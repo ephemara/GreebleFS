@@ -41,39 +41,61 @@ interface ShippedExplorerModeProfileManifest {
   modeProfiles?: ExplorerModeProfileDefinition[];
 }
 
-const shippedExplorerModeProfileManifest =
-  shippedExplorerModeProfileManifestJson as ShippedExplorerModeProfileManifest;
 const builtInExplorerModeProfileOrder = [
   "balanced",
   "navigator",
   "focus",
   "inspector",
 ] as const satisfies readonly BuiltInExplorerModeProfileId[];
-const shippedExplorerModeProfiles = Array.isArray(
-  shippedExplorerModeProfileManifest.modeProfiles,
-)
-  ? shippedExplorerModeProfileManifest.modeProfiles
-  : [];
-const shippedExplorerModeProfileById = new Map(
-  shippedExplorerModeProfiles.map((profile) => [profile.id, profile] as const),
-);
-
-const builtInExplorerModeProfiles = Object.fromEntries(
-  builtInExplorerModeProfileOrder.map((modeProfileId) => {
-    const modeProfile = shippedExplorerModeProfileById.get(modeProfileId);
-    if (!modeProfile) {
-      throw new Error(
-        `Missing shipped explorer mode profile: ${modeProfileId}`,
-      );
-    }
-    return [modeProfileId, { ...modeProfile }] as const;
-  }),
-) as Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition>;
 
 export const defaultExplorerModeProfileId: BuiltInExplorerModeProfileId =
   "balanced";
-export const explorerModeProfiles = builtInExplorerModeProfileOrder.map(
-  (modeProfileId) => builtInExplorerModeProfiles[modeProfileId],
+
+function cloneExplorerModeProfileDefinition(
+  profile: ExplorerModeProfileDefinition,
+): ExplorerModeProfileDefinition {
+  return { ...profile };
+}
+
+function resolveBuiltInExplorerModeProfiles(
+  manifest: ShippedExplorerModeProfileManifest | null | undefined,
+): Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition> {
+  const shippedExplorerModeProfiles = Array.isArray(manifest?.modeProfiles)
+    ? manifest.modeProfiles.map(cloneExplorerModeProfileDefinition)
+    : [];
+  const shippedExplorerModeProfileById = new Map(
+    shippedExplorerModeProfiles.map((profile) => [profile.id, profile] as const),
+  );
+
+  return Object.fromEntries(
+    builtInExplorerModeProfileOrder.map((modeProfileId) => {
+      const modeProfile = shippedExplorerModeProfileById.get(modeProfileId);
+      if (!modeProfile) {
+        throw new Error(
+          `Missing shipped explorer mode profile: ${modeProfileId}`,
+        );
+      }
+      return [modeProfileId, cloneExplorerModeProfileDefinition(modeProfile)] as const;
+    }),
+  ) as Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition>;
+}
+
+let builtInExplorerModeProfiles =
+  {} as Record<BuiltInExplorerModeProfileId, ExplorerModeProfileDefinition>;
+
+export let explorerModeProfiles: ExplorerModeProfileDefinition[] = [];
+
+export function applyUsrExplorerModeProfileManifest(
+  manifest: ShippedExplorerModeProfileManifest | null | undefined,
+): void {
+  builtInExplorerModeProfiles = resolveBuiltInExplorerModeProfiles(manifest);
+  explorerModeProfiles = builtInExplorerModeProfileOrder.map(
+    (modeProfileId) => builtInExplorerModeProfiles[modeProfileId],
+  );
+}
+
+applyUsrExplorerModeProfileManifest(
+  shippedExplorerModeProfileManifestJson as ShippedExplorerModeProfileManifest,
 );
 
 export function stepExplorerModeProfile(input: {

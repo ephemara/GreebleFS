@@ -333,10 +333,17 @@ import {
   type TerminalWindowMode,
 } from './store/settingsStore';
 import {
+  createUsrProfile,
+  deleteUsrProfile,
+  duplicateUsrProfile,
+  getUsrProfileSettingSliceKeys,
+  getUsrProfileSharedSettingSliceKeys,
   getUsrProfileRuntimeRevision,
   getUsrProfileRuntimeSnapshot,
   installUsrProfileSettingsPersistence,
+  renameUsrProfile,
   subscribeToUsrProfileRuntime,
+  switchUsrProfile,
 } from './runtime/usrProfiles';
 import { useExplorerStore } from './store/explorerStore';
 import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
@@ -4291,6 +4298,79 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     await openManagedContentDirectory('themeEngines');
   }, [openManagedContentDirectory]);
 
+  const openUsrProfilesRootFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    const profilesRoot = getUsrProfileRuntimeSnapshot()?.profilesRoot;
+    if (!profilesRoot) {
+      return;
+    }
+
+    await ensureDir(profilesRoot);
+    await openExplorerPath(profilesRoot);
+  }, []);
+
+  const openUsrProfileFolder = useCallback(async (profileId: string) => {
+    if (!isTauri()) {
+      return;
+    }
+
+    const snapshot = getUsrProfileRuntimeSnapshot();
+    const profile = snapshot?.profiles.find((entry) => entry.id === profileId);
+    if (!profile) {
+      return;
+    }
+
+    await ensureDir(profile.directoryPath);
+    await openExplorerPath(profile.directoryPath);
+  }, []);
+
+  const handleSwitchUsrProfile = useCallback(async (profileId: string) => {
+    await switchUsrProfile(profileId, useSettingsStore.getState().settings);
+  }, []);
+
+  const handleCreateUsrProfile = useCallback(async (name: string) => {
+    await createUsrProfile({
+      name,
+      activate: true,
+      seedSettingsJson: JSON.stringify(useSettingsStore.getState().settings),
+    });
+  }, []);
+
+  const handleDuplicateUsrProfile = useCallback(
+    async (profileId: string, name: string) => {
+      await duplicateUsrProfile({
+        sourceProfileId: profileId,
+        name,
+        activate: true,
+        currentSettings: useSettingsStore.getState().settings,
+      });
+    },
+    [],
+  );
+
+  const handleRenameUsrProfile = useCallback(
+    async (profileId: string, name: string) => {
+      await renameUsrProfile({ profileId, name });
+    },
+    [],
+  );
+
+  const handleDeleteUsrProfile = useCallback(
+    async (profileId: string) => {
+      const snapshot = getUsrProfileRuntimeSnapshot();
+      const fallbackProfileId =
+        snapshot?.profiles.find((profile) => profile.id !== profileId)?.id ?? null;
+      await deleteUsrProfile({
+        profileId,
+        fallbackProfileId,
+      });
+    },
+    [],
+  );
+
   const refreshAuthoredWallpapers = useCallback(async (force = false) => {
     if (!isTauri()) {
       setAuthoredWallpapers([]);
@@ -4724,25 +4804,35 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         pendingRepositoryImports,
         onPendingRepositoryImportsHandled: handleRepositoryImportsHandled,
         topBarPackages,
-        topBarPackagesDirectory: topBarSystemConfig.topBarsDirectory,
+        topBarPackagesDirectory: getManagedContentPrimaryDirectory('topBars'),
         topBarPackagesLoading,
         topBarPackagesError,
         topBarPackagesWarnings,
+        usrProfileRuntimeSnapshot,
+        usrProfileSettingSliceKeys: getUsrProfileSettingSliceKeys(),
+        usrProfileSharedSettingSliceKeys: getUsrProfileSharedSettingSliceKeys(),
+        onSwitchUsrProfile: handleSwitchUsrProfile,
+        onCreateUsrProfile: handleCreateUsrProfile,
+        onDuplicateUsrProfile: handleDuplicateUsrProfile,
+        onRenameUsrProfile: handleRenameUsrProfile,
+        onDeleteUsrProfile: handleDeleteUsrProfile,
+        onOpenUsrProfilesRootFolder: openUsrProfilesRootFolder,
+        onOpenUsrProfileFolder: openUsrProfileFolder,
         dockPresentationPackages,
-        dockPresentationPackagesDirectory: dockPresentationSystemConfig.dockPresentationsDirectory,
+        dockPresentationPackagesDirectory: getManagedContentPrimaryDirectory('dockPresentations'),
         dockPresentationPackagesLoading,
         dockPresentationPackagesError,
         dockPresentationPackagesWarnings,
         explorerLayouts: combinedExplorerLayouts,
-        explorerLayoutsDirectory: explorerLayoutSystemConfig.explorerLayoutsDirectory,
+        explorerLayoutsDirectory: getManagedContentPrimaryDirectory('explorerLayouts'),
         explorerLayoutsLoading: explorerLayoutPackagesLoading,
         explorerLayoutsError: explorerLayoutPackagesError,
         explorerLayoutsWarnings: explorerLayoutPackagesWarnings,
         homePacks: combinedHomePacks,
         menuPacks: combinedMenuPacks,
         actionsDirectory: actionPackSystemConfig.actionsDirectory,
-        homePacksDirectory: homePackSystemConfig.homePacksDirectory,
-        menuPacksDirectory: menuPackSystemConfig.menuPacksDirectory,
+        homePacksDirectory: getManagedContentPrimaryDirectory('homePacks'),
+        menuPacksDirectory: getManagedContentPrimaryDirectory('menuPacks'),
         actionsLoading: actionPacksLoading,
         homePacksLoading,
         menuPacksLoading,
@@ -4878,8 +4968,13 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       handleEmbeddedExplorerPickerConfirm,
       handleOpenInTerminal,
       handleOpenInFilesystemAquarium,
+      handleCreateUsrProfile,
+      handleDeleteUsrProfile,
+      handleDuplicateUsrProfile,
       handleRepositoryImportsHandled,
       handleRequestRepositoryImport,
+      handleRenameUsrProfile,
+      handleSwitchUsrProfile,
       hideOverlay,
       isOverlayVisible,
       activeExplorerPickerRequest,
@@ -4919,6 +5014,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       openShadersFolder,
       openThemeEnginesFolder,
       openThemeRecipesFolder,
+      openUsrProfileFolder,
+      openUsrProfilesRootFolder,
       openPluginsFolder,
       openTopBarsFolder,
       openWallpapersFolder,
@@ -4971,6 +5068,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       menuPacksLoading,
       menuPacksWarnings,
       refreshMenuPacks,
+      usrProfileRuntimeSnapshot,
     ],
   );
   const panelLookup = useMemo(

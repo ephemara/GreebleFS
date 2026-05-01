@@ -69,50 +69,90 @@ interface ShippedExplorerExperimentalModeManifest {
   };
 }
 
-const shippedExplorerExperimentalModeManifest =
-  shippedExplorerExperimentalModeManifestJson as ShippedExplorerExperimentalModeManifest;
+function cloneAdaptiveSemanticDensityStopDefinition(
+  stop: AdaptiveSemanticDensityStopDefinition,
+): AdaptiveSemanticDensityStopDefinition {
+  return {
+    ...stop,
+    grid: stop.grid ? { ...stop.grid } : undefined,
+    table: stop.table ? { ...stop.table } : undefined,
+  };
+}
 
-export const ADAPTIVE_SEMANTIC_DENSITY_STEP =
-  typeof shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStep ===
-  "number"
-    ? shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStep
-    : 0.16;
-export const DEFAULT_ADAPTIVE_SEMANTIC_DENSITY =
-  typeof shippedExplorerExperimentalModeManifest.defaultAdaptiveSemanticDensity ===
-  "number"
-    ? shippedExplorerExperimentalModeManifest.defaultAdaptiveSemanticDensity
-    : 0.4;
+function cloneExplorerExperimentalModeDefinition(
+  mode: ExplorerExperimentalModeDefinition,
+): ExplorerExperimentalModeDefinition {
+  return { ...mode };
+}
 
-export const adaptiveSemanticDensityStops = Array.isArray(
-  shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStops,
-)
-  ? shippedExplorerExperimentalModeManifest.adaptiveSemanticDensityStops
-  : [];
+function cloneExplorerExperimentalDensityDescriptor(
+  descriptor: ExplorerExperimentalDensityDescriptor,
+): ExplorerExperimentalDensityDescriptor {
+  return { ...descriptor };
+}
 
-export const explorerExperimentalModes = Array.isArray(
-  shippedExplorerExperimentalModeManifest.modes,
-)
-  ? shippedExplorerExperimentalModeManifest.modes
-  : [];
+export let ADAPTIVE_SEMANTIC_DENSITY_STEP = 0.16;
+export let DEFAULT_ADAPTIVE_SEMANTIC_DENSITY = 0.4;
+export let adaptiveSemanticDensityStops: AdaptiveSemanticDensityStopDefinition[] =
+  [];
+export let explorerExperimentalModes: ExplorerExperimentalModeDefinition[] = [];
 
-const constellationDensityDescriptors = Array.isArray(
-  shippedExplorerExperimentalModeManifest.densityDescriptors?.constellation,
-)
-  ? shippedExplorerExperimentalModeManifest.densityDescriptors.constellation
-  : [];
+let constellationDensityDescriptors: ExplorerExperimentalDensityDescriptor[] = [];
+let timelineDensityDescriptors: ExplorerExperimentalDensityDescriptor[] = [];
+let explorerExperimentalModeMap = new Map<
+  Exclude<ExplorerExperimentalViewMode, "off">,
+  ExplorerExperimentalModeDefinition
+>();
+let adaptiveDensityStopMap = new Map<
+  AdaptiveSemanticDensityStopId,
+  AdaptiveSemanticDensityStopDefinition
+>();
 
-const timelineDensityDescriptors = Array.isArray(
-  shippedExplorerExperimentalModeManifest.densityDescriptors?.timeline,
-)
-  ? shippedExplorerExperimentalModeManifest.densityDescriptors.timeline
-  : [];
+export function applyUsrExplorerExperimentalModeManifest(
+  manifest: ShippedExplorerExperimentalModeManifest | null | undefined,
+): void {
+  ADAPTIVE_SEMANTIC_DENSITY_STEP =
+    typeof manifest?.adaptiveSemanticDensityStep === "number"
+      ? manifest.adaptiveSemanticDensityStep
+      : 0.16;
+  DEFAULT_ADAPTIVE_SEMANTIC_DENSITY =
+    typeof manifest?.defaultAdaptiveSemanticDensity === "number"
+      ? manifest.defaultAdaptiveSemanticDensity
+      : 0.4;
+  adaptiveSemanticDensityStops = Array.isArray(
+    manifest?.adaptiveSemanticDensityStops,
+  )
+    ? manifest.adaptiveSemanticDensityStops.map(
+        cloneAdaptiveSemanticDensityStopDefinition,
+      )
+    : [];
+  explorerExperimentalModes = Array.isArray(manifest?.modes)
+    ? manifest.modes.map(cloneExplorerExperimentalModeDefinition)
+    : [];
+  constellationDensityDescriptors = Array.isArray(
+    manifest?.densityDescriptors?.constellation,
+  )
+    ? manifest.densityDescriptors.constellation.map(
+        cloneExplorerExperimentalDensityDescriptor,
+      )
+    : [];
+  timelineDensityDescriptors = Array.isArray(
+    manifest?.densityDescriptors?.timeline,
+  )
+    ? manifest.densityDescriptors.timeline.map(
+        cloneExplorerExperimentalDensityDescriptor,
+      )
+    : [];
+  explorerExperimentalModeMap = new Map(
+    explorerExperimentalModes.map((mode) => [mode.id, mode] as const),
+  );
+  adaptiveDensityStopMap = new Map(
+    adaptiveSemanticDensityStops.map((stop) => [stop.id, stop] as const),
+  );
+}
 
-const explorerExperimentalModeMap = new Map(
-  explorerExperimentalModes.map((mode) => [mode.id, mode] as const),
-);
-
-const adaptiveDensityStopMap = new Map(
-  adaptiveSemanticDensityStops.map((stop) => [stop.id, stop] as const),
+applyUsrExplorerExperimentalModeManifest(
+  shippedExplorerExperimentalModeManifestJson as ShippedExplorerExperimentalModeManifest,
 );
 
 export function normalizeExplorerExperimentalViewMode(

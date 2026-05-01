@@ -42,6 +42,17 @@ export const settingsSectionCatalog = [
     order: 20,
   },
   {
+    key: 'profiles',
+    label: 'Profiles',
+    subtitle: 'Shared-root usr plus profile-local workbench overlays.',
+    keywords: ['profiles', 'usr', 'overrides', 'shared root', 'workbench config'],
+    overviewSummary: 'Switch named usr overlays, inspect profile-owned settings slices, and keep shared-root content global.',
+    featuredInOverview: true,
+    archetype: 'hybrid',
+    shell: { preferredContentDensity: 'comfortable' },
+    order: 22,
+  },
+  {
     key: 'models',
     label: 'Models',
     subtitle: 'Managed local-model catalog, cache, and acceleration-aware bindings.',
@@ -360,7 +371,7 @@ export const settingsSectionCategoryCatalog = [
     label: 'Start',
     description: 'Orientation, startup behavior, and global controls.',
     order: 10,
-    sectionKeys: ['overview', 'system', 'hotkeys'],
+    sectionKeys: ['overview', 'system', 'profiles', 'hotkeys'],
   },
   {
     key: 'core-features',

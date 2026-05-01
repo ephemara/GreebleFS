@@ -1,3 +1,32 @@
+# 2026-05-01 - Usr Profiles Now Overlay Workbench Config On The Shared Root
+
+- GreebleFS now has a first-class `usr` profile runtime for workbench configuration instead of treating the writable `usr/` root as one monolithic user state bucket.
+  - `src-tauri/src/usr_profiles.rs` owns the profile catalog/filesystem contract under `usr/profiles/`, first-run migration from legacy `ultacode-settings`, shared-vs-profile settings partitioning, effective settings merge, lane directory-stack resolution, and the cross-window `usr-profile-changed-event`.
+  - `src/runtime/usrProfiles.ts` is the TS host bridge for initialize/list/switch/create/duplicate/rename/delete/persist flows. It applies host snapshots by overriding managed-content directory stacks, refreshing profile-overlay static manifests, rewriting the effective settings blob in local storage, and rehydrating `useSettingsStore`.
+  - `src/runtime/usrProfileStaticConfigRuntime.ts` is the static-manifest overlay bridge for profile-scoped JSON/TOML lanes that used to behave like frozen shipped imports. It currently rehydrates `explorerChromeLayouts`, `explorerCustomizeControls`, `explorerModeProfiles`, `explorerShellLayouts`, `explorerWorkspaceLayouts`, `explorerExperimentalModes`, `explorerZoomBehaviors`, `explorerPerformance`, and `hotkeys`.
+- Durable resolution rules:
+  - Managed content now resolves in `active profile overlay -> shared usr root -> bundled fallback` order only for lanes marked `profile-overlay` in `usr/manifest.json` / `src/config/usrManifest.ts`.
+  - Lanes marked `shared-root` must ignore profile directories completely and keep using the shared writable root plus bundled fallback.
+  - Profile-owned settings slices are `editor`, `presentation`, `dock`, `terminal`, `explorer`, `home`, `appearance`, `keybindings`, `layout`, `audio`, and `plugins`.
+  - Shared/root settings slices are `python`, `models`, `system`, `mobile`, `screenshots`, and `polygemini`.
+  - `notes`, `Screenshots`, explorer workspace/session blobs, and arbitrary component-local localStorage remain outside the v1 profile system.
+  - If a future profile-overlay lane is manifest-driven but still initializes from a shipped JSON import, add an `applyUsr*Manifest(...)` seam in the owning config file and register that lane in `src/runtime/usrProfileStaticConfigRuntime.ts` instead of inventing a second refresh path.
+  - Future profile-aware authored package loaders should consume the managed-content stack helpers in `src/config/managedContentDirectoryStacks.ts` / `src/config/appContentDirectories.ts` rather than hardcoding a single `getManagedContentDirectory(...)` root.
+- Settings and shell integration:
+  - `src/components/SettingsPage.tsx`, `src/panels/panelRegistry.tsx`, and `src/components/settings/sections/ProfilesSettingsSection.tsx` now expose a dedicated `Settings > Profiles` surface for switching, creating from current state, duplicating, renaming, deleting, and opening profile folders, plus clear shared-vs-overridden slice visibility.
+  - `src/App.tsx` now treats the active profile snapshot as part of shell truth: open-folder actions use the active writable directory for profile-overlay lanes, profile switches persist the current effective workbench settings before flipping, and catalog-backed authored lanes refresh against the new stack signature.
+- Validation that passed for this pass:
+  - `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - `bunx vitest run src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`
+  - `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "renders the dedicated profiles section with switch and create actions|organizes the settings rail into compact preference groups" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep for the new runtime/settings files via `bunx tsc --noEmit --pretty false` filtered through `rg` returned no matching diagnostics after the final fixes
+- Honest limitations:
+  - Full-repo `bunx tsc --noEmit` still has unrelated baseline diagnostics outside this lane, so validation stayed focused on touched files.
+  - The full `src/test/settingsPage.behavior.test.tsx` suite is still heavy on this branch and timed out when run whole; the new profile coverage passed through focused test-name runs instead.
+  - `src/generated/tauri.ts` was already dirty in the workspace, so this pass intentionally kept the new frontend profile bridge on direct `invoke()` / `listen()` calls instead of regenerating bindings on top of unrelated changes.
+- Next recommended step:
+  - Add focused tests for lane-stack precedence (`profile-overlay` vs `shared-root`) and an App-level profile-switch test that proves authored catalogs plus static manifest lanes both refresh without a full restart.
+
 # 2026-05-01 - Wasm Runtime Surfaces Are Now Compiler-Aware And Plugin-Reusable
 
 - The shared `wasm-panel` lane is no longer implicitly "Go only". GreebleFS now supports Rust `cargo-wasm-bindgen` UI runtimes alongside the existing Go / TinyGo path.

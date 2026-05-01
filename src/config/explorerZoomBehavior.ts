@@ -176,9 +176,6 @@ const defaultHudSegments: ExplorerZoomHudSegments = Object.freeze({
   oversize: 20,
 });
 
-const shippedExplorerZoomBehaviorManifest =
-  shippedExplorerZoomBehaviorManifestJson as ShippedExplorerZoomBehaviorManifest;
-
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -464,47 +461,72 @@ function normalizeHudSegments(
   };
 }
 
-export const explorerZoomBehavior: ExplorerZoomBehaviorManifest = Object.freeze({
-  version: Math.max(1, Math.round(asFiniteNumber(
-    shippedExplorerZoomBehaviorManifest.version,
-    1,
-  ))),
-  id:
-    typeof shippedExplorerZoomBehaviorManifest.id === "string" &&
-      shippedExplorerZoomBehaviorManifest.id.trim().length > 0
-      ? shippedExplorerZoomBehaviorManifest.id.trim()
-      : "greeblefs-core-explorer-zoom-behavior",
-  name:
-    typeof shippedExplorerZoomBehaviorManifest.name === "string" &&
-      shippedExplorerZoomBehaviorManifest.name.trim().length > 0
-      ? shippedExplorerZoomBehaviorManifest.name.trim()
-      : "GreebleFS Core Explorer Zoom Behavior",
-  description:
-    typeof shippedExplorerZoomBehaviorManifest.description === "string" &&
-      shippedExplorerZoomBehaviorManifest.description.trim().length > 0
-      ? shippedExplorerZoomBehaviorManifest.description.trim()
-      : "Canonical Explorer ctrl/cmd-wheel layout zoom behavior.",
-  gridAnchors: normalizeGridAnchors(shippedExplorerZoomBehaviorManifest.gridAnchors),
-  layoutDomain: normalizeLayoutDomain(
-    shippedExplorerZoomBehaviorManifest.layoutDomain,
-  ),
-  wheel: normalizeWheelBehavior(shippedExplorerZoomBehaviorManifest.wheel),
-  oversize: normalizeOversizeBehavior(shippedExplorerZoomBehaviorManifest.oversize),
-  presentation: normalizePresentationBehavior(
-    shippedExplorerZoomBehaviorManifest.presentation,
-  ),
-  hudSegments: normalizeHudSegments(shippedExplorerZoomBehaviorManifest.hudSegments),
-});
+function asTrimmedString(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : fallback;
+}
 
-export const explorerGridZoomAnchors = Object.freeze([
-  { id: "icons-s" as const, zoom: explorerZoomBehavior.gridAnchors["icons-s"] },
-  { id: "icons-m" as const, zoom: explorerZoomBehavior.gridAnchors["icons-m"] },
-  { id: "icons-l" as const, zoom: explorerZoomBehavior.gridAnchors["icons-l"] },
-  { id: "icons-xl" as const, zoom: explorerZoomBehavior.gridAnchors["icons-xl"] },
-]);
+function createExplorerZoomBehaviorManifest(
+  manifest: ShippedExplorerZoomBehaviorManifest | null | undefined,
+): ExplorerZoomBehaviorManifest {
+  return Object.freeze({
+    version: Math.max(1, Math.round(asFiniteNumber(manifest?.version, 1))),
+    id: asTrimmedString(
+      manifest?.id,
+      "greeblefs-core-explorer-zoom-behavior",
+    ),
+    name: asTrimmedString(
+      manifest?.name,
+      "GreebleFS Core Explorer Zoom Behavior",
+    ),
+    description: asTrimmedString(
+      manifest?.description,
+      "Canonical Explorer ctrl/cmd-wheel layout zoom behavior.",
+    ),
+    gridAnchors: normalizeGridAnchors(manifest?.gridAnchors),
+    layoutDomain: normalizeLayoutDomain(manifest?.layoutDomain),
+    wheel: normalizeWheelBehavior(manifest?.wheel),
+    oversize: normalizeOversizeBehavior(manifest?.oversize),
+    presentation: normalizePresentationBehavior(manifest?.presentation),
+    hudSegments: normalizeHudSegments(manifest?.hudSegments),
+  });
+}
 
-export const EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS =
+function buildExplorerGridZoomAnchors(
+  behavior: ExplorerZoomBehaviorManifest,
+): ReadonlyArray<{ id: ExplorerZoomGridAnchorId; zoom: number }> {
+  return Object.freeze([
+    { id: "icons-s" as const, zoom: behavior.gridAnchors["icons-s"] },
+    { id: "icons-m" as const, zoom: behavior.gridAnchors["icons-m"] },
+    { id: "icons-l" as const, zoom: behavior.gridAnchors["icons-l"] },
+    { id: "icons-xl" as const, zoom: behavior.gridAnchors["icons-xl"] },
+  ]);
+}
+
+export let explorerZoomBehavior: ExplorerZoomBehaviorManifest =
+  createExplorerZoomBehaviorManifest(null);
+
+export let explorerGridZoomAnchors: ReadonlyArray<{
+  id: ExplorerZoomGridAnchorId;
+  zoom: number;
+}> = buildExplorerGridZoomAnchors(explorerZoomBehavior);
+
+export let EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS =
   explorerZoomBehavior.wheel.commitIdleMs;
+
+export function applyUsrExplorerZoomBehaviorManifest(
+  manifest: ShippedExplorerZoomBehaviorManifest | null | undefined,
+): void {
+  explorerZoomBehavior = createExplorerZoomBehaviorManifest(manifest);
+  explorerGridZoomAnchors = buildExplorerGridZoomAnchors(explorerZoomBehavior);
+  EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS =
+    explorerZoomBehavior.wheel.commitIdleMs;
+}
+
+applyUsrExplorerZoomBehaviorManifest(
+  shippedExplorerZoomBehaviorManifestJson as ShippedExplorerZoomBehaviorManifest,
+);
 
 export function resolveExplorerGridItemPadding(stageSize: number): {
   top: number;

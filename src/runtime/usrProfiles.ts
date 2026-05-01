@@ -233,6 +233,8 @@ async function applyUsrProfileSnapshot(
   isApplyingHostSnapshot = true;
   try {
     applyManagedContentDirectoryStackOverrides(stackOverrides);
+    const staticConfigRuntime = await import('./usrProfileStaticConfigRuntime');
+    await staticConfigRuntime.refreshUsrProfileStaticConfigRuntime();
     writeEffectiveSettingsIntoLocalStorage(effectiveSettings);
     activeUsrProfileSnapshot = snapshot;
     activeUsrProfileSnapshotFingerprint = nextFingerprint;

@@ -26,6 +26,7 @@ import {
 } from '../config/themeBundlePacks';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import * as explorerPickerRuntime from '../runtime/explorerPicker';
+import type { UsrProfileRuntimeSnapshot } from '../runtime/usrProfiles';
 import { createLoadedTopBarDefinition } from '../config/topBars';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useAccelerationRuntimeStore } from '../store/accelerationRuntimeStore';
@@ -122,6 +123,14 @@ function renderSettingsPage(options?: {
   pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
+  usrProfileRuntimeSnapshot?: UsrProfileRuntimeSnapshot | null;
+  onSwitchUsrProfile?: (profileId: string) => Promise<void>;
+  onCreateUsrProfile?: (name: string) => Promise<void>;
+  onDuplicateUsrProfile?: (profileId: string, name: string) => Promise<void>;
+  onRenameUsrProfile?: (profileId: string, name: string) => Promise<void>;
+  onDeleteUsrProfile?: (profileId: string) => Promise<void>;
+  onOpenUsrProfilesRootFolder?: () => Promise<void>;
+  onOpenUsrProfileFolder?: (profileId: string) => Promise<void>;
 }) {
   const packageThemes = (options?.themePackages ?? []).map(pkg => pkg.theme);
   const appearanceSettings = useSettingsStore.getState().settings.appearance;
@@ -143,6 +152,16 @@ function renderSettingsPage(options?: {
       topBarPackagesLoading={false}
       topBarPackagesError={null}
       topBarPackagesWarnings={[]}
+      usrProfileRuntimeSnapshot={options?.usrProfileRuntimeSnapshot ?? null}
+      usrProfileSettingSliceKeys={['editor', 'dock', 'explorer', 'appearance']}
+      usrProfileSharedSettingSliceKeys={['system', 'mobile', 'models']}
+      onSwitchUsrProfile={options?.onSwitchUsrProfile ?? (async () => {})}
+      onCreateUsrProfile={options?.onCreateUsrProfile ?? (async () => {})}
+      onDuplicateUsrProfile={options?.onDuplicateUsrProfile ?? (async () => {})}
+      onRenameUsrProfile={options?.onRenameUsrProfile ?? (async () => {})}
+      onDeleteUsrProfile={options?.onDeleteUsrProfile ?? (async () => {})}
+      onOpenUsrProfilesRootFolder={options?.onOpenUsrProfilesRootFolder ?? (async () => {})}
+      onOpenUsrProfileFolder={options?.onOpenUsrProfileFolder ?? (async () => {})}
       homePacks={options?.homePacks ?? BUILT_IN_HOME_PACK_FIXTURES}
       homePacksDirectory={homePackSystemConfig.homePacksDirectory}
       homePacksLoading={false}
@@ -1154,6 +1173,83 @@ describe('SettingsPage behavior', () => {
         orderedButtons[index]?.compareDocumentPosition(orderedButtons[index + 1] as Node)
           & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+    }
+  });
+
+  it('renders the dedicated profiles section with switch and create actions', async () => {
+    const user = userEvent.setup();
+    const createProfile = vi.fn(async () => {});
+    const switchProfile = vi.fn(async () => {});
+    const promptMock = vi
+      .spyOn(window, 'prompt')
+      .mockImplementation(() => 'Studio Draft');
+
+    const usrProfileRuntimeSnapshot: UsrProfileRuntimeSnapshot = {
+      activeProfileId: 'studio',
+      profilesRoot: 'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles',
+      sharedSettingsPath:
+        'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/shared/settings.json',
+      sharedSettingsJson: '{}',
+      activeProfileSettingsPath:
+        'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/studio/settings.json',
+      activeProfileSettingsJson: '{}',
+      effectiveSettingsJson: '{}',
+      managedContentDirectoryStacks: [],
+      profiles: [
+        {
+          id: 'studio',
+          name: 'Studio',
+          overrideSlices: ['editor', 'dock'],
+          createdAtMs: 1,
+          updatedAtMs: 2,
+          directoryPath:
+            'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/studio',
+          settingsPath:
+            'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/studio/settings.json',
+          isActive: true,
+        },
+        {
+          id: 'review',
+          name: 'Review',
+          overrideSlices: ['appearance'],
+          createdAtMs: 3,
+          updatedAtMs: 4,
+          directoryPath:
+            'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/review',
+          settingsPath:
+            'C:/Users/Admin/AppData/Roaming/GreebleFS/usr/profiles/review/settings.json',
+          isActive: false,
+        },
+      ],
+    };
+
+    useSettingsStore.getState().setActiveSection('profiles');
+
+    try {
+      renderSettingsPage({
+        usrProfileRuntimeSnapshot,
+        onCreateUsrProfile: createProfile,
+        onSwitchUsrProfile: switchProfile,
+      });
+
+      expect(screen.getByText('Shared Root Slices')).toBeInTheDocument();
+      expect(screen.getByText('editor · overridden')).toBeInTheDocument();
+      expect(screen.getByText('system')).toBeInTheDocument();
+
+      await user.click(
+        screen.getByRole('button', { name: /create from current/i }),
+      );
+      expect(createProfile).toHaveBeenCalledWith('Studio Draft');
+
+      const reviewCard = document.querySelector(
+        '[data-settings-catalog-card="Review"]',
+      ) as HTMLElement | null;
+      expect(reviewCard).not.toBeNull();
+
+      await user.click(within(reviewCard!).getByRole('button', { name: 'Switch' }));
+      expect(switchProfile).toHaveBeenCalledWith('review');
+    } finally {
+      promptMock.mockRestore();
     }
   });
 

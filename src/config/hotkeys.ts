@@ -110,17 +110,34 @@ interface ShippedHotkeyManifest {
 export const LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE =
   "data-gfs-local-app-zoom-hotkeys";
 
-const shippedHotkeyManifest =
-  shippedHotkeyManifestJson as ShippedHotkeyManifest;
+function cloneHotkeyBindingDefinition(
+  definition: HotkeyBindingDefinition,
+): HotkeyBindingDefinition {
+  return { ...definition };
+}
 
-export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] =
-  Array.isArray(shippedHotkeyManifest.bindings)
-    ? shippedHotkeyManifest.bindings.map((definition) => ({ ...definition }))
+function resolveHotkeyBindingDefinitions(
+  manifest: ShippedHotkeyManifest | null | undefined,
+): HotkeyBindingDefinition[] {
+  return Array.isArray(manifest?.bindings)
+    ? manifest.bindings.map(cloneHotkeyBindingDefinition)
     : [];
+}
 
-const hotkeyDefinitionByKey = new Map(
-  hotkeyBindingDefinitions.map((definition) => [definition.key, definition]),
-);
+export let hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [];
+
+let hotkeyDefinitionByKey = new Map<HotkeyBindingKey, HotkeyBindingDefinition>();
+
+export function applyUsrHotkeyManifest(
+  manifest: ShippedHotkeyManifest | null | undefined,
+): void {
+  hotkeyBindingDefinitions = resolveHotkeyBindingDefinitions(manifest);
+  hotkeyDefinitionByKey = new Map(
+    hotkeyBindingDefinitions.map((definition) => [definition.key, definition]),
+  );
+}
+
+applyUsrHotkeyManifest(shippedHotkeyManifestJson as ShippedHotkeyManifest);
 
 export function createDefaultKeybindingSettings(): HotkeyBindingSettings {
   const normalizedSettings = hotkeyBindingDefinitions.reduce(

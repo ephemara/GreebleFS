@@ -45,6 +45,7 @@ import type {
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
+import type { UsrProfileRuntimeSnapshot } from '../runtime/usrProfiles';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -234,6 +235,16 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  usrProfileRuntimeSnapshot = null,
+  usrProfileSettingSliceKeys = [],
+  usrProfileSharedSettingSliceKeys = [],
+  onSwitchUsrProfile = async () => {},
+  onCreateUsrProfile = async () => {},
+  onDuplicateUsrProfile = async () => {},
+  onRenameUsrProfile = async () => {},
+  onDeleteUsrProfile = async () => {},
+  onOpenUsrProfilesRootFolder = async () => {},
+  onOpenUsrProfileFolder = async () => {},
   dockPresentationPackages = [],
   dockPresentationPackagesDirectory = '',
   dockPresentationPackagesLoading = false,
@@ -385,6 +396,19 @@ export function createBuiltInPanelDefinitions({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  usrProfileRuntimeSnapshot?: UsrProfileRuntimeSnapshot | null;
+  usrProfileSettingSliceKeys?: readonly string[];
+  usrProfileSharedSettingSliceKeys?: readonly string[];
+  onSwitchUsrProfile?: (profileId: string) => Promise<void>;
+  onCreateUsrProfile?: (name: string) => Promise<void>;
+  onDuplicateUsrProfile?: (
+    profileId: string,
+    name: string,
+  ) => Promise<void>;
+  onRenameUsrProfile?: (profileId: string, name: string) => Promise<void>;
+  onDeleteUsrProfile?: (profileId: string) => Promise<void>;
+  onOpenUsrProfilesRootFolder?: () => Promise<void>;
+  onOpenUsrProfileFolder?: (profileId: string) => Promise<void>;
   dockPresentationPackages?: LoadedDockPresentationPackage[];
   dockPresentationPackagesDirectory?: string;
   dockPresentationPackagesLoading?: boolean;
@@ -746,6 +770,16 @@ export function createBuiltInPanelDefinitions({
             topBarPackagesLoading={topBarPackagesLoading}
             topBarPackagesError={topBarPackagesError}
             topBarPackagesWarnings={topBarPackagesWarnings}
+            usrProfileRuntimeSnapshot={usrProfileRuntimeSnapshot}
+            usrProfileSettingSliceKeys={usrProfileSettingSliceKeys}
+            usrProfileSharedSettingSliceKeys={usrProfileSharedSettingSliceKeys}
+            onSwitchUsrProfile={onSwitchUsrProfile}
+            onCreateUsrProfile={onCreateUsrProfile}
+            onDuplicateUsrProfile={onDuplicateUsrProfile}
+            onRenameUsrProfile={onRenameUsrProfile}
+            onDeleteUsrProfile={onDeleteUsrProfile}
+            onOpenUsrProfilesRootFolder={onOpenUsrProfilesRootFolder}
+            onOpenUsrProfileFolder={onOpenUsrProfileFolder}
             dockPresentationPackages={dockPresentationPackages}
             dockPresentationPackagesDirectory={dockPresentationPackagesDirectory}
             dockPresentationPackagesLoading={dockPresentationPackagesLoading}

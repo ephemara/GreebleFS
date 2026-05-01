@@ -46,14 +46,6 @@ interface ShippedExplorerCustomizeControlManifest {
   controls?: ExplorerCustomizeCatalogEntry[];
 }
 
-const shippedExplorerCustomizeControlManifest =
-  shippedExplorerCustomizeControlManifestJson as ShippedExplorerCustomizeControlManifest;
-const builtInExplorerCustomizeCatalogEntries = Array.isArray(
-  shippedExplorerCustomizeControlManifest.controls,
-)
-  ? shippedExplorerCustomizeControlManifest.controls
-  : [];
-
 const defaultActionChromeSurfaces: ExplorerChromeSurfaceId[] = [
   "explorerTopbar",
   "explorerToolbar",
@@ -80,6 +72,20 @@ function cloneExplorerCustomizeCatalogEntry(
     sizeVariants: [...entry.sizeVariants],
   };
 }
+
+let builtInExplorerCustomizeCatalogEntries: ExplorerCustomizeCatalogEntry[] = [];
+
+export function applyUsrExplorerCustomizeControlManifest(
+  manifest: ShippedExplorerCustomizeControlManifest | null | undefined,
+): void {
+  builtInExplorerCustomizeCatalogEntries = Array.isArray(manifest?.controls)
+    ? manifest.controls.map(cloneExplorerCustomizeCatalogEntry)
+    : [];
+}
+
+applyUsrExplorerCustomizeControlManifest(
+  shippedExplorerCustomizeControlManifestJson as ShippedExplorerCustomizeControlManifest,
+);
 
 export function toExplorerActionChromeControlId(
   actionId: string,

@@ -37,8 +37,6 @@ interface ShippedExplorerShellLayoutManifest {
   shellLayouts?: ExplorerShellLayoutDefinition[];
 }
 
-const shippedExplorerShellLayoutManifest =
-  shippedExplorerShellLayoutManifestJson as ShippedExplorerShellLayoutManifest;
 const builtInExplorerShellLayoutOrder = [
   "balanced",
   "navigator",
@@ -57,26 +55,49 @@ export const EXPLORER_ACTIONS_WIDTH_BOUNDS = {
   default: 344,
 } as const;
 
-const shippedExplorerShellLayouts = Array.isArray(
-  shippedExplorerShellLayoutManifest.shellLayouts,
-)
-  ? shippedExplorerShellLayoutManifest.shellLayouts
-  : [];
-const shippedExplorerShellLayoutById = new Map(
-  shippedExplorerShellLayouts.map((layout) => [layout.id, layout] as const),
-);
+function cloneExplorerShellLayoutDefinition(
+  layout: ExplorerShellLayoutDefinition,
+): ExplorerShellLayoutDefinition {
+  return { ...layout };
+}
 
-export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] =
-  builtInExplorerShellLayoutOrder.map((layoutId) => {
+function resolveExplorerShellLayouts(
+  manifest: ShippedExplorerShellLayoutManifest | null | undefined,
+): ExplorerShellLayoutDefinition[] {
+  const shippedExplorerShellLayouts = Array.isArray(manifest?.shellLayouts)
+    ? manifest.shellLayouts.map(cloneExplorerShellLayoutDefinition)
+    : [];
+  const shippedExplorerShellLayoutById = new Map(
+    shippedExplorerShellLayouts.map((layout) => [layout.id, layout] as const),
+  );
+
+  return builtInExplorerShellLayoutOrder.map((layoutId) => {
     const layout = shippedExplorerShellLayoutById.get(layoutId);
     if (!layout) {
       throw new Error(`Missing shipped explorer shell layout: ${layoutId}`);
     }
-    return { ...layout };
+    return cloneExplorerShellLayoutDefinition(layout);
   });
+}
 
-const explorerShellLayoutMap = new Map(
-  explorerShellLayouts.map((layout) => [layout.id, layout] as const),
+export let explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [];
+
+let explorerShellLayoutMap = new Map<
+  ExplorerShellLayoutId,
+  ExplorerShellLayoutDefinition
+>();
+
+export function applyUsrExplorerShellLayoutManifest(
+  manifest: ShippedExplorerShellLayoutManifest | null | undefined,
+): void {
+  explorerShellLayouts = resolveExplorerShellLayouts(manifest);
+  explorerShellLayoutMap = new Map(
+    explorerShellLayouts.map((layout) => [layout.id, layout] as const),
+  );
+}
+
+applyUsrExplorerShellLayoutManifest(
+  shippedExplorerShellLayoutManifestJson as ShippedExplorerShellLayoutManifest,
 );
 
 function clampRoundedWidth(value: number, min: number, max: number): number {

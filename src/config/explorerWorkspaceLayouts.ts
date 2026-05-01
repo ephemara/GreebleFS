@@ -21,8 +21,6 @@ interface ShippedExplorerWorkspaceLayoutManifest {
   workspaceLayouts?: ExplorerWorkspaceLayoutDefinition[];
 }
 
-const shippedExplorerWorkspaceLayoutManifest =
-  shippedExplorerWorkspaceLayoutManifestJson as ShippedExplorerWorkspaceLayoutManifest;
 const builtInExplorerWorkspaceLayoutOrder = [
   "single",
   "split",
@@ -37,28 +35,6 @@ export const explorerPaneIds: ExplorerPaneId[] = [
   "pane-4",
 ];
 
-const shippedExplorerWorkspaceLayouts = Array.isArray(
-  shippedExplorerWorkspaceLayoutManifest.workspaceLayouts,
-)
-  ? shippedExplorerWorkspaceLayoutManifest.workspaceLayouts
-  : [];
-const shippedExplorerWorkspaceLayoutById = new Map(
-  shippedExplorerWorkspaceLayouts.map((layout) => [layout.id, layout] as const),
-);
-
-const builtInExplorerWorkspaceLayouts = Object.fromEntries(
-  builtInExplorerWorkspaceLayoutOrder.map((layoutId) => {
-    const layout = shippedExplorerWorkspaceLayoutById.get(layoutId);
-    if (!layout) {
-      throw new Error(`Missing shipped explorer workspace layout: ${layoutId}`);
-    }
-    return [
-      layoutId,
-      { ...layout, visiblePaneIds: [...layout.visiblePaneIds] },
-    ] as const;
-  }),
-) as Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition>;
-
 export const defaultExplorerWorkspaceLayoutMode: ExplorerWorkspaceLayoutMode =
   "single";
 export const defaultExplorerWorkspaceAxisRatio = 0.5;
@@ -66,6 +42,52 @@ export const EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS = {
   min: 0.18,
   max: 0.82,
 } as const;
+
+function cloneExplorerWorkspaceLayoutDefinition(
+  layout: ExplorerWorkspaceLayoutDefinition,
+): ExplorerWorkspaceLayoutDefinition {
+  return {
+    ...layout,
+    visiblePaneIds: [...layout.visiblePaneIds],
+  };
+}
+
+function resolveBuiltInExplorerWorkspaceLayouts(
+  manifest: ShippedExplorerWorkspaceLayoutManifest | null | undefined,
+): Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition> {
+  const shippedExplorerWorkspaceLayouts = Array.isArray(
+    manifest?.workspaceLayouts,
+  )
+    ? manifest.workspaceLayouts.map(cloneExplorerWorkspaceLayoutDefinition)
+    : [];
+  const shippedExplorerWorkspaceLayoutById = new Map(
+    shippedExplorerWorkspaceLayouts.map((layout) => [layout.id, layout] as const),
+  );
+
+  return Object.fromEntries(
+    builtInExplorerWorkspaceLayoutOrder.map((layoutId) => {
+      const layout = shippedExplorerWorkspaceLayoutById.get(layoutId);
+      if (!layout) {
+        throw new Error(`Missing shipped explorer workspace layout: ${layoutId}`);
+      }
+      return [layoutId, cloneExplorerWorkspaceLayoutDefinition(layout)] as const;
+    }),
+  ) as Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition>;
+}
+
+let builtInExplorerWorkspaceLayouts =
+  {} as Record<ExplorerWorkspaceLayoutMode, ExplorerWorkspaceLayoutDefinition>;
+
+export function applyUsrExplorerWorkspaceLayoutManifest(
+  manifest: ShippedExplorerWorkspaceLayoutManifest | null | undefined,
+): void {
+  builtInExplorerWorkspaceLayouts =
+    resolveBuiltInExplorerWorkspaceLayouts(manifest);
+}
+
+applyUsrExplorerWorkspaceLayoutManifest(
+  shippedExplorerWorkspaceLayoutManifestJson as ShippedExplorerWorkspaceLayoutManifest,
+);
 
 export function normalizeExplorerWorkspaceLayoutMode(
   value: unknown,

@@ -277,30 +277,10 @@ const explorerChromeSurfaceDefinitions: Record<
   },
 };
 
-const shippedExplorerChromeLayoutManifest =
-  shippedExplorerChromeLayoutManifestJson as ShippedExplorerChromeLayoutManifest;
 const builtInExplorerChromeLayoutOrder = [
   "default",
   "focused-search",
 ] as const satisfies readonly BuiltInExplorerChromeLayoutId[];
-const shippedExplorerChromeLayouts = Array.isArray(
-  shippedExplorerChromeLayoutManifest.chromeLayouts,
-)
-  ? shippedExplorerChromeLayoutManifest.chromeLayouts
-  : [];
-const shippedExplorerChromeLayoutById = new Map(
-  shippedExplorerChromeLayouts.map((layout) => [layout.id, layout] as const),
-);
-
-const builtInExplorerChromeLayouts = Object.fromEntries(
-  builtInExplorerChromeLayoutOrder.map((layoutId) => {
-    const layout = shippedExplorerChromeLayoutById.get(layoutId);
-    if (!layout) {
-      throw new Error(`Missing shipped explorer chrome layout: ${layoutId}`);
-    }
-    return [layoutId, layout] as const;
-  }),
-) as Record<BuiltInExplorerChromeLayoutId, ExplorerChromeLayoutDefinition>;
 
 const explorerChromeZoneSurfaceMap = Object.values(
   explorerChromeSurfaceDefinitions,
@@ -319,6 +299,74 @@ const explorerChromeZoneSurfaceMap = Object.values(
 
 export const defaultExplorerChromeLayoutId: BuiltInExplorerChromeLayoutId =
   "default";
+
+function cloneExplorerChromeSlotDefinition(
+  slot: ExplorerChromeSlotDefinition,
+): ExplorerChromeSlotDefinition {
+  return { ...slot };
+}
+
+function cloneExplorerChromeLayoutDefinition(
+  layout: ExplorerChromeLayoutDefinition,
+): ExplorerChromeLayoutDefinition {
+  const placements: ExplorerChromeLayoutDefinition["placements"] = {};
+  for (const [controlId, surfacePlacements] of Object.entries(
+    layout.placements ?? {},
+  )) {
+    const nextSurfacePlacements: Partial<
+      Record<ExplorerChromeSurfaceId, ExplorerChromeSlotDefinition>
+    > = {};
+    for (const [surfaceId, slotDefinition] of Object.entries(
+      surfacePlacements ?? {},
+    )) {
+      if (!slotDefinition) {
+        continue;
+      }
+      nextSurfacePlacements[surfaceId as ExplorerChromeSurfaceId] =
+        cloneExplorerChromeSlotDefinition(slotDefinition);
+    }
+    placements[controlId as ExplorerChromeControlId] = nextSurfacePlacements;
+  }
+
+  return {
+    ...layout,
+    placements,
+  };
+}
+
+function resolveBuiltInExplorerChromeLayouts(
+  manifest: ShippedExplorerChromeLayoutManifest | null | undefined,
+): Record<BuiltInExplorerChromeLayoutId, ExplorerChromeLayoutDefinition> {
+  const shippedExplorerChromeLayouts = Array.isArray(manifest?.chromeLayouts)
+    ? manifest.chromeLayouts.map(cloneExplorerChromeLayoutDefinition)
+    : [];
+  const shippedExplorerChromeLayoutById = new Map(
+    shippedExplorerChromeLayouts.map((layout) => [layout.id, layout] as const),
+  );
+
+  return Object.fromEntries(
+    builtInExplorerChromeLayoutOrder.map((layoutId) => {
+      const layout = shippedExplorerChromeLayoutById.get(layoutId);
+      if (!layout) {
+        throw new Error(`Missing shipped explorer chrome layout: ${layoutId}`);
+      }
+      return [layoutId, cloneExplorerChromeLayoutDefinition(layout)] as const;
+    }),
+  ) as Record<BuiltInExplorerChromeLayoutId, ExplorerChromeLayoutDefinition>;
+}
+
+let builtInExplorerChromeLayouts =
+  {} as Record<BuiltInExplorerChromeLayoutId, ExplorerChromeLayoutDefinition>;
+
+export function applyUsrExplorerChromeLayoutManifest(
+  manifest: ShippedExplorerChromeLayoutManifest | null | undefined,
+): void {
+  builtInExplorerChromeLayouts = resolveBuiltInExplorerChromeLayouts(manifest);
+}
+
+applyUsrExplorerChromeLayoutManifest(
+  shippedExplorerChromeLayoutManifestJson as ShippedExplorerChromeLayoutManifest,
+);
 
 function isExplorerChromeSurfaceId(
   value: unknown,

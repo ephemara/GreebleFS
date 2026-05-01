@@ -29,6 +29,7 @@ import {
   Home,
   Image,
   Info,
+  Layers3,
   LayoutGrid,
   Loader2,
   MonitorPlay,
@@ -142,6 +143,7 @@ import {
   type ExplorerCloudProviderId,
 } from "../runtime/explorerBackend";
 import { openExplorerPicker } from "../runtime/explorerPicker";
+import type { UsrProfileRuntimeSnapshot } from "../runtime/usrProfiles";
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
@@ -257,6 +259,7 @@ import {
   EmptyPluginSettingsState,
   PluginSettingsSection,
 } from "./settings/sections/PluginSettingsSection";
+import { ProfilesSettingsSection } from "./settings/sections/ProfilesSettingsSection";
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getWorkbenchShellFamilyForLayoutProfile,
@@ -2597,6 +2600,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Sparkles size={14} />;
     case "system":
       return <Settings2 size={14} />;
+    case "profiles":
+      return <Layers3 size={14} />;
     case "models":
       return <Bot size={14} />;
     case "terminal":
@@ -2659,6 +2664,10 @@ interface SettingsSectionContentContext {
   semanticIndexModelSummary: string;
   launchAtStartup: boolean;
   startMobileShareOnBoot: boolean;
+  activeUsrProfileName: string;
+  usrProfileCount: number;
+  usrProfileSharedSliceCount: number;
+  usrProfileOverrideSliceCount: number;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: "windows" | "macos" | "linux" | "unknown";
   presentationWindowMode: PresentationWindowMode;
@@ -2738,6 +2747,15 @@ function getSettingsSectionContent(
             : "Taskbar off",
         ].join(" · "),
         detail: `Handle machine-level behavior like login launch and the ${context.systemPresentationState.recoveryPath === "tray" ? "tray" : context.platform === "macos" ? "Dock" : "taskbar"} recovery path in one place.`,
+      };
+    case "profiles":
+      return {
+        summary: `${context.activeUsrProfileName} · ${context.usrProfileCount} profile${
+          context.usrProfileCount === 1 ? "" : "s"
+        } · ${context.usrProfileOverrideSliceCount} active override slice${
+          context.usrProfileOverrideSliceCount === 1 ? "" : "s"
+        }`,
+        detail: `Keep ${context.usrProfileSharedSliceCount} shared-root settings slices global while swapping profile-local workbench overlays and authored usr lanes.`,
       };
     case "models":
       return {
@@ -3108,6 +3126,16 @@ export function SettingsPage({
   topBarPackagesLoading,
   topBarPackagesError,
   topBarPackagesWarnings,
+  usrProfileRuntimeSnapshot = null,
+  usrProfileSettingSliceKeys = [],
+  usrProfileSharedSettingSliceKeys = [],
+  onSwitchUsrProfile = async () => {},
+  onCreateUsrProfile = async () => {},
+  onDuplicateUsrProfile = async () => {},
+  onRenameUsrProfile = async () => {},
+  onDeleteUsrProfile = async () => {},
+  onOpenUsrProfilesRootFolder = async () => {},
+  onOpenUsrProfileFolder = async () => {},
   dockPresentationPackages = [],
   dockPresentationPackagesDirectory = dockPresentationSystemConfig.dockPresentationsDirectory,
   dockPresentationPackagesLoading = false,
@@ -3232,6 +3260,19 @@ export function SettingsPage({
   topBarPackagesLoading: boolean;
   topBarPackagesError: string | null;
   topBarPackagesWarnings: string[];
+  usrProfileRuntimeSnapshot?: UsrProfileRuntimeSnapshot | null;
+  usrProfileSettingSliceKeys?: readonly string[];
+  usrProfileSharedSettingSliceKeys?: readonly string[];
+  onSwitchUsrProfile?: (profileId: string) => Promise<void>;
+  onCreateUsrProfile?: (name: string) => Promise<void>;
+  onDuplicateUsrProfile?: (
+    profileId: string,
+    name: string,
+  ) => Promise<void>;
+  onRenameUsrProfile?: (profileId: string, name: string) => Promise<void>;
+  onDeleteUsrProfile?: (profileId: string) => Promise<void>;
+  onOpenUsrProfilesRootFolder?: () => Promise<void>;
+  onOpenUsrProfileFolder?: (profileId: string) => Promise<void>;
   dockPresentationPackages?: LoadedDockPresentationPackage[];
   dockPresentationPackagesDirectory?: string;
   dockPresentationPackagesLoading?: boolean;
@@ -7649,6 +7690,16 @@ export function SettingsPage({
     ],
   );
 
+  const activeUsrProfile = useMemo(
+    () =>
+      usrProfileRuntimeSnapshot?.profiles.find((profile) => profile.isActive) ??
+      usrProfileRuntimeSnapshot?.profiles.find(
+        (profile) => profile.id === usrProfileRuntimeSnapshot.activeProfileId,
+      ) ??
+      null,
+    [usrProfileRuntimeSnapshot],
+  );
+
   const settingsSectionContext = useMemo<SettingsSectionContentContext>(
     () => ({
       effectiveThemeName: effectiveTheme.name,
@@ -7659,6 +7710,10 @@ export function SettingsPage({
       semanticIndexModelSummary,
       launchAtStartup: settings.system.launchAtStartup,
       startMobileShareOnBoot: settings.system.startMobileShareOnBoot,
+      activeUsrProfileName: activeUsrProfile?.name ?? "Default",
+      usrProfileCount: usrProfileRuntimeSnapshot?.profiles.length ?? 0,
+      usrProfileSharedSliceCount: usrProfileSharedSettingSliceKeys.length,
+      usrProfileOverrideSliceCount: activeUsrProfile?.overrideSlices.length ?? 0,
       systemPresentationState,
       platform: platform as SettingsSectionContentContext["platform"],
       presentationWindowMode: settings.presentation.windowMode,
@@ -7681,9 +7736,9 @@ export function SettingsPage({
       zenFocusMode: settings.layout.zenFocusMode,
       hotkeyLabels: [
         settings.keybindings.terminalToggle,
-        settings.keybindings.windowModeToggle,
-        settings.keybindings.zenFocusModeToggle,
-        settings.keybindings.mobileShareToggle,
+      settings.keybindings.windowModeToggle,
+      settings.keybindings.zenFocusModeToggle,
+      settings.keybindings.mobileShareToggle,
       ].map(formatHotkeyLabel),
       connectedCloudAccountCount,
       configuredCloudProviderCount,
@@ -7732,6 +7787,8 @@ export function SettingsPage({
     }),
     [
       activeLayoutProfile.label,
+      activeUsrProfile?.name,
+      activeUsrProfile?.overrideSlices.length,
       animationFailures.length,
       availableAnimations.length,
       availableSoundPackEntries.length,
@@ -7779,6 +7836,7 @@ export function SettingsPage({
       settings.explorer.thumbnails.enabled,
       settings.explorer.viewMode,
       settings.keybindings.terminalToggle,
+      settings.keybindings.mobileShareToggle,
       settings.keybindings.windowModeToggle,
       settings.keybindings.zenFocusModeToggle,
       settings.layout.zenFocusMode,
@@ -7786,6 +7844,7 @@ export function SettingsPage({
       settings.mobile.tailscaleHostname,
       settings.presentation.windowMode,
       settings.system.launchAtStartup,
+      settings.system.startMobileShareOnBoot,
       shaderFailures.length,
       shaderPerformanceProfile.label,
       systemPresentationState,
@@ -7794,6 +7853,8 @@ export function SettingsPage({
       themeRecipeSelectionSummary,
       themeWallpaperAvailable,
       topBarSelectionSummary,
+      usrProfileRuntimeSnapshot?.profiles.length,
+      usrProfileSharedSettingSliceKeys.length,
       workspaceRoots.length,
     ],
   );
@@ -14957,6 +15018,23 @@ export function SettingsPage({
             onRefreshTelemetryStatus={refreshTelemetryStatus}
             onTelemetryExport={handleTelemetryExport}
             onTelemetryClear={handleTelemetryClear}
+          />
+        )}
+
+        {activeSection === "profiles" && (
+          <ProfilesSettingsSection
+            detail={activeSectionMeta.detail}
+            accent={accent}
+            usrProfileRuntimeSnapshot={usrProfileRuntimeSnapshot}
+            usrProfileSettingSliceKeys={usrProfileSettingSliceKeys}
+            usrProfileSharedSettingSliceKeys={usrProfileSharedSettingSliceKeys}
+            onSwitchUsrProfile={onSwitchUsrProfile}
+            onCreateUsrProfile={onCreateUsrProfile}
+            onDuplicateUsrProfile={onDuplicateUsrProfile}
+            onRenameUsrProfile={onRenameUsrProfile}
+            onDeleteUsrProfile={onDeleteUsrProfile}
+            onOpenUsrProfilesRootFolder={onOpenUsrProfilesRootFolder}
+            onOpenUsrProfileFolder={onOpenUsrProfileFolder}
           />
         )}
 

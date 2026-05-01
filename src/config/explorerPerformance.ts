@@ -40,9 +40,6 @@ const defaultExplorerPerformanceBudgets: ExplorerPerformanceBudgets = Object.fre
   doubleClickSecondClickToNavigateDispatchMs: 1,
 });
 
-const shippedExplorerPerformanceManifest =
-  shippedExplorerPerformanceManifestJson as ShippedExplorerPerformanceManifest;
-
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -105,41 +102,64 @@ function normalizeBudgets(
   };
 }
 
-export const explorerPerformance: ExplorerPerformanceManifest = Object.freeze({
-  version: Math.max(1, Math.round(asFiniteNumber(
-    shippedExplorerPerformanceManifest.version,
-    1,
-    { minimum: 1, maximum: 1000 },
-  ))),
-  id: asString(
-    shippedExplorerPerformanceManifest.id,
-    "greeblefs-core-explorer-performance",
-  ),
-  name: asString(
-    shippedExplorerPerformanceManifest.name,
-    "GreebleFS Core Explorer Performance",
-  ),
-  description: asString(
-    shippedExplorerPerformanceManifest.description,
-    "Canonical Explorer hot-path interaction tuning and latency budgets.",
-  ),
-  folderActivation: normalizeFolderActivationPerformance(
-    shippedExplorerPerformanceManifest.folderActivation,
-  ),
-  budgets: normalizeBudgets(shippedExplorerPerformanceManifest.budgets),
-});
+function createExplorerPerformanceManifest(
+  manifest: ShippedExplorerPerformanceManifest | null | undefined,
+): ExplorerPerformanceManifest {
+  return Object.freeze({
+    version: Math.max(
+      1,
+      Math.round(asFiniteNumber(manifest?.version, 1, { minimum: 1, maximum: 1000 })),
+    ),
+    id: asString(manifest?.id, "greeblefs-core-explorer-performance"),
+    name: asString(
+      manifest?.name,
+      "GreebleFS Core Explorer Performance",
+    ),
+    description: asString(
+      manifest?.description,
+      "Canonical Explorer hot-path interaction tuning and latency budgets.",
+    ),
+    folderActivation: normalizeFolderActivationPerformance(
+      manifest?.folderActivation,
+    ),
+    budgets: normalizeBudgets(manifest?.budgets),
+  });
+}
 
-export const EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
-  explorerPerformance.folderActivation.doubleClickPreviewPrimeDelayMs;
+export let explorerPerformance: ExplorerPerformanceManifest =
+  createExplorerPerformanceManifest(null);
 
-export const EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION =
-  explorerPerformance.folderActivation.doubleClickSecondClickImmediateNavigation;
+export let EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
+  defaultFolderActivationPerformance.doubleClickPreviewPrimeDelayMs;
 
-export const EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS =
-  explorerPerformance.folderActivation.doubleClickDedupeWindowMs;
+export let EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION =
+  defaultFolderActivationPerformance.doubleClickSecondClickImmediateNavigation;
 
-export const EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
-  explorerPerformance.folderActivation.pointerDownDirectoryWarmEnabled;
+export let EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS =
+  defaultFolderActivationPerformance.doubleClickDedupeWindowMs;
 
-export const EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
-  explorerPerformance.budgets.doubleClickSecondClickToNavigateDispatchMs;
+export let EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
+  defaultFolderActivationPerformance.pointerDownDirectoryWarmEnabled;
+
+export let EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
+  defaultExplorerPerformanceBudgets.doubleClickSecondClickToNavigateDispatchMs;
+
+export function applyUsrExplorerPerformanceManifest(
+  manifest: ShippedExplorerPerformanceManifest | null | undefined,
+): void {
+  explorerPerformance = createExplorerPerformanceManifest(manifest);
+  EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
+    explorerPerformance.folderActivation.doubleClickPreviewPrimeDelayMs;
+  EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION =
+    explorerPerformance.folderActivation.doubleClickSecondClickImmediateNavigation;
+  EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS =
+    explorerPerformance.folderActivation.doubleClickDedupeWindowMs;
+  EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
+    explorerPerformance.folderActivation.pointerDownDirectoryWarmEnabled;
+  EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
+    explorerPerformance.budgets.doubleClickSecondClickToNavigateDispatchMs;
+}
+
+applyUsrExplorerPerformanceManifest(
+  shippedExplorerPerformanceManifestJson as ShippedExplorerPerformanceManifest,
+);
