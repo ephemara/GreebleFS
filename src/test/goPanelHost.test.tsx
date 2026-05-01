@@ -1,8 +1,21 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 
-const { buildGoRuntimePackageMock, callGoSidecarActionMock } = vi.hoisted(() => ({
-  buildGoRuntimePackageMock: vi.fn(async () => ({
+const {
+  getRuntimePackageMock,
+  prepareRuntimePackageMock,
+  callRuntimeActionMock,
+  extensionHostCallMock,
+  extensionHostSubscribeMock,
+  extensionHostUnsubscribeMock,
+} = vi.hoisted(() => ({
+  getRuntimePackageMock: vi.fn(async () => ({
+    manifest: {
+      id: 'sample-panel',
+      compiler: 'go-js-wasm',
+    },
+  })),
+  prepareRuntimePackageMock: vi.fn(async () => ({
     runtimeId: 'sample-panel',
     artifactPath: '/tmp/sample-panel.wasm',
     artifactKind: 'sample-panel.wasm',
@@ -15,20 +28,43 @@ const { buildGoRuntimePackageMock, callGoSidecarActionMock } = vi.hoisted(() => 
     stdout: '',
     stderr: '',
   })),
-  callGoSidecarActionMock: vi.fn(async ({ actionId }: { actionId: string }) => ({
+  callRuntimeActionMock: vi.fn(async ({ actionId }: { actionId: string }) => ({
     runtimeId: 'peer-sidecar',
     actionId,
     result: { ok: true, fromPeer: true },
+    resultJson: JSON.stringify({ ok: true, fromPeer: true }),
   })),
+  extensionHostCallMock: vi.fn(async () => null),
+  extensionHostSubscribeMock: vi.fn(async () => ({
+    subscription: {
+      subscriptionId: 'subscription-1',
+      topic: 'test.topic',
+      includeSnapshot: false,
+      streamHandle: null,
+    },
+    unsubscribe: vi.fn(async () => {}),
+  })),
+  extensionHostUnsubscribeMock: vi.fn(async () => null),
 }));
 
 vi.mock('@tauri-apps/plugin-fs', () => ({
   readFile: vi.fn(async () => new Uint8Array(8)),
 }));
 
-vi.mock('../runtime/goRuntimeBackend', () => ({
-  buildGoRuntimePackage: buildGoRuntimePackageMock,
-  callGoSidecarAction: callGoSidecarActionMock,
+vi.mock('../runtime/externalRuntimeBackend', () => ({
+  getRuntimePackage: getRuntimePackageMock,
+  prepareRuntimePackage: prepareRuntimePackageMock,
+  callRuntimeAction: callRuntimeActionMock,
+}));
+
+vi.mock('../runtime/extensionHostApi', () => ({
+  createExtensionHostClient: vi.fn(() => ({
+    call: extensionHostCallMock,
+    events: {
+      subscribe: extensionHostSubscribeMock,
+      unsubscribe: extensionHostUnsubscribeMock,
+    },
+  })),
 }));
 
 import { GoPanelHost, type GoPanelHostContext, type GoPanelHostEvent } from '../components/GoPanelHost';
@@ -66,8 +102,12 @@ class FakeGoInstance {
 }
 
 beforeEach(() => {
-  buildGoRuntimePackageMock.mockClear();
-  callGoSidecarActionMock.mockClear();
+  getRuntimePackageMock.mockClear();
+  prepareRuntimePackageMock.mockClear();
+  callRuntimeActionMock.mockClear();
+  extensionHostCallMock.mockClear();
+  extensionHostSubscribeMock.mockClear();
+  extensionHostUnsubscribeMock.mockClear();
   if (typeof window !== 'undefined') {
     delete (window as Window & { __greeblefsRuntimeHostBridge?: unknown }).__greeblefsRuntimeHostBridge;
   }
@@ -94,7 +134,7 @@ describe('GoPanelHost', () => {
     );
 
     await waitFor(() => {
-      expect(buildGoRuntimePackageMock).toHaveBeenCalledTimes(1);
+      expect(prepareRuntimePackageMock).toHaveBeenCalledTimes(1);
     });
 
     await waitFor(() => {
@@ -162,7 +202,7 @@ describe('GoPanelHost', () => {
     await expect(entry.bridge.callRuntimeAction('sample-panel', 'noop')).rejects.toThrow(
       /cannot call their own actions/i,
     );
-    expect(callGoSidecarActionMock).not.toHaveBeenCalled();
+    expect(callRuntimeActionMock).not.toHaveBeenCalled();
   });
 
   it('routes a peer-targeted callRuntimeAction through the sidecar backend', async () => {
@@ -193,8 +233,8 @@ describe('GoPanelHost', () => {
       { input: 7 },
     );
     expect(result).toEqual({ ok: true, fromPeer: true });
-    expect(callGoSidecarActionMock).toHaveBeenCalledTimes(1);
-    expect(callGoSidecarActionMock).toHaveBeenLastCalledWith(
+    expect(callRuntimeActionMock).toHaveBeenCalledTimes(1);
+    expect(callRuntimeActionMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         runtimeId: 'peer-sidecar',
         actionId: 'do.work',
@@ -204,7 +244,7 @@ describe('GoPanelHost', () => {
   });
 
   it('renders an error fallback when the runtime build fails', async () => {
-    buildGoRuntimePackageMock.mockRejectedValueOnce(new Error('toolchain missing'));
+    prepareRuntimePackageMock.mockRejectedValueOnce(new Error('toolchain missing'));
 
     const events: GoPanelHostEvent[] = [];
     const { findByRole } = render(

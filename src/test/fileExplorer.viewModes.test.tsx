@@ -7324,8 +7324,11 @@ const value = 1;
       pluginName: "Mock Plugin",
       title: "Notes Lane",
       priority: 900,
+      rendererKind: "react",
       rendererEntry: "preview/notes.tsx",
       runtimeId: null,
+      runtimeSurfaceId: null,
+      buildTarget: null,
       match: {
         appliesTo: "file",
         extensions: ["txt"],

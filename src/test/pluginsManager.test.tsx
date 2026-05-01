@@ -96,8 +96,11 @@ function makePreviewLane(
     pluginName: partial.pluginName ?? 'Media Workbench',
     title: partial.title,
     priority: partial.priority ?? 720,
+    rendererKind: partial.rendererKind ?? 'react',
     rendererEntry: partial.rendererEntry ?? 'preview/workbench.tsx',
     runtimeId: partial.runtimeId ?? null,
+    runtimeSurfaceId: partial.runtimeSurfaceId ?? null,
+    buildTarget: partial.buildTarget ?? null,
     match: partial.match ?? {
       appliesTo: 'file',
       extensions: ['wav'],

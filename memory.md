@@ -1,3 +1,34 @@
+# 2026-05-01 - Wasm Runtime Surfaces Are Now Compiler-Aware And Plugin-Reusable
+
+- The shared `wasm-panel` lane is no longer implicitly "Go only". GreebleFS now supports Rust `cargo-wasm-bindgen` UI runtimes alongside the existing Go / TinyGo path.
+  - `src-tauri/src/runtime_pipeline/manifest.rs` now recognizes `compiler = "cargo-wasm-bindgen"` for `kind = "wasm-panel"` and `kind = "wasm-worker"`.
+  - `src-tauri/src/runtime_pipeline/toolchain.rs` now probes `wasm-bindgen --version` and surfaces it through the generated `RuntimeToolchainStatus`.
+  - `src-tauri/src/runtime_pipeline/driver.rs` now has a dedicated cargo-wasm-bindgen driver: it builds `wasm32-unknown-unknown`, runs `wasm-bindgen --target web`, and treats the generated JS module as the prepared artifact path.
+- Durable build/output rule for Rust wasm UI runtimes:
+  - `prepareRuntimePackage(...)` for `cargo-wasm-bindgen` returns the generated JS boot module as `artifactPath`, not the raw `.wasm` file.
+  - The sibling `.wasm` payload stays beside that JS artifact in the runtime cache. Future frontend callers should treat the JS module as the entrypoint and let it bootstrap the `.wasm` dependency.
+- The React host is now generic:
+  - `src/components/WasmPanelHost.tsx` is the canonical compiler-aware Wasm UI host. It owns the bridge token, mutable host context object, localStorage blob helpers, host-event subscriptions, and the compiler-specific boot path.
+  - `src/components/GoPanelHost.tsx` is now just a compatibility wrapper that defaults `buildTarget` for Go consumers.
+  - Rust wasm-bindgen panel modules must export `default` or `init` plus `mountPanel(bridgeToken)` (or snake_case equivalents). Optional `unmountPanel` is used for cleanup.
+- Plugin packages can now mount Wasm UI directly without a React renderer file:
+  - Top-level `panelRuntime = { runtimeId|runtimeRef, buildTarget? }` in `plugin.json` synthesizes a plugin panel around `PluginWasmPanelSurface`.
+  - Preview lanes can declare `rendererKind = "wasm-panel"` plus `runtimeSurfaceId|runtimeSurfaceRef` and optional `buildTarget` to synthesize a runtime-backed preview lane around `PluginWasmPreviewSurface`.
+  - Important semantic split: preview-lane `runtimeId` still means "peer sidecar/runtime bridge for a React-rendered lane", while `runtimeSurfaceId` is the actual Wasm UI runtime id.
+- Durable host-bridge rule:
+  - `callRuntimeAction(targetRuntimeId, ...)` still cannot target the mounted panel's own runtime id. Wasm UI runtimes must call a peer sidecar/native runtime when they need backend work.
+  - The bridge context is intentionally synchronized in place rather than replaced, so Go SDK code or future Rust runtimes holding a reference keep seeing updated host values without a forced remount.
+- Test coverage added for this lane:
+  - `src/test/goPanelHost.test.tsx` now mocks the generic `externalRuntimeBackend` + `extensionHostApi` seam instead of the old Go-specific backend.
+  - `src/test/pluginPackages.test.ts` now covers `panelRuntime` package panels and `rendererKind = "wasm-panel"` preview lanes.
+  - Preview-lane fixture helpers in `explorerPreviewRegistry.test.ts`, `pluginsManager.test.tsx`, `pluginWorkbenchAdapters.test.tsx`, and the focused `fileExplorer.viewModes.test.tsx` lane now populate `rendererKind`, `runtimeSurfaceId`, and `buildTarget`.
+- Validation for this pass:
+  - Passed: `bunx vitest run src/test/goPanelHost.test.tsx src/test/pluginPackages.test.ts src/test/explorerPreviewRegistry.test.ts src/test/pluginsManager.test.tsx src/test/pluginWorkbenchAdapters.test.tsx src/test/fileExplorer.viewModes.test.tsx --testNamePattern "plugin preview lanes claim files|GoPanelHost|plugin package discovery|explorerPreviewRegistry|PluginsManager|pluginWorkbenchAdapters text loader"`
+  - Passed: `bun run bindings:generate`
+  - Honest limitation: `cargo test runtime_pipeline --manifest-path src-tauri/Cargo.toml` is currently blocked by a pre-existing lib-test gating problem in `src-tauri/src/secondary_windows.rs` (`window_commands` / `wayland_dock` are behind `#[cfg(not(test))]`). The wasm runtime changes still compile in the real app/export-bindings path.
+- Next recommended step:
+  - Add one small reference Rust wasm-bindgen runtime under the managed `runtimes/` root so future agents can smoke-test `WasmPanelHost` without reverse-engineering the expected `mountPanel` export contract from source.
+
 # 2026-05-01 - Explorer Actions Library Now Reuses The Context-Menu Runtime
 
 - The docked explorer actions pane is no longer a separate authored-actions-only browser during normal runtime. `src/components/FileExplorer.tsx` now builds scoped runtime menus through `buildExplorerRuntimeMenu(...)`, and `src/components/explorer/ExplorerActionsPane.tsx` renders those live nodes as an action library with search, scope pills, and an `Edit Menu` deep-link back into Settings.

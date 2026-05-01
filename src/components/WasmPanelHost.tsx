@@ -282,7 +282,6 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
       style,
       hostElementRef,
     } = props;
-    const containerRef = useRef<HTMLDivElement | null>(null);
     const bridgeContextRef = useRef<Record<string, unknown> | null>(null);
     const runtimeCleanupRef = useRef<(() => void | Promise<void>) | null>(null);
     const hostEventUnsubscribersRef = useRef<
@@ -302,7 +301,6 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
 
     const pushHostEvent = useCallback(
       (name: string, payload?: unknown) => {
-        bridgeTokenRef.current;
         onEvent?.({ kind: 'host-event', name, payload });
       },
       [onEvent],
@@ -518,7 +516,6 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
       callPeerRuntimeAction,
       hostClient.events,
       onEvent,
-      context,
     ]);
 
     useEffect(() => {
@@ -555,7 +552,6 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
     return (
       <div
         ref={(element) => {
-          containerRef.current = element;
           if (hostElementRef) {
             hostElementRef.current = element;
           }

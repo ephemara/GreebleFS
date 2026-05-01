@@ -70,8 +70,11 @@ function makeTextWorkbenchProps(overrides: Record<string, unknown> = {}) {
       pluginName: 'Text Workbench',
       title: 'Text Workbench',
       priority: 900,
+      rendererKind: 'react',
       rendererEntry: 'preview/textWorkbench.tsx',
       runtimeId: null,
+      runtimeSurfaceId: null,
+      buildTarget: null,
       match: {
         appliesTo: 'file',
         extensions: ['md'],

@@ -42,8 +42,11 @@ function createPluginLane(
     pluginName: partial.pluginName ?? partial.id,
     title: partial.title ?? partial.id,
     priority: partial.priority,
+    rendererKind: partial.rendererKind ?? "react",
     rendererEntry: partial.rendererEntry ?? "preview/workbench.tsx",
     runtimeId: partial.runtimeId ?? null,
+    runtimeSurfaceId: partial.runtimeSurfaceId ?? null,
+    buildTarget: partial.buildTarget ?? null,
     match: partial.match ?? {
       appliesTo: "file",
       extensions: ["txt"],

@@ -1,8 +1,45 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { discoverOverlayPlugins } from '../config/pluginPackages';
 import { pluginSystemConfig } from '../config/plugins';
 import { createMockOverlayPluginApi } from './helpers/createMockOverlayPluginApi';
+
+function makeAppearance() {
+  return {
+    theme: {
+      id: 'test-theme',
+    },
+    fonts: {
+      ui: 'sans-serif',
+      mono: 'monospace',
+    },
+    cssVars: {},
+  } as never;
+}
+
+function makePanelHost() {
+  return {
+    mode: 'panel-tab',
+    width: 960,
+    height: 640,
+    zoom: 1,
+    compact: false,
+    density: 'regular',
+  } as never;
+}
+
+function makePreviewHost() {
+  return {
+    mode: 'preview-pane',
+    width: 800,
+    height: 500,
+    zoom: 1,
+    compact: false,
+    density: 'regular',
+  } as never;
+}
 
 describe('plugin package discovery', () => {
   it('keeps loading legacy plugins when one file fails to parse', async () => {
@@ -739,6 +776,178 @@ describe('plugin package discovery', () => {
       defaultSize: 'lg',
     });
     expect(typeof result.workflows[0]?.component).toBe('function');
+  });
+
+  it('creates package panels from panelRuntime manifests without loading a React entrypoint', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'rust-panel-suite',
+            path: 'plugins/rust-panel-suite',
+            is_dir: true,
+            extension: '',
+            modified: 55,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/rust-panel-suite/plugin.json') {
+        return JSON.stringify({
+          id: 'rust-panel-suite',
+          name: 'Rust Panel Suite',
+          panelRuntime: {
+            runtimeId: 'rust-panel-runtime',
+            buildTarget: 'wasm-bindgen-web',
+          },
+        });
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+
+    expect(result.warnings).toEqual([]);
+    expect(result.plugins).toHaveLength(1);
+    expect(result.plugins[0]?.id).toBe('rust-panel-suite');
+    expect(result.plugins[0]?.name).toBe('Rust Panel Suite');
+    expect(result.plugins[0]?.diagnostics.sourceKind).toBe('package-plugin');
+    expect(result.plugins[0]?.diagnostics.manifestPath?.replace(/\\/g, '/')).toBe(
+      'plugins/rust-panel-suite/plugin.json',
+    );
+    expect(result.plugins[0]?.diagnostics.capabilities.panel).toBe(true);
+
+    const markup = renderToStaticMarkup(
+      React.createElement(result.plugins[0]!.component as React.ComponentType<any>, {
+        plugin: result.plugins[0],
+        api: createMockOverlayPluginApi(),
+        appearance: makeAppearance(),
+        host: makePanelHost(),
+      }),
+    );
+
+    expect(markup).toContain('data-runtime-id="rust-panel-runtime"');
+    expect(markup).toContain('Loading rust-panel-runtime');
+  });
+
+  it('creates wasm preview lanes from runtimeSurface manifests without a renderer entry', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'rust-preview-suite',
+            path: 'plugins/rust-preview-suite',
+            is_dir: true,
+            extension: '',
+            modified: 77,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/rust-preview-suite/plugin.json') {
+        return JSON.stringify({
+          id: 'rust-preview-suite',
+          name: 'Rust Preview Suite',
+          contributions: {
+            previewLanes: [
+              {
+                id: 'model-inspector',
+                title: 'Model Inspector',
+                rendererKind: 'wasm-panel',
+                runtimeSurfaceId: 'rust-preview-runtime',
+                buildTarget: 'wasm-bindgen-web',
+                priority: 915,
+                match: {
+                  appliesTo: 'file',
+                  extensions: ['glb'],
+                  fileNames: [],
+                  previewKinds: ['model3d'],
+                },
+                capabilities: {
+                  editable: false,
+                  workflowTabs: false,
+                  contextMenu: false,
+                },
+              },
+            ],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+
+    expect(result.warnings).toEqual([]);
+    expect(result.previewLanes).toHaveLength(1);
+    expect(result.previewLanes[0]).toMatchObject({
+      id: 'rust-preview-suite.preview-lane.model-inspector',
+      pluginId: 'rust-preview-suite',
+      pluginName: 'Rust Preview Suite',
+      title: 'Model Inspector',
+      priority: 915,
+      rendererKind: 'wasm-panel',
+      rendererEntry: null,
+      runtimeId: null,
+      runtimeSurfaceId: 'rust-preview-runtime',
+      buildTarget: 'wasm-bindgen-web',
+      match: {
+        appliesTo: 'file',
+        extensions: ['glb'],
+        previewKinds: ['model3d'],
+      },
+      capabilities: {
+        editable: false,
+        save: false,
+        export: false,
+        workflowTabs: false,
+        contextMenu: false,
+        prefetch: false,
+        closeGuard: false,
+      },
+    });
+
+    const markup = renderToStaticMarkup(
+      React.createElement(result.previewLanes[0]!.component as React.ComponentType<any>, {
+        plugin: {
+          id: 'rust-preview-suite',
+          name: 'Rust Preview Suite',
+          filePath: 'plugins/rust-preview-suite/plugin.json',
+          pluginRoot: pluginSystemConfig.pluginsDirectory,
+          pluginDirectory: 'plugins/rust-preview-suite',
+          backendDirectory: 'plugins/rust-preview-suite/backend',
+        },
+        api: createMockOverlayPluginApi(),
+        appearance: makeAppearance(),
+        host: makePreviewHost(),
+        executionContext: null,
+        lane: result.previewLanes[0],
+        file: {
+          path: '/tmp/model.glb',
+          resolvedPath: '/tmp/model.glb',
+          name: 'model.glb',
+          extension: 'glb',
+          size: 4096,
+          assetUrl: 'asset:///tmp/model.glb',
+          isDirectory: false,
+        },
+        runtime: {} as never,
+        viewMode: 'preview',
+        workflowTabId: 'preview',
+        previewBackedByArchiveVirtual: false,
+      }),
+    );
+
+    expect(markup).toContain('data-runtime-id="rust-preview-runtime"');
+    expect(markup).toContain('Loading Model Inspector runtime');
   });
 
   it('rejects unsafe package-relative paths before loading bundled assets', async () => {
