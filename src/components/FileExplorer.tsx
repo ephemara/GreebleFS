@@ -81,9 +81,11 @@ import {
 } from "../config/chromeEffects";
 import {
   createLegacyExplorerActionContextMenuContributions,
+  type ExplorerMenuContextKind,
   type ExplorerMenuInvocationContext,
   type ExplorerMenuInvocationEntry,
   type ExplorerMenuPreviewContext,
+  type ExplorerResolvedActionContextMenuContribution,
   type ExplorerResolvedPluginContextMenuContribution,
 } from "../config/explorerContextMenu";
 import { formatWorkbenchExtensionLabel } from "../config/explorerWorkbenches";
@@ -337,6 +339,7 @@ import {
   buildExplorerRuntimeMenu,
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
+  type ExplorerRuntimeMenuNode,
 } from "./explorer/explorerMenuRuntime";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import type {
@@ -9106,6 +9109,9 @@ export function FileExplorer({
   const [actionsVisible, setActionsVisible] = useState(
     () => initialSession.actionsVisible,
   );
+  const [actionsPaneScopeId, setActionsPaneScopeId] = useState<
+    "selection" | "current-folder" | "preview"
+  >("selection");
   const [actionsPaneSelectedControlId, setActionsPaneSelectedControlId] =
     useState<ExplorerChromeControlId | null>(null);
   const [resizingExplorerChromeControlId, setResizingExplorerChromeControlId] =
@@ -17867,6 +17873,159 @@ export function FileExplorer({
 
     void requestOpenWithPrograms(activeOpenWithTargetPath);
   }, [activeOpenWithTargetPath, requestOpenWithPrograms]);
+  const openContextMenuComposerSettings = useCallback(
+    (context: ExplorerMenuContextKind) => {
+      useSettingsStore.getState().setActiveContextMenuComposerContext(context);
+      onOpenSettingsSection("context-menus");
+    },
+    [onOpenSettingsSection],
+  );
+  const explorerMenuRuntimeEnvironment = useMemo(
+    () => ({
+      currentPath,
+      currentPathIsCloud,
+      currentPathIsHome,
+      currentLocationSupportsMutation,
+      currentPathIsArchiveVirtual,
+      userHomePath,
+      runtimePlatform: explorerMenuRuntimePlatform,
+      clipboardAvailable: Boolean(clipboard),
+      canCreateDirectory: explorerPicker?.allowCreateDirectory ?? true,
+      canCreateFile: explorerPicker == null,
+      revealPathLabel,
+      propertiesLabel,
+      supportsNativeOpenWith,
+      supportsOpenWithSystemPicker,
+      supportsNativeProperties,
+      openWithProgramsByPath,
+      supportsNativeIntegration,
+      isCloudExplorerPath,
+      isExplorerArchiveVirtualPath,
+      isSemanticSearchTextLikeExtension,
+      isExplorerArchiveEntry: (entry: ExplorerMenuInvocationEntry) =>
+        isExplorerArchiveEntry({
+          name: entry.name,
+          is_dir: entry.isDirectory,
+        }),
+      isBookmarked: (path: string) => bookmarkPathSet.has(path),
+      canRunAudioBatch: canRunAudioBatchEntries,
+      openEntry: (entry: ExplorerMenuInvocationEntry) =>
+        openEntry(resolveContextMenuFileEntry(entry)),
+      openWithSystemPicker,
+      openWithProgram,
+      openAsAdmin,
+      openInTerminal: onOpenInTerminal,
+      openInFilesystemAquarium: onOpenInFilesystemAquarium,
+      sendToMobileDownload: sendEntryToMobileDownload,
+      revealExplorerPath: (path: string) =>
+        revealExplorerPath(path).catch((error) => {
+          setError(String(error));
+          throw error;
+        }),
+      openExplorerPropertiesPanel,
+      copyToSysClipboard,
+      queueClipboard: queueClipboardEntries,
+      requestTransferDestination: requestTransferDestinationEntries,
+      extractArchive: (
+        entry: ExplorerMenuInvocationEntry,
+        mode: "extractHere" | "extractToDirectory" | "extractToNewFolder",
+      ) => handleArchiveAction(resolveContextMenuFileEntry(entry), mode),
+      duplicateEntries: duplicateMenuEntries,
+      findSimilar: triggerFindSimilarForPath,
+      startRename: (entry: ExplorerMenuInvocationEntry) =>
+        setRename({
+          active: true,
+          path: entry.path,
+          name: entry.name,
+        }),
+      openTagDialog,
+      toggleBookmark: toggleBookmarkMenuEntry,
+      openTrashDialog: (entries: ExplorerMenuInvocationEntry[]) =>
+        openTrashDialog(entries.map(resolveContextMenuFileEntry)),
+      openNew: (kind: "file" | "folder") => {
+        if (!currentLocationSupportsMutation) {
+          setError("Archive and virtual explorer locations are read-only.");
+          return;
+        }
+        setNewItemName(kind === "folder" ? "New Folder" : "untitled.txt");
+        setNewItem({ visible: true, kind });
+      },
+      paste,
+      refresh,
+      navigate,
+      openSettingsSection: (section: string) =>
+        onOpenSettingsSection(section as SettingsSectionKey),
+      openContextMenuComposer: openContextMenuComposerSettings,
+      runAudioBatch: runAudioBatchForEntries,
+      executeActionCommand: async (
+        command: ExplorerResolvedActionContextMenuContribution,
+        runtimeContext: {
+          invocation: ExplorerMenuInvocationContext;
+          targetEntries: ExplorerMenuInvocationEntry[];
+          primaryEntry: ExplorerMenuInvocationEntry | null;
+        },
+      ) => executeExplorerMenuAction(command.execution.action, runtimeContext),
+      executePluginCommand: async (
+        command: ExplorerResolvedPluginContextMenuContribution,
+        entry: ExplorerMenuInvocationEntry,
+      ) => {
+        try {
+          await executePluginContextMenuItem(command, entry);
+        } catch (error) {
+          setError(String(error));
+        }
+      },
+      onError: (message: string) => setError(message),
+    }),
+    [
+      bookmarkPathSet,
+      clipboard,
+      copyToSysClipboard,
+      currentLocationSupportsMutation,
+      currentPath,
+      currentPathIsArchiveVirtual,
+      currentPathIsCloud,
+      currentPathIsHome,
+      duplicateMenuEntries,
+      executeExplorerMenuAction,
+      executePluginContextMenuItem,
+      explorerPicker,
+      explorerMenuRuntimePlatform,
+      handleArchiveAction,
+      isCloudExplorerPath,
+      navigate,
+      onOpenInFilesystemAquarium,
+      onOpenInTerminal,
+      onOpenSettingsSection,
+      openAsAdmin,
+      openContextMenuComposerSettings,
+      openEntry,
+      openExplorerPropertiesPanel,
+      openTagDialog,
+      openTrashDialog,
+      openWithProgram,
+      openWithProgramsByPath,
+      openWithSystemPicker,
+      paste,
+      propertiesLabel,
+      queueClipboardEntries,
+      refresh,
+      requestTransferDestinationEntries,
+      resolveContextMenuFileEntry,
+      revealExplorerPath,
+      revealPathLabel,
+      runAudioBatchForEntries,
+      sendEntryToMobileDownload,
+      setError,
+      supportsNativeIntegration,
+      supportsNativeOpenWith,
+      supportsNativeProperties,
+      supportsOpenWithSystemPicker,
+      toggleBookmarkMenuEntry,
+      triggerFindSimilarForPath,
+      userHomePath,
+    ],
+  );
 
   const resolvedContextMenu = useMemo(() => {
     if (!ctxMenu.visible || !ctxMenu.invocation) {
@@ -17884,151 +18043,19 @@ export function FileExplorer({
       pluginContextMenuItems: combinedPluginContextMenuItems,
       previewContextMenuRegistration: effectivePreviewContextMenuRegistration,
       includeEditMenuCommand: true,
-      environment: {
-        currentPath,
-        currentPathIsCloud,
-        currentPathIsHome,
-        currentLocationSupportsMutation,
-        currentPathIsArchiveVirtual,
-        userHomePath,
-        runtimePlatform: explorerMenuRuntimePlatform,
-        clipboardAvailable: Boolean(clipboard),
-        canCreateDirectory: explorerPicker?.allowCreateDirectory ?? true,
-        canCreateFile: explorerPicker == null,
-        revealPathLabel,
-        propertiesLabel,
-        supportsNativeOpenWith,
-        supportsOpenWithSystemPicker,
-        supportsNativeProperties,
-        openWithProgramsByPath,
-        supportsNativeIntegration,
-        isCloudExplorerPath,
-        isExplorerArchiveVirtualPath,
-        isSemanticSearchTextLikeExtension,
-        isExplorerArchiveEntry: (entry) =>
-          isExplorerArchiveEntry({
-            name: entry.name,
-            is_dir: entry.isDirectory,
-          }),
-        isBookmarked: (path) => bookmarkPathSet.has(path),
-        canRunAudioBatch: canRunAudioBatchEntries,
-        openEntry: (entry) => openEntry(resolveContextMenuFileEntry(entry)),
-        openWithSystemPicker,
-        openWithProgram,
-        openAsAdmin,
-        openInTerminal: onOpenInTerminal,
-        openInFilesystemAquarium: onOpenInFilesystemAquarium,
-        sendToMobileDownload: sendEntryToMobileDownload,
-        revealExplorerPath: (path) =>
-          revealExplorerPath(path).catch((error) => {
-            setError(String(error));
-            throw error;
-          }),
-        openExplorerPropertiesPanel,
-        copyToSysClipboard,
-        queueClipboard: queueClipboardEntries,
-        requestTransferDestination: requestTransferDestinationEntries,
-        extractArchive: (entry, mode) =>
-          handleArchiveAction(resolveContextMenuFileEntry(entry), mode),
-        duplicateEntries: duplicateMenuEntries,
-        findSimilar: triggerFindSimilarForPath,
-        startRename: (entry) =>
-          setRename({
-            active: true,
-            path: entry.path,
-            name: entry.name,
-          }),
-        openTagDialog,
-        toggleBookmark: toggleBookmarkMenuEntry,
-        openTrashDialog: (entries) =>
-          openTrashDialog(entries.map(resolveContextMenuFileEntry)),
-        openNew: (kind) => {
-          if (!currentLocationSupportsMutation) {
-            setError("Archive and virtual explorer locations are read-only.");
-            return;
-          }
-          setNewItemName(kind === "folder" ? "New Folder" : "untitled.txt");
-          setNewItem({ visible: true, kind });
-        },
-        paste,
-        refresh,
-        navigate,
-        openSettingsSection: (section) =>
-          onOpenSettingsSection(section as SettingsSectionKey),
-        openContextMenuComposer: (context) => {
-          useSettingsStore
-            .getState()
-            .setActiveContextMenuComposerContext(context);
-          onOpenSettingsSection("context-menus");
-        },
-        runAudioBatch: runAudioBatchForEntries,
-        executeActionCommand: async (command, runtimeContext) =>
-          executeExplorerMenuAction(command.execution.action, runtimeContext),
-        executePluginCommand: async (command, entry) => {
-          try {
-            await executePluginContextMenuItem(command, entry);
-          } catch (error) {
-            setError(String(error));
-          }
-        },
-        onError: (message) => setError(message),
-      },
+      environment: explorerMenuRuntimeEnvironment,
     });
   }, [
-    bookmarkPathSet,
     actions,
-    canRunAudioBatchEntries,
-    clipboard,
-    combinedPluginContextMenuItems,
-    copyToSysClipboard,
     ctxMenu.invocation,
     ctxMenu.visible,
-    currentLocationSupportsMutation,
-    currentPath,
-    currentPathIsArchiveVirtual,
-    currentPathIsCloud,
-    currentPathIsHome,
-    duplicateMenuEntries,
-    executeExplorerMenuAction,
-    executePluginContextMenuItem,
-    explorerPicker,
     explorerSettings.activeMenuPackId,
     explorerSettings.contextMenuLayoutOverridesByContext,
     explorerTheme.menuPresentation.renderer,
-    handleArchiveAction,
-    isCloudExplorerPath,
-    menuPacks,
-    navigate,
-    onOpenInFilesystemAquarium,
-    onOpenInTerminal,
-    onOpenSettingsSection,
-    openAsAdmin,
-    openEntry,
-    openExplorerPropertiesPanel,
-    openTagDialog,
-    openTrashDialog,
-    openWithProgram,
-    openWithProgramsByPath,
-    openWithSystemPicker,
-    paste,
-    propertiesLabel,
     effectivePreviewContextMenuRegistration,
-    queueClipboardEntries,
-    refresh,
-    requestTransferDestinationEntries,
-    resolveContextMenuFileEntry,
-    revealExplorerPath,
-    revealPathLabel,
-    runAudioBatchForEntries,
-    sendEntryToMobileDownload,
-    explorerMenuRuntimePlatform,
-    supportsNativeIntegration,
-    supportsNativeOpenWith,
-    supportsOpenWithSystemPicker,
-    supportsNativeProperties,
-    toggleBookmarkMenuEntry,
-    triggerFindSimilarForPath,
-    userHomePath,
+    combinedPluginContextMenuItems,
+    explorerMenuRuntimeEnvironment,
+    menuPacks,
   ]);
   const resolveContextMenuInputModality = useCallback(
     (event: React.MouseEvent) =>
@@ -31302,46 +31329,163 @@ export function FileExplorer({
     updateShaderPreviewScene,
     updateShaderPreviewSelection,
   ]);
-  const resolveExplorerActionsPaneSurface = useCallback(
-    (entry: ExplorerCustomizeCatalogEntry): ExplorerChromeSurfaceId => {
-      if (entry.surfaces.includes("previewHeader") && hasPreview) {
-        return "previewHeader";
-      }
-      return "explorerToolbar";
-    },
-    [hasPreview],
+  const actionsPanePreviewTarget = useMemo(
+    () => resolvePreviewContextMenuEntry(),
+    [resolvePreviewContextMenuEntry],
   );
-  const canExecuteExplorerActionsPaneEntry = useCallback(
-    (entry: ExplorerCustomizeCatalogEntry) => {
-      if (!entry.action) {
-        return false;
-      }
+  const actionsPaneRuntimeScopes = useMemo(() => {
+    const countCommandLeaves = (nodes: ExplorerRuntimeMenuNode[]): number =>
+      nodes.reduce((count, node) => {
+        if (node.kind === "command") {
+          return count + 1;
+        }
+        if (node.kind === "submenu") {
+          return count + countCommandLeaves(node.children);
+        }
+        return count;
+      }, 0);
 
-      return canExecuteExplorerChromeAction(
-        entry.action,
-        resolveExplorerActionsPaneSurface(entry),
-      );
-    },
-    [canExecuteExplorerChromeAction, resolveExplorerActionsPaneSurface],
-  );
-  const invokeExplorerActionsPaneEntry = useCallback(
-    (entry: ExplorerCustomizeCatalogEntry) => {
-      if (!entry.action) {
-        return;
-      }
+    const scopes: Array<{
+      id: "selection" | "current-folder" | "preview";
+      label: string;
+      contextKind: ExplorerMenuContextKind;
+      summary: string;
+      openWithTargetPath: string | null;
+      menu: ReturnType<typeof buildExplorerRuntimeMenu>;
+    }> = [];
+    const baseMenuOptions = {
+      menuPacks,
+      activeMenuPackId: explorerSettings.activeMenuPackId,
+      layoutOverridesByContext:
+        explorerSettings.contextMenuLayoutOverridesByContext,
+      themeRendererPreference: explorerTheme.menuPresentation.renderer,
+      actions,
+      pluginContextMenuItems: combinedPluginContextMenuItems,
+      previewContextMenuRegistration: effectivePreviewContextMenuRegistration,
+      includeEditMenuCommand: false,
+      environment: explorerMenuRuntimeEnvironment,
+    } as const;
 
-      const surfaceId = resolveExplorerActionsPaneSurface(entry);
-      if (!canExecuteExplorerChromeAction(entry.action, surfaceId)) {
-        return;
-      }
-      void executeExplorerChromeActionControl(entry.action, surfaceId, "mouse");
-    },
-    [
-      canExecuteExplorerChromeAction,
-      executeExplorerChromeActionControl,
-      resolveExplorerActionsPaneSurface,
-    ],
+    if (selectedMenuInvocationEntries.length > 0) {
+      const primaryEntry = selectedMenuInvocationEntries[0] ?? null;
+      const selectionKind: ExplorerMenuInvocationContext["kind"] =
+        selectedMenuInvocationEntries.length > 1
+          ? "multi-select"
+          : isSearchActive
+            ? "search-result"
+            : "entry";
+      const selectionInvocation = buildContextMenuInvocation(selectionKind, {
+        inputModality: "mouse",
+        selectedEntries: selectedMenuInvocationEntries,
+        primaryEntry,
+        previewTarget: actionsPanePreviewTarget,
+        previewContext: previewMenuContext,
+      });
+      const selectionMenu = buildExplorerRuntimeMenu({
+        ...baseMenuOptions,
+        invocation: selectionInvocation,
+      });
+      const selectionSummary =
+        selectedMenuInvocationEntries.length > 1
+          ? `${selectedMenuInvocationEntries.length} selected items`
+          : primaryEntry?.path ?? "Current selection";
+      scopes.push({
+        id: "selection",
+        label:
+          selectionKind === "search-result" ? "Search Result" : "Selection",
+        contextKind: selectionKind,
+        summary: selectionSummary,
+        openWithTargetPath: selectionMenu.primaryEntry?.path ?? null,
+        menu: selectionMenu,
+      });
+    }
+
+    const currentFolderInvocation = buildContextMenuInvocation("background", {
+      inputModality: "mouse",
+      selectedEntries: [],
+      primaryEntry: null,
+      previewTarget: null,
+      previewContext: null,
+    });
+    const currentFolderMenu = buildExplorerRuntimeMenu({
+      ...baseMenuOptions,
+      invocation: currentFolderInvocation,
+    });
+    scopes.push({
+      id: "current-folder",
+      label: "Current Folder",
+      contextKind: "background",
+      summary: currentPath,
+      openWithTargetPath: currentPath,
+      menu: currentFolderMenu,
+    });
+
+    if (actionsPanePreviewTarget) {
+      const previewInvocation = buildContextMenuInvocation("preview-pane", {
+        inputModality: "mouse",
+        selectedEntries: [actionsPanePreviewTarget],
+        primaryEntry: actionsPanePreviewTarget,
+        previewTarget: actionsPanePreviewTarget,
+        previewContext: previewMenuContext,
+      });
+      const previewMenu = buildExplorerRuntimeMenu({
+        ...baseMenuOptions,
+        invocation: previewInvocation,
+      });
+      scopes.push({
+        id: "preview",
+        label: "Preview",
+        contextKind: "preview-pane",
+        summary: actionsPanePreviewTarget.path,
+        openWithTargetPath: previewMenu.primaryEntry?.path ?? null,
+        menu: previewMenu,
+      });
+    }
+
+    return scopes.map((scope) => ({
+      ...scope,
+      commandCount: countCommandLeaves(scope.menu.nodes),
+    }));
+  }, [
+    actions,
+    actionsPanePreviewTarget,
+    buildContextMenuInvocation,
+    combinedPluginContextMenuItems,
+    currentPath,
+    effectivePreviewContextMenuRegistration,
+    explorerMenuRuntimeEnvironment,
+    explorerSettings.activeMenuPackId,
+    explorerSettings.contextMenuLayoutOverridesByContext,
+    explorerTheme.menuPresentation.renderer,
+    isSearchActive,
+    menuPacks,
+    previewMenuContext,
+    selectedMenuInvocationEntries,
+  ]);
+  const activeActionsPaneRuntimeScope = useMemo(
+    () =>
+      actionsPaneRuntimeScopes.find((scope) => scope.id === actionsPaneScopeId) ??
+      actionsPaneRuntimeScopes[0] ??
+      null,
+    [actionsPaneRuntimeScopes, actionsPaneScopeId],
   );
+  const activeActionsPaneOpenWithTargetPath = useMemo(() => {
+    if (!actionsPaneVisible || !activeActionsPaneRuntimeScope) {
+      return null;
+    }
+    if (activeActionsPaneRuntimeScope.contextKind === "background") {
+      return null;
+    }
+    return activeActionsPaneRuntimeScope.openWithTargetPath;
+  }, [actionsPaneVisible, activeActionsPaneRuntimeScope]);
+
+  useEffect(() => {
+    if (!activeActionsPaneOpenWithTargetPath) {
+      return;
+    }
+
+    void requestOpenWithPrograms(activeActionsPaneOpenWithTargetPath);
+  }, [activeActionsPaneOpenWithTargetPath, requestOpenWithPrograms]);
   const explorerActionsPane = useMemo(() => {
     if (!actionsPaneVisible) {
       return null;
@@ -31370,22 +31514,44 @@ export function FileExplorer({
             catalog={explorerCustomizeCatalog}
             muted={EXP.muted}
             pendingHotkeyPrompt={pendingExplorerHotkeyPrompt}
+            runtimeActiveContextKind={
+              activeActionsPaneRuntimeScope?.contextKind ?? "background"
+            }
+            runtimeActiveScopeId={activeActionsPaneRuntimeScope?.id ?? null}
+            runtimeContextLabel={
+              activeActionsPaneRuntimeScope?.label ?? "Current Folder"
+            }
+            runtimeContextSummary={
+              activeActionsPaneRuntimeScope?.summary ?? currentPath
+            }
+            runtimeMenuNodes={activeActionsPaneRuntimeScope?.menu.nodes ?? []}
+            runtimeScopeOptions={actionsPaneRuntimeScopes.map((scope) => ({
+              id: scope.id,
+              label: scope.label,
+              contextKind: scope.contextKind,
+              summary: scope.summary,
+              commandCount: scope.commandCount,
+            }))}
             selectedEntry={selectedExplorerCustomizeEntry}
             selectedPlacement={selectedExplorerCustomizePlacement}
             text={EXP.text}
             onBeginCatalogDrag={beginCatalogExplorerChromePointerDrag}
             onClose={closeActionsPanel}
-            onInvokeCatalogEntry={invokeExplorerActionsPaneEntry}
+            onOpenRuntimeMenuComposer={openContextMenuComposerSettings}
             onRequestHotkeyCapture={(controlId) => {
               selectExplorerCustomizeControl(controlId);
               requestExplorerChromeHotkeyCapture(controlId);
             }}
             onSelectControl={selectExplorerCustomizeControl}
+            onSelectRuntimeScope={(scopeId) =>
+              setActionsPaneScopeId(
+                scopeId as "selection" | "current-folder" | "preview",
+              )
+            }
             onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
             onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
             onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
             onSetSelectedWidthPx={setSelectedExplorerChromeWidthPx}
-            runtimeCanExecuteEntry={canExecuteExplorerActionsPaneEntry}
           />
         </ResizablePane>
       </div>
@@ -31397,14 +31563,17 @@ export function FileExplorer({
     accent,
     actionsPaneShellStyle,
     actionsPaneVisible,
+    actionsPaneRuntimeScopes,
+    activeActionsPaneRuntimeScope,
+    actionsPaneScopeId,
     actionsWidth,
     activeChromeEditSession,
     appearance,
     beginCatalogExplorerChromePointerDrag,
-    canExecuteExplorerActionsPaneEntry,
     closeActionsPanel,
+    currentPath,
     explorerCustomizeCatalog,
-    invokeExplorerActionsPaneEntry,
+    openContextMenuComposerSettings,
     pendingExplorerHotkeyPrompt,
     previewPlacement,
     requestExplorerChromeHotkeyCapture,
@@ -31412,6 +31581,7 @@ export function FileExplorer({
     selectedExplorerCustomizeCommandBinding,
     selectedExplorerCustomizeEntry,
     selectedExplorerCustomizePlacement,
+    setActionsPaneScopeId,
     setSelectedExplorerChromeWidthPx,
     setSelectedExplorerChromeShowIcon,
     setSelectedExplorerChromeShowLabel,

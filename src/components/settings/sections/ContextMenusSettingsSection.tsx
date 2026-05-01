@@ -5,39 +5,16 @@ import {
   type CSSProperties,
   type Dispatch,
   type PointerEvent as ReactPointerEvent,
-  type ReactNode,
   type SetStateAction,
 } from 'react';
 
 import {
   ArrowDown,
   ArrowUp,
-  Clipboard,
-  Copy,
-  CopyPlus,
-  Edit3,
-  Eraser,
-  ExternalLink,
-  Eye,
-  FilePlus,
-  FolderPlus,
   FolderTree,
-  Info,
-  Pencil,
   Puzzle,
-  RefreshCw,
-  RotateCcw,
-  Save,
-  Scissors,
   Search,
-  Shield,
-  Sliders,
   Sparkles,
-  Star,
-  Tags,
-  Terminal,
-  Trash2,
-  Undo2,
 } from '@/components/AppIcons';
 
 import {
@@ -47,6 +24,11 @@ import {
 import { OverlayActionButton } from '../../OverlayActionButton';
 import { OverlayScrollArea } from '../../OverlayScrollArea';
 import { WorkbenchDisclosureGroup } from '../../WorkbenchDisclosureGroup';
+import {
+  buildExplorerCommandSearchHaystack,
+  renderExplorerCommandLibraryIcon,
+  resolveExplorerCommandSourceLabel,
+} from '../../explorer/explorerCommandLibrary';
 import type { ResolvedOverlayAppearance } from '../../../config/appearance';
 import type { LoadedActionPack, LoadedExplorerAction } from '../../../config/actionPacks';
 import {
@@ -101,74 +83,6 @@ const explorerMenuGroupOptions: Array<
   'plugin',
   'danger',
 ];
-
-function renderSettingsContextMenuIcon(iconName?: string): ReactNode {
-  switch (iconName) {
-    case 'Clipboard':
-      return <Clipboard size={13} />;
-    case 'Copy':
-      return <Copy size={13} />;
-    case 'CopyPlus':
-      return <CopyPlus size={13} />;
-    case 'Edit3':
-      return <Edit3 size={13} />;
-    case 'Eraser':
-      return <Eraser size={13} />;
-    case 'ExternalLink':
-      return <ExternalLink size={13} />;
-    case 'Eye':
-      return <Eye size={13} />;
-    case 'FilePlus':
-      return <FilePlus size={13} />;
-    case 'FolderPlus':
-      return <FolderPlus size={13} />;
-    case 'Info':
-      return <Info size={13} />;
-    case 'Pencil':
-      return <Pencil size={13} />;
-    case 'RefreshCw':
-      return <RefreshCw size={13} />;
-    case 'RotateCcw':
-      return <RotateCcw size={13} />;
-    case 'Save':
-      return <Save size={13} />;
-    case 'Scissors':
-      return <Scissors size={13} />;
-    case 'Shield':
-      return <Shield size={13} />;
-    case 'Sliders':
-      return <Sliders size={13} />;
-    case 'Sparkles':
-      return <Sparkles size={13} />;
-    case 'Star':
-      return <Star size={13} />;
-    case 'Tags':
-      return <Tags size={13} />;
-    case 'Terminal':
-      return <Terminal size={13} />;
-    case 'Trash2':
-      return <Trash2 size={13} />;
-    case 'Undo2':
-      return <Undo2 size={13} />;
-    default:
-      return <Puzzle size={13} />;
-  }
-}
-
-function resolveContextMenuCommandSourceLabel(
-  command: ExplorerCommandDefinition,
-): string {
-  if (command.source === 'action') {
-    return `Action · ${command.packName}`;
-  }
-  if (command.source === 'plugin') {
-    return `Plugin · ${command.pluginName}`;
-  }
-  if (command.source === 'preview') {
-    return 'Preview Lane';
-  }
-  return 'Built-In';
-}
 
 function getContextMenuPreviewPathKey(path: string[]): string {
   return path.length > 0 ? path.join('/') : 'root';
@@ -317,7 +231,7 @@ function ExplorerContextMenuPreviewPanels({
                   }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', opacity: 0.78 }}>
-                    {renderSettingsContextMenuIcon(node.iconName)}
+                    {renderExplorerCommandLibraryIcon(node.iconName)}
                   </span>
                   <span
                     style={{
@@ -888,7 +802,7 @@ export function ContextMenusSettingsSection({
             : command.source === 'built-in'
               ? 'commands'
               : 'extensions',
-        sourceLabel: resolveContextMenuCommandSourceLabel(command),
+        sourceLabel: resolveExplorerCommandSourceLabel(command),
         command,
       }));
     const unfilteredItems = [...structureItems, ...commandItems];
@@ -897,17 +811,16 @@ export function ContextMenusSettingsSection({
       return unfilteredItems;
     }
 
-    return unfilteredItems.filter((item) =>
-      [
-        item.label,
-        item.description,
-        item.sourceLabel,
-        item.kind === 'command' ? item.command.id : '',
-      ]
+    return unfilteredItems.filter((item) => {
+      const commandHaystack =
+        item.kind === 'command'
+          ? buildExplorerCommandSearchHaystack(item.command)
+          : '';
+      return [item.label, item.description, item.sourceLabel, commandHaystack]
         .join(' ')
         .toLowerCase()
-        .includes(normalizedQuery),
-    );
+        .includes(normalizedQuery);
+    });
   }, [contextMenuCommandBrowserQuery, filteredContextMenuBrowserCommands]);
 
   const contextMenuLibrarySections = useMemo(
@@ -1957,7 +1870,7 @@ export function ContextMenusSettingsSection({
                               const metaParts: string[] = [];
                               if (resolvedCommand) {
                                 metaParts.push(
-                                  resolveContextMenuCommandSourceLabel(resolvedCommand),
+                                  resolveExplorerCommandSourceLabel(resolvedCommand),
                                 );
                               }
                               if (item.kind === 'submenu') {
@@ -2034,7 +1947,7 @@ export function ContextMenusSettingsSection({
                                         {item.kind === 'submenu' ? (
                                           <FolderTree size={13} />
                                         ) : (
-                                          renderSettingsContextMenuIcon(
+                                          renderExplorerCommandLibraryIcon(
                                             resolvedCommand?.iconName,
                                           )
                                         )}
@@ -2183,7 +2096,7 @@ export function ContextMenusSettingsSection({
                                     />
                                     <span className="opacity-75">
                                       {item.kind === 'command' ? (
-                                        renderSettingsContextMenuIcon(
+                                        renderExplorerCommandLibraryIcon(
                                           item.command.iconName,
                                         )
                                       ) : item.kind === 'structure-submenu' ? (

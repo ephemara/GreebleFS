@@ -1,3 +1,24 @@
+# 2026-05-01 - Explorer Actions Library Now Reuses The Context-Menu Runtime
+
+- The docked explorer actions pane is no longer a separate authored-actions-only browser during normal runtime. `src/components/FileExplorer.tsx` now builds scoped runtime menus through `buildExplorerRuntimeMenu(...)`, and `src/components/explorer/ExplorerActionsPane.tsx` renders those live nodes as an action library with search, scope pills, and an `Edit Menu` deep-link back into Settings.
+- The runtime scopes are intentional:
+  - `selection` / `search-result` when the explorer has a real selection
+  - `current-folder` for cwd-level actions even with nothing selected
+  - `preview` when the preview lane has a target
+- Durable runtime rule: `current-folder` scope must keep executing against the active explorer cwd. The runtime may synthesize the cwd as the effective `primaryEntry` for background actions so folder-targeted commands still have a concrete folder target even when `selectedEntries` is empty.
+- `src/components/explorer/explorerCommandLibrary.tsx` is now the shared browse-time helper for command-library UIs. `ExplorerActionsPane.tsx` and `src/components/settings/sections/ContextMenusSettingsSection.tsx` both use it for icon rendering, source labels, and search haystack composition. If those two surfaces drift again, fix the shared helper first instead of forking presentation logic.
+- Durable architecture rule after this pass:
+  - do not resurrect a second explorer-only action browser that groups raw action packs independently from the real menu runtime
+  - runtime action browsing and execution should go through `ExplorerCommandDefinition` plus `buildExplorerRuntimeMenu(...)`
+  - customize mode still uses the control catalog / chrome override lane for drag-to-place authoring
+- Validation that passed for this pass:
+  - `node_modules\\.bin\\vitest.exe run src\\test\\fileExplorer.viewModes.test.tsx src\\test\\settingsPage.behavior.test.tsx -t "portal drag overlay|drags authored actions into chrome|opens customize mode and the layout switcher from command entry points|keeps shell layout as an optional catalog control instead of default chrome|commits the active chrome customize draft when Done closes the actions pane|drops library commands into the open folder panel inside the menu canvas|browses scoped runtime commands in the action library and runs folder actions against the current cwd" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep for `FileExplorer`, `ExplorerActionsPane`, `ContextMenusSettingsSection`, `explorerCommandLibrary`, and `explorerMenuRuntime` returned no matching diagnostics
+- Validation note:
+  - the giant `src/test/fileExplorer.viewModes.test.tsx` suite still has unrelated current-branch failures outside this lane, including the executable-preview embedded-terminal path and an older sources-rail expectation. Treat those as separate cleanup work, not evidence that the action-library runtime is miswired.
+- Next recommended step:
+  - add a focused action-library test block for scope switching (`selection` -> `current-folder` -> `preview`) plus `Open With` child loading so future runtime-menu work can validate this lane without depending on the full explorer mega-suite.
+
 # 2026-04-29 - Unified Secondary Window System And IDE Native Tear-Off
 
 - GreebleFS now has one host-owned secondary-window pipeline instead of feature-local `new WebviewWindow(...)` calls:

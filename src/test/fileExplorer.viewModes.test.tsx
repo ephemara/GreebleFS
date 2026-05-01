@@ -1888,6 +1888,55 @@ describe("FileExplorer view modes", () => {
     );
   });
 
+  it("browses scoped runtime commands in the action library and runs folder actions against the current cwd", async () => {
+    renderExplorer({ actions: [sampleExplorerAction] });
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    fireEvent.click(
+      within(getChromeControl("actionsPaneToggle") as HTMLElement).getByRole(
+        "button",
+      ),
+    );
+
+    const pane = getExplorerActionsPane();
+    expect(
+      within(pane).getByRole("button", { name: "Edit Menu" }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: /Current Folder/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(pane).getByRole("button", { name: /New Folder/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      await within(pane).findByRole("button", {
+        name: /sample workspace action/i,
+      }),
+    );
+
+    const actionExecuteCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "action_execute");
+    expect(actionExecuteCalls).toHaveLength(1);
+    expect(actionExecuteCalls[0]?.[1]).toMatchObject({
+      request: {
+        context: {
+          kind: "background",
+          currentLocation: REPO_ROOT,
+          selectedEntries: [],
+          primaryEntry: {
+            path: REPO_ROOT,
+            isDirectory: true,
+          },
+        },
+      },
+    });
+
+    fireEvent.click(within(pane).getByRole("button", { name: "Close" }));
+  });
+
   it("resets layout customization to canonical from the menu", async () => {
     useSettingsStore
       .getState()
