@@ -8,6 +8,19 @@ use tauri::Manager;
 
 const REPO_USR_MANIFEST_TEXT: &str = include_str!("../../usr/manifest.json");
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum UsrProfileLaneMode {
+    SharedRoot,
+    ProfileOverlay,
+}
+
+impl Default for UsrProfileLaneMode {
+    fn default() -> Self {
+        Self::SharedRoot
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsrManifestEntry {
@@ -16,6 +29,8 @@ pub struct UsrManifestEntry {
     pub env_var_suffix: Option<String>,
     pub bundled: bool,
     pub bootstrap_to_managed_root: bool,
+    #[serde(default)]
+    pub profile_mode: UsrProfileLaneMode,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -87,6 +102,23 @@ pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, S
         .app_local_data_dir()
         .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?;
     Ok(app_local_data_root.join("usr"))
+}
+
+pub fn resolve_shared_usr_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if read_first_env_path(&[
+        "GREEBLEFS_MANAGED_CONTENT_ROOT",
+        "OVERLAYTERM_MANAGED_CONTENT_ROOT",
+    ])
+    .is_some()
+    {
+        return resolve_managed_content_root(app);
+    }
+
+    if cfg!(debug_assertions) {
+        return resolve_bundled_usr_root(app);
+    }
+
+    resolve_managed_content_root(app)
 }
 
 fn copy_missing_entries(source: &Path, target: &Path) -> Result<(), String> {

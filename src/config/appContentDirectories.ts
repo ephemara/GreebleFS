@@ -33,6 +33,12 @@ interface ManagedContentRootsSnapshot {
   writableRoot: string;
 }
 
+export interface ManagedContentDirectoryStackOverride {
+  laneId: string;
+  directories: string[];
+  writableDirectory: string;
+}
+
 const shippedManagedDirectoryMetadata = {
   plugins: {
     label: "Plugins",
@@ -406,6 +412,12 @@ let resolvedLegacyHomeDirectories: Partial<
 let resolvedLegacyReleaseDirectories: Partial<
   Record<ManagedContentDirectoryId, string>
 > = {};
+let managedContentDirectorySearchOverrides: Partial<
+  Record<ManagedContentDirectoryId, string[]>
+> = {};
+let managedContentPrimaryDirectoryOverrides: Partial<
+  Record<ManagedContentDirectoryId, string>
+> = {};
 
 function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as Record<string, string | undefined>;
@@ -701,6 +713,68 @@ export function getManagedContentDirectory(
   }
 
   return directoryDefinition.legacyRelativeDirectoryName;
+}
+
+export function applyManagedContentDirectoryStackOverrides(
+  overrides: ManagedContentDirectoryStackOverride[],
+): void {
+  const nextSearchOverrides: Partial<Record<ManagedContentDirectoryId, string[]>> = {};
+  const nextPrimaryOverrides: Partial<Record<ManagedContentDirectoryId, string>> = {};
+
+  for (const override of overrides) {
+    const directoryId = override.laneId as ManagedContentDirectoryId;
+    if (!managedContentDirectoryLookup.has(directoryId)) {
+      continue;
+    }
+
+    const normalizedDirectories = override.directories
+      .filter(
+        (directory): directory is string =>
+          typeof directory === 'string' && directory.trim().length > 0,
+      )
+      .map((directory) => directory.trim());
+    if (normalizedDirectories.length === 0) {
+      continue;
+    }
+
+    nextSearchOverrides[directoryId] = normalizedDirectories;
+    const writableDirectory =
+      typeof override.writableDirectory === 'string' &&
+      override.writableDirectory.trim().length > 0
+        ? override.writableDirectory.trim()
+        : normalizedDirectories[0];
+    nextPrimaryOverrides[directoryId] = writableDirectory;
+  }
+
+  managedContentDirectorySearchOverrides = nextSearchOverrides;
+  managedContentPrimaryDirectoryOverrides = nextPrimaryOverrides;
+}
+
+export function clearManagedContentDirectoryStackOverrides(): void {
+  managedContentDirectorySearchOverrides = {};
+  managedContentPrimaryDirectoryOverrides = {};
+}
+
+export function getManagedContentDirectorySearchDirectories(
+  id: ManagedContentDirectoryId,
+): string[] {
+  const overriddenDirectories = managedContentDirectorySearchOverrides[id];
+  if (Array.isArray(overriddenDirectories) && overriddenDirectories.length > 0) {
+    return [...overriddenDirectories];
+  }
+
+  return [getManagedContentDirectory(id)];
+}
+
+export function getManagedContentPrimaryDirectory(
+  id: ManagedContentDirectoryId,
+): string {
+  const overriddenDirectory = managedContentPrimaryDirectoryOverrides[id];
+  if (typeof overriddenDirectory === 'string' && overriddenDirectory.length > 0) {
+    return overriddenDirectory;
+  }
+
+  return getManagedContentDirectory(id);
 }
 
 export function isLegacyScreenshotDirectory(

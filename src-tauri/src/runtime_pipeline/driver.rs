@@ -9,13 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeManifest};
-use crate::runtime_pipeline::toolchain::{
-    probe_runtime_toolchains, RuntimeToolchainStatus, ToolchainProbe,
-};
-
-type ToolchainProbeSelector = for<'a> fn(&'a RuntimeToolchainStatus) -> &'a ToolchainProbe;
+use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, ToolchainProbe};
 type RuntimeBuildInvoker =
     fn(&RuntimeManifest, &Path, &str, &str) -> Result<RuntimeCompilerBuildOutput, String>;
+type ToolchainVersionResolver = fn() -> Result<String, String>;
 
 #[derive(Debug, Default)]
 pub struct RuntimeCompilerBuildOutput {
@@ -25,7 +22,7 @@ pub struct RuntimeCompilerBuildOutput {
 
 struct RuntimeCompilerDriver {
     default_target_resolver: fn() -> String,
-    toolchain_probe_selector: ToolchainProbeSelector,
+    toolchain_version_resolver: ToolchainVersionResolver,
     artifact_name_builder: fn(&str) -> String,
     build_invoker: RuntimeBuildInvoker,
 }
@@ -36,9 +33,7 @@ impl RuntimeCompilerDriver {
     }
 
     fn resolve_toolchain_version(&self) -> Result<String, String> {
-        let probe = probe_runtime_toolchains();
-        let toolchain_probe = (self.toolchain_probe_selector)(&probe);
-        resolve_installed_toolchain_version(toolchain_probe)
+        (self.toolchain_version_resolver)()
     }
 
     fn artifact_name(&self, runtime_id: &str) -> String {
@@ -58,42 +53,49 @@ impl RuntimeCompilerDriver {
 
 const GO_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: host_target_triple,
-    toolchain_probe_selector: select_go_toolchain_probe,
+    toolchain_version_resolver: resolve_go_toolchain_version,
     artifact_name_builder: build_native_binary_artifact_name,
     build_invoker: invoke_go_build_script,
 };
 
 const CARGO_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_cargo_host_target,
-    toolchain_probe_selector: select_cargo_toolchain_probe,
+    toolchain_version_resolver: resolve_cargo_toolchain_version,
     artifact_name_builder: build_native_binary_artifact_name,
     build_invoker: invoke_cargo_build,
 };
 
 const C_NATIVE_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_c_host_target,
-    toolchain_probe_selector: select_c_toolchain_probe,
+    toolchain_version_resolver: resolve_c_toolchain_version,
     artifact_name_builder: build_native_binary_artifact_name,
     build_invoker: invoke_unsupported_c_build,
 };
 
 const GO_JS_WASM_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_js_wasm_target,
-    toolchain_probe_selector: select_go_toolchain_probe,
+    toolchain_version_resolver: resolve_go_toolchain_version,
     artifact_name_builder: build_wasm_artifact_name,
     build_invoker: invoke_go_build_script,
 };
 
 const TINYGO_WASM_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_tinygo_wasm_target,
-    toolchain_probe_selector: select_tinygo_toolchain_probe,
+    toolchain_version_resolver: resolve_tinygo_toolchain_version,
     artifact_name_builder: build_wasm_artifact_name,
     build_invoker: invoke_go_build_script,
 };
 
+const CARGO_WASM_BINDGEN_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
+    default_target_resolver: default_cargo_wasm_bindgen_target,
+    toolchain_version_resolver: resolve_cargo_wasm_bindgen_toolchain_version,
+    artifact_name_builder: build_javascript_artifact_name,
+    build_invoker: invoke_cargo_wasm_bindgen_build,
+};
+
 const PYTHON_SIDECAR_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     default_target_resolver: default_python_host_target,
-    toolchain_probe_selector: select_python_toolchain_probe,
+    toolchain_version_resolver: resolve_python_toolchain_version,
     artifact_name_builder: build_python_sidecar_artifact_name,
     build_invoker: skip_host_build,
 };
@@ -131,6 +133,7 @@ fn require_runtime_compiler_driver(compiler: RuntimeCompiler) -> &'static Runtim
         RuntimeCompiler::CNative => &C_NATIVE_DRIVER,
         RuntimeCompiler::GoJsWasm => &GO_JS_WASM_DRIVER,
         RuntimeCompiler::TinygoWasm => &TINYGO_WASM_DRIVER,
+        RuntimeCompiler::CargoWasmBindgen => &CARGO_WASM_BINDGEN_DRIVER,
         RuntimeCompiler::PythonSidecar => &PYTHON_SIDECAR_DRIVER,
     }
 }
@@ -147,6 +150,10 @@ fn default_cargo_host_target() -> String {
     "cargo-host".to_string()
 }
 
+fn default_cargo_wasm_bindgen_target() -> String {
+    "wasm-bindgen-web".to_string()
+}
+
 fn default_c_host_target() -> String {
     "c-host".to_string()
 }
@@ -159,24 +166,42 @@ fn default_python_host_target() -> String {
     "python-host".to_string()
 }
 
-fn select_go_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
-    &status.go
+fn resolve_probe_version(probe: &ToolchainProbe) -> Result<String, String> {
+    resolve_installed_toolchain_version(probe)
 }
 
-fn select_cargo_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
-    &status.cargo
+fn resolve_go_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    resolve_probe_version(&probe.go)
 }
 
-fn select_c_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
-    &status.cc
+fn resolve_cargo_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    resolve_probe_version(&probe.cargo)
 }
 
-fn select_tinygo_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
-    &status.tinygo
+fn resolve_c_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    resolve_probe_version(&probe.cc)
 }
 
-fn select_python_toolchain_probe(status: &RuntimeToolchainStatus) -> &ToolchainProbe {
-    &status.python
+fn resolve_tinygo_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    resolve_probe_version(&probe.tinygo)
+}
+
+fn resolve_python_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    resolve_probe_version(&probe.python)
+}
+
+fn resolve_cargo_wasm_bindgen_toolchain_version() -> Result<String, String> {
+    let probe = probe_runtime_toolchains();
+    let cargo_version = resolve_probe_version(&probe.cargo)?;
+    let wasm_bindgen_version = resolve_probe_version(&probe.wasm_bindgen)?;
+    Ok(format!(
+        "cargo-{cargo_version}+wasm-bindgen-{wasm_bindgen_version}"
+    ))
 }
 
 fn resolve_installed_toolchain_version(probe: &ToolchainProbe) -> Result<String, String> {
@@ -203,6 +228,10 @@ fn build_native_binary_artifact_name(runtime_id: &str) -> String {
 
 fn build_wasm_artifact_name(runtime_id: &str) -> String {
     format!("{runtime_id}.wasm")
+}
+
+fn build_javascript_artifact_name(runtime_id: &str) -> String {
+    format!("{runtime_id}.js")
 }
 
 fn build_python_sidecar_artifact_name(_: &str) -> String {
@@ -330,6 +359,120 @@ fn invoke_cargo_build(
     Ok(RuntimeCompilerBuildOutput { stdout, stderr })
 }
 
+fn invoke_cargo_wasm_bindgen_build(
+    manifest: &RuntimeManifest,
+    artifact_path: &Path,
+    target: &str,
+    mode: &str,
+) -> Result<RuntimeCompilerBuildOutput, String> {
+    let module_dir = PathBuf::from(&manifest.module_dir);
+    let cargo_manifest_path = resolve_cargo_manifest_path(&module_dir)?;
+    let crate_stem = resolve_cargo_library_stem(&cargo_manifest_path, manifest)?;
+    let cargo_target_directory = module_dir.join("target");
+    let cargo_target = resolve_cargo_wasm_bindgen_cargo_target(target)?;
+    let bindgen_target = resolve_cargo_wasm_bindgen_bindgen_target(target)?;
+
+    let mut cargo_command = Command::new("cargo");
+    cargo_command
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&cargo_manifest_path)
+        .arg("--lib")
+        .arg("--target")
+        .arg(&cargo_target)
+        .arg("--target-dir")
+        .arg(&cargo_target_directory);
+    if mode == "release" {
+        cargo_command.arg("--release");
+    }
+    cargo_command.current_dir(&module_dir);
+
+    let cargo_output = cargo_command
+        .output()
+        .map_err(|error| format!("failed to run cargo wasm build: {error}"))?;
+    let cargo_stdout = String::from_utf8_lossy(&cargo_output.stdout).to_string();
+    let cargo_stderr = String::from_utf8_lossy(&cargo_output.stderr).to_string();
+    if !cargo_output.status.success() {
+        return Err(format!(
+            "cargo wasm build exited with status {}: {}",
+            cargo_output.status,
+            if cargo_stderr.is_empty() {
+                cargo_stdout.as_str()
+            } else {
+                cargo_stderr.as_str()
+            }
+        ));
+    }
+
+    let built_wasm_path = resolve_cargo_built_wasm_path(
+        &cargo_target_directory,
+        &cargo_target,
+        mode,
+        &crate_stem,
+    );
+    let output_directory = artifact_path.parent().ok_or_else(|| {
+        format!(
+            "runtime artifact {} has no parent directory",
+            artifact_path.display()
+        )
+    })?;
+    std::fs::create_dir_all(output_directory).map_err(|error| {
+        format!(
+            "failed to create wasm-bindgen output directory {}: {error}",
+            output_directory.display()
+        )
+    })?;
+
+    let out_name = artifact_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| {
+            format!(
+                "runtime artifact {} has no valid JS file stem",
+                artifact_path.display()
+            )
+        })?;
+    let mut bindgen_command = Command::new("wasm-bindgen");
+    bindgen_command
+        .arg("--target")
+        .arg(bindgen_target)
+        .arg("--out-dir")
+        .arg(output_directory)
+        .arg("--out-name")
+        .arg(out_name)
+        .arg(&built_wasm_path)
+        .current_dir(&module_dir);
+
+    let bindgen_output = bindgen_command
+        .output()
+        .map_err(|error| format!("failed to run wasm-bindgen: {error}"))?;
+    let bindgen_stdout = String::from_utf8_lossy(&bindgen_output.stdout).to_string();
+    let bindgen_stderr = String::from_utf8_lossy(&bindgen_output.stderr).to_string();
+    if !bindgen_output.status.success() {
+        return Err(format!(
+            "wasm-bindgen exited with status {}: {}",
+            bindgen_output.status,
+            if bindgen_stderr.is_empty() {
+                bindgen_stdout.as_str()
+            } else {
+                bindgen_stderr.as_str()
+            }
+        ));
+    }
+
+    if !artifact_path.exists() {
+        return Err(format!(
+            "wasm-bindgen did not produce expected entry module {}",
+            artifact_path.display()
+        ));
+    }
+
+    Ok(RuntimeCompilerBuildOutput {
+        stdout: format!("{cargo_stdout}{bindgen_stdout}"),
+        stderr: format!("{cargo_stderr}{bindgen_stderr}"),
+    })
+}
+
 fn invoke_unsupported_c_build(
     _: &RuntimeManifest,
     _: &Path,
@@ -400,6 +543,38 @@ fn resolve_cargo_binary_name(
     Ok(manifest.id.clone())
 }
 
+fn resolve_cargo_library_stem(
+    cargo_manifest_path: &Path,
+    manifest: &RuntimeManifest,
+) -> Result<String, String> {
+    let text = std::fs::read_to_string(cargo_manifest_path).map_err(|error| {
+        format!(
+            "Failed to read cargo manifest {}: {error}",
+            cargo_manifest_path.display()
+        )
+    })?;
+    let parsed = text
+        .parse::<toml::Value>()
+        .map_err(|error| format!("Failed to parse {}: {error}", cargo_manifest_path.display()))?;
+    if let Some(lib_name) = parsed
+        .get("lib")
+        .and_then(|value| value.as_table())
+        .and_then(|table| table.get("name"))
+        .and_then(|value| value.as_str())
+    {
+        return Ok(lib_name.replace('-', "_"));
+    }
+    if let Some(package_name) = parsed
+        .get("package")
+        .and_then(|value| value.as_table())
+        .and_then(|table| table.get("name"))
+        .and_then(|value| value.as_str())
+    {
+        return Ok(package_name.replace('-', "_"));
+    }
+    Ok(manifest.id.replace('-', "_"))
+}
+
 fn resolve_cargo_built_artifact_path(
     cargo_target_directory: &Path,
     target: &str,
@@ -422,6 +597,42 @@ fn resolve_cargo_built_artifact_path(
         path.push(binary_name);
     }
     path
+}
+
+fn resolve_cargo_built_wasm_path(
+    cargo_target_directory: &Path,
+    cargo_target: &str,
+    mode: &str,
+    crate_stem: &str,
+) -> PathBuf {
+    let profile_directory = if mode == "release" {
+        "release"
+    } else {
+        "debug"
+    };
+    cargo_target_directory
+        .join(cargo_target)
+        .join(profile_directory)
+        .join(format!("{crate_stem}.wasm"))
+}
+
+fn resolve_cargo_wasm_bindgen_cargo_target(target: &str) -> Result<String, String> {
+    match target.trim() {
+        "" | "wasm-bindgen-web" => Ok("wasm32-unknown-unknown".to_string()),
+        "wasm32-unknown-unknown" => Ok("wasm32-unknown-unknown".to_string()),
+        other => Err(format!(
+            "unsupported cargo-wasm-bindgen target {other}; use wasm-bindgen-web or wasm32-unknown-unknown"
+        )),
+    }
+}
+
+fn resolve_cargo_wasm_bindgen_bindgen_target(target: &str) -> Result<&'static str, String> {
+    match target.trim() {
+        "" | "wasm-bindgen-web" | "wasm32-unknown-unknown" => Ok("web"),
+        other => Err(format!(
+            "unsupported wasm-bindgen output target {other}; use wasm-bindgen-web"
+        )),
+    }
 }
 
 /// Resolve the Go build script for the running host. Order of precedence:
@@ -515,6 +726,10 @@ mod tests {
             "tinygo-wasm"
         );
         assert_eq!(
+            default_target_for_compiler(RuntimeCompiler::CargoWasmBindgen),
+            "wasm-bindgen-web"
+        );
+        assert_eq!(
             default_target_for_compiler(RuntimeCompiler::PythonSidecar),
             "python-host"
         );
@@ -538,8 +753,27 @@ mod tests {
             "notes-preview.wasm"
         );
         assert_eq!(
+            artifact_name_for_compiler(
+                RuntimeCompiler::CargoWasmBindgen,
+                "notes-preview"
+            ),
+            "notes-preview.js"
+        );
+        assert_eq!(
             artifact_name_for_compiler(RuntimeCompiler::PythonSidecar, "ignored"),
             "python-sidecar.entry"
+        );
+    }
+
+    #[test]
+    fn cargo_wasm_bindgen_target_aliases_resolve() {
+        assert_eq!(
+            resolve_cargo_wasm_bindgen_cargo_target("wasm-bindgen-web").unwrap(),
+            "wasm32-unknown-unknown"
+        );
+        assert_eq!(
+            resolve_cargo_wasm_bindgen_bindgen_target("wasm-bindgen-web").unwrap(),
+            "web"
         );
     }
 

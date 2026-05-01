@@ -39,6 +39,7 @@ import {
   pluginSystemConfig,
 } from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
+import { PluginWasmPanelSurface, PluginWasmPreviewSurface } from '../components/PluginWasmRuntimeSurfaces';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
   type BoundOverlayPluginPreviewLaneComponent,
@@ -129,10 +130,14 @@ interface PluginPackagePreviewWorkbenchChromeManifest
 interface PluginPackagePreviewLaneManifest {
   id?: string;
   title?: string;
+  rendererKind?: 'react' | 'wasm-panel';
   renderer?: string;
   rendererEntry?: string;
   runtimeId?: string;
   runtimeRef?: string;
+  runtimeSurfaceId?: string;
+  runtimeSurfaceRef?: string;
+  buildTarget?: string;
   priority?: number;
   match?: {
     appliesTo?: 'any' | 'file' | 'directory';
@@ -152,6 +157,12 @@ interface PluginPackagePreviewLaneManifest {
   workflowTabs?: PluginPackagePreviewWorkbenchChromeManifest;
   workbenchChrome?: PluginPackagePreviewWorkbenchChromeManifest;
   previewChrome?: PluginPackagePreviewWorkbenchChromeManifest;
+}
+
+interface PluginPackagePanelRuntimeManifest {
+  runtimeId?: string;
+  runtimeRef?: string;
+  buildTarget?: string;
 }
 
 interface PluginPackageSettingsSlotManifest {
@@ -211,6 +222,7 @@ interface PluginPackageManifest {
   entry?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
+  panelRuntime?: PluginPackagePanelRuntimeManifest;
   category?: string;
   tags?: string[];
   testFiles?: PluginPackageTestFileManifest[];
@@ -495,6 +507,26 @@ function asPreviewWorkbenchChromeManifest(
   };
 }
 
+function asPanelRuntimeManifest(
+  value: unknown,
+): PluginPackagePanelRuntimeManifest | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const runtimeId = asString(record.runtimeId) || asString(record.runtimeRef);
+  if (!runtimeId) {
+    return undefined;
+  }
+
+  return {
+    runtimeId: asString(record.runtimeId),
+    runtimeRef: asString(record.runtimeRef),
+    buildTarget: asString(record.buildTarget) || undefined,
+  };
+}
+
 function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneManifest[] {
   if (!Array.isArray(value)) {
     return [];
@@ -502,8 +534,17 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
 
   return value.flatMap(entry => {
     const record = asRecord(entry);
-    const renderer = asString(record?.renderer) || asString(record?.rendererEntry);
-    if (!record || !renderer) {
+    if (!record) {
+      return [];
+    }
+    const rendererKind =
+      asString(record.rendererKind) === 'wasm-panel' ||
+      ((!asString(record.renderer) && !asString(record.rendererEntry))
+        && Boolean(asString(record.runtimeSurfaceId) || asString(record.runtimeSurfaceRef)))
+        ? 'wasm-panel'
+        : 'react';
+    const renderer = asString(record.renderer) || asString(record.rendererEntry);
+    if (rendererKind === 'react' && !renderer) {
       return [];
     }
 
@@ -534,15 +575,25 @@ function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneMan
     );
     const title =
       asString(record.title) ||
-      deriveDisplayNameFromFilePath(renderer);
+      deriveDisplayNameFromFilePath(
+        renderer
+          || asString(record.runtimeSurfaceId)
+          || asString(record.runtimeSurfaceRef)
+          || 'preview-lane',
+      );
 
     return [{
       id: asString(record.id) || deriveIdFromName(title, 'preview-lane'),
       title,
+      rendererKind,
       renderer,
       rendererEntry: asString(record.rendererEntry),
       runtimeId: asString(record.runtimeId) || asString(record.runtimeRef),
       runtimeRef: asString(record.runtimeRef),
+      runtimeSurfaceId:
+        asString(record.runtimeSurfaceId) || asString(record.runtimeSurfaceRef),
+      runtimeSurfaceRef: asString(record.runtimeSurfaceRef),
+      buildTarget: asString(record.buildTarget),
       priority:
         typeof record.priority === 'number' && Number.isFinite(record.priority)
           ? Math.round(record.priority)
@@ -888,6 +939,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
     entry: asString(source.entry),
     defaultOpen: asBoolean(source.defaultOpen),
     keepMounted: asBoolean(source.keepMounted),
+    panelRuntime: asPanelRuntimeManifest(source.panelRuntime),
     category: asString(source.category) || undefined,
     tags: asStringArray(source.tags),
     testFiles: asTestFileManifestArray(source.testFiles),
@@ -1055,7 +1107,7 @@ function estimatePackageManifestCapabilities(
 ): OverlayPluginCapabilitySummary {
   const contributions = record.manifest.contributions;
   return {
-    panel: Boolean(record.manifest.entry),
+    panel: Boolean(record.manifest.entry || record.manifest.panelRuntime),
     mobilePanes: contributions?.mobilePanes?.length ?? 0,
     themes: contributions?.themes?.length ?? 0,
     shaders: contributions?.shaders?.length ?? 0,
@@ -1247,6 +1299,24 @@ async function resolvePackagePanelEntry(record: PluginPackageRecord): Promise<Fi
   return null;
 }
 
+function resolvePackagePanelRuntime(record: PluginPackageRecord): {
+  runtimeId: string;
+  buildTarget: string | null;
+} | null {
+  const runtimeId =
+    record.manifest.panelRuntime?.runtimeId?.trim()
+    || record.manifest.panelRuntime?.runtimeRef?.trim()
+    || '';
+  if (!runtimeId) {
+    return null;
+  }
+
+  return {
+    runtimeId,
+    buildTarget: record.manifest.panelRuntime?.buildTarget?.trim() || null,
+  };
+}
+
 function createPluginRelativeModuleSourceResolver(
   packageDirectoryPath: string,
 ): RuntimeRelativeModuleSourceResolver {
@@ -1366,8 +1436,14 @@ async function loadPluginPackage(
   };
 
   const panelEntry = await resolvePackagePanelEntry(record);
+  const panelRuntime = resolvePackagePanelRuntime(record);
   let packagePlugin: LoadedOverlayPlugin | null = null;
   if (panelEntry) {
+    if (panelRuntime) {
+      packageWarnings.push(
+        `panelRuntime ${panelRuntime.runtimeId} is ignored because the package already provides a React panel entry`,
+      );
+    }
     try {
       const source = await commands.fsReadTextFile(panelEntry.path).then(unwrapTauriResult);
       packagePlugin = await loadPluginFromSource(source, panelEntry as PluginFileEntry, hostApiFactory, {
@@ -1400,6 +1476,43 @@ async function loadPluginPackage(
     } catch (error) {
       packageWarnings.push(String(error));
     }
+  } else if (panelRuntime) {
+    packagePlugin = {
+      ...packagePreviewBaseContext,
+      filePath: record.manifestPath,
+      modified: record.modified,
+      enabled: true,
+      description: record.manifest.description,
+      defaultOpen: record.manifest.defaultOpen ?? pluginSystemConfig.folderPanelsOpenByDefault,
+      keepMounted: record.manifest.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
+      error: null,
+      diagnostics: {
+        sourceKind: 'package-plugin',
+        sourceLabel: packageName,
+        manifestPath: record.manifestPath,
+        category: packageCategory,
+        tags: packageTags,
+        testFiles: packageTestFiles,
+        warnings: [],
+        capabilities: {
+          panel: true,
+          themes: 0,
+          shaders: 0,
+          fonts: 0,
+          commands: 0,
+          actions: 0,
+          explorerActions: 0,
+          contextMenuItems: 0,
+          previewLanes: 0,
+          settingsSlots: 0,
+        },
+      },
+      component: (props) => React.createElement(PluginWasmPanelSurface, {
+        ...props,
+        runtimeId: panelRuntime.runtimeId,
+        buildTarget: panelRuntime.buildTarget,
+      }),
+    };
   }
 
   const themeDirectories = await resolveThemeDirectories(record);
@@ -1593,75 +1706,101 @@ async function loadPluginPackage(
       async (previewLane) => {
         const laneTitle =
           previewLane.title ||
-          deriveDisplayNameFromFilePath(previewLane.renderer || 'preview-lane');
+          deriveDisplayNameFromFilePath(
+            previewLane.renderer
+              || previewLane.runtimeSurfaceId
+              || previewLane.runtimeSurfaceRef
+              || 'preview-lane',
+          );
         const stableId =
           previewLane.id || deriveIdFromName(laneTitle, 'preview-lane');
-        if (!previewLane.renderer || !isSafeRelativePath(previewLane.renderer)) {
-          packageWarnings.push(
-            `preview lane ${laneTitle}: invalid renderer path`,
-          );
-          return null;
-        }
+        let boundComponent: BoundOverlayPluginPreviewLaneComponent | null = null;
+        let normalizedRendererEntry: string | null = null;
+        if (previewLane.rendererKind === 'wasm-panel') {
+          const runtimeSurfaceId =
+            previewLane.runtimeSurfaceId?.trim()
+            || previewLane.runtimeSurfaceRef?.trim()
+            || '';
+          if (!runtimeSurfaceId) {
+            packageWarnings.push(
+              `preview lane ${laneTitle}: wasm-panel lanes require runtimeSurfaceId or runtimeSurfaceRef`,
+            );
+            return null;
+          }
 
-        const normalizedRendererEntry = normalizeRelativePath(
-          previewLane.renderer,
-        );
-        let rendererComponent =
-          previewRendererCache.get(normalizedRendererEntry) ?? null;
-        if (!rendererComponent) {
-          const rendererEntry = await resolveRelativeFileEntry(
+          boundComponent = (props) =>
+            React.createElement(PluginWasmPreviewSurface, {
+              ...props,
+              runtimeId: runtimeSurfaceId,
+              buildTarget: previewLane.buildTarget?.trim() || null,
+            });
+        } else {
+          if (!previewLane.renderer || !isSafeRelativePath(previewLane.renderer)) {
+            packageWarnings.push(
+              `preview lane ${laneTitle}: invalid renderer path`,
+            );
+            return null;
+          }
+
+          normalizedRendererEntry = normalizeRelativePath(
+            previewLane.renderer,
+          );
+          let rendererComponent =
+            previewRendererCache.get(normalizedRendererEntry) ?? null;
+          if (!rendererComponent) {
+            const rendererEntry = await resolveRelativeFileEntry(
+              record.directoryPath,
+              normalizedRendererEntry,
+            );
+            if (
+              !rendererEntry ||
+              !pluginSystemConfig.frontendExtensions.includes(
+                rendererEntry.extension as never,
+              )
+            ) {
+              packageWarnings.push(
+                `preview lane ${laneTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
+              );
+              return null;
+            }
+
+            try {
+              const source = await commands
+                .fsReadTextFile(rendererEntry.path)
+                .then(unwrapTauriResult);
+              rendererComponent = await loadPluginPreviewLaneFromSource(
+                source,
+                rendererEntry as PluginFileEntry,
+                {
+                  resolveRelativeModuleSource: previewModuleResolver,
+                },
+              );
+              previewRendererCache.set(normalizedRendererEntry, rendererComponent);
+            } catch (error) {
+              packageWarnings.push(
+                `preview lane ${laneTitle}: ${String(error)}`,
+              );
+              return null;
+            }
+          }
+
+          const rendererFilePath = joinPlatformPath(
             record.directoryPath,
             normalizedRendererEntry,
           );
-          if (
-            !rendererEntry ||
-            !pluginSystemConfig.frontendExtensions.includes(
-              rendererEntry.extension as never,
-            )
-          ) {
-            packageWarnings.push(
-              `preview lane ${laneTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
-            );
-            return null;
-          }
-
-          try {
-            const source = await commands
-              .fsReadTextFile(rendererEntry.path)
-              .then(unwrapTauriResult);
-            rendererComponent = await loadPluginPreviewLaneFromSource(
-              source,
-              rendererEntry as PluginFileEntry,
-              {
-                resolveRelativeModuleSource: previewModuleResolver,
-              },
-            );
-            previewRendererCache.set(normalizedRendererEntry, rendererComponent);
-          } catch (error) {
-            packageWarnings.push(
-              `preview lane ${laneTitle}: ${String(error)}`,
-            );
-            return null;
-          }
+          const previewLaneContext: OverlayPluginContext = {
+            ...packagePreviewBaseContext,
+            filePath: rendererFilePath,
+          };
+          const previewLaneApi = hostApiFactory(previewLaneContext);
+          boundComponent = (props) =>
+            React.createElement(rendererComponent!, {
+              ...props,
+              api: previewLaneApi.bindExecutionContext(props.executionContext),
+              plugin: previewLaneContext,
+            });
         }
 
-        const rendererFilePath = joinPlatformPath(
-          record.directoryPath,
-          normalizedRendererEntry,
-        );
-        const previewLaneContext: OverlayPluginContext = {
-          ...packagePreviewBaseContext,
-          filePath: rendererFilePath,
-        };
-        const previewLaneApi = hostApiFactory(previewLaneContext);
-        const boundComponent: BoundOverlayPluginPreviewLaneComponent = (
-          props,
-        ) =>
-          React.createElement(rendererComponent!, {
-            ...props,
-            api: previewLaneApi.bindExecutionContext(props.executionContext),
-            plugin: previewLaneContext,
-          });
         const capabilities = previewLane.capabilities
           ? normalizeOverlayPluginPreviewLaneCapabilities(
               previewLane.capabilities,
@@ -1685,8 +1824,16 @@ async function loadPluginPackage(
           priority:
             previewLane.priority ??
             DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
+          rendererKind: previewLane.rendererKind === 'wasm-panel'
+            ? 'wasm-panel'
+            : 'react',
           rendererEntry: normalizedRendererEntry,
           runtimeId: previewLane.runtimeId?.trim() || null,
+          runtimeSurfaceId:
+            previewLane.runtimeSurfaceId?.trim()
+            || previewLane.runtimeSurfaceRef?.trim()
+            || null,
+          buildTarget: previewLane.buildTarget?.trim() || null,
           match: previewLane.match
             ? normalizeOverlayPluginPreviewLaneMatchRule(previewLane.match)
             : normalizeOverlayPluginPreviewLaneMatchRule(undefined),

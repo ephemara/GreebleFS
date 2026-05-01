@@ -12,6 +12,7 @@ import {
     reportGlobalError,
 } from "./runtime/globalErrorPanel";
 import { initializeManagedContentDirectories } from "./config/appContentDirectories";
+import { initializeUsrProfilesBootstrap } from "./runtime/usrProfiles";
 import { FILE_OPERATIONS_WINDOW_LABEL } from "./runtime/fileOperationsWindow";
 import { EXPLORER_PICKER_WINDOW_LABEL } from "./runtime/explorerPicker";
 import {
@@ -115,6 +116,7 @@ async function resolveBootstrapTarget() {
 async function bootstrapApp() {
     try {
         await initializeManagedContentDirectories();
+        await initializeUsrProfilesBootstrap();
         const { RootComponent, rootProps } = await resolveBootstrapTarget();
         document.documentElement.classList.add('overlay-scrollbar-scope');
         document.body.classList.add('overlay-scrollbar-scope');

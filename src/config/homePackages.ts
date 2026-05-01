@@ -2,6 +2,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import { getManagedContentDirectory } from './appContentDirectories';
+import { loadManagedContentPackagesFromDirectoryStack } from './managedContentDirectoryStacks';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -506,25 +507,36 @@ export async function loadExplorerHomePacksFromDirectoryEntries(
 }
 
 export async function loadExplorerHomePacks(): Promise<ExplorerHomePackLoadResult> {
-  const directory = homePackSystemConfig.homePacksDirectory;
   if (!isTauri()) {
     return {
       packs: [],
-      directory,
+      directory: homePackSystemConfig.homePacksDirectory,
       warnings: [],
       sourceError: null,
     };
   }
 
-  try {
-    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
-    return loadExplorerHomePacksFromDirectoryEntries(entries, directory);
-  } catch (error) {
-    return {
-      packs: [],
-      directory,
-      warnings: [],
-      sourceError: String(error),
-    };
-  }
+  const result = await loadManagedContentPackagesFromDirectoryStack({
+    directoryId: 'homePacks',
+    loadFromDirectoryEntries: async (directoryEntries, directoryLabel) => {
+      const loaded = await loadExplorerHomePacksFromDirectoryEntries(
+        directoryEntries,
+        directoryLabel,
+      );
+      return {
+        packages: loaded.packs,
+        directory: loaded.directory,
+        warnings: loaded.warnings,
+        sourceError: loaded.sourceError,
+      };
+    },
+    getPackageId: (pack) => pack.id,
+  });
+
+  return {
+    packs: result.packages,
+    directory: result.directory,
+    warnings: result.warnings,
+    sourceError: result.sourceError,
+  };
 }

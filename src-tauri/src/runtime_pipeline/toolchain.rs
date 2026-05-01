@@ -16,6 +16,7 @@ pub struct RuntimeToolchainStatus {
     pub tinygo: ToolchainProbe,
     pub cargo: ToolchainProbe,
     pub rustc: ToolchainProbe,
+    pub wasm_bindgen: ToolchainProbe,
     pub cc: ToolchainProbe,
     pub python: ToolchainProbe,
     pub manifest_path: Option<String>,
@@ -49,6 +50,11 @@ pub fn probe_runtime_toolchains() -> RuntimeToolchainStatus {
         tinygo: probe_simple_command("tinygo", &["version"], parse_tinygo_version),
         cargo: probe_simple_command("cargo", &["--version"], parse_cargo_version),
         rustc: probe_simple_command("rustc", &["--version"], parse_rustc_version),
+        wasm_bindgen: probe_simple_command(
+            "wasm-bindgen",
+            &["--version"],
+            parse_wasm_bindgen_version,
+        ),
         cc: probe_simple_command("cc", &["--version"], parse_cc_version),
         python: probe_simple_command("python3", &["--version"], parse_python_version),
         manifest_path: locate_pinned_toolchain_manifest(),
@@ -179,6 +185,11 @@ fn parse_cc_version(output: &str) -> Option<String> {
         .filter(|line| !line.is_empty())
 }
 
+fn parse_wasm_bindgen_version(output: &str) -> Option<String> {
+    // `wasm-bindgen 0.2.95`
+    parse_cargo_version(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +231,14 @@ mod tests {
         assert_eq!(
             parse_rustc_version("rustc 1.88.0 (6b00bc388 2025-06-23)"),
             Some("1.88.0".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_wasm_bindgen_version_string() {
+        assert_eq!(
+            parse_wasm_bindgen_version("wasm-bindgen 0.2.95"),
+            Some("0.2.95".to_string())
         );
     }
 }

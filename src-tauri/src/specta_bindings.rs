@@ -145,6 +145,11 @@ use crate::video_engine::{
     VideoEngineLoadSourceRequest, VideoEngineLoopRegion, VideoEngineLoopRegionRequest,
     VideoEngineSeekRequest, VideoEngineStateEvent, VideoEngineStateSnapshot, VideoPlaybackBackend,
 };
+use crate::usr_profiles::{
+    UsrManagedContentDirectoryStack, UsrProfileChangedEvent, UsrProfileCreateRequest,
+    UsrProfileDeleteRequest, UsrProfileDuplicateRequest, UsrProfileRenameRequest,
+    UsrProfileRuntimeSnapshot, UsrProfileSummary,
+};
 use crate::vst_commands::{VstPluginEntry, VstScanPath, VstScanPathKind};
 use crate::vst_host_runtime::{
     VstEditorAttachMode, VstEditorHostRect, VstEditorSessionCreateRequest,
@@ -432,6 +437,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::startup_commands::startup_set_launch_at_startup,
             crate::startup_commands::startup_set_linux_display_backend_preference,
             crate::startup_commands::startup_set_linux_nvidia_webkit_workaround_mode,
+            crate::usr_profiles::usr_profiles_initialize,
+            crate::usr_profiles::usr_profiles_get_runtime_snapshot,
+            crate::usr_profiles::usr_profiles_persist_active_settings_snapshot,
+            crate::usr_profiles::usr_profiles_switch,
+            crate::usr_profiles::usr_profiles_create,
+            crate::usr_profiles::usr_profiles_duplicate,
+            crate::usr_profiles::usr_profiles_rename,
+            crate::usr_profiles::usr_profiles_delete,
             crate::storage_commands::storage_scan_start,
             crate::storage_commands::storage_scan_poll,
             crate::storage_commands::storage_scan_list_directory,
@@ -466,6 +479,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::video_engine::VideoEngineStateEvent,
             crate::terminal::TerminalShellIntegrationStateEvent,
             crate::gpu_runtime::GpuRuntimeStatusEvent,
+            crate::usr_profiles::UsrProfileChangedEvent,
             crate::telemetry::TelemetryRecordEvent
         ])
         .typ::<ShellBlueprint>()
@@ -733,6 +747,15 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<LinuxDisplayBackendPreference>()
         .typ::<LinuxDisplayBackendStatus>()
         .typ::<LinuxNvidiaWebkitWorkaroundMode>()
+        .typ::<crate::usr::UsrProfileLaneMode>()
+        .typ::<UsrProfileSummary>()
+        .typ::<UsrManagedContentDirectoryStack>()
+        .typ::<UsrProfileRuntimeSnapshot>()
+        .typ::<UsrProfileChangedEvent>()
+        .typ::<UsrProfileCreateRequest>()
+        .typ::<UsrProfileDuplicateRequest>()
+        .typ::<UsrProfileRenameRequest>()
+        .typ::<UsrProfileDeleteRequest>()
         .typ::<WaylandDockAnchor>()
         .typ::<WaylandDockHostStatus>()
         .typ::<VstScanPath>()

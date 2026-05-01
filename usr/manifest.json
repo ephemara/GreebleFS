@@ -6,209 +6,239 @@
       "relativeDirectory": "plugins",
       "envVarSuffix": "PLUGINS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "themes",
       "relativeDirectory": "themes",
       "envVarSuffix": "THEMES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "appearancePacks",
       "relativeDirectory": "appearance-packs",
       "envVarSuffix": "APPEARANCE_PACKS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "topBars",
       "relativeDirectory": "top-bars",
       "envVarSuffix": "TOP_BARS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "dockPresentations",
       "relativeDirectory": "dock-presentations",
       "envVarSuffix": "DOCK_PRESENTATIONS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerLayouts",
       "relativeDirectory": "explorer-layouts",
       "envVarSuffix": "EXPLORER_LAYOUTS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerChromeLayouts",
       "relativeDirectory": "explorer-chrome-layouts",
       "envVarSuffix": "EXPLORER_CHROME_LAYOUTS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerCustomizeControls",
       "relativeDirectory": "explorer-customize-controls",
       "envVarSuffix": "EXPLORER_CUSTOMIZE_CONTROLS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerModeProfiles",
       "relativeDirectory": "explorer-mode-profiles",
       "envVarSuffix": "EXPLORER_MODE_PROFILES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerShellLayouts",
       "relativeDirectory": "explorer-shell-layouts",
       "envVarSuffix": "EXPLORER_SHELL_LAYOUTS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerWorkspaceLayouts",
       "relativeDirectory": "explorer-workspace-layouts",
       "envVarSuffix": "EXPLORER_WORKSPACE_LAYOUTS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerExperimentalModes",
       "relativeDirectory": "explorer-experimental-modes",
       "envVarSuffix": "EXPLORER_EXPERIMENTAL_MODES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerZoomBehaviors",
       "relativeDirectory": "explorer-zoom-behaviors",
       "envVarSuffix": "EXPLORER_ZOOM_BEHAVIORS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "explorerPerformance",
       "relativeDirectory": "explorer-performance",
       "envVarSuffix": "EXPLORER_PERFORMANCE",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "homePacks",
       "relativeDirectory": "home-packs",
       "envVarSuffix": "HOME_PACKS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "menuPacks",
       "relativeDirectory": "menu-packs",
       "envVarSuffix": "MENU_PACKS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "actions",
       "relativeDirectory": "actions",
       "envVarSuffix": "ACTIONS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "runtimes",
       "relativeDirectory": "runtimes",
       "envVarSuffix": "RUNTIMES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "iconThemes",
       "relativeDirectory": "icon-themes",
       "envVarSuffix": "ICON_THEMES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "interactionMotionPacks",
       "relativeDirectory": "interaction-motion",
       "envVarSuffix": "INTERACTION_MOTION",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "layoutDynamics",
       "relativeDirectory": "layout-dynamics",
       "envVarSuffix": "LAYOUT_DYNAMICS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "hotkeys",
       "relativeDirectory": "hotkeys",
       "envVarSuffix": "HOTKEYS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
     },
     {
       "id": "soundPacks",
       "relativeDirectory": "sound-packs",
       "envVarSuffix": "SOUND_PACKS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "shaders",
       "relativeDirectory": "shaders",
       "envVarSuffix": "SHADERS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "animations",
       "relativeDirectory": "animations",
       "envVarSuffix": "ANIMATIONS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "wallpapers",
       "relativeDirectory": "wallpapers",
       "envVarSuffix": "WALLPAPERS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "shellRenderers",
       "relativeDirectory": "shell-renderers",
       "envVarSuffix": "SHELL_RENDERERS",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "themeRecipes",
       "relativeDirectory": "theme-recipes",
       "envVarSuffix": "THEME_RECIPES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "themeEngines",
       "relativeDirectory": "theme-engines",
       "envVarSuffix": "THEME_ENGINES",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     },
     {
       "id": "domain",
       "relativeDirectory": "domain",
       "bundled": true,
-      "bootstrapToManagedRoot": true
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
     }
   ]
 }

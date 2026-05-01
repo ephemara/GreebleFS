@@ -1,14 +1,15 @@
 //! Universal polyglot runtime pipeline.
 //!
 //! Generalizes the Python sidecar pattern into a shared system that hosts
-//! `python-sidecar`, `go-native`, `go-js-wasm`, and `tinygo-wasm` packages
+//! `python-sidecar`, `go-native`, `go-js-wasm`, `tinygo-wasm`, and
+//! `cargo-wasm-bindgen` packages
 //! through a single manifest contract (`runtime.toml`).
 //!
 //! - `manifest`   — typed `runtime.toml` parser/normalizer.
 //! - `discovery`  — root walking for builtin + managed-content runtimes.
 //! - `cache`      — content-addressed compile/build cache keyed by id +
 //!                  toolchain version + source signature + target + mode.
-//! - `toolchain`  — Go/TinyGo/Python presence probing (best-effort, host-side).
+//! - `toolchain`  — Go/TinyGo/Rust/Python presence probing (best-effort, host-side).
 //! - `sidecar`    — long-lived stdio JSON-lines child lifecycle.
 //! - `command`    — short-lived `runtime_run_command` execution.
 //! - `tui`        — routes a runtime into the existing terminal infra.

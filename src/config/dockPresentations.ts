@@ -3,6 +3,7 @@ import { parse as parseToml } from 'smol-toml';
 
 import shippedBuiltInDockPresentationManifestJson from '../../usr/dock-presentations/greeblefs-core/dock-presentation.json';
 import { getManagedContentDirectory } from './appContentDirectories';
+import { loadManagedContentPackagesFromDirectoryStack } from './managedContentDirectoryStacks';
 import {
   overlayWindowGeometry,
   type OverlayWindowBounds,
@@ -840,25 +841,18 @@ export async function loadDockPresentationPackagesFromDirectoryEntries(
 }
 
 export async function loadDockPresentationPackages(): Promise<DockPresentationPackageLoadResult> {
-  const directory = dockPresentationSystemConfig.dockPresentationsDirectory;
   if (!isTauri()) {
     return {
       packages: [],
-      directory,
+      directory: dockPresentationSystemConfig.dockPresentationsDirectory,
       warnings: [],
       sourceError: null,
     };
   }
 
-  try {
-    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
-    return loadDockPresentationPackagesFromDirectoryEntries(entries, directory);
-  } catch (error) {
-    return {
-      packages: [],
-      directory,
-      warnings: [],
-      sourceError: String(error),
-    };
-  }
+  return loadManagedContentPackagesFromDirectoryStack({
+    directoryId: 'dockPresentations',
+    loadFromDirectoryEntries: loadDockPresentationPackagesFromDirectoryEntries,
+    getPackageId: (pkg) => pkg.id,
+  });
 }

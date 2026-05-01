@@ -1,11 +1,14 @@
 import shippedUsrManifestJson from '../../usr/manifest.json';
 
+export type GreebleUsrProfileMode = 'shared-root' | 'profile-overlay';
+
 export interface GreebleUsrManifestEntry {
   id: string;
   relativeDirectory: string;
   envVarSuffix?: string;
   bundled: boolean;
   bootstrapToManagedRoot: boolean;
+  profileMode: GreebleUsrProfileMode;
 }
 
 export interface GreebleUsrManifest {
@@ -24,6 +27,10 @@ function normalizeUsrManifestEntry(entry: GreebleUsrManifestEntry): GreebleUsrMa
       : undefined,
     bundled: entry.bundled !== false,
     bootstrapToManagedRoot: entry.bootstrapToManagedRoot !== false,
+    profileMode:
+      entry.profileMode === 'profile-overlay'
+        ? 'profile-overlay'
+        : 'shared-root',
   };
 }
 

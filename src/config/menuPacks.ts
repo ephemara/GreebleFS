@@ -2,6 +2,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import { getManagedContentDirectory } from './appContentDirectories';
+import { loadManagedContentPackagesFromDirectoryStack } from './managedContentDirectoryStacks';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import {
@@ -562,25 +563,36 @@ export async function loadExplorerMenuPacksFromDirectoryEntries(
 }
 
 export async function loadExplorerMenuPacks(): Promise<ExplorerMenuPackLoadResult> {
-  const directory = menuPackSystemConfig.menuPacksDirectory;
   if (!isTauri()) {
     return {
       packs: mergeExplorerMenuPacksWithBuiltInFallback([]),
-      directory,
+      directory: menuPackSystemConfig.menuPacksDirectory,
       warnings: [],
       sourceError: null,
     };
   }
 
-  try {
-    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
-    return loadExplorerMenuPacksFromDirectoryEntries(entries, directory);
-  } catch (error) {
-    return {
-      packs: mergeExplorerMenuPacksWithBuiltInFallback([]),
-      directory,
-      warnings: [],
-      sourceError: String(error),
-    };
-  }
+  const result = await loadManagedContentPackagesFromDirectoryStack({
+    directoryId: 'menuPacks',
+    loadFromDirectoryEntries: async (directoryEntries, directoryLabel) => {
+      const loaded = await loadExplorerMenuPacksFromDirectoryEntries(
+        directoryEntries,
+        directoryLabel,
+      );
+      return {
+        packages: loaded.packs,
+        directory: loaded.directory,
+        warnings: loaded.warnings,
+        sourceError: loaded.sourceError,
+      };
+    },
+    getPackageId: (pack) => pack.id,
+  });
+
+  return {
+    packs: result.packages,
+    directory: result.directory,
+    warnings: result.warnings,
+    sourceError: result.sourceError,
+  };
 }

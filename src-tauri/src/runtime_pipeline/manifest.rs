@@ -70,6 +70,9 @@ pub enum RuntimeCompiler {
     GoJsWasm,
     /// `tinygo build -target wasm` for size-constrained workers/panels.
     TinygoWasm,
+    /// `cargo build --target wasm32-unknown-unknown` followed by
+    /// `wasm-bindgen --target web` for Rust-authored browser/webview runtimes.
+    CargoWasmBindgen,
     /// The legacy Python sidecar lane, migrated onto this manifest.
     PythonSidecar,
 }
@@ -88,6 +91,7 @@ impl RuntimeCompiler {
             RuntimeCompiler::CNative => "c-native",
             RuntimeCompiler::GoJsWasm => "go-js-wasm",
             RuntimeCompiler::TinygoWasm => "tinygo-wasm",
+            RuntimeCompiler::CargoWasmBindgen => "cargo-wasm-bindgen",
             RuntimeCompiler::PythonSidecar => "python-sidecar",
         }
     }
@@ -112,7 +116,9 @@ impl RuntimeCompiler {
     pub fn produces_wasm(&self) -> bool {
         matches!(
             self,
-            RuntimeCompiler::GoJsWasm | RuntimeCompiler::TinygoWasm
+            RuntimeCompiler::GoJsWasm
+                | RuntimeCompiler::TinygoWasm
+                | RuntimeCompiler::CargoWasmBindgen
         )
     }
 }
@@ -354,7 +360,9 @@ impl RuntimeManifest {
         let display_name = raw.display_name.unwrap_or_else(|| raw.id.clone());
         let language = raw.language.unwrap_or_else(|| match raw.compiler {
             RuntimeCompiler::PythonSidecar => "python".to_string(),
-            RuntimeCompiler::CargoNative => "rust".to_string(),
+            RuntimeCompiler::CargoNative | RuntimeCompiler::CargoWasmBindgen => {
+                "rust".to_string()
+            }
             RuntimeCompiler::CNative => "c".to_string(),
             _ => "go".to_string(),
         });
@@ -423,8 +431,10 @@ fn validate_kind_compiler_pairing(
         | (RuntimeKind::WasmPanel, RuntimeCompiler::GoJsWasm)
         | (RuntimeKind::WasmPanel, RuntimeCompiler::TinygoWasm)
         | (RuntimeKind::WasmPanel, RuntimeCompiler::GoNative)
+        | (RuntimeKind::WasmPanel, RuntimeCompiler::CargoWasmBindgen)
         | (RuntimeKind::WasmWorker, RuntimeCompiler::GoJsWasm)
-        | (RuntimeKind::WasmWorker, RuntimeCompiler::TinygoWasm) => true,
+        | (RuntimeKind::WasmWorker, RuntimeCompiler::TinygoWasm)
+        | (RuntimeKind::WasmWorker, RuntimeCompiler::CargoWasmBindgen) => true,
         _ => false,
     };
     if ok {

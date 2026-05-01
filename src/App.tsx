@@ -31,9 +31,11 @@ import {
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
   getManagedContentDirectory,
+  getManagedContentPrimaryDirectory,
   managedContentDirectoryCatalog,
   type ManagedContentDirectoryId,
 } from './config/appContentDirectories';
+import { buildManagedContentDirectoryStackSignature } from './config/managedContentDirectoryStacks';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
   groupPanelsForWorkbenchNavigation,
@@ -330,6 +332,12 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
+import {
+  getUsrProfileRuntimeRevision,
+  getUsrProfileRuntimeSnapshot,
+  installUsrProfileSettingsPersistence,
+  subscribeToUsrProfileRuntime,
+} from './runtime/usrProfiles';
 import { useExplorerStore } from './store/explorerStore';
 import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
 import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
@@ -889,6 +897,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [actionPacksLoading, setActionPacksLoading] = useState(true);
   const [actionPacksError, setActionPacksError] = useState<string | null>(null);
   const [actionPacksWarnings, setActionPacksWarnings] = useState<string[]>([]);
+  const [usrProfileRuntimeSnapshot, setUsrProfileRuntimeSnapshot] =
+    useState(getUsrProfileRuntimeSnapshot);
+  const [usrProfileRuntimeRevision, setUsrProfileRuntimeRevision] = useState(
+    getUsrProfileRuntimeRevision,
+  );
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -900,6 +913,15 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   useExplorerTaskProgressFeed();
   const explorerTaskTransitionReadyRef = useRef(false);
   const previousExplorerTasksByIdRef = useRef<Record<string, ExplorerTaskSnapshot>>({});
+  const hasAppliedUsrProfileRefreshRef = useRef(false);
+
+  useEffect(() => {
+    void installUsrProfileSettingsPersistence();
+    return subscribeToUsrProfileRuntime((snapshot) => {
+      setUsrProfileRuntimeSnapshot(snapshot);
+      setUsrProfileRuntimeRevision(getUsrProfileRuntimeRevision());
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -3778,12 +3800,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
         setHomePacksLoading((prev) => prev && !nextForce);
         try {
-          await ensureDir(homePackSystemConfig.homePacksDirectory);
-          const listed = await listExplorerDir(homePackSystemConfig.homePacksDirectory, false);
-          const nextSignature = listed
-            .map((entry) => `${entry.path}:${entry.modified}`)
-            .sort()
-            .join('|');
+          await ensureDir(getManagedContentPrimaryDirectory('homePacks'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature('homePacks');
 
           if (!nextForce && nextSignature === homePacksSignatureRef.current) {
             setHomePacksLoading(false);
@@ -3838,15 +3856,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
         setMenuPacksLoading((prev) => prev && !nextForce);
         try {
-          await ensureDir(menuPackSystemConfig.menuPacksDirectory);
-          const listed = await listExplorerDir(
-            menuPackSystemConfig.menuPacksDirectory,
-            false,
-          );
-          const nextSignature = listed
-            .map((entry) => `${entry.path}:${entry.modified}`)
-            .sort()
-            .join('|');
+          await ensureDir(getManagedContentPrimaryDirectory('menuPacks'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature('menuPacks');
 
           if (!nextForce && nextSignature === menuPacksSignatureRef.current) {
             setMenuPacksLoading(false);
@@ -4030,12 +4041,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
         setTopBarPackagesLoading(prev => prev && !nextForce);
         try {
-          await ensureDir(topBarSystemConfig.topBarsDirectory);
-          const listed = await listExplorerDir(topBarSystemConfig.topBarsDirectory, false);
-          const nextSignature = listed
-            .map(entry => `${entry.path}:${entry.modified}`)
-            .sort()
-            .join('|');
+          await ensureDir(getManagedContentPrimaryDirectory('topBars'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature('topBars');
 
           if (!nextForce && nextSignature === topBarPackagesSignatureRef.current) {
             setTopBarPackagesLoading(false);
@@ -4090,15 +4097,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
         setDockPresentationPackagesLoading(prev => prev && !nextForce);
         try {
-          await ensureDir(dockPresentationSystemConfig.dockPresentationsDirectory);
-          const listed = await listExplorerDir(
-            dockPresentationSystemConfig.dockPresentationsDirectory,
-            false,
+          await ensureDir(getManagedContentPrimaryDirectory('dockPresentations'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature(
+            'dockPresentations',
           );
-          const nextSignature = listed
-            .map(entry => `${entry.path}:${entry.modified}`)
-            .sort()
-            .join('|');
 
           if (!nextForce && nextSignature === dockPresentationPackagesSignatureRef.current) {
             setDockPresentationPackagesLoading(false);
@@ -4153,12 +4155,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
         setExplorerLayoutPackagesLoading(prev => prev && !nextForce);
         try {
-          await ensureDir(explorerLayoutSystemConfig.explorerLayoutsDirectory);
-          const listed = await listExplorerDir(explorerLayoutSystemConfig.explorerLayoutsDirectory, false);
-          const nextSignature = listed
-            .map(entry => `${entry.path}:${entry.modified}`)
-            .sort()
-            .join('|');
+          await ensureDir(getManagedContentPrimaryDirectory('explorerLayouts'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature(
+            'explorerLayouts',
+          );
 
           if (!nextForce && nextSignature === explorerLayoutPackagesSignatureRef.current) {
             setExplorerLayoutPackagesLoading(false);
@@ -4183,6 +4183,30 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!hasAppliedUsrProfileRefreshRef.current) {
+      hasAppliedUsrProfileRefreshRef.current = true;
+      return;
+    }
+
+    void Promise.all([
+      refreshTopBarPackages(true),
+      refreshDockPresentationPackages(true),
+      refreshExplorerLayoutPackages(true),
+      refreshHomePacks(true),
+      refreshMenuPacks(true),
+      refreshFolderPlugins(true),
+    ]);
+  }, [
+    usrProfileRuntimeRevision,
+    refreshDockPresentationPackages,
+    refreshExplorerLayoutPackages,
+    refreshFolderPlugins,
+    refreshHomePacks,
+    refreshMenuPacks,
+    refreshTopBarPackages,
+  ]);
+
   const refreshTopBarCatalog = useCallback(async () => {
     await Promise.all([
       refreshTopBarPackages(true),
@@ -4202,7 +4226,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
-    const directoryPath = getManagedContentDirectory(directoryId);
+    const directoryPath = getManagedContentPrimaryDirectory(directoryId);
     await ensureDir(directoryPath);
     await openExplorerPath(directoryPath);
   }, []);

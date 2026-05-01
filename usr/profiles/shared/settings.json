@@ -1,0 +1,87 @@
+{
+  "mobile": {
+    "layout": {
+      "chromeScale": 1.08,
+      "directoriesFirst": true,
+      "gridZoom": 1,
+      "interfaceScale": 1.05,
+      "pagePadding": 16,
+      "showHiddenFiles": false,
+      "showTabLabels": true,
+      "sortBy": "name",
+      "sortOrder": "asc",
+      "touchComfort": "comfortable",
+      "viewMode": "icons-m"
+    },
+    "remoteAccessMode": "tailscale",
+    "tailscaleHostname": "",
+    "tailscaleLoginServer": ""
+  },
+  "models": {
+    "capabilityBindings": {
+      "image-cutout": {
+        "backendPreference": "cuda",
+        "modelId": "image-cutout-sam2-small"
+      },
+      "local-inference": {
+        "backendPreference": "auto",
+        "modelId": null
+      },
+      "semantic-indexing": {
+        "backendPreference": "auto",
+        "modelId": "image-cutout-sam2-small"
+      },
+      "source-separation": {
+        "backendPreference": "cuda",
+        "modelId": null
+      }
+    },
+    "semanticIndexRootOverrides": {}
+  },
+  "polygemini": {
+    "autoStart": false,
+    "defaultModel": "gemini-2.5-flash",
+    "maxTokens": 8192,
+    "serverPort": 8090,
+    "serverUrl": "http://localhost",
+    "temperature": 0.7
+  },
+  "python": {
+    "autoUpgradePip": true,
+    "bootstrapPackages": "",
+    "createBoilerplate": true,
+    "preferredInterpreterPath": "",
+    "runtimeRoot": ""
+  },
+  "screenshots": {
+    "closeEditorAfterAction": true,
+    "defaultCaptureMode": "region",
+    "defaultOutputAction": "save-copy",
+    "saveDirectory": "Screenshots",
+    "showGrid": true
+  },
+  "system": {
+    "accelerationRoutingMode": "preferCuda",
+    "consumerDiagnosticsEnabled": false,
+    "consumerDiagnosticsIncludePerfSamples": false,
+    "consumerDiagnosticsIncludePluginRuntime": false,
+    "consumerDiagnosticsIncludeRendererRuntime": false,
+    "devTelemetryHudVisible": false,
+    "developerMode": false,
+    "developerTelemetryCaptureMode": "raw",
+    "developerTelemetryEnabled": false,
+    "developerTelemetryMaxFileSizeMb": 64,
+    "developerTelemetryPayloadMode": "metadata+small-payloads",
+    "developerTelemetryShowInspector": false,
+    "developerTelemetryWriteToFile": false,
+    "developerTestSettingsEnabled": false,
+    "gpuTierMode": "discrete",
+    "hideAppInTray": false,
+    "launchAtStartup": false,
+    "linuxDisplayBackendPreference": "auto",
+    "linuxNvidiaWebkitWorkaroundMode": "auto",
+    "showInTaskbar": true,
+    "sourceTraceModeEnabled": false,
+    "startMobileShareOnBoot": false
+  }
+}

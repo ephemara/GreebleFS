@@ -1,0 +1,19 @@
+{
+  "id": "default",
+  "name": "Default",
+  "overrideSlices": [
+    "editor",
+    "presentation",
+    "dock",
+    "terminal",
+    "explorer",
+    "home",
+    "appearance",
+    "keybindings",
+    "layout",
+    "audio",
+    "plugins"
+  ],
+  "createdAtMs": 1777610292718,
+  "updatedAtMs": 1777610292718
+}

@@ -55,8 +55,11 @@ export interface OverlayPluginPreviewLaneDescriptor {
   pluginName: string;
   title: string;
   priority: number;
-  rendererEntry: string;
+  rendererKind: 'react' | 'wasm-panel';
+  rendererEntry: string | null;
   runtimeId: string | null;
+  runtimeSurfaceId: string | null;
+  buildTarget: string | null;
   match: OverlayPluginPreviewLaneMatchRule;
   capabilities: OverlayPluginPreviewLaneCapabilityFlags;
   workbenchChrome: ExplorerPreviewWorkbenchChromeMetadata;

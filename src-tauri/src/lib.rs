@@ -92,6 +92,8 @@ pub mod url_drop;
 #[cfg(not(test))]
 pub mod usr;
 #[cfg(not(test))]
+pub mod usr_profiles;
+#[cfg(not(test))]
 pub mod video_commands;
 #[cfg(not(test))]
 pub mod video_engine;

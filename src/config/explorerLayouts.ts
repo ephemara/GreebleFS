@@ -3,6 +3,10 @@ import { mkdir, writeTextFile } from '@tauri-apps/plugin-fs';
 import { parse as parseToml } from 'smol-toml';
 
 import { getManagedContentDirectory } from './appContentDirectories';
+import {
+  getManagedContentWritableDirectory,
+  loadManagedContentPackagesFromDirectoryStack,
+} from './managedContentDirectoryStacks';
 import { normalizeExplorerChromeOverrideSnapshot, type ExplorerChromeOverrideSnapshot } from './explorerChromeLayouts';
 import { defaultExplorerModeProfileId, normalizeExplorerModeProfileId, type ExplorerModeProfileId } from './explorerModeProfiles';
 import { getExplorerRailWidthBounds } from './explorerRail';
@@ -648,27 +652,20 @@ export async function loadExplorerLayoutPackagesFromDirectoryEntries(
 }
 
 export async function loadExplorerLayoutPackages(): Promise<ExplorerLayoutPackageLoadResult> {
-  const directory = explorerLayoutSystemConfig.explorerLayoutsDirectory;
   if (!isTauri()) {
     return {
       packages: [],
-      directory,
+      directory: explorerLayoutSystemConfig.explorerLayoutsDirectory,
       warnings: [],
       sourceError: null,
     };
   }
 
-  try {
-    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
-    return loadExplorerLayoutPackagesFromDirectoryEntries(entries, directory);
-  } catch (error) {
-    return {
-      packages: [],
-      directory,
-      warnings: [],
-      sourceError: String(error),
-    };
-  }
+  return loadManagedContentPackagesFromDirectoryStack({
+    directoryId: 'explorerLayouts',
+    loadFromDirectoryEntries: loadExplorerLayoutPackagesFromDirectoryEntries,
+    getPackageId: (pkg) => pkg.id,
+  });
 }
 
 export function getBuiltInExplorerLayouts(): LoadedExplorerLayoutDefinition[] {
@@ -730,7 +727,7 @@ export async function saveUserExplorerLayout(
     },
   );
   const targetDirectory = joinPlatformPath(
-    explorerLayoutSystemConfig.explorerLayoutsDirectory,
+    getManagedContentWritableDirectory('explorerLayouts'),
     loadedLayout.localId,
   );
   const targetManifestPath = joinPlatformPath(targetDirectory, 'explorer-layout.json');

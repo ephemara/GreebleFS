@@ -7,6 +7,7 @@ import {
   type OverlayTopBarDefinition,
 } from './topBars';
 import { getManagedContentDirectory } from './appContentDirectories';
+import { loadManagedContentPackagesFromDirectoryStack } from './managedContentDirectoryStacks';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -333,25 +334,18 @@ export async function loadTopBarPackagesFromDirectoryEntries(
 }
 
 export async function loadTopBarPackages(): Promise<TopBarPackageLoadResult> {
-  const directory = topBarSystemConfig.topBarsDirectory;
   if (!isTauri()) {
     return {
       packages: [],
-      directory,
+      directory: topBarSystemConfig.topBarsDirectory,
       warnings: [],
       sourceError: null,
     };
   }
 
-  try {
-    const entries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
-    return loadTopBarPackagesFromDirectoryEntries(entries, directory);
-  } catch (error) {
-    return {
-      packages: [],
-      directory,
-      warnings: [],
-      sourceError: String(error),
-    };
-  }
+  return loadManagedContentPackagesFromDirectoryStack({
+    directoryId: 'topBars',
+    loadFromDirectoryEntries: loadTopBarPackagesFromDirectoryEntries,
+    getPackageId: (pkg) => pkg.id,
+  });
 }
