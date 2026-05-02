@@ -6619,3 +6619,12 @@
   - `crates/tauri-plugins/_template/integration-notes.md` is the minimum per-plugin record for upstream revision, vendoring reason, GreebleFS boundary, local changes, and validation.
 - Durable product rule:
   - Keep plugin source dormant until needed. When activating a plugin, wire it through root Cargo workspace membership, a `src-tauri/Cargo.toml` path dependency, `src-tauri/src/lib.rs` registration, `src-tauri/capabilities/default.json` permissions, and a host-owned frontend runtime wrapper if guest JS APIs are exposed.
+# 2026-05-02 - Reference source deep scan
+
+Deep-scanned `reference/src` with a focus on file I/O, import/export, and filesystem plumbing. The highest-signal layers are:
+
+- `file/`: `fiDevice` mount/routing and bulk I/O, `fiStream` buffered stream wrapper, `fiAssetManager` logical path resolution, `fiPackfile` RPF7 archive device, `fiRpf7Builder` archive writer, `fiZipfile` read-only zip device, `fiSavegame` async save/load state machine, and `fiRemoteServer` remote file bridge.
+- `xmldata/`: XML import/export pipeline is `xmlAsciiTokenizerXml` -> `aDataStruct::LoadXML/SaveXML` -> per-type `aDataType` serializers in `datatypes.cpp`.
+- `data/`: generic serialization helpers in `serialize.h`, resource relocation/fixup in `resource.h`, plus supporting compression/crypto helpers.
+
+Created `reference/src/README.md` as a durable map of the tree with a focus on the parts most reusable for GreebleFS. The main patterns worth borrowing are explicit device-prefix routing, asset-root resolution, bulk reads for archive content, schema-driven XML import/export, and state-machine style save/load flows.
