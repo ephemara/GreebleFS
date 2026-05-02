@@ -6628,3 +6628,15 @@ Deep-scanned `reference/src` with a focus on file I/O, import/export, and filesy
 - `data/`: generic serialization helpers in `serialize.h`, resource relocation/fixup in `resource.h`, plus supporting compression/crypto helpers.
 
 Created `reference/src/README.md` as a durable map of the tree with a focus on the parts most reusable for GreebleFS. The main patterns worth borrowing are explicit device-prefix routing, asset-root resolution, bulk reads for archive content, schema-driven XML import/export, and state-machine style save/load flows.
+# 2026-05-02 - Alien code scan
+
+Deep-scanned `reference/src` again with a bias toward the weird, high-leverage systems that are more interesting than ordinary file I/O. The strongest reusable finds were:
+
+- `net/task2.h`: lambda-based async task graph with continuations, child tasks, cancellation propagation, and main-thread vs worker-thread routing.
+- `system/task.h` / `system/threadpool.h` / `system/task_spu.h`: explicit task manager, worker pool, scheduler classes, and SPU job plumbing with DMA-style staging.
+- `vectormath/`: modernized SIMD/SoA vector-matrix math library with strong platform specialization.
+- `system/virtualallocator.h`: 64K page-oriented allocator with virtual/physical separation and memtype tagging.
+- `audioengine/ambisonics.h`, `audiohardware/granularsubmix.cpp`, `audiohardware/waveslot.cpp`: advanced audio graph code with ambisonic decoding, granular synthesis, streaming wave-slot management, batching, and cache tables.
+- `zlib/inflateServer.cpp`: dedicated service-style SPU decompression pipeline.
+
+Created `reference/src/ALIEN_CODE.md` as a curated map of the above with a bias toward what GreebleFS can actually borrow from it. The most important pattern to carry forward is task-graph orchestration with cancellation and explicit worker routing; the rest is mostly inspiration for staging, caching, and high-throughput math.
