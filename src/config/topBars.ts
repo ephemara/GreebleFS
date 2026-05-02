@@ -1,4 +1,4 @@
-import shippedBuiltInTopBarManifestJson from "../../usr/top-bars/greeblefs-core/top-bar.json";
+import shippedBuiltInTopBarManifestJson from "../../usr/profiles/default/top-bars/greeblefs-core/top-bar.json";
 import type {
   OverlayWorkbenchChromeStyle,
   OverlayWorkbenchTabStyle,

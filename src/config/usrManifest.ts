@@ -1,6 +1,8 @@
 import shippedUsrManifestJson from '../../usr/manifest.json';
 
 export type GreebleUsrProfileMode = 'shared-root' | 'profile-overlay';
+export const DEFAULT_USR_PROFILE_ID = 'default';
+const USR_PROFILES_DIRECTORY_NAME = 'profiles';
 
 export interface GreebleUsrManifestEntry {
   id: string;
@@ -62,4 +64,35 @@ export const LEGACY_MANAGED_CONTENT_ROOT_ENV_VAR = 'OVERLAYTERM_MANAGED_CONTENT_
 
 export function getGreebleUsrManifestEntry(entryId: string): GreebleUsrManifestEntry | null {
   return greebleUsrManifestEntryLookup.get(entryId) ?? null;
+}
+
+export function buildGreebleUsrProfileRelativeDirectory(
+  profileId: string,
+  relativeDirectory: string,
+): string {
+  const normalizedProfileId = profileId.trim() || DEFAULT_USR_PROFILE_ID;
+  const normalizedRelativeDirectory = relativeDirectory
+    .trim()
+    .replace(/^[\\/]+/, '')
+    .replace(/[\\/]+$/, '');
+  return `${USR_PROFILES_DIRECTORY_NAME}/${normalizedProfileId}/${normalizedRelativeDirectory}`;
+}
+
+export function getGreebleUsrShippedRelativeDirectory(
+  entryOrId: GreebleUsrManifestEntry | string,
+): string {
+  const manifestEntry =
+    typeof entryOrId === 'string'
+      ? getGreebleUsrManifestEntry(entryOrId)
+      : entryOrId;
+  if (!manifestEntry) {
+    return typeof entryOrId === 'string' ? entryOrId : '';
+  }
+
+  return manifestEntry.profileMode === 'profile-overlay'
+    ? buildGreebleUsrProfileRelativeDirectory(
+        DEFAULT_USR_PROFILE_ID,
+        manifestEntry.relativeDirectory,
+      )
+    : manifestEntry.relativeDirectory;
 }

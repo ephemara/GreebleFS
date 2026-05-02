@@ -1,4 +1,4 @@
-import shippedExplorerWorkspaceLayoutManifestJson from "../../usr/explorer-workspace-layouts/greeblefs-core/explorer-workspace-layout.json";
+import shippedExplorerWorkspaceLayoutManifestJson from "../../usr/profiles/default/explorer-workspace-layouts/greeblefs-core/explorer-workspace-layout.json";
 
 export type ExplorerPaneId = "pane-1" | "pane-2" | "pane-3" | "pane-4";
 export type ExplorerWorkspaceLayoutMode =

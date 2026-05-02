@@ -1,4 +1,4 @@
-import shippedHotkeyManifestJson from "../../usr/hotkeys/greeblefs-core/hotkeys.json";
+import shippedHotkeyManifestJson from "../../usr/profiles/default/hotkeys/greeblefs-core/hotkeys.json";
 export type HotkeyBindingKey =
   | "toggleDeveloperTelemetryHud"
   | "commandPalette"

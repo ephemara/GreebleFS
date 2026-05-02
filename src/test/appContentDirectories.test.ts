@@ -11,19 +11,19 @@ describe('managed content directories', () => {
   });
 
   it('defaults icon-theme storage to a portable managed directory name', () => {
-    expect(getManagedContentDirectory('iconThemes')).toBe('icon-themes');
+    expect(getManagedContentDirectory('iconThemes')).toBe('usr/icon-themes');
   });
 
   it('defaults top-bar storage to a portable managed directory name', () => {
-    expect(getManagedContentDirectory('topBars')).toBe('top-bars');
+    expect(getManagedContentDirectory('topBars')).toBe('usr/profiles/default/top-bars');
   });
 
   it('defaults menu-pack storage to a portable managed directory name', () => {
-    expect(getManagedContentDirectory('menuPacks')).toBe('menu-packs');
+    expect(getManagedContentDirectory('menuPacks')).toBe('usr/profiles/default/menu-packs');
   });
 
   it('defaults action storage to a portable managed directory name', () => {
-    expect(getManagedContentDirectory('actions')).toBe('actions');
+    expect(getManagedContentDirectory('actions')).toBe('usr/actions');
   });
 
   it('respects a notes directory override', () => {

@@ -1,7 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
-import shippedBuiltInDockPresentationManifestJson from '../../usr/dock-presentations/greeblefs-core/dock-presentation.json';
+import shippedBuiltInDockPresentationManifestJson from '../../usr/profiles/default/dock-presentations/greeblefs-core/dock-presentation.json';
 import { getManagedContentDirectory } from './appContentDirectories';
 import { loadManagedContentPackagesFromDirectoryStack } from './managedContentDirectoryStacks';
 import {

@@ -1,4 +1,4 @@
-import shippedExplorerZoomBehaviorManifestJson from "../../usr/explorer-zoom-behaviors/greeblefs-core/explorer-zoom-behavior.json";
+import shippedExplorerZoomBehaviorManifestJson from "../../usr/profiles/default/explorer-zoom-behaviors/greeblefs-core/explorer-zoom-behavior.json";
 
 export type ExplorerZoomGridAnchorId =
   | "icons-xl"

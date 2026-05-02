@@ -77,7 +77,7 @@ describe('top bar selection', () => {
       },
       {
         source: 'top-bar-package',
-        sourceLabel: 'usr/top-bars',
+        sourceLabel: 'usr/profiles/default/top-bars',
         sourcePackageId: 'greeblefs-core-top-bars',
       },
     );
@@ -104,7 +104,7 @@ describe('top bar selection', () => {
       },
       {
         source: 'top-bar-package',
-        sourceLabel: 'usr/top-bars',
+        sourceLabel: 'usr/profiles/default/top-bars',
       },
     );
 

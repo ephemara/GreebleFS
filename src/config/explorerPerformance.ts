@@ -1,4 +1,4 @@
-import shippedExplorerPerformanceManifestJson from "../../usr/explorer-performance/greeblefs-core/explorer-performance.json";
+import shippedExplorerPerformanceManifestJson from "../../usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json";
 
 export interface ExplorerFolderActivationPerformance {
   doubleClickPreviewPrimeDelayMs: number;

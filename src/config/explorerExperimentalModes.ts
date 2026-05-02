@@ -1,4 +1,4 @@
-import shippedExplorerExperimentalModeManifestJson from "../../usr/explorer-experimental-modes/greeblefs-core/explorer-experimental-mode.json";
+import shippedExplorerExperimentalModeManifestJson from "../../usr/profiles/default/explorer-experimental-modes/greeblefs-core/explorer-experimental-mode.json";
 
 export type ExplorerExperimentalViewMode =
   | "off"

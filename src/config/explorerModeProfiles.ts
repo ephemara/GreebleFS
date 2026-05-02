@@ -1,4 +1,4 @@
-import shippedExplorerModeProfileManifestJson from "../../usr/explorer-mode-profiles/greeblefs-core/explorer-mode-profile.json";
+import shippedExplorerModeProfileManifestJson from "../../usr/profiles/default/explorer-mode-profiles/greeblefs-core/explorer-mode-profile.json";
 import {
   getExplorerShellLayoutDefinition,
   type ExplorerShellLayoutId,

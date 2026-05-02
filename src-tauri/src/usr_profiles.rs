@@ -8,10 +8,14 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event;
 
-use crate::usr::{load_usr_manifest, resolve_bundled_usr_root, resolve_shared_usr_root, UsrProfileLaneMode};
+use crate::usr::{
+    build_usr_profile_relative_directory, load_usr_manifest, resolve_bundled_usr_root,
+    resolve_shared_usr_root, resolve_shipped_usr_entry_relative_directory, DEFAULT_USR_PROFILE_ID,
+    UsrProfileLaneMode,
+};
 
 const PROFILE_CATALOG_VERSION: u32 = 1;
-const DEFAULT_PROFILE_ID: &str = "default";
+const DEFAULT_PROFILE_ID: &str = DEFAULT_USR_PROFILE_ID;
 const DEFAULT_PROFILE_NAME: &str = "Default";
 const PROFILES_DIRECTORY_NAME: &str = "profiles";
 const SHARED_DIRECTORY_NAME: &str = "shared";
@@ -187,6 +191,17 @@ fn profile_settings_path(shared_usr_root: &Path, profile_id: &str) -> PathBuf {
     profile_directory(shared_usr_root, profile_id).join(PROFILE_SETTINGS_FILE_NAME)
 }
 
+fn default_profile_overlay_directory(shared_usr_root: &Path, relative_directory: &str) -> PathBuf {
+    shared_usr_root.join(build_usr_profile_relative_directory(
+        DEFAULT_PROFILE_ID,
+        relative_directory,
+    ))
+}
+
+fn legacy_profile_overlay_root_directory(shared_usr_root: &Path, relative_directory: &str) -> PathBuf {
+    shared_usr_root.join(relative_directory)
+}
+
 fn normalize_profile_id_fragment(value: &str) -> String {
     let mut normalized = String::with_capacity(value.len());
     let mut last_was_dash = false;
@@ -217,6 +232,40 @@ fn ensure_parent_directory(path: &Path) -> Result<(), String> {
         fs::create_dir_all(parent)
             .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
     }
+    Ok(())
+}
+
+fn copy_missing_entries(source: &Path, target: &Path) -> Result<(), String> {
+    let metadata = fs::metadata(source)
+        .map_err(|error| format!("Failed to inspect {}: {error}", source.display()))?;
+
+    if metadata.is_dir() {
+        fs::create_dir_all(target)
+            .map_err(|error| format!("Failed to create {}: {error}", target.display()))?;
+        for child in fs::read_dir(source)
+            .map_err(|error| format!("Failed to read {}: {error}", source.display()))?
+        {
+            let child =
+                child.map_err(|error| format!("Failed to read directory entry: {error}"))?;
+            let child_source = child.path();
+            let child_target = target.join(child.file_name());
+            copy_missing_entries(&child_source, &child_target)?;
+        }
+        return Ok(());
+    }
+
+    if target.exists() {
+        return Ok(());
+    }
+
+    ensure_parent_directory(target)?;
+    fs::copy(source, target).map_err(|error| {
+        format!(
+            "Failed to copy profile content {} -> {}: {error}",
+            source.display(),
+            target.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -390,6 +439,67 @@ fn unique_profile_id(
     candidate
 }
 
+fn move_or_merge_legacy_profile_overlay_directory(
+    shared_usr_root: &Path,
+    relative_directory: &str,
+) -> Result<(), String> {
+    let legacy_directory = legacy_profile_overlay_root_directory(shared_usr_root, relative_directory);
+    if !legacy_directory.exists() {
+        return Ok(());
+    }
+
+    let canonical_directory = default_profile_overlay_directory(shared_usr_root, relative_directory);
+    if !canonical_directory.exists() {
+        ensure_parent_directory(&canonical_directory)?;
+        match fs::rename(&legacy_directory, &canonical_directory) {
+            Ok(()) => return Ok(()),
+            Err(_) => {}
+        }
+    }
+
+    copy_missing_entries(&legacy_directory, &canonical_directory)?;
+    fs::remove_dir_all(&legacy_directory).map_err(|error| {
+        format!(
+            "Failed to remove legacy usr profile-overlay directory {} after migration: {error}",
+            legacy_directory.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn migrate_legacy_profile_overlay_lanes(shared_usr_root: &Path) -> Result<(), String> {
+    let manifest = load_usr_manifest()?;
+    for entry in manifest.entries {
+        if entry.profile_mode != UsrProfileLaneMode::ProfileOverlay {
+            continue;
+        }
+        move_or_merge_legacy_profile_overlay_directory(shared_usr_root, &entry.relative_directory)?;
+    }
+    Ok(())
+}
+
+fn copy_profile_overlay_lane_directories(
+    shared_usr_root: &Path,
+    source_profile_id: &str,
+    target_profile_id: &str,
+) -> Result<(), String> {
+    let manifest = load_usr_manifest()?;
+    for entry in manifest.entries {
+        if entry.profile_mode != UsrProfileLaneMode::ProfileOverlay {
+            continue;
+        }
+
+        let source_directory = profile_directory(shared_usr_root, source_profile_id).join(&entry.relative_directory);
+        if !source_directory.exists() {
+            continue;
+        }
+
+        let target_directory = profile_directory(shared_usr_root, target_profile_id).join(&entry.relative_directory);
+        copy_missing_entries(&source_directory, &target_directory)?;
+    }
+    Ok(())
+}
+
 fn ensure_catalog_profile_exists(catalog: &UsrProfileCatalogFile, profile_id: &str) -> Result<(), String> {
     if catalog.profile_order.iter().any(|entry| entry == profile_id) {
         Ok(())
@@ -462,17 +572,20 @@ fn load_or_initialize_catalog(
 
     let catalog_path = profile_catalog_path(shared_usr_root);
     if !catalog_path.exists() {
-        return seed_default_profile(
+        let catalog = seed_default_profile(
             shared_usr_root,
             current_settings_json,
             legacy_settings_storage_json,
-        );
+        )?;
+        migrate_legacy_profile_overlay_lanes(shared_usr_root)?;
+        return Ok(catalog);
     }
 
     let mut catalog = load_profile_catalog(shared_usr_root)?;
     if catalog.profile_order.is_empty() {
         catalog = seed_default_profile(shared_usr_root, current_settings_json, legacy_settings_storage_json)?;
     }
+    migrate_legacy_profile_overlay_lanes(shared_usr_root)?;
 
     if !catalog
         .profile_order
@@ -553,8 +666,14 @@ fn build_directory_stacks(
             continue;
         }
 
-        let shared_root_directory = shared_usr_root.join(&entry.relative_directory);
-        let bundled_directory_path = bundled_usr_root.join(&entry.relative_directory);
+        let shared_root_directory = match entry.profile_mode {
+            UsrProfileLaneMode::SharedRoot => shared_usr_root.join(&entry.relative_directory),
+            UsrProfileLaneMode::ProfileOverlay => {
+                default_profile_overlay_directory(shared_usr_root, &entry.relative_directory)
+            }
+        };
+        let bundled_directory_path =
+            bundled_usr_root.join(resolve_shipped_usr_entry_relative_directory(&entry));
         let profile_directory_path = match entry.profile_mode {
             UsrProfileLaneMode::SharedRoot => None,
             UsrProfileLaneMode::ProfileOverlay => {
@@ -747,6 +866,11 @@ pub async fn usr_profiles_create(
         &profile_settings_path(&shared_usr_root, &new_profile_id),
         &seed_profile_settings,
     )?;
+    copy_profile_overlay_lane_directories(
+        &shared_usr_root,
+        &catalog.active_profile_id,
+        &new_profile_id,
+    )?;
 
     catalog.profile_order.push(new_profile_id.clone());
     if request.activate {
@@ -799,6 +923,11 @@ pub async fn usr_profiles_duplicate(
     write_json_file(
         &profile_settings_path(&shared_usr_root, &new_profile_id),
         &source_settings,
+    )?;
+    copy_profile_overlay_lane_directories(
+        &shared_usr_root,
+        &request.source_profile_id,
+        &new_profile_id,
     )?;
 
     catalog.profile_order.push(new_profile_id.clone());

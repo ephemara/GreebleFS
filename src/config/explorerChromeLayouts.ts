@@ -1,4 +1,4 @@
-import shippedExplorerChromeLayoutManifestJson from "../../usr/explorer-chrome-layouts/greeblefs-core/explorer-chrome-layout.json";
+import shippedExplorerChromeLayoutManifestJson from "../../usr/profiles/default/explorer-chrome-layouts/greeblefs-core/explorer-chrome-layout.json";
 export type ExplorerChromeSurfaceId =
   | "explorerTopbar"
   | "explorerToolbar"

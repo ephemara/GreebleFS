@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 const REPO_USR_MANIFEST_TEXT: &str = include_str!("../../usr/manifest.json");
+pub const DEFAULT_USR_PROFILE_ID: &str = "default";
+const USR_PROFILES_DIRECTORY_NAME: &str = "profiles";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -66,6 +68,21 @@ fn read_first_env_path(var_names: &[&str]) -> Option<PathBuf> {
 pub fn load_usr_manifest() -> Result<UsrManifest, String> {
     serde_json::from_str(REPO_USR_MANIFEST_TEXT)
         .map_err(|error| format!("Failed to parse usr manifest: {error}"))
+}
+
+pub fn build_usr_profile_relative_directory(profile_id: &str, relative_directory: &str) -> PathBuf {
+    PathBuf::from(USR_PROFILES_DIRECTORY_NAME)
+        .join(profile_id)
+        .join(relative_directory)
+}
+
+pub fn resolve_shipped_usr_entry_relative_directory(entry: &UsrManifestEntry) -> PathBuf {
+    match entry.profile_mode {
+        UsrProfileLaneMode::SharedRoot => PathBuf::from(&entry.relative_directory),
+        UsrProfileLaneMode::ProfileOverlay => {
+            build_usr_profile_relative_directory(DEFAULT_USR_PROFILE_ID, &entry.relative_directory)
+        }
+    }
 }
 
 pub fn resolve_bundled_usr_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -178,12 +195,13 @@ pub fn bootstrap_usr_content(app: &tauri::AppHandle) -> Result<(), String> {
         .iter()
         .filter(|entry| entry.bundled && entry.bootstrap_to_managed_root)
     {
-        let source_path = source_root.join(&entry.relative_directory);
+        let relative_path = resolve_shipped_usr_entry_relative_directory(entry);
+        let source_path = source_root.join(&relative_path);
         if !source_path.exists() {
             continue;
         }
 
-        let target_path = target_root.join(&entry.relative_directory);
+        let target_path = target_root.join(&relative_path);
         copy_missing_entries(&source_path, &target_path)?;
     }
 

@@ -1,4 +1,4 @@
-import shippedExplorerShellLayoutManifestJson from "../../usr/explorer-shell-layouts/greeblefs-core/explorer-shell-layout.json";
+import shippedExplorerShellLayoutManifestJson from "../../usr/profiles/default/explorer-shell-layouts/greeblefs-core/explorer-shell-layout.json";
 
 export type ExplorerShellLayoutId =
   | "balanced"

@@ -1,4 +1,4 @@
-import shippedExplorerCustomizeControlManifestJson from "../../usr/explorer-customize-controls/greeblefs-core/explorer-customize-control.json";
+import shippedExplorerCustomizeControlManifestJson from "../../usr/profiles/default/explorer-customize-controls/greeblefs-core/explorer-customize-control.json";
 
 import type { LoadedExplorerAction } from "./actionPacks";
 import type {

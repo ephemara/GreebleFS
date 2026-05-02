@@ -3,6 +3,7 @@ import { appLocalDataDir, homeDir, join } from "@tauri-apps/api/path";
 import { exists, mkdir, rename } from "@tauri-apps/plugin-fs";
 
 import {
+  getGreebleUsrShippedRelativeDirectory,
   getGreebleUsrManifestEntry,
   greebleUsrManagedContentEntries,
   LEGACY_USR_SOURCE_ROOT_ENV_VAR,
@@ -374,7 +375,7 @@ function createShippedManagedDirectoryDefinitions(): ManagedContentDirectoryDefi
       label: metadata.label,
       description: metadata.description,
       keywords: metadata.keywords,
-      relativeDirectoryName: entry.relativeDirectory,
+      relativeDirectoryName: getGreebleUsrShippedRelativeDirectory(entry),
       legacyRelativeDirectoryName: entry.relativeDirectory,
       envVarSuffix: entry.envVarSuffix,
       order: metadata.order,
@@ -707,7 +708,7 @@ export function getManagedContentDirectory(
       const usrRootOverride = readUsrSourceRootOverride();
       return appendRelativePath(
         usrRootOverride ?? "usr",
-        manifestEntry.relativeDirectory,
+        getGreebleUsrShippedRelativeDirectory(manifestEntry),
       );
     }
   }
