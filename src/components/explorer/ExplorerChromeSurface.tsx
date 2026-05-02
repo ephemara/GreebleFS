@@ -37,11 +37,14 @@ export interface ExplorerChromeSurfaceLayoutDynamics {
   onCommitSnapshot?: (snapshot: LayoutDynamicsAuthoringSnapshot) => void;
 }
 
+type ExplorerChromeSurfaceOverflowMode = "scroll" | "wrap";
+
 interface ExplorerChromeSurfaceProps {
   surface: ExplorerChromeResolvedSurface;
   style?: CSSProperties;
   getRowStyle?: (rowId: string) => CSSProperties | undefined;
   getZoneStyle?: (zoneId: ExplorerChromeZoneId) => CSSProperties | undefined;
+  overflowMode?: ExplorerChromeSurfaceOverflowMode;
   dynamicCanvasMinHeightPx?: number;
   excludedControlIds?: ExplorerChromeControlId[];
   renderControl: (
@@ -105,6 +108,7 @@ export function ExplorerChromeSurface({
   style,
   getRowStyle,
   getZoneStyle,
+  overflowMode = "scroll",
   dynamicCanvasMinHeightPx,
   excludedControlIds,
   renderControl,
@@ -175,6 +179,7 @@ export function ExplorerChromeSurface({
     editModeActive;
   const usesFreeformDynamicCanvas =
     useDynamicSurfaceLayout && layoutDynamics?.axisMode === "free-2d";
+  const useWrappedOverflow = overflowMode === "wrap";
   const freeformDynamicCanvasBandId = `${surface.surfaceId}:freeform-canvas`;
   const parseDynamicCanvasCssPixels = useCallback(
     (value: CSSProperties["minHeight"] | CSSProperties["height"]): number => {
@@ -631,16 +636,18 @@ export function ExplorerChromeSurface({
             key={row.id}
             data-overlay-explorer-row={row.id}
             data-explorer-customize-row-id={row.id}
-            onWheel={handleHorizontalChromeWheel}
+            onWheel={
+              useWrappedOverflow ? undefined : handleHorizontalChromeWheel
+            }
             style={{
               width: "100%",
               minWidth: 0,
               position: "relative",
               ...(getRowStyle?.(row.id) ?? {}),
-              flexWrap: "nowrap",
-              overflowX: "auto",
-              overflowY: "hidden",
-              overscrollBehaviorX: "contain",
+              flexWrap: useWrappedOverflow ? "wrap" : "nowrap",
+              overflowX: useWrappedOverflow ? "visible" : "auto",
+              overflowY: useWrappedOverflow ? "visible" : "hidden",
+              overscrollBehaviorX: useWrappedOverflow ? "auto" : "contain",
             }}
           >
             {row.zones.map((zone) => {
@@ -668,9 +675,10 @@ export function ExplorerChromeSurface({
                   style={{
                     position: "relative",
                     ...(getZoneStyle?.(zone.id) ?? {}),
-                    flexWrap: "nowrap",
-                    flexShrink: 0,
-                    minWidth: "max-content",
+                    flexWrap: useWrappedOverflow ? "wrap" : "nowrap",
+                    flexShrink: useWrappedOverflow ? 1 : 0,
+                    minWidth: useWrappedOverflow ? 0 : "max-content",
+                    maxWidth: useWrappedOverflow ? "100%" : undefined,
                     ...(editModeActive
                       ? {
                           minHeight: 32,
@@ -824,7 +832,9 @@ export function ExplorerChromeSurface({
                             minWidth: 0,
                             position: "relative",
                             flexGrow: hasExplicitWidth ? 0 : responsivePlacement.grow ?? 0,
-                            flexShrink: 0,
+                            flexShrink: useWrappedOverflow
+                              ? responsivePlacement.shrink ?? 0
+                              : 0,
                             flexBasis: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
                             width: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
                             maxWidth: hasExplicitWidth ? responsivePlacement.widthPx : undefined,

@@ -1,3 +1,16 @@
+# 2026-05-02 - Preview Header Chrome Wraps Inside Narrow Preview Panes
+
+- The preview-pane header no longer relies on horizontal scrolling for its buttons when the preview pane is narrow.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` now has an explicit `overflowMode` contract: default `scroll` preserves rigid, horizontally scrollable chrome rows, while `wrap` lets rows/zones wrap and honors placement `shrink` for controls that are allowed to compress.
+  - `src/components/FileExplorer.tsx` opts only the preview header into `overflowMode="wrap"`, so regular explorer toolbar/topbar behavior stays unchanged.
+  - `src/test/ExplorerChromeSurface.test.tsx` covers both behaviors: normal chrome remains nowrap/scrollable, and preview header chrome wraps with visible overflow and shrink-aware identity controls.
+- Validation for this pass:
+  - Passed: `bunx vitest run src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - Limitation: full `bunx tsc --noEmit --pretty false` still fails on unrelated current-branch diagnostics in mobile string libs, drive-info typing, image cutout contracts, icon/theme package typing, picker windows, tests, and vendored tiptap.
+  - Limitation: focused `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens executable scripts in an editor-first preview with edit left of the run workflow tab" --reporter=dot --testTimeout=30000` still fails on the pre-existing executable preview embedded-terminal expectation.
+- Next recommended step:
+  - If preview chrome gets more controls, prefer adjusting the preview header surface layout/manifest ordering before adding more local JSX conditions.
+
 # 2026-05-02 - Dock Explorer Layout Selection Split From App Mode
 
 - Dock mode now has its own explorer layout selection lane instead of reusing the app/windowed lane.

@@ -6209,6 +6209,7 @@ function PreviewPanel({
           surface={previewHeaderSurface}
           getRowStyle={() => previewHeaderRowStyle}
           getZoneStyle={getPreviewHeaderZoneStyle}
+          overflowMode="wrap"
           renderControl={renderPreviewChromeControl}
           layoutDynamics={previewHeaderLayoutDynamics}
           editMode={chromeEditMode}

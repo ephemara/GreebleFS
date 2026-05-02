@@ -400,6 +400,95 @@ describe("ExplorerChromeSurface", () => {
     expect(control?.style.flexShrink).toBe("0");
   });
 
+  it("lets preview header chrome wrap inside narrow panes instead of horizontal scrolling", () => {
+    const rendered = render(
+      <ExplorerChromeSurface
+        surface={{
+          surfaceId: "previewHeader",
+          rows: [
+            {
+              id: "primary",
+              zones: [
+                {
+                  id: "start",
+                  controls: [
+                    {
+                      controlId: "previewIdentity",
+                      surfaceId: "previewHeader",
+                      zone: "start",
+                      order: 10,
+                      grow: 1,
+                      shrink: 1,
+                    },
+                  ],
+                },
+                {
+                  id: "end",
+                  controls: [
+                    {
+                      controlId: "previewModeToggle",
+                      surfaceId: "previewHeader",
+                      zone: "end",
+                      order: 10,
+                    },
+                    {
+                      controlId: "previewCopyPath",
+                      surfaceId: "previewHeader",
+                      zone: "end",
+                      order: 20,
+                    },
+                    {
+                      controlId: "previewClose",
+                      surfaceId: "previewHeader",
+                      zone: "end",
+                      order: 30,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          visibleControlIds: [
+            "previewIdentity",
+            "previewModeToggle",
+            "previewCopyPath",
+            "previewClose",
+          ],
+        }}
+        overflowMode="wrap"
+        getRowStyle={() => ({
+          display: "flex",
+          flexWrap: "wrap",
+        })}
+        getZoneStyle={() => ({
+          display: "flex",
+          flexWrap: "wrap",
+        })}
+        renderControl={(placement) => (
+          <button type="button">{placement.controlId}</button>
+        )}
+      />,
+    );
+
+    const row = rendered.container.querySelector(
+      "[data-overlay-explorer-row='primary']",
+    ) as HTMLElement | null;
+    const endZone = rendered.container.querySelector(
+      "[data-overlay-explorer-zone='end']",
+    ) as HTMLElement | null;
+    const identityControl = rendered.container.querySelector(
+      "[data-overlay-explorer-control='previewIdentity']",
+    ) as HTMLElement | null;
+
+    expect(row?.style.flexWrap).toBe("wrap");
+    expect(row?.style.overflowX).toBe("visible");
+    expect(row?.style.overflowY).toBe("visible");
+    expect(endZone?.style.flexWrap).toBe("wrap");
+    expect(endZone?.style.minWidth).toBe("0px");
+    expect(endZone?.style.maxWidth).toBe("100%");
+    expect(identityControl?.style.flexShrink).toBe("1");
+  });
+
   it("maps vertical wheel movement to horizontal chrome row scroll only while overflow can move", () => {
     const rendered = render(
       <ExplorerChromeSurface
