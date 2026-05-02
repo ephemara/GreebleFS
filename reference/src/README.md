@@ -8,6 +8,7 @@ If you are looking for the useful stuff fast, start here:
 - `data/` for generic serialization, resource relocation/fixup, compression, crypto helpers, and binary data containers.
 - `xmldata/` for the schema-driven XML import/export path used by tool and content data.
 - `system/` for lower-level platform plumbing that supports mounting, file access, and runtime startup.
+- `REPO_MAP.md` for the exhaustive file-by-file index with sizes, imports, and semantic summaries.
 
 ## Mental model
 

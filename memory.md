@@ -6640,3 +6640,8 @@ Deep-scanned `reference/src` again with a bias toward the weird, high-leverage s
 - `zlib/inflateServer.cpp`: dedicated service-style SPU decompression pipeline.
 
 Created `reference/src/ALIEN_CODE.md` as a curated map of the above with a bias toward what GreebleFS can actually borrow from it. The most important pattern to carry forward is task-graph orchestration with cancellation and explicit worker routing; the rest is mostly inspiration for staging, caching, and high-throughput math.
+# 2026-05-02 - Reference source full repo map
+
+Created `reference/src/REPO_MAP.md` as an exhaustive, folder-structured inventory of the entire `reference/src` tree. The map lists every file with size, direct include/import data where applicable, and a heuristic semantic summary so future agents can quickly find candidate reference files without rescanning the tree.
+
+The existing `reference/src/README.md` now links to the exhaustive map. Keep using `README.md` and `ALIEN_CODE.md` as the curated high-signal companions, and use `REPO_MAP.md` when you need full coverage or want to hunt for a specific filename/folder.
