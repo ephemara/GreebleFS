@@ -133,7 +133,7 @@ use telemetry::{finish_native_span, start_native_span, TelemetryManager};
 #[cfg(not(test))]
 use terminal::TerminalManager;
 #[cfg(not(test))]
-use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
+use window_commands::{TrayVisibilityState, MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
 #[cfg(not(test))]
 #[derive(serde::Deserialize)]
@@ -329,6 +329,7 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             url_drop::setup(&app.handle());
+            app.manage(TrayVisibilityState::new(true));
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if cfg!(debug_assertions) {

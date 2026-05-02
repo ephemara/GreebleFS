@@ -1,4 +1,6 @@
-use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
+use std::sync::Mutex;
+
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::linux_graphics::current_linux_display_backend;
 #[cfg(target_os = "linux")]
@@ -9,6 +11,33 @@ use crate::wayland_dock::{
 
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
 pub const MAIN_WINDOW_LABEL: &str = "main";
+
+pub struct TrayVisibilityState {
+    requested_visible: Mutex<bool>,
+}
+
+impl TrayVisibilityState {
+    pub fn new(initial_visible: bool) -> Self {
+        Self {
+            requested_visible: Mutex::new(initial_visible),
+        }
+    }
+
+    fn lock_requested_visible(&self) -> Result<std::sync::MutexGuard<'_, bool>, String> {
+        self.requested_visible
+            .lock()
+            .map_err(|_| "Tray visibility state lock was poisoned".to_string())
+    }
+
+    fn claim_visibility_change(&self, visible: bool) -> Result<bool, String> {
+        let mut requested_visible = self.lock_requested_visible()?;
+        if *requested_visible == visible {
+            return Ok(false);
+        }
+        *requested_visible = visible;
+        Ok(true)
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -137,11 +166,19 @@ pub fn window_set_taskbar_visibility(
 #[tauri::command]
 #[specta::specta]
 pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let visibility_state = app.try_state::<TrayVisibilityState>();
+    if let Some(state) = visibility_state.as_ref() {
+        if !state.claim_visibility_change(visible)? {
+            return Ok(());
+        }
+    }
+
     let tray = app
         .tray_by_id(MAIN_TRAY_ICON_ID)
         .ok_or_else(|| "Main tray icon not found".to_string())?;
 
-    tray.set_visible(visible).map_err(|error| error.to_string())
+    tray.set_visible(visible).map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -318,6 +355,16 @@ mod tests {
     #[test]
     fn main_window_label_is_stable() {
         assert_eq!(MAIN_WINDOW_LABEL, "main");
+    }
+
+    #[test]
+    fn tray_visibility_state_skips_duplicate_requests() {
+        let state = TrayVisibilityState::new(true);
+
+        assert!(!state.claim_visibility_change(true).unwrap());
+        assert!(state.claim_visibility_change(false).unwrap());
+        assert!(!state.claim_visibility_change(false).unwrap());
+        assert!(state.claim_visibility_change(true).unwrap());
     }
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]
