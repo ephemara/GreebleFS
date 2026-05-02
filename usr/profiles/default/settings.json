@@ -906,7 +906,7 @@
     "layoutDynamicsIntensity": 1,
     "layoutDynamicsPresetId": null,
     "layoutDynamicsSurfaceOverrides": {},
-    "panelTransparency": 0,
+    "panelTransparency": 0.32,
     "shaderControlValues": {},
     "shaderPerformanceMode": "quality",
     "sidebarPosition": "left",
@@ -1422,7 +1422,7 @@
               "controlId": "navigateUp",
               "hidden": false,
               "offsetPx": 0,
-              "order": 50,
+              "order": 40,
               "surfaceId": "explorerToolbar",
               "widthPx": 56,
               "zone": "primaryStart"
@@ -1542,7 +1542,7 @@
               "controlId": "batchRename",
               "hidden": false,
               "offsetPx": 0,
-              "order": 20,
+              "order": 10,
               "surfaceId": "explorerToolbar",
               "widthPx": 101,
               "zone": "secondaryEnd"
@@ -1554,7 +1554,7 @@
               "controlId": "tagSelection",
               "hidden": false,
               "offsetPx": 0,
-              "order": 30,
+              "order": 20,
               "surfaceId": "explorerToolbar",
               "widthPx": 56,
               "zone": "secondaryEnd"
@@ -1566,7 +1566,7 @@
               "controlId": "duplicateScan",
               "hidden": false,
               "offsetPx": 0,
-              "order": 40,
+              "order": 30,
               "surfaceId": "explorerToolbar",
               "widthPx": 83,
               "zone": "secondaryEnd"
@@ -1578,7 +1578,7 @@
               "controlId": "undoTrash",
               "hidden": false,
               "offsetPx": 0,
-              "order": 50,
+              "order": 40,
               "surfaceId": "explorerToolbar",
               "widthPx": 87,
               "zone": "secondaryEnd"
@@ -1590,7 +1590,7 @@
               "controlId": "viewLayout",
               "hidden": false,
               "offsetPx": 0,
-              "order": 60,
+              "order": 50,
               "surfaceId": "explorerToolbar",
               "widthPx": 56,
               "zone": "secondaryEnd"
@@ -1602,7 +1602,7 @@
               "controlId": "togglePreview",
               "hidden": false,
               "offsetPx": 0,
-              "order": 70,
+              "order": 60,
               "surfaceId": "explorerToolbar",
               "widthPx": 96,
               "zone": "secondaryEnd"
@@ -1614,7 +1614,7 @@
               "controlId": "actionsPaneToggle",
               "hidden": false,
               "offsetPx": 0,
-              "order": 80,
+              "order": 70,
               "surfaceId": "explorerToolbar",
               "widthPx": 96,
               "zone": "secondaryEnd"
@@ -1626,7 +1626,7 @@
               "controlId": "selectionModeToggle",
               "hidden": false,
               "offsetPx": 0,
-              "order": 90,
+              "order": 80,
               "surfaceId": "explorerToolbar",
               "widthPx": 84,
               "zone": "secondaryEnd"
@@ -1638,7 +1638,7 @@
               "controlId": "newFolder",
               "hidden": false,
               "offsetPx": 0,
-              "order": 100,
+              "order": 90,
               "surfaceId": "explorerToolbar",
               "widthPx": 73,
               "zone": "secondaryEnd"
@@ -1650,98 +1650,10 @@
               "controlId": "newFile",
               "hidden": false,
               "offsetPx": 0,
-              "order": 110,
+              "order": 100,
               "surfaceId": "explorerToolbar",
               "widthPx": 60,
               "zone": "secondaryEnd"
-            },
-            {
-              "controlId": "railIdentity",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "start"
-            },
-            {
-              "controlId": "railBookmarkSummary",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "railClose",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "railManageToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 30,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewIdentity",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "previewHeader",
-              "zone": "start"
-            },
-            {
-              "controlId": "previewClose",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "previewHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewState",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "previewHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewSplitToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 30,
-              "surfaceId": "previewHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewLockToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 40,
-              "surfaceId": "previewHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewCopyPath",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 50,
-              "surfaceId": "previewHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "previewTerminalToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 60,
-              "surfaceId": "previewHeader",
-              "zone": "end"
             },
             {
               "controlId": "statusItemCount",
@@ -1778,16 +1690,17 @@
             {
               "controlId": "statusTaskBadge",
               "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
+              "offsetPx": 672,
+              "order": 30,
               "surfaceId": "explorerStatusBar",
-              "zone": "end"
+              "widthPx": 180,
+              "zone": "center"
             },
             {
               "controlId": "terminalDrawerToggle",
               "hidden": false,
               "offsetPx": 0,
-              "order": 20,
+              "order": 10,
               "surfaceId": "explorerStatusBar",
               "zone": "end"
             },
@@ -1795,7 +1708,7 @@
               "controlId": "statusViewToggles",
               "hidden": false,
               "offsetPx": 0,
-              "order": 30,
+              "order": 20,
               "surfaceId": "explorerStatusBar",
               "zone": "end"
             },
@@ -2663,7 +2576,17 @@
       }
     ],
     "followThemeExplorerLayout": false,
-    "gridZoom": 0.6770000036679785,
+    "gridZoom": 0,
+    "layoutSelectionByPresentationMode": {
+      "dock": {
+        "activeExplorerLayoutId": null,
+        "followThemeExplorerLayout": true
+      },
+      "windowed": {
+        "activeExplorerLayoutId": "focus",
+        "followThemeExplorerLayout": false
+      }
+    },
     "layoutUiResetRevision": 0,
     "modeProfileOverridesByThemeId": {
       "pilot-dark": "inspector"
@@ -2683,7 +2606,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-l"
+    "viewMode": "icons-s"
   },
   "home": {
     "activePackId": "atlas-cockpit",
@@ -2795,12 +2718,13 @@
     "panelStateByProfile": {
       "overlay-classic": {
         "activePanelId": "explorer",
-        "dismissedPanelIds": [],
+        "dismissedPanelIds": [
+          "greeblefs-workbench-model3d"
+        ],
         "openPanelIds": [
           "explorer",
           "settings",
           "terminal",
-          "greeblefs-workbench-model3d",
           "git"
         ]
       }
@@ -2818,7 +2742,7 @@
         },
         "explorerInspectorLinkMode": "live-linked",
         "floatingNodes": [],
-        "focusedSurfaceId": "terminal",
+        "focusedSurfaceId": "explorer",
         "inspectorRailState": {
           "mode": "preview-inspector",
           "preferredWidth": 420,
@@ -2888,62 +2812,134 @@
         "surfaceStateById": {
           "explorer": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": false
           },
           "git": {
             "collapsed": true,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": false
           },
           "go-sample-panel": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-index-photo-gallery": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-archive": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "greeblefs-workbench-audio": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "greeblefs-workbench-docx": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-folder": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-model3d": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-pdf": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-python": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-shader": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "greeblefs-workbench-spreadsheet": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "greeblefs-workbench-sqlite": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
+            "hidden": true
+          },
+          "greeblefs-workbench-text": {
+            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "greeblefs-workbench-video": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "notes": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "plugins": {
             "collapsed": false,
-            "hidden": true
-          },
-          "screenshots": {
-            "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "settings": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "storage": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           },
           "terminal": {
             "collapsed": true,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": false
           },
           "test-extension-hello": {
             "collapsed": false,
+            "externalizedRestorePlacement": null,
+            "externalizedWindowId": null,
             "hidden": true
           }
         },
@@ -2980,6 +2976,6 @@
     "showSidebar": false,
     "windowMode": "windowed",
     "windowedHeight": 888,
-    "windowedWidth": 1683
+    "windowedWidth": 1440
   }
 }
