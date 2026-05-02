@@ -1,3 +1,31 @@
+# 2026-05-02 - Reference Pipeline Research For Intrusive Containers, Buddy Pools, Path Hashing, And Paging
+
+- Research target:
+  - `reference/src/atl/inlist.h`
+  - `reference/src/atl/inmap.h`
+  - `reference/src/atl/atinbintree.h`
+  - `reference/src/atl/pool.h`
+  - `reference/src/system/virtualallocator.h`
+  - `reference/src/atl/hashstring.h`
+  - `reference/src/string/stringhash.h`
+  - `reference/src/paging/streamer.h`
+- GreebleFS fit assessment:
+  - The repo already has array/map caches, identity revisions, thumbnail artifact caching, and viewport-aware explorer state. That means the reference patterns are mostly a refinement/rearchitecture of existing seams, not a brand-new subsystem.
+  - The immediate highest-value slice is path/identity keying plus viewport-driven prefetch and cache invalidation in the explorer backend/UI.
+  - Intrusive trees are plausible for hot backend metadata graphs and selection/lookup structures, but not worth forcing into React state.
+  - A buddy allocator only makes sense if scoped to a dedicated native thumbnail/preview buffer pool. Making it app-wide would be a deep allocator rewrite.
+- Concrete repo seams identified:
+  - `src-tauri/src/fs_commands.rs` already owns dir-list caching, search caches, and `Vec<FileEntry>` directory materialization.
+  - `src-tauri/src/explorer_identity.rs` already persists path aliases and thumbnail artifact identity/revision records in SQLite.
+  - `src/runtime/explorerBackend.ts` is the host seam for local/cloud/archive/remote listings, search, thumbnail reads, and cache-policy plumbing.
+  - `src/components/FileExplorer.tsx` already tracks viewport metrics, `visibleEntries`, `visibleEntryIndexLookup`, entry thumbnails, and adjacent preview prefetch.
+- Durable rule:
+  - Do not sell the reference patterns as literal console-style replacements for the whole app. In this codebase, they are best used as targeted backend primitives under the existing cache/identity/preview architecture.
+- Next recommended implementation path:
+  - Prototype a small path-hash + intrusive-index-backed backend cache first.
+  - If that proves useful under load, extend it into a viewport scheduler for thumbnails/previews.
+  - Treat buddy allocation as a later, isolated optimization for decode buffers only if profiling shows allocation churn there.
+
 # 2026-05-02 - Go PTY Panel Wasm Artifacts Now Load Through The Runtime Byte Bridge
 
 - The Go PTY `wasm-panel` boot path no longer reads compiled `.wasm` files with `@tauri-apps/plugin-fs.readFile(...)`.
