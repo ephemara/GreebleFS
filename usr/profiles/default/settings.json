@@ -933,17 +933,17 @@
   },
   "dock": {
     "activePresentationId": "greeblefs-core-dock-presentations:yakuake-workbench",
-    "defaultTerminalColumns": 200,
-    "defaultTerminalRows": 17,
-    "edgeSize": 429,
-    "edgeWidth": 1683,
+    "defaultTerminalColumns": 41,
+    "defaultTerminalRows": 8,
+    "edgeSize": 150,
+    "edgeWidth": 400,
     "floatingBounds": {
-      "height": 617,
-      "width": 2524,
-      "x": 8,
-      "y": 733
+      "height": 150,
+      "width": 400,
+      "x": -32000,
+      "y": -32000
     },
-    "placementMode": "bottom-edge",
+    "placementMode": "floating",
     "previewEnabled": true,
     "previewSplitMode": "pane",
     "topBarId": "dock-control-strip"
@@ -2606,7 +2606,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-s"
+    "viewMode": "details"
   },
   "home": {
     "activePackId": "atlas-cockpit",
@@ -2718,9 +2718,7 @@
     "panelStateByProfile": {
       "overlay-classic": {
         "activePanelId": "explorer",
-        "dismissedPanelIds": [
-          "greeblefs-workbench-model3d"
-        ],
+        "dismissedPanelIds": [],
         "openPanelIds": [
           "explorer",
           "settings",
@@ -2953,7 +2951,7 @@
     "valuesByPluginId": {}
   },
   "presentation": {
-    "windowMode": "windowed"
+    "windowMode": "dock"
   },
   "terminal": {
     "cursorBlink": true,
@@ -2965,8 +2963,8 @@
     "fontSize": 13,
     "integratedHost": "go-pty-panel",
     "overlayAnchor": "bottom",
-    "overlayHeight": 429,
-    "overlayWidth": 1683,
+    "overlayHeight": 150,
+    "overlayWidth": 400,
     "preferredOpenMode": "integrated",
     "scrollback": 10000,
     "shell": "powershell.exe -NoLogo",
@@ -2974,7 +2972,7 @@
     "shellPath": "powershell.exe",
     "shellProfile": "powershell",
     "showSidebar": false,
-    "windowMode": "windowed",
+    "windowMode": "overlay",
     "windowedHeight": 888,
     "windowedWidth": 1440
   }
