@@ -482,7 +482,10 @@ import {
   startMobileShareSession,
   useMobileShareStore,
 } from "../store/mobileShareStore";
-import { useSettingsStore } from "../store/settingsStore";
+import {
+  useSettingsStore,
+  type PresentationWindowMode,
+} from "../store/settingsStore";
 import type { SettingsSectionKey } from "../config/settingsNavigation";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
 import {
@@ -8769,6 +8772,9 @@ export function FileExplorer({
     [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === "dock";
+  const explorerLayoutPresentationMode: PresentationWindowMode = isCompactDock
+    ? "dock"
+    : "windowed";
   const dockPreviewAllowed =
     !isCompactDock || dockPreviewPolicy?.enabled !== false;
   const showsGlobalChromeControls = chromeControlSurface === "topbar";
@@ -8840,9 +8846,18 @@ export function FileExplorer({
       ),
     [availableExplorerLayouts],
   );
-  const activeExplorerLayoutSelectionId = explorerSettings.followThemeExplorerLayout
+  const activeExplorerLayoutSelection =
+    explorerSettings.layoutSelectionByPresentationMode?.[
+      explorerLayoutPresentationMode
+    ] ?? {
+      followThemeExplorerLayout: explorerSettings.followThemeExplorerLayout,
+      activeExplorerLayoutId: explorerSettings.activeExplorerLayoutId,
+    };
+  const followsThemeExplorerLayout =
+    activeExplorerLayoutSelection.followThemeExplorerLayout;
+  const activeExplorerLayoutSelectionId = followsThemeExplorerLayout
     ? themeExplorerLayoutId
-    : explorerSettings.activeExplorerLayoutId;
+    : activeExplorerLayoutSelection.activeExplorerLayoutId;
   const resolvedExplorerLayout = useMemo(
     () =>
       findExplorerLayoutById(
@@ -8870,7 +8885,6 @@ export function FileExplorer({
     [
       defaultModeProfileId,
       explorerChromeThemeId,
-      explorerSettings.followThemeExplorerLayout,
       explorerSettings.modeProfileOverridesByThemeId,
       explorerTheme.defaultModeProfileId,
       resolvedExplorerLayout?.modeProfileId,
@@ -19334,11 +19348,15 @@ export function FileExplorer({
   }, [availableExplorerLayouts]);
   const selectExplorerLayout = useCallback(
     (nextLayout: LoadedExplorerLayoutDefinition) => {
-      setFollowThemeExplorerLayout(false);
-      setActiveExplorerLayoutId(nextLayout.id);
+      setFollowThemeExplorerLayout(false, explorerLayoutPresentationMode);
+      setActiveExplorerLayoutId(nextLayout.id, explorerLayoutPresentationMode);
       setShowModeProfileMenu(false);
     },
-    [setActiveExplorerLayoutId, setFollowThemeExplorerLayout],
+    [
+      explorerLayoutPresentationMode,
+      setActiveExplorerLayoutId,
+      setFollowThemeExplorerLayout,
+    ],
   );
   const cycleExplorerLayout = useCallback(
     (direction: "next" | "previous" = "next") => {
@@ -19372,21 +19390,23 @@ export function FileExplorer({
   );
   const toggleThemeExplorerLayoutFollow = useCallback(() => {
     if (!themeExplorerLayoutId) {
-      restoreCanonicalExplorerLayout();
+      restoreCanonicalExplorerLayout(explorerLayoutPresentationMode);
       return;
     }
-    if (explorerSettings.followThemeExplorerLayout) {
-      setFollowThemeExplorerLayout(false);
+    if (followsThemeExplorerLayout) {
+      setFollowThemeExplorerLayout(false, explorerLayoutPresentationMode);
       setActiveExplorerLayoutId(
         resolvedExplorerLayout?.id ?? EXPLORER_CANONICAL_LAYOUT_ID,
+        explorerLayoutPresentationMode,
       );
       return;
     }
-    setFollowThemeExplorerLayout(true);
-    setActiveExplorerLayoutId(null);
+    setFollowThemeExplorerLayout(true, explorerLayoutPresentationMode);
+    setActiveExplorerLayoutId(null, explorerLayoutPresentationMode);
     setShowModeProfileMenu(false);
   }, [
-    explorerSettings.followThemeExplorerLayout,
+    explorerLayoutPresentationMode,
+    followsThemeExplorerLayout,
     resolvedExplorerLayout?.id,
     restoreCanonicalExplorerLayout,
     setActiveExplorerLayoutId,
@@ -19514,8 +19534,8 @@ export function FileExplorer({
         nextLayouts.push(savedLayout);
         return nextLayouts;
       });
-      setFollowThemeExplorerLayout(false);
-      setActiveExplorerLayoutId(savedLayout.id);
+      setFollowThemeExplorerLayout(false, explorerLayoutPresentationMode);
+      setActiveExplorerLayoutId(savedLayout.id, explorerLayoutPresentationMode);
       setShowModeProfileMenu(false);
     },
     [
@@ -19524,6 +19544,7 @@ export function FileExplorer({
       canonicalExplorerLayout,
       currentExplorerTabStripVisible,
       effectiveModeProfile.id,
+      explorerLayoutPresentationMode,
       explorerChromeOverride,
       layoutBandMetricsDraft,
       persistedExplorerChromeOverride,
@@ -20437,7 +20458,7 @@ export function FileExplorer({
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
         enabled: explorerTopbarLayoutDynamicsSettings.enabled,
-        authoringCanvasEnabled: false,
+        authoringCanvasEnabled: isCompactDock,
         axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerTopbarLayoutDynamicsSettings.preset,
         intensity: explorerTopbarLayoutDynamicsSettings.intensity,
@@ -20453,13 +20474,14 @@ export function FileExplorer({
         activeChromeEditSession,
         explorerTopbarLayoutDynamicsSettings,
         handleExplorerChromeDynamicSurfaceCommit,
+        isCompactDock,
       ],
     );
   const explorerToolbarLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
         enabled: explorerToolbarLayoutDynamicsSettings.enabled,
-        authoringCanvasEnabled: false,
+        authoringCanvasEnabled: isCompactDock,
         axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerToolbarLayoutDynamicsSettings.preset,
         intensity: explorerToolbarLayoutDynamicsSettings.intensity,
@@ -20475,6 +20497,7 @@ export function FileExplorer({
         activeChromeEditSession,
         explorerToolbarLayoutDynamicsSettings,
         handleExplorerChromeDynamicSurfaceCommit,
+        isCompactDock,
       ],
     );
   const explorerRailHeaderLayoutDynamics =
@@ -23826,13 +23849,13 @@ export function FileExplorer({
                 title={`Cycle explorer layouts (current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label})`}
                 style={{
                   ...toolbarToggleButtonStyle(
-                    explorerSettings.followThemeExplorerLayout ||
+                    followsThemeExplorerLayout ||
                       resolvedExplorerLayout?.id !== EXPLORER_CANONICAL_LAYOUT_ID,
                     false,
                     placement.sizeVariant,
                   ),
                   color:
-                    explorerSettings.followThemeExplorerLayout ||
+                    followsThemeExplorerLayout ||
                     resolvedExplorerLayout?.id !== EXPLORER_CANONICAL_LAYOUT_ID
                       ? EXP.text
                       : EXP.muted,
@@ -23843,7 +23866,7 @@ export function FileExplorer({
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background =
-                    explorerSettings.followThemeExplorerLayout ||
+                    followsThemeExplorerLayout ||
                     resolvedExplorerLayout?.id !== EXPLORER_CANONICAL_LAYOUT_ID
                       ? "var(--overlay-explorer-chip-active-bg)"
                       : "var(--overlay-explorer-chip-bg)")
@@ -23854,7 +23877,7 @@ export function FileExplorer({
                   accent={accent}
                   active={
                     showModeProfileMenu ||
-                    explorerSettings.followThemeExplorerLayout ||
+                    followsThemeExplorerLayout ||
                     resolvedExplorerLayout?.id !== EXPLORER_CANONICAL_LAYOUT_ID
                   }
                 />
@@ -23876,7 +23899,7 @@ export function FileExplorer({
                   >
                     {resolvedExplorerLayout?.name ?? effectiveModeProfile.shortLabel}
                   </span>
-                  {explorerSettings.followThemeExplorerLayout ? (
+                  {followsThemeExplorerLayout ? (
                     <span
                       style={{
                         fontSize: 9,
@@ -24110,7 +24133,7 @@ export function FileExplorer({
                       style={toolbarActionButtonStyle()}
                     >
                       <Sparkles size={12} />
-                      {explorerSettings.followThemeExplorerLayout
+                      {followsThemeExplorerLayout
                         ? "Pin Current Layout"
                         : "Follow Theme"}
                     </button>
@@ -25795,7 +25818,7 @@ export function FileExplorer({
               style={toolbarActionButtonStyle()}
             >
               <Sparkles size={12} />
-              {explorerSettings.followThemeExplorerLayout
+              {followsThemeExplorerLayout
                 ? "Pin Current Layout"
                 : "Follow Theme"}
             </button>
@@ -25832,7 +25855,7 @@ export function FileExplorer({
     explorerLayoutsBySource.shipped,
     explorerLayoutsBySource.theme,
     explorerLayoutsBySource.user,
-    explorerSettings.followThemeExplorerLayout,
+    followsThemeExplorerLayout,
     resetExplorerLayoutUiToCanonical,
     resolvedExplorerLayout?.id,
     resolvedExplorerLayout?.name,

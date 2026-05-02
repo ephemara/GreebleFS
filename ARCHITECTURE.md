@@ -353,6 +353,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/runtime/layoutDynamicsRuntime.ts` owns the solver math and the band/free-2d stepping rules, while `src/components/layoutDynamics/LayoutDynamicsCanvas.tsx` is the only supported hot-path integration path for live repulsion, collision recovery, and anchor-return authoring UI
   - `src/store/settingsStore.ts` persists `settings.appearance.layoutDynamicsEnabled`, `layoutDynamicsPresetId`, `layoutDynamicsIntensity`, `layoutDynamicsSurfaceOverrides`, and `topBarLayoutSnapshotsById`; those top-bar snapshots store authored anchors only, never the transient repelled positions
   - `src/components/explorer/ExplorerChromeSurface.tsx` and `src/components/WorkbenchTopBar.tsx` are the first adopters. Explorer adoption is intentionally mixed-mode in v1: surfaces that already carry authored `bandId` / `anchorX` / `anchorY` metadata switch into the layout-dynamics canvas, while untouched legacy slot drafts stay on the old zone/order/offset path until they are explicitly adopted
+  - Dock-mode explorer topbar/toolbar chrome opts into the layout-dynamics authoring canvas while explorer customize mode is active, so dock-specific header controls can be free-positioned without enabling free-pixel authoring across every explorer surface
   - `src/components/SettingsPage.tsx` now exposes a dedicated `Layout Dynamics` section plus `src/animation/LayoutDynamicsLab.tsx`, and those settings are the supported place to tune shared presets, per-surface overrides, and top-bar snapshot resets
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
@@ -472,6 +473,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `usr/explorer-customize-controls/**/explorer-customize-control.json` owns the built-in movable-control catalog for the ZBrush-style explorer customize/browser flow
   - `usr/explorer-workspace-layouts/**/explorer-workspace-layout.json` owns multi-pane workspace topology presets, and `usr/explorer-experimental-modes/**/explorer-experimental-mode.json` owns the shipped experimental explorer-mode catalog
   - `settingsStore.ts` persists per-theme `modeProfileOverridesByThemeId`, keyed by theme id, so users can retune a theme's default explorer mode without mutating live explorer session state
+  - `settingsStore.ts` persists explorer layout choice in `layoutSelectionByPresentationMode.windowed` and `.dock`; legacy `followThemeExplorerLayout` / `activeExplorerLayoutId` mirror the windowed lane for compatibility
   - `settingsStore.ts` persists per-theme `chromeLayoutOverridesByThemeId`, keyed by theme id and `chromeLayoutId`
   - `FileExplorer.tsx`, `ExplorerWorkspace.tsx`, `ExplorerSideRail.tsx`, and the preview panel should render resolved chrome surfaces instead of hardcoded button sequences
   - zone-based chrome edit mode moves controls across those surfaces by rewriting override snapshots; it is not a free-pixel docking system
@@ -573,7 +575,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Dock mode is now a distinct presentation subsystem over the same explorer/runtime truth layer:
   - `App.tsx` still forces the explorer forward when entering overlay mode, but now passes `explorerLayoutMode: 'dock'`
   - dock mode keeps the same explorer sessions, filesystem data plane, tabs, and workspace state as app mode
-  - dock mode can diverge in workbench recipe, explorer recipe, metrics, and chrome layout without becoming a separate filesystem subsystem
+  - dock mode can diverge in workbench recipe, explorer recipe, metrics, chrome layout, and active explorer layout selection without becoming a separate filesystem subsystem
   - `/usr/dock-presentations/**/dock-presentation.json` is the first-class authored source for dock placement, sizing defaults, terminal grid defaults, top-bar choice, and preview policy
   - dock preview/workbench panes are policy-owned (`settings.dock.previewEnabled` / `previewSplitMode`) rather than hard-disabled by `layoutMode === 'dock'`
   - dock sizing now has a Yakuake-style terminal grid contract through `src/config/dockTerminalGrid.ts`; pixel height/width changes update default rows/columns, and terminal panes surface live `columns x rows` telemetry during resize
