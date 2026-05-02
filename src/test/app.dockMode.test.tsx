@@ -340,6 +340,14 @@ function setNavigatorPlatform(platform: string) {
     configurable: true,
     value: platform,
   });
+  Object.defineProperty(navigator, 'userAgent', {
+    configurable: true,
+    value: `Mozilla/5.0 (${platform})`,
+  });
+  Object.defineProperty(navigator, 'userAgentData', {
+    configurable: true,
+    value: { platform },
+  });
 }
 
 describe('App dock mode behavior', () => {
@@ -840,7 +848,7 @@ describe('App dock mode behavior', () => {
     }));
   });
 
-  it('keeps the configured app zoom while a windowed app is maximized', async () => {
+  it('pins normal app windows to native scale while maximized', async () => {
     setWindowMode('windowed');
     const currentWindow = getCurrentWindow();
     vi.mocked(currentWindow.isMaximized).mockResolvedValue(true);
@@ -849,7 +857,49 @@ describe('App dock mode behavior', () => {
     render(<App />);
 
     await waitFor(() => {
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '1');
+    });
+  });
+
+  it('keeps dock mode zoom isolated from native app window scaling', async () => {
+    setWindowMode('overlay');
+    useSettingsStore.getState().updateAppearance({ appZoom: 0.82 });
+
+    render(<App />);
+
+    await waitFor(() => {
       expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '0.82');
+    });
+  });
+
+  it('heals stale minimum app bounds when switching back from dock mode', async () => {
+    const user = userEvent.setup();
+    setWindowMode('overlay');
+    useSettingsStore.setState((state) => ({
+      settings: {
+        ...state.settings,
+        terminal: {
+          ...state.settings.terminal,
+          windowedWidth: panelWindowGeometry.minWidth,
+          windowedHeight: panelWindowGeometry.minHeight,
+        },
+      },
+    }));
+
+    render(<App />);
+
+    await user.click(await screen.findByTitle('Switch to Application Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.presentation.windowMode).toBe('windowed');
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenLastCalledWith(expect.objectContaining({
+        width: panelWindowGeometry.defaultWidth,
+        height: panelWindowGeometry.defaultHeight,
+        x: Math.round((1920 - panelWindowGeometry.defaultWidth) / 2),
+        y: Math.round((1080 - panelWindowGeometry.defaultHeight) / 2),
+      }));
+      expect(useSettingsStore.getState().settings.terminal.windowedWidth).toBe(panelWindowGeometry.defaultWidth);
+      expect(useSettingsStore.getState().settings.terminal.windowedHeight).toBe(panelWindowGeometry.defaultHeight);
     });
   });
 

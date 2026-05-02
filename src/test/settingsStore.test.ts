@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSystemPresentationState } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { defaultMobileLayoutSettings } from '../config/mobileLayout';
-import { overlayWindowGeometry } from '../config/overlayWindow';
+import { overlayWindowGeometry, panelWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
 import {
   createDefaultIdeWorkbenchLayoutState,
@@ -112,6 +112,16 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
     expect(settings.explorer.followThemeExplorerLayout).toBe(true);
     expect(settings.explorer.activeExplorerLayoutId).toBeNull();
+    expect(settings.explorer.layoutSelectionByPresentationMode).toEqual({
+      windowed: {
+        followThemeExplorerLayout: true,
+        activeExplorerLayoutId: null,
+      },
+      dock: {
+        followThemeExplorerLayout: true,
+        activeExplorerLayoutId: null,
+      },
+    });
     expect(settings.explorer.activeMenuPackId).toBe(DEFAULT_EXPLORER_MENU_PACK_ID);
     expect(settings.explorer.contextMenuLayoutOverridesByContext).toEqual({});
     expect(settings.explorer.preferredWorkbenchByExtension).toEqual({});
@@ -314,6 +324,19 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
   });
 
+  it('heals app-mode window size updates saved at the native chrome minimum', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({
+      windowMode: 'windowed',
+      windowedWidth: panelWindowGeometry.minWidth,
+      windowedHeight: panelWindowGeometry.minHeight,
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.windowedWidth).toBe(panelWindowGeometry.defaultWidth);
+    expect(settings.terminal.windowedHeight).toBe(panelWindowGeometry.defaultHeight);
+  });
+
   it('updates external terminal fields together', () => {
     const store = useSettingsStore.getState();
     store.updateTerminal({
@@ -455,6 +478,19 @@ describe('useSettingsStore.updateMobile()', () => {
 });
 
 describe('mergeSettingsWithDefaults()', () => {
+  it('heals stale imported app-mode bounds saved at the native chrome minimum', () => {
+    const merged = mergeSettingsWithDefaults({
+      terminal: {
+        ...defaultSettings.terminal,
+        windowedWidth: panelWindowGeometry.minWidth,
+        windowedHeight: panelWindowGeometry.minHeight,
+      },
+    });
+
+    expect(merged.terminal.windowedWidth).toBe(panelWindowGeometry.defaultWidth);
+    expect(merged.terminal.windowedHeight).toBe(panelWindowGeometry.defaultHeight);
+  });
+
   it('normalizes invalid gpu tier imports back to auto', () => {
     const merged = mergeSettingsWithDefaults({
       system: {
@@ -663,7 +699,55 @@ describe('useSettingsStore.updateExplorer()', () => {
     const { explorer } = useSettingsStore.getState().settings;
     expect(explorer.followThemeExplorerLayout).toBe(false);
     expect(explorer.activeExplorerLayoutId).toBe('user:focus-wide');
+    expect(explorer.layoutSelectionByPresentationMode.windowed).toEqual({
+      followThemeExplorerLayout: false,
+      activeExplorerLayoutId: 'user:focus-wide',
+    });
+    expect(explorer.layoutSelectionByPresentationMode.dock).toEqual({
+      followThemeExplorerLayout: true,
+      activeExplorerLayoutId: null,
+    });
     expect(explorer.chromeLayoutOverridesByThemeId.operator?.default?.entries).toHaveLength(1);
+  });
+
+  it('keeps dock explorer layout selection independent from the app lane', () => {
+    const store = useSettingsStore.getState();
+
+    store.setActiveExplorerLayoutId('user:app-wide');
+    store.setActiveExplorerLayoutId('user:dock-compact', 'dock');
+    store.setFollowThemeExplorerLayout(true, 'dock');
+
+    const { explorer } = useSettingsStore.getState().settings;
+    expect(explorer.followThemeExplorerLayout).toBe(false);
+    expect(explorer.activeExplorerLayoutId).toBe('user:app-wide');
+    expect(explorer.layoutSelectionByPresentationMode.windowed).toEqual({
+      followThemeExplorerLayout: false,
+      activeExplorerLayoutId: 'user:app-wide',
+    });
+    expect(explorer.layoutSelectionByPresentationMode.dock).toEqual({
+      followThemeExplorerLayout: true,
+      activeExplorerLayoutId: 'user:dock-compact',
+    });
+  });
+
+  it('migrates legacy explorer layout selection into both presentation lanes', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        followThemeExplorerLayout: false,
+        activeExplorerLayoutId: 'user:legacy-focus',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.layoutSelectionByPresentationMode).toEqual({
+      windowed: {
+        followThemeExplorerLayout: false,
+        activeExplorerLayoutId: 'user:legacy-focus',
+      },
+      dock: {
+        followThemeExplorerLayout: false,
+        activeExplorerLayoutId: 'user:legacy-focus',
+      },
+    });
   });
 
   it('restores the canonical explorer layout without mutating explorer session geometry', () => {
@@ -680,6 +764,10 @@ describe('useSettingsStore.updateExplorer()', () => {
     const { explorer } = useSettingsStore.getState().settings;
     expect(explorer.followThemeExplorerLayout).toBe(false);
     expect(explorer.activeExplorerLayoutId).toBe(EXPLORER_CANONICAL_LAYOUT_ID);
+    expect(explorer.layoutSelectionByPresentationMode.windowed).toEqual({
+      followThemeExplorerLayout: false,
+      activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+    });
     expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
     expect(useExplorerStore.getState().session.sidebarWidth).toBe(312);
     expect(useExplorerStore.getState().session.previewWidth).toBe(488);
@@ -735,6 +823,16 @@ describe('useSettingsStore.updateExplorer()', () => {
     const { appearance, explorer } = useSettingsStore.getState().settings;
     expect(explorer.followThemeExplorerLayout).toBe(false);
     expect(explorer.activeExplorerLayoutId).toBe(EXPLORER_CANONICAL_LAYOUT_ID);
+    expect(explorer.layoutSelectionByPresentationMode).toEqual({
+      windowed: {
+        followThemeExplorerLayout: false,
+        activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+      },
+      dock: {
+        followThemeExplorerLayout: false,
+        activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+      },
+    });
     expect(explorer.chromeLayoutOverridesByThemeId).toEqual({});
     expect(explorer.layoutUiResetRevision).toBe(beforeRevision + 1);
     expect(appearance.topBarLayoutSnapshotsById).toEqual({});

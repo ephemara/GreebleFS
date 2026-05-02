@@ -1,15 +1,34 @@
-# 2026-05-01 - Usr Profiles Now Overlay Workbench Config On The Shared Root
+# 2026-05-02 - Dock Explorer Layout Selection Split From App Mode
+
+- Dock mode now has its own explorer layout selection lane instead of reusing the app/windowed lane.
+  - `src/store/settingsStore.ts` added `settings.explorer.layoutSelectionByPresentationMode.windowed` and `.dock`.
+  - Legacy `followThemeExplorerLayout` / `activeExplorerLayoutId` remain as compatibility mirrors for the windowed lane.
+  - Old persisted settings with only legacy layout fields migrate into both lanes, while live layout-switcher calls from `FileExplorer.tsx` update the lane implied by `layoutMode === "dock"` vs `"full"`.
+- Dock explorer customize mode now enables the existing layout-dynamics authoring canvas for the `explorerTopbar` and `explorerToolbar` surfaces.
+  - This keeps normal app-mode explorer chrome on the conservative zone/order customize path.
+  - In dock mode, customize mode can use the free-2d authoring canvas for the header chrome surfaces that matter most for the UE5/Yakuake-style flow.
+- Validation for this pass:
+  - Passed: `bunx vitest run src/test/settingsStore.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/ExplorerChromeSurface.test.tsx --reporter=dot`
+  - Limitation: full `bunx tsc --noEmit --pretty false` still fails on unrelated current-branch diagnostics in mobile string libs, drive-info typing, image cutout contracts, icon/theme package typing, picker windows, and vendored tiptap.
+  - Limitation: full `src/test/fileExplorer.viewModes.test.tsx` still has unrelated mega-suite failures around executable preview terminal setup, older sources-rail expectations, constellation zoom assertions, and pending folder-size measurement.
+- Next recommended step:
+  - Add a small focused `FileExplorer` test for `layoutMode="dock"` proving layout switcher writes only `layoutSelectionByPresentationMode.dock`; avoid depending on the full explorer mega-suite for this lane.
+
+# 2026-05-01 - Usr Profiles Now Make `usr/profiles/default` The Canonical Workbench Baseline
 
 - GreebleFS now has a first-class `usr` profile runtime for workbench configuration instead of treating the writable `usr/` root as one monolithic user state bucket.
   - `src-tauri/src/usr_profiles.rs` owns the profile catalog/filesystem contract under `usr/profiles/`, first-run migration from legacy `ultacode-settings`, shared-vs-profile settings partitioning, effective settings merge, lane directory-stack resolution, and the cross-window `usr-profile-changed-event`.
   - `src/runtime/usrProfiles.ts` is the TS host bridge for initialize/list/switch/create/duplicate/rename/delete/persist flows. It applies host snapshots by overriding managed-content directory stacks, refreshing profile-overlay static manifests, rewriting the effective settings blob in local storage, and rehydrating `useSettingsStore`.
   - `src/runtime/usrProfileStaticConfigRuntime.ts` is the static-manifest overlay bridge for profile-scoped JSON/TOML lanes that used to behave like frozen shipped imports. It currently rehydrates `explorerChromeLayouts`, `explorerCustomizeControls`, `explorerModeProfiles`, `explorerShellLayouts`, `explorerWorkspaceLayouts`, `explorerExperimentalModes`, `explorerZoomBehaviors`, `explorerPerformance`, and `hotkeys`.
 - Durable resolution rules:
-  - Managed content now resolves in `active profile overlay -> shared usr root -> bundled fallback` order only for lanes marked `profile-overlay` in `usr/manifest.json` / `src/config/usrManifest.ts`.
-  - Lanes marked `shared-root` must ignore profile directories completely and keep using the shared writable root plus bundled fallback.
+  - Managed content now resolves in `active profile overlay -> default profile -> bundled default profile` order for lanes marked `profile-overlay` in `usr/manifest.json` / `src/config/usrManifest.ts`.
+  - The repo `usr/` tree is now profile-first for workbench-config lanes: the canonical shipped copies live under `usr/profiles/default/<lane>`, not top-level `usr/<lane>`.
+  - Lanes marked `shared-root` must ignore profile directories completely and keep using the shared writable root plus bundled fallback under top-level `usr/<lane>`.
   - Profile-owned settings slices are `editor`, `presentation`, `dock`, `terminal`, `explorer`, `home`, `appearance`, `keybindings`, `layout`, `audio`, and `plugins`.
   - Shared/root settings slices are `python`, `models`, `system`, `mobile`, `screenshots`, and `polygemini`.
   - `notes`, `Screenshots`, explorer workspace/session blobs, and arbitrary component-local localStorage remain outside the v1 profile system.
+  - Startup now migrates any legacy top-level profile-overlay lanes into `usr/profiles/default`, and newly created or duplicated profiles copy the source profile's overlay lane directories instead of cloning settings alone.
   - If a future profile-overlay lane is manifest-driven but still initializes from a shipped JSON import, add an `applyUsr*Manifest(...)` seam in the owning config file and register that lane in `src/runtime/usrProfileStaticConfigRuntime.ts` instead of inventing a second refresh path.
   - Future profile-aware authored package loaders should consume the managed-content stack helpers in `src/config/managedContentDirectoryStacks.ts` / `src/config/appContentDirectories.ts` rather than hardcoding a single `getManagedContentDirectory(...)` root.
 - Settings and shell integration:
@@ -6478,6 +6497,28 @@
   - Do not use `tailscale serve` as implicit mobile-share infrastructure unless the product explicitly owns its lifecycle, validates the proxy target, and tears it down. A stale OS-level Serve proxy can outlive the app and make the bare MagicDNS host return 502.
   - `sfm.local` is a product mDNS constant, not a per-user hardcode. Keep it as a convenience fallback only; enterprise-grade copied/QR URLs should prefer deterministic routable addresses discovered at runtime.
   - A notice saying mobile share is live for a path like `C:\automations\tidus` reflects the active Explorer session path passed into the share runtime. It is not hardcoded in the share server.
+
+## 2026-05-02 - Window Mode Applies Stop Reusing Poisoned App Bounds
+
+- Dock/app switching had two separate failure modes after recent window work:
+  - Stale profile/runtime state could save app-mode restore bounds at the native chrome minimum (`800x560`), so switching back to app mode restored a tiny window and made the shell look like it had zoomed out.
+  - Older async dock `windowApplyMode` calls could land after a newer app-mode transition, leaving the native window in dock geometry even though the React/store mode was already `windowed`.
+- Durable implementation shape:
+  - `src/config/overlayWindow.ts` now exposes `normalizePanelWindowStoredSize()`. Exact `panelWindowGeometry.minWidth/minHeight` pairs are treated as stale chrome-minimum restore state and heal back to app defaults; intentionally undersized raw values still clamp to the chrome-safe minimum.
+  - `src/store/settingsStore.ts` and `src/runtime/overlayRuntimeUtils.ts` both route app windowed size normalization through that helper, so imported/stale settings and live layout application share the same repair rule.
+  - `src/App.tsx` now uses a generation guard for native presentation applies. Stale async dock/app applies bail before clobbering newer mode transitions, while the dedicated Wayland dock host remains allowed to take overlay requests before local mode rehydrate.
+  - Same-host mode toggles directly apply the target presentation instead of relying only on a later visibility-gated effect. This keeps fast dock/app toggles deterministic.
+  - Normal app windows render at native shell scale (`zoom=1`). `appearance.appZoom` remains an overlay/dock visual control, so a stale or intentional low dock zoom no longer shrinks app-mode layout or hides top-bar controls.
+- Validation:
+  - passed: `bun run test -- src/test/overlayWindow.test.ts src/test/settingsStore.test.ts src/test/app.dockMode.test.tsx`
+  - passed: `bun run test -- src/test/explorerLayouts.test.ts`
+  - passed: `bun run test -- src/test/layoutDynamicsRuntime.test.ts`
+  - passed: `bun run test -- src/test/layoutDynamicsCanvas.test.tsx`
+  - timed out: `bun run test -- src/test/fileExplorer.viewModes.test.tsx`
+  - failed with pre-existing repo-wide diagnostics: `bunx tsc --noEmit` (drive info snake/camel mismatches, image cutout generated types, vendored tiptap deps, mobile `replaceAll`, and other unrelated files).
+- Durable product rule:
+  - Do not apply `appZoom` to native app-mode shell rendering unless app/window geometry and hit testing are redesigned around that. App mode should resize natively; dock/overlay mode can use visual zoom.
+  - Any new async Tauri window presentation path must either participate in the `windowPresentationApplyGenerationRef` guard or prove it cannot race with mode changes.
 
 ## 2026-04-28 - Explorer Folder Entry And Row Modes Stop Paying Full-Directory Frontend Costs
 

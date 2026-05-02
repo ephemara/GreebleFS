@@ -802,6 +802,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const lastResolvedMonitorPointRef = useRef<{ x: number; y: number } | null>(null);
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
+  const windowPresentationApplyGenerationRef = useRef(0);
   const lastWindowedMaximizedRef = useRef(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [dockResizeTelemetry, setDockResizeTelemetry] = useState<{
@@ -1594,6 +1595,22 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const shouldWaitForWindowRouting = runtimePlatform === 'linux'
     && (!linuxDisplayServerResolved || (linuxDisplayServer === 'wayland' && !waylandDockHostStatusResolved));
   const canResizeOverlayShell = !currentHostUsesWaylandDockLayerShell;
+  const beginWindowPresentationApply = useCallback(() => {
+    windowPresentationApplyGenerationRef.current += 1;
+    return windowPresentationApplyGenerationRef.current;
+  }, []);
+  const isWindowPresentationApplyCurrent = useCallback((
+    generation: number,
+    expectedMode: TerminalWindowMode,
+  ) => {
+    if (generation !== windowPresentationApplyGenerationRef.current) {
+      return false;
+    }
+    if (expectedMode === 'overlay' && currentHostUsesWaylandDockLayerShell) {
+      return true;
+    }
+    return windowModeRef.current === expectedMode;
+  }, [currentHostUsesWaylandDockLayerShell]);
 
   useEffect(() => {
     setActiveMobileShareThemeSnapshot(mobileShareThemeSnapshot);
@@ -1658,7 +1675,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     ],
   );
   const activeDockResizeGrid = dockResizeTelemetry?.grid ?? dockTerminalGrid;
-  const effectiveWindowZoom = clampedAppZoom;
+  const effectiveWindowZoom = isWindowedMode
+    ? overlayVisualControls.zoom.defaultValue
+    : clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
   const scaledHeight = `${100 / effectiveWindowZoom}%`;
   const shellBackgroundColor = effectiveShellBlurEnabled
@@ -2471,6 +2490,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
+    const applyGeneration = beginWindowPresentationApply();
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
@@ -2478,6 +2498,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       const monitor = await resolvePreferredMonitor();
       if (!monitor) {
         await openWithoutMonitorLayout(win);
+        return;
+      }
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'overlay')) {
         return;
       }
 
@@ -2510,11 +2533,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       if (layout.healedHeight !== null && layout.healedHeight !== dockStore.edgeSize) {
         useSettingsStore.getState().updateDock({ edgeSize: layout.healedHeight });
       }
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'overlay')) {
+        return;
+      }
       await applyDockOverlayLayout({
         monitor,
         scaleFactor,
         currentBounds: rememberedBounds,
       });
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'overlay')) {
+        isProgrammaticResizeRef.current = false;
+        return;
+      }
       await win.show();
       await win.setFocus();
       if (runtimePlatform === 'linux' && !isWaylandOverlaySession) {
@@ -2581,9 +2611,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [
     appAnimationDurationMs,
     applyDockOverlayLayout,
+    beginWindowPresentationApply,
     clearAnimationClock,
     currentHostUsesWaylandDockLayerShell,
     isWaylandOverlaySession,
+    isWindowPresentationApplyCurrent,
     markOverlayRuntimePhase,
     openWithoutMonitorLayout,
     resolveAnimationById,
@@ -2597,6 +2629,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
+    const applyGeneration = beginWindowPresentationApply();
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
@@ -2604,6 +2637,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       const monitor = await resolvePreferredMonitor();
       if (!monitor) {
         await openWithoutMonitorLayout(win);
+        return;
+      }
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
         return;
       }
 
@@ -2644,6 +2680,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
 
       const currentlyMaximized = await win.isMaximized().catch(() => false);
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
+        return;
+      }
       const shouldSeedRestoreBoundsBeforeMaximize = lastWindowedMaximizedRef.current;
       const shouldRestoreMaximizedWindow =
         shouldSeedRestoreBoundsBeforeMaximize || currentlyMaximized;
@@ -2670,9 +2709,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           maxHeight: constraints.maxHeight,
         }));
       }
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
+        isProgrammaticResizeRef.current = false;
+        return;
+      }
       await win.show();
       await win.unminimize().catch(() => {});
       await win.setFocus();
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
+        isProgrammaticResizeRef.current = false;
+        return;
+      }
       if (shouldRestoreMaximizedWindow) {
         await win.maximize().catch(() => {});
         setIsWindowMaximized(true);
@@ -2717,7 +2764,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, [
     appAnimationDurationMs,
+    beginWindowPresentationApply,
     clearAnimationClock,
+    isWindowPresentationApplyCurrent,
     markOverlayRuntimePhase,
     openWithoutMonitorLayout,
     resolveAnimationById,
@@ -2850,6 +2899,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
     }
 
+    windowPresentationApplyGenerationRef.current += 1;
+    windowModeRef.current = nextWindowMode;
     updatePresentation({
       windowMode: nextWindowMode === 'overlay' ? 'dock' : 'windowed',
     });
@@ -2870,12 +2921,26 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         );
       }
       await hideCurrentHostImmediately();
+      return;
+    }
+
+    if (
+      shouldCarryVisibleSession
+      && (currentPresentationHost === nextPresentationHost || currentWindowHostRole === nextPresentationHost)
+    ) {
+      if (nextWindowMode === 'windowed') {
+        await showWindowedPanel();
+      } else {
+        await positionAndShow();
+      }
     }
   }, [
     currentWindowHostRole,
     hideCurrentHostImmediately,
     isCurrentHostWindowVisible,
+    positionAndShow,
     setPanelOpenStateDirectly,
+    showWindowedPanel,
     updatePresentation,
     usesSeparateWaylandDockHost,
   ]);
@@ -3091,11 +3156,15 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
+    const applyGeneration = beginWindowPresentationApply();
     try {
       const win = getCurrentWindow();
       const scaleFactor = await win.scaleFactor();
       const monitor = await resolvePreferredMonitor();
       if (!monitor) {
+        return;
+      }
+      if (!isWindowPresentationApplyCurrent(applyGeneration, mode)) {
         return;
       }
 
@@ -3123,6 +3192,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           shouldRestoreMaximizedWindow,
           shouldSeedRestoreBoundsBeforeMaximize,
         });
+        if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
+          return;
+        }
         isProgrammaticResizeRef.current = true;
         try {
           unwrapTauriResult(await commands.windowApplyMode({
@@ -3139,6 +3211,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
             maxWidth: constraints.maxWidth,
             maxHeight: constraints.maxHeight,
           }));
+          if (!isWindowPresentationApplyCurrent(applyGeneration, 'windowed')) {
+            return;
+          }
           if (shouldRestoreMaximizedWindow) {
             await win.maximize().catch(() => {});
             setIsWindowMaximized(true);
@@ -3165,6 +3240,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       const shouldRestoreFloatingBounds =
         dockStore.placementMode === 'floating' && !currentHostUsesWaylandDockLayerShell;
 
+      if (!isWindowPresentationApplyCurrent(applyGeneration, 'overlay')) {
+        return;
+      }
       await applyDockOverlayLayout({
         monitor,
         scaleFactor,
@@ -3177,9 +3255,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, [
     applyDockOverlayLayout,
+    beginWindowPresentationApply,
     currentHostUsesWaylandDockLayerShell,
     isDedicatedSecondaryWindowHost,
     isCurrentWindowPresentationHost,
+    isWindowPresentationApplyCurrent,
     shouldSkipTaskbar,
   ]);
 
@@ -3272,13 +3352,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
 
     let cancelled = false;
+    const applyGeneration = windowPresentationApplyGenerationRef.current;
 
     const repositionOverlay = async () => {
       try {
         const win = getCurrentWindow();
         const scaleFactor = await win.scaleFactor();
         const monitor = await resolvePreferredMonitor();
-        if (!monitor || cancelled) {
+        if (
+          !monitor
+          || cancelled
+          || !isWindowPresentationApplyCurrent(applyGeneration, 'overlay')
+        ) {
           return;
         }
 
@@ -3304,6 +3389,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     dockSettings.edgeWidth,
     dockSettings.floatingBounds,
     isCurrentWindowPresentationHost,
+    isWindowPresentationApplyCurrent,
     overlayAnchor,
     windowMode,
     resolvePreferredMonitor,

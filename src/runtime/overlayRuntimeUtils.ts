@@ -3,6 +3,7 @@ import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
   clampOverlayVisualControlValue,
   computeWindowSizeConstraints,
+  normalizePanelWindowStoredSize,
   overlayWindowGeometry,
   overlayVisualControls,
   panelWindowGeometry,
@@ -59,10 +60,22 @@ export function computePanelWindowLayout(args: {
     Math.round(args.workArea.size.height / args.scaleFactor) - panelWindowGeometry.logicalPadding * 2,
     panelWindowGeometry.minHeight,
   );
-  const targetLogicalWidth = args.windowedWidth > 0 ? args.windowedWidth : panelWindowGeometry.defaultWidth;
-  const targetLogicalHeight = args.windowedHeight > 0 ? args.windowedHeight : panelWindowGeometry.defaultHeight;
-  const healedWidth = targetLogicalWidth > availableLogicalWidth ? availableLogicalWidth : null;
-  const healedHeight = targetLogicalHeight > availableLogicalHeight ? availableLogicalHeight : null;
+  const restoredSize = normalizePanelWindowStoredSize({
+    width: args.windowedWidth,
+    height: args.windowedHeight,
+  });
+  const targetLogicalWidth = restoredSize.width;
+  const targetLogicalHeight = restoredSize.height;
+  const healedWidth = targetLogicalWidth > availableLogicalWidth
+    ? availableLogicalWidth
+    : restoredSize.healed
+      ? targetLogicalWidth
+      : null;
+  const healedHeight = targetLogicalHeight > availableLogicalHeight
+    ? availableLogicalHeight
+    : restoredSize.healed
+      ? targetLogicalHeight
+      : null;
   const logicalWidth = Math.max(
     Math.min(healedWidth ?? targetLogicalWidth, availableLogicalWidth),
     Math.min(panelWindowGeometry.minWidth, availableLogicalWidth),

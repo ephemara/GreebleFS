@@ -106,6 +106,7 @@ import {
 } from '../config/layoutDynamics';
 import {
   clampOverlayVisualControlValue,
+  normalizePanelWindowStoredSize,
   overlayVisualControls,
   overlayWindowGeometry,
   type OverlayWindowBounds,
@@ -233,6 +234,16 @@ export interface PresentationSettings {
   windowMode: PresentationWindowMode;
 }
 
+export interface ExplorerLayoutSelectionState {
+  followThemeExplorerLayout: boolean;
+  activeExplorerLayoutId: string | null;
+}
+
+export type ExplorerLayoutSelectionByPresentationMode = Record<
+  PresentationWindowMode,
+  ExplorerLayoutSelectionState
+>;
+
 export type DockFloatingBounds = OverlayWindowBounds;
 
 export interface DockSettings {
@@ -283,6 +294,7 @@ export interface ExplorerSettings {
   collectionPreviewMode: ExplorerCollectionPreviewMode;
   followThemeExplorerLayout: boolean;
   activeExplorerLayoutId: string | null;
+  layoutSelectionByPresentationMode: ExplorerLayoutSelectionByPresentationMode;
   layoutUiResetRevision: number;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
@@ -575,6 +587,121 @@ export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolder
   return value === 'single' ? 'single' : 'double';
 }
 
+const explorerLayoutPresentationModes = ['windowed', 'dock'] as const satisfies readonly PresentationWindowMode[];
+
+function createExplorerLayoutSelectionState(
+  followThemeExplorerLayout = true,
+  activeExplorerLayoutId: string | null = null,
+): ExplorerLayoutSelectionState {
+  return {
+    followThemeExplorerLayout,
+    activeExplorerLayoutId: normalizeExplorerLayoutSelectionId(activeExplorerLayoutId),
+  };
+}
+
+function createDefaultExplorerLayoutSelectionByPresentationMode(): ExplorerLayoutSelectionByPresentationMode {
+  return {
+    windowed: createExplorerLayoutSelectionState(),
+    dock: createExplorerLayoutSelectionState(),
+  };
+}
+
+function normalizeExplorerLayoutSelectionState(
+  value: unknown,
+  fallback: ExplorerLayoutSelectionState,
+): ExplorerLayoutSelectionState {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { ...fallback };
+  }
+
+  const source = value as Partial<ExplorerLayoutSelectionState>;
+  const hasExplicitFollowThemeExplorerLayout = Object.prototype.hasOwnProperty.call(
+    source,
+    'followThemeExplorerLayout',
+  );
+  const hasExplicitActiveExplorerLayoutId = Object.prototype.hasOwnProperty.call(
+    source,
+    'activeExplorerLayoutId',
+  );
+
+  return {
+    followThemeExplorerLayout: hasExplicitFollowThemeExplorerLayout
+      ? source.followThemeExplorerLayout !== false
+      : fallback.followThemeExplorerLayout,
+    activeExplorerLayoutId: hasExplicitActiveExplorerLayoutId
+      ? normalizeExplorerLayoutSelectionId(source.activeExplorerLayoutId)
+      : fallback.activeExplorerLayoutId,
+  };
+}
+
+function normalizeExplorerLayoutSelectionByPresentationMode(
+  value: unknown,
+  fallback: ExplorerLayoutSelectionByPresentationMode,
+): ExplorerLayoutSelectionByPresentationMode {
+  const source = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Partial<Record<PresentationWindowMode | 'overlay', unknown>>
+    : {};
+  const dockSelectionSource = source.dock ?? source.overlay;
+
+  return {
+    windowed: normalizeExplorerLayoutSelectionState(
+      source.windowed,
+      fallback.windowed,
+    ),
+    dock: normalizeExplorerLayoutSelectionState(
+      dockSelectionSource,
+      fallback.dock,
+    ),
+  };
+}
+
+function resolveExplorerLayoutSelectionFallback(
+  explorer: ExplorerSettings,
+): ExplorerLayoutSelectionByPresentationMode {
+  const legacySelection = createExplorerLayoutSelectionState(
+    explorer.followThemeExplorerLayout,
+    explorer.activeExplorerLayoutId,
+  );
+  return normalizeExplorerLayoutSelectionByPresentationMode(
+    explorer.layoutSelectionByPresentationMode,
+    {
+      windowed: legacySelection,
+      dock: legacySelection,
+    },
+  );
+}
+
+function buildExplorerLayoutSelectionByPresentationModeUpdate(
+  explorer: ExplorerSettings,
+  presentationMode: PresentationWindowMode | undefined,
+  selectionUpdates: Partial<ExplorerLayoutSelectionState>,
+): Partial<ExplorerSettings> {
+  const targetPresentationMode = presentationMode ?? 'windowed';
+  const baseSelections = resolveExplorerLayoutSelectionFallback(explorer);
+  const currentSelection = baseSelections[targetPresentationMode];
+  const nextSelection = normalizeExplorerLayoutSelectionState(
+    {
+      ...currentSelection,
+      ...selectionUpdates,
+    },
+    currentSelection,
+  );
+  const nextSelections = {
+    ...baseSelections,
+    [targetPresentationMode]: nextSelection,
+  };
+
+  return {
+    ...(targetPresentationMode === 'windowed'
+      ? {
+          followThemeExplorerLayout: nextSelection.followThemeExplorerLayout,
+          activeExplorerLayoutId: nextSelection.activeExplorerLayoutId,
+        }
+      : {}),
+    layoutSelectionByPresentationMode: nextSelections,
+  };
+}
+
 function normalizeExplorerModeProfileOverrideMap(
   value: unknown,
 ): Record<string, ExplorerModeProfileId> {
@@ -614,6 +741,8 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'followThemeExplorerLayout');
   const hasExplicitActiveExplorerLayoutId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeExplorerLayoutId');
+  const hasExplicitLayoutSelectionByPresentationMode = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'layoutSelectionByPresentationMode');
   const hasExplicitLayoutUiResetRevision = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'layoutUiResetRevision');
   const hasExplicitActiveMenuPackId = updates != null
@@ -626,6 +755,54 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'thumbnails');
   const hasExplicitPreferredWorkbenchByExtension = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'preferredWorkbenchByExtension');
+  const nextFollowThemeExplorerLayout = hasExplicitFollowThemeExplorerLayout
+    ? updates?.followThemeExplorerLayout !== false
+    : base.followThemeExplorerLayout;
+  const nextActiveExplorerLayoutId = hasExplicitActiveExplorerLayoutId
+    ? normalizeExplorerLayoutSelectionId(updates?.activeExplorerLayoutId)
+    : base.activeExplorerLayoutId;
+  const baseLayoutSelectionByPresentationMode =
+    resolveExplorerLayoutSelectionFallback(base);
+  const explicitLayoutSelectionByPresentationMode =
+    hasExplicitLayoutSelectionByPresentationMode
+      ? normalizeExplorerLayoutSelectionByPresentationMode(
+          updates?.layoutSelectionByPresentationMode,
+          baseLayoutSelectionByPresentationMode,
+        )
+      : baseLayoutSelectionByPresentationMode;
+  const legacyLayoutSelectionPatch = {
+    ...(hasExplicitFollowThemeExplorerLayout
+      ? { followThemeExplorerLayout: nextFollowThemeExplorerLayout }
+      : {}),
+    ...(hasExplicitActiveExplorerLayoutId
+      ? { activeExplorerLayoutId: nextActiveExplorerLayoutId }
+      : {}),
+  };
+  const legacyLayoutSelectionPatchTarget =
+    hasExplicitLayoutSelectionByPresentationMode
+      ? {
+          ...explicitLayoutSelectionByPresentationMode,
+          windowed: {
+            ...explicitLayoutSelectionByPresentationMode.windowed,
+            ...legacyLayoutSelectionPatch,
+          },
+        }
+      : Object.fromEntries(
+          explorerLayoutPresentationModes.map((presentationMode) => [
+            presentationMode,
+            {
+              ...explicitLayoutSelectionByPresentationMode[presentationMode],
+              ...legacyLayoutSelectionPatch,
+            },
+          ]),
+        );
+  const nextLayoutSelectionByPresentationMode =
+    hasExplicitFollowThemeExplorerLayout || hasExplicitActiveExplorerLayoutId
+      ? normalizeExplorerLayoutSelectionByPresentationMode(
+          legacyLayoutSelectionPatchTarget,
+          explicitLayoutSelectionByPresentationMode,
+        )
+      : explicitLayoutSelectionByPresentationMode;
 
   return {
     ...base,
@@ -648,12 +825,9 @@ function normalizeExplorerSettings(
     collectionPreviewMode: normalizeExplorerCollectionPreviewMode(
       updates?.collectionPreviewMode ?? base.collectionPreviewMode,
     ),
-    followThemeExplorerLayout: hasExplicitFollowThemeExplorerLayout
-      ? updates?.followThemeExplorerLayout !== false
-      : base.followThemeExplorerLayout,
-    activeExplorerLayoutId: hasExplicitActiveExplorerLayoutId
-      ? normalizeExplorerLayoutSelectionId(updates?.activeExplorerLayoutId)
-      : base.activeExplorerLayoutId,
+    followThemeExplorerLayout: nextFollowThemeExplorerLayout,
+    activeExplorerLayoutId: nextActiveExplorerLayoutId,
+    layoutSelectionByPresentationMode: nextLayoutSelectionByPresentationMode,
     layoutUiResetRevision: hasExplicitLayoutUiResetRevision
       ? normalizeSettingsRevision(updates?.layoutUiResetRevision)
       : normalizeSettingsRevision(base.layoutUiResetRevision),
@@ -992,6 +1166,12 @@ function normalizeTerminalSettings(
   updates?: Partial<TerminalSettings>,
 ): TerminalSettings {
   const merged = { ...base, ...updates };
+  const windowedSize = normalizePanelWindowStoredSize({
+    width: merged.windowedWidth,
+    height: merged.windowedHeight,
+    fallbackWidth: base.windowedWidth,
+    fallbackHeight: base.windowedHeight,
+  });
   const hasExplicitShellProfile = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'shellProfile');
   const hasExplicitShellPath = updates != null
@@ -1059,8 +1239,8 @@ function normalizeTerminalSettings(
     ),
     overlayAnchor: normalizeOverlayWindowAnchor(merged.overlayAnchor ?? base.overlayAnchor),
     windowMode: normalizeTerminalWindowMode(merged.windowMode ?? base.windowMode),
-    windowedWidth: normalizeSavedWindowDimension(merged.windowedWidth, base.windowedWidth, 720),
-    windowedHeight: normalizeSavedWindowDimension(merged.windowedHeight, base.windowedHeight, 480),
+    windowedWidth: windowedSize.width,
+    windowedHeight: windowedSize.height,
   };
 }
 
@@ -1518,6 +1698,8 @@ export const defaultSettings: Settings = {
     collectionPreviewMode: 'list',
     followThemeExplorerLayout: true,
     activeExplorerLayoutId: null,
+    layoutSelectionByPresentationMode:
+      createDefaultExplorerLayoutSelectionByPresentationMode(),
     layoutUiResetRevision: 0,
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
@@ -1847,6 +2029,10 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
   const migratedContextMenuLayouts = Object.keys(normalizedImportedContextMenuLayouts).length > 0
     ? normalizedImportedContextMenuLayouts
     : migrateLegacyContextMenuOverridesToLayouts(normalizedLegacyContextMenuItemOverrides);
+  const normalizedImportedExplorerLayoutSettings = normalizeExplorerSettings(
+    base.explorer,
+    (imported as Partial<Settings> | undefined)?.explorer,
+  );
 
   return {
     ...base,
@@ -1887,6 +2073,12 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       thumbnails: normalizeExplorerThumbnailSettings(
         imported?.explorer?.thumbnails ?? base.explorer.thumbnails,
       ),
+      followThemeExplorerLayout:
+        normalizedImportedExplorerLayoutSettings.followThemeExplorerLayout,
+      activeExplorerLayoutId:
+        normalizedImportedExplorerLayoutSettings.activeExplorerLayoutId,
+      layoutSelectionByPresentationMode:
+        normalizedImportedExplorerLayoutSettings.layoutSelectionByPresentationMode,
       modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap(
         imported?.explorer?.modeProfileOverridesByThemeId ?? base.explorer.modeProfileOverridesByThemeId,
       ),
@@ -1976,9 +2168,17 @@ interface SettingsState {
   updateHome: (updates: Partial<HomeSettings>) => void;
   setHomePackState: (packId: string, state: Record<string, unknown>) => void;
   setHomePresetSelection: (packId: string, presetId: string | null) => void;
-  setFollowThemeExplorerLayout: (followTheme: boolean) => void;
-  setActiveExplorerLayoutId: (layoutId: string | null) => void;
-  restoreCanonicalExplorerLayout: () => void;
+  setFollowThemeExplorerLayout: (
+    followTheme: boolean,
+    presentationMode?: PresentationWindowMode,
+  ) => void;
+  setActiveExplorerLayoutId: (
+    layoutId: string | null,
+    presentationMode?: PresentationWindowMode,
+  ) => void;
+  restoreCanonicalExplorerLayout: (
+    presentationMode?: PresentationWindowMode,
+  ) => void;
   resetLayoutCustomizationToCanonical: () => void;
   setExplorerModeProfileOverride: (themeId: string, modeProfileId: ExplorerModeProfileId) => void;
   clearExplorerModeProfileOverride: (themeId: string) => void;
@@ -2257,32 +2457,51 @@ export const useSettingsStore = create<SettingsState>()(
         };
       }),
 
-      setFollowThemeExplorerLayout: (followTheme) => set((state) => ({
+      setFollowThemeExplorerLayout: (followTheme, presentationMode) => set((state) => ({
         settings: {
           ...state.settings,
-          explorer: normalizeExplorerSettings(state.settings.explorer, {
-            followThemeExplorerLayout: followTheme,
-          }),
+          explorer: normalizeExplorerSettings(
+            state.settings.explorer,
+            buildExplorerLayoutSelectionByPresentationModeUpdate(
+              state.settings.explorer,
+              presentationMode,
+              { followThemeExplorerLayout: followTheme },
+            ),
+          ),
         },
       })),
 
-      setActiveExplorerLayoutId: (layoutId) => set((state) => ({
+      setActiveExplorerLayoutId: (layoutId, presentationMode) => set((state) => ({
         settings: {
           ...state.settings,
-          explorer: normalizeExplorerSettings(state.settings.explorer, {
-            activeExplorerLayoutId: layoutId,
-            followThemeExplorerLayout: false,
-          }),
+          explorer: normalizeExplorerSettings(
+            state.settings.explorer,
+            buildExplorerLayoutSelectionByPresentationModeUpdate(
+              state.settings.explorer,
+              presentationMode,
+              {
+                activeExplorerLayoutId: layoutId,
+                followThemeExplorerLayout: false,
+              },
+            ),
+          ),
         },
       })),
 
-      restoreCanonicalExplorerLayout: () => set((state) => ({
+      restoreCanonicalExplorerLayout: (presentationMode) => set((state) => ({
         settings: {
           ...state.settings,
-          explorer: normalizeExplorerSettings(state.settings.explorer, {
-            followThemeExplorerLayout: false,
-            activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
-          }),
+          explorer: normalizeExplorerSettings(
+            state.settings.explorer,
+            buildExplorerLayoutSelectionByPresentationModeUpdate(
+              state.settings.explorer,
+              presentationMode,
+              {
+                followThemeExplorerLayout: false,
+                activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+              },
+            ),
+          ),
         },
       })),
 
@@ -2294,6 +2513,15 @@ export const useSettingsStore = create<SettingsState>()(
             explorer: normalizeExplorerSettings(state.settings.explorer, {
               followThemeExplorerLayout: false,
               activeExplorerLayoutId: EXPLORER_CANONICAL_LAYOUT_ID,
+              layoutSelectionByPresentationMode: Object.fromEntries(
+                explorerLayoutPresentationModes.map((presentationMode) => [
+                  presentationMode,
+                  createExplorerLayoutSelectionState(
+                    false,
+                    EXPLORER_CANONICAL_LAYOUT_ID,
+                  ),
+                ]),
+              ) as ExplorerLayoutSelectionByPresentationMode,
               chromeLayoutOverridesByThemeId: {},
               layoutUiResetRevision:
                 normalizeSettingsRevision(state.settings.explorer.layoutUiResetRevision) + 1,

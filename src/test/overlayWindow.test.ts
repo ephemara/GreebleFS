@@ -111,6 +111,22 @@ describe('panel window geometry', () => {
     expect(layout.y).toBe(Math.round((WORK_AREA.size.height - panelWindowGeometry.minHeight) / 2));
   });
 
+  it('heals stale app-mode restore bounds saved at the native chrome minimum', () => {
+    const layout = computePanelWindowLayout({
+      workArea: WORK_AREA,
+      scaleFactor: 1,
+      windowedWidth: panelWindowGeometry.minWidth,
+      windowedHeight: panelWindowGeometry.minHeight,
+    });
+
+    expect(layout.width).toBe(panelWindowGeometry.defaultWidth);
+    expect(layout.height).toBe(panelWindowGeometry.defaultHeight);
+    expect(layout.healedWidth).toBe(panelWindowGeometry.defaultWidth);
+    expect(layout.healedHeight).toBe(panelWindowGeometry.defaultHeight);
+    expect(layout.x).toBe(Math.round((WORK_AREA.size.width - panelWindowGeometry.defaultWidth) / 2));
+    expect(layout.y).toBe(Math.round((WORK_AREA.size.height - panelWindowGeometry.defaultHeight) / 2));
+  });
+
   it('uses monitor work-area limits as native app-mode max constraints', () => {
     const constraints = computePanelWindowConstraints({
       workArea: WORK_AREA,

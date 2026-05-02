@@ -47,6 +47,12 @@ export const panelWindowGeometry = {
   minHeight: 560,
 } as const;
 
+export interface PanelWindowStoredSize {
+  width: number;
+  height: number;
+  healed: boolean;
+}
+
 type WindowConstraintGeometry = {
   logicalPadding: number;
   minWidth: number;
@@ -121,6 +127,53 @@ export function formatOverlayVisualControlValue(
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function parsePositiveFiniteNumber(value: unknown): number | null {
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
+function normalizeStoredWindowDimension(value: unknown, fallback: number, min: number): number {
+  return Math.max(Math.round(parsePositiveFiniteNumber(value) ?? fallback), min);
+}
+
+export function normalizePanelWindowStoredSize(args: {
+  width: unknown;
+  height: unknown;
+  fallbackWidth?: number;
+  fallbackHeight?: number;
+  healMinimumSize?: boolean;
+}): PanelWindowStoredSize {
+  const fallbackWidth = normalizeStoredWindowDimension(
+    args.fallbackWidth,
+    panelWindowGeometry.defaultWidth,
+    panelWindowGeometry.minWidth,
+  );
+  const fallbackHeight = normalizeStoredWindowDimension(
+    args.fallbackHeight,
+    panelWindowGeometry.defaultHeight,
+    panelWindowGeometry.minHeight,
+  );
+  const rawWidth = parsePositiveFiniteNumber(args.width);
+  const rawHeight = parsePositiveFiniteNumber(args.height);
+  const width = normalizeStoredWindowDimension(rawWidth, fallbackWidth, panelWindowGeometry.minWidth);
+  const height = normalizeStoredWindowDimension(rawHeight, fallbackHeight, panelWindowGeometry.minHeight);
+  const isStaleChromeMinimumRestore = args.healMinimumSize !== false
+    && rawWidth != null
+    && rawHeight != null
+    && Math.round(rawWidth) === panelWindowGeometry.minWidth
+    && Math.round(rawHeight) === panelWindowGeometry.minHeight;
+
+  if (!isStaleChromeMinimumRestore) {
+    return { width, height, healed: false };
+  }
+
+  return {
+    width: fallbackWidth,
+    height: fallbackHeight,
+    healed: fallbackWidth !== width || fallbackHeight !== height,
+  };
 }
 
 function resolvePhysicalPadding(scaleFactor: number): number {
