@@ -146,6 +146,13 @@ struct PreviewBytesInvokeArgs {
 #[cfg(not(test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RuntimeArtifactBytesInvokeArgs {
+    request: crate::runtime_pipeline::commands::RuntimeReadArtifactBytesRequest,
+}
+
+#[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GlobalSearchQueryUnderPathInvokeArgs {
     root_path: String,
     query: String,
@@ -218,6 +225,29 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             });
             true
         }
+        "runtime_read_artifact_bytes" => {
+            let args =
+                match parse_json_invoke_args::<RuntimeArtifactBytesInvokeArgs>(&invoke.message) {
+                    Ok(args) => args,
+                    Err(error) => {
+                        invoke.resolver.reject(error);
+                        return true;
+                    }
+                };
+            let resolver = invoke.resolver;
+            let command_app = invoke.message.webview().app_handle().clone();
+            let state_app = command_app.clone();
+            ipc_runtime::binary::spawn_raw_invoke_response(resolver, async move {
+                let registry = state_app.state::<runtime_pipeline::RuntimeRegistryState>();
+                runtime_pipeline::commands::runtime_read_artifact_bytes(
+                    command_app,
+                    registry,
+                    args.request,
+                )
+                .await
+            });
+            true
+        }
         "global_search_query_under_path" => {
             let args = match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(
                 &invoke.message,
@@ -264,6 +294,7 @@ pub fn run() {
             "fs_read_preview_bytes"
             | "cloud_read_preview_bytes"
             | "remote_read_preview_bytes"
+            | "runtime_read_artifact_bytes"
             | "global_search_query_under_path" => raw_preview_invoke_handler(invoke),
             _ => specta_invoke_handler(invoke),
         };

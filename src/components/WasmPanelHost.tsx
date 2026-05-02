@@ -8,7 +8,6 @@
 import {
   convertFileSrc,
 } from '@tauri-apps/api/core';
-import { readFile } from '@tauri-apps/plugin-fs';
 import {
   forwardRef,
   useCallback,
@@ -23,6 +22,7 @@ import {
   callRuntimeAction,
   getRuntimePackage,
   prepareRuntimePackage,
+  readRuntimeArtifactBytes,
   type DiscoveredRuntimePackage,
   type RuntimeCallTypedRequest,
   type RuntimePreparePackageResponse,
@@ -197,7 +197,11 @@ async function bootGoPanelRuntime(args: {
     `--runtime-id=${runtimeId}`,
   ];
 
-  const wasmFileBytes = await readFile(prepared.artifactPath);
+  const wasmFileBytes = await readRuntimeArtifactBytes({
+    runtimeId: prepared.runtimeId,
+    cacheKey: prepared.cacheKey,
+    artifactKind: prepared.artifactKind,
+  });
   const wasmBytes = wasmFileBytes.buffer.slice(
     wasmFileBytes.byteOffset,
     wasmFileBytes.byteOffset + wasmFileBytes.byteLength,

@@ -4,6 +4,7 @@ import { render, waitFor } from '@testing-library/react';
 const {
   getRuntimePackageMock,
   prepareRuntimePackageMock,
+  readRuntimeArtifactBytesMock,
   callRuntimeActionMock,
   extensionHostCallMock,
   extensionHostSubscribeMock,
@@ -28,6 +29,7 @@ const {
     stdout: '',
     stderr: '',
   })),
+  readRuntimeArtifactBytesMock: vi.fn(async () => new Uint8Array(8)),
   callRuntimeActionMock: vi.fn(async ({ actionId }: { actionId: string }) => ({
     runtimeId: 'peer-sidecar',
     actionId,
@@ -47,13 +49,10 @@ const {
   extensionHostUnsubscribeMock: vi.fn(async () => null),
 }));
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  readFile: vi.fn(async () => new Uint8Array(8)),
-}));
-
 vi.mock('../runtime/externalRuntimeBackend', () => ({
   getRuntimePackage: getRuntimePackageMock,
   prepareRuntimePackage: prepareRuntimePackageMock,
+  readRuntimeArtifactBytes: readRuntimeArtifactBytesMock,
   callRuntimeAction: callRuntimeActionMock,
 }));
 
@@ -104,6 +103,7 @@ class FakeGoInstance {
 beforeEach(() => {
   getRuntimePackageMock.mockClear();
   prepareRuntimePackageMock.mockClear();
+  readRuntimeArtifactBytesMock.mockClear();
   callRuntimeActionMock.mockClear();
   extensionHostCallMock.mockClear();
   extensionHostSubscribeMock.mockClear();
@@ -135,6 +135,11 @@ describe('GoPanelHost', () => {
 
     await waitFor(() => {
       expect(prepareRuntimePackageMock).toHaveBeenCalledTimes(1);
+    });
+    expect(readRuntimeArtifactBytesMock).toHaveBeenCalledWith({
+      runtimeId: 'sample-panel',
+      cacheKey: 'fake-cache-key',
+      artifactKind: 'sample-panel.wasm',
     });
 
     await waitFor(() => {

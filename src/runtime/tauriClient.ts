@@ -28,6 +28,12 @@ export interface ManagedContentRootsSnapshot {
   writableRoot: string;
 }
 
+export interface RuntimeReadArtifactBytesRequest {
+  runtimeId: string;
+  cacheKey: string;
+  artifactKind: string;
+}
+
 export type WaylandDockAnchor = "top" | "bottom";
 
 const TELEMETRY_COMMANDS = new Set([
@@ -144,6 +150,10 @@ const baseCommands = {
     ),
   remoteReadPreviewBytes: (path: string, maxBytes: number) =>
     invoke<ArrayBuffer>("remote_read_preview_bytes", { path, maxBytes }).then(
+      (buffer) => new Uint8Array(buffer),
+    ),
+  runtimeReadArtifactBytes: (request: RuntimeReadArtifactBytesRequest) =>
+    invoke<ArrayBuffer>("runtime_read_artifact_bytes", { request }).then(
       (buffer) => new Uint8Array(buffer),
     ),
   audioEngineSetPluginParameter: (request: {

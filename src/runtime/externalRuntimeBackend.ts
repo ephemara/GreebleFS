@@ -32,7 +32,11 @@ import type {
   RuntimeStopSidecarRequest,
   RuntimeToolchainStatus,
 } from '../generated/tauri';
-import { commands, unwrapTauriResult } from './tauriClient';
+import {
+  commands,
+  unwrapTauriResult,
+  type RuntimeReadArtifactBytesRequest,
+} from './tauriClient';
 
 export type {
   ExecutionContextSnapshot,
@@ -53,6 +57,7 @@ export type {
   RuntimeStopSidecarRequest,
   RuntimeToolchainStatus,
 };
+export type { RuntimeReadArtifactBytesRequest };
 
 export interface RuntimeCallTypedRequest<TPayload = unknown> {
   runtimeId: string;
@@ -97,6 +102,12 @@ export async function prepareRuntimePackage(
   request: RuntimePreparePackageRequest,
 ): Promise<RuntimePreparePackageResponse> {
   return unwrapTauriResult(await commands.runtimePreparePackage(request));
+}
+
+export async function readRuntimeArtifactBytes(
+  request: RuntimeReadArtifactBytesRequest,
+): Promise<Uint8Array> {
+  return commands.runtimeReadArtifactBytes(request);
 }
 
 export async function startRuntimeSidecar(

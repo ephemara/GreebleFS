@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, State};
+use tauri::{ipc::Response, AppHandle, Manager, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -78,6 +78,7 @@ const RUNTIMES_MANAGED_DIR_NAME: &str = "runtimes";
 const BUILTIN_RUNTIMES_REPO_RELATIVE: &str = "../src-go/builtin-runtimes";
 const EXPLORER_ARCHIVE_VIRTUAL_SCHEME: &str = "greeblefs://archive";
 const REMOTE_PROTOCOL_PREFIX: &str = "remote://sftp/";
+const RUNTIME_ARTIFACT_BYTES_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1954,6 +1955,14 @@ pub struct RuntimePreparePackageResponse {
     pub stderr: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeReadArtifactBytesRequest {
+    pub runtime_id: String,
+    pub cache_key: String,
+    pub artifact_kind: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeStartSidecarRequest {
@@ -2091,6 +2100,127 @@ pub async fn runtime_prepare_package(
         stdout,
         stderr,
     })
+}
+
+fn validate_runtime_artifact_cache_key(cache_key: &str) -> Result<(), String> {
+    if cache_key.len() == 64
+        && cache_key
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return Ok(());
+    }
+
+    Err("Runtime artifact cache keys must be 64-character SHA-256 hex digests.".to_string())
+}
+
+fn validate_runtime_artifact_file_name(artifact_kind: &str) -> Result<(), String> {
+    if artifact_kind.trim().is_empty() {
+        return Err("Runtime artifact kind cannot be empty.".to_string());
+    }
+
+    if artifact_kind.contains('/') || artifact_kind.contains('\\') {
+        return Err("Runtime artifact kind must be a file name, not a path.".to_string());
+    }
+
+    if artifact_kind == "." || artifact_kind == ".." {
+        return Err("Runtime artifact kind cannot be a relative path segment.".to_string());
+    }
+
+    Ok(())
+}
+
+fn resolve_runtime_artifact_cache_path(
+    layout: &CompileCacheLayout,
+    request: &RuntimeReadArtifactBytesRequest,
+) -> Result<PathBuf, String> {
+    validate_runtime_artifact_cache_key(&request.cache_key)?;
+    validate_runtime_artifact_file_name(&request.artifact_kind)?;
+    Ok(layout
+        .entry_for(&request.cache_key)
+        .artifact_path(&request.artifact_kind))
+}
+
+fn canonicalize_runtime_artifact_inside_cache(
+    layout: &CompileCacheLayout,
+    artifact_path: &Path,
+) -> Result<PathBuf, String> {
+    let cache_root = std::fs::canonicalize(&layout.root_dir).map_err(|error| {
+        format!(
+            "Failed to resolve runtime cache root '{}': {error}",
+            layout.root_dir.display()
+        )
+    })?;
+    let artifact = std::fs::canonicalize(artifact_path).map_err(|error| {
+        format!(
+            "Failed to resolve runtime artifact '{}': {error}",
+            artifact_path.display()
+        )
+    })?;
+
+    if !artifact.starts_with(&cache_root) {
+        return Err(format!(
+            "Runtime artifact '{}' is outside the runtime cache root.",
+            artifact.display()
+        ));
+    }
+
+    Ok(artifact)
+}
+
+pub async fn runtime_read_artifact_bytes(
+    app: AppHandle,
+    registry: State<'_, RuntimeRegistry>,
+    request: RuntimeReadArtifactBytesRequest,
+) -> Result<Response, String> {
+    let package = require_package(&registry, &app, &request.runtime_id)?;
+    if !package.manifest.kind.is_wasm() || !package.manifest.compiler.produces_wasm() {
+        return Err(format!(
+            "runtime_read_artifact_bytes requires a wasm runtime (got kind = {}, compiler = {})",
+            package.manifest.kind.as_str(),
+            package.manifest.compiler.as_str()
+        ));
+    }
+
+    let expected_artifact_kind =
+        artifact_name_for_compiler(package.manifest.compiler, &package.manifest.id);
+    if request.artifact_kind != expected_artifact_kind {
+        return Err(format!(
+            "Runtime artifact kind '{}' does not match expected artifact '{}' for runtime '{}'.",
+            request.artifact_kind, expected_artifact_kind, package.manifest.id
+        ));
+    }
+
+    let layout = CompileCacheLayout::from_app(&app)?;
+    let artifact_path = resolve_runtime_artifact_cache_path(&layout, &request)?;
+    let artifact_path = canonicalize_runtime_artifact_inside_cache(&layout, &artifact_path)?;
+    let metadata = tokio::fs::metadata(&artifact_path).await.map_err(|error| {
+        format!(
+            "Failed to inspect runtime artifact '{}': {error}",
+            artifact_path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "Runtime artifact '{}' is not a file.",
+            artifact_path.display()
+        ));
+    }
+    if metadata.len() > RUNTIME_ARTIFACT_BYTES_MAX_BYTES {
+        return Err(format!(
+            "Runtime artifact '{}' is too large to load into a wasm panel (> {} MB).",
+            artifact_path.display(),
+            RUNTIME_ARTIFACT_BYTES_MAX_BYTES / (1024 * 1024)
+        ));
+    }
+
+    let bytes = tokio::fs::read(&artifact_path).await.map_err(|error| {
+        format!(
+            "Failed to read runtime artifact '{}': {error}",
+            artifact_path.display()
+        )
+    })?;
+    Ok(Response::new(bytes))
 }
 
 #[tauri::command]

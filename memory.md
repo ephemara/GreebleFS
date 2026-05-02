@@ -1,3 +1,21 @@
+# 2026-05-02 - Go PTY Panel Wasm Artifacts Now Load Through The Runtime Byte Bridge
+
+- The Go PTY `wasm-panel` boot path no longer reads compiled `.wasm` files with `@tauri-apps/plugin-fs.readFile(...)`.
+  - `src/components/WasmPanelHost.tsx` now asks `src/runtime/externalRuntimeBackend.ts::readRuntimeArtifactBytes(...)` for the prepared artifact bytes after `runtime_prepare_package(...)`.
+  - `src/runtime/tauriClient.ts` invokes the raw `runtime_read_artifact_bytes` IPC lane and converts the returned `ArrayBuffer` to `Uint8Array`.
+  - `src-tauri/src/runtime_pipeline/commands.rs` owns artifact-byte reads: it validates runtime id, wasm compiler/kind, expected artifact name, 64-character SHA-256 cache key, app-local runtime-cache containment, file type, and max byte size before returning a raw `tauri::ipc::Response`.
+  - `src-tauri/src/lib.rs` wires `runtime_read_artifact_bytes` through the same raw binary invoke handler family as preview-byte reads, so no broad Tauri FS plugin grant is needed.
+- Durable regression rule:
+  - If the Go PTY panel shows `fs.read_file not allowed`, the bug is almost certainly a reintroduced frontend filesystem read in the `WasmPanelHost` artifact boot path. Do not fix it by widening `src-tauri/capabilities/default.json`; keep artifact reads behind the runtime pipeline cache validator.
+- Validation for this pass:
+  - Passed: `bunx vitest run src/test/goPanelHost.test.tsx --reporter=dot`
+  - Passed: `GOOS=js GOARCH=wasm go build -o <temp> ./builtin-runtimes/go-pty-panel`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - Limitation: full `bunx tsc --noEmit --pretty false -p tsconfig.json` remains red on unrelated current-branch TS diagnostics outside the touched files.
+  - Limitation: `bun run test:runtime-stack:quick` still reaches a pre-existing Rust lib-test cfg issue in `src-tauri/src/secondary_windows.rs` where `window_commands` / `wayland_dock` are unavailable under the test module graph.
+- Next recommended step:
+  - Add a focused Rust unit around `runtime_read_artifact_bytes` path/cache validation once the current lib-test cfg blocker is cleared.
+
 # 2026-05-02 - Preview Header Chrome Wraps Inside Narrow Preview Panes
 
 - The preview-pane header no longer relies on horizontal scrolling for its buttons when the preview pane is narrow.
