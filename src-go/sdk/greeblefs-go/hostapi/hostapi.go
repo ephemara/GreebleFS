@@ -159,7 +159,11 @@ func toJSValue(value any) js.Value {
 		}
 		return arr
 	default:
-		return js.ValueOf(v)
+		raw, err := marshalTypedHostBridgeValueForJavaScript(v)
+		if err != nil {
+			return js.Null()
+		}
+		return js.Global().Get("JSON").Call("parse", raw)
 	}
 }
 

@@ -1,3 +1,12 @@
+# 2026-05-03 - Go Wasm Host API Structs Marshal Through JSON
+
+- Fixed a suite-wide Go wasm panic where `hostapi.toJSValue(...)` passed typed structs and typed slices, such as `HostSubscriptionRequest{Topics: []string{...}}`, directly to `syscall/js.ValueOf`. Go's js bridge rejects those values with `panic: ValueOf: invalid value`.
+- The Go webview SDK now keeps primitive/js/map/[]any fast paths but JSON-roundtrips arbitrary typed Go values into plain JS objects for host bridge calls. This protects `Events.Subscribe`, `CallHostMethodJSON`, `CallRuntimeAction`, and future typed SDK request structs from the same panic class.
+- Added `src-go/sdk/greeblefs-go/hostapi/bridge_value_test.go` so regular Go tests cover typed host bridge request serialization without needing a browser runner.
+- Cleared two generated app-local stale `sample-panel.wasm` cache artifacts under `C:\Users\Admin\AppData\Local\co.greeblefs.app\runtime-cache` so the sample panel rebuilds against the patched SDK instead of reusing the panic-bearing wasm.
+- Validation included `go test ./sdk/greeblefs-go/...`, js/wasm builds for `sample-panel` and `go-pty-panel`, focused `goPanelHost` Vitest coverage, and a temporary Node + `wasm_exec.js` execution smoke that called `Events.Subscribe` with the same three-topic typed request and completed without panic.
+- Durable rule: if Go wasm panels panic in `syscall/js.ValueOf`, inspect `src-go/sdk/greeblefs-go/hostapi.toJSValue` first. Host bridge request structs must become plain JS data before crossing into React; do not pass arbitrary Go structs or typed slices straight to `js.ValueOf`.
+
 # 2026-05-03 - Explorer Navigation Lock Guard
 
 - Fixed a folder-lock/desync path in the Go explorer policy service. `navigate` still records the attempted session immediately for latest-navigation ordering, but now rolls back to the previous session if the host listing fails and no newer navigation has replaced that attempted session. This prevents a failed folder listing from leaving the policy session at a path the React Explorer never committed.
