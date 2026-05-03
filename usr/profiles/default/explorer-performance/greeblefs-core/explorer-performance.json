@@ -42,11 +42,19 @@
       "recursiveSearch": 2,
       "checksum": 1,
       "thumbnailDecode": 0,
-      "previewRead": 0,
-      "archive": 0,
+      "previewRead": 2,
+      "archive": 1,
       "indexing": 0,
       "maintenance": 0
     }
+  },
+  "previewStreaming": {
+    "enabled": true,
+    "chunkBytes": 65536,
+    "textMaxBytes": 10485760,
+    "dataUriMaxBytes": 12582912,
+    "binaryMaxBytes": 268435456,
+    "archiveEntryMaxBytes": 268435456
   },
   "messageStreams": {
     "enabled": true,

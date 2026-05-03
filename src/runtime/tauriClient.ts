@@ -144,6 +144,16 @@ const baseCommands = {
     invoke<ArrayBuffer>("fs_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),
     ),
+  fsReadArchiveEntryPreviewBytes: (
+    archivePath: string,
+    entryPath: string,
+    maxBytes: number,
+  ) =>
+    invoke<ArrayBuffer>("fs_read_archive_entry_preview_bytes", {
+      archivePath,
+      entryPath,
+      maxBytes,
+    }).then((buffer) => new Uint8Array(buffer)),
   cloudReadPreviewBytes: (path: string, maxBytes: number) =>
     invoke<ArrayBuffer>("cloud_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),

@@ -10,6 +10,9 @@ use tar::Archive;
 use xz2::read::XzDecoder;
 use zip::read::ZipArchive;
 
+use crate::native_task_graph::NativeTaskCancellationToken;
+use crate::preview_streaming::read_reader_to_bounded_vec;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum FsArchiveExtractionMode {
@@ -435,6 +438,138 @@ pub fn materialize_archive_entry(
     })
 }
 
+pub fn read_archive_entry_preview_bytes(
+    archive_path: &Path,
+    entry_path: &str,
+    max_bytes: u64,
+    chunk_bytes: usize,
+    token: &NativeTaskCancellationToken,
+) -> Result<Vec<u8>, String> {
+    validate_archive_path(archive_path)?;
+    let format = detect_archive_format(archive_path)
+        .ok_or_else(|| unsupported_archive_error(archive_path))?;
+    let normalized_entry_path = normalize_archive_entry_path(entry_path)?;
+    if normalized_entry_path.is_empty() {
+        return Err("Archive entry path is required for preview reads.".to_string());
+    }
+
+    match format {
+        ArchiveFormat::Zip => read_zip_archive_entry_preview_bytes(
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::SevenZip => read_seven_zip_archive_entry_preview_bytes(
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::Tar => read_tar_archive_entry_preview_bytes(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::TarGz => read_tar_archive_entry_preview_bytes(
+            GzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::TarBz2 => read_tar_archive_entry_preview_bytes(
+            BzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::TarXz => read_tar_archive_entry_preview_bytes(
+            XzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::Gzip => read_single_stream_archive_entry_preview_bytes(
+            GzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".gz"),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::Bzip2 => read_single_stream_archive_entry_preview_bytes(
+            BzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".bz2"),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+        ArchiveFormat::Xz => read_single_stream_archive_entry_preview_bytes(
+            XzDecoder::new(
+                File::open(archive_path)
+                    .map(BufReader::new)
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
+            ),
+            single_stream_output_name(archive_path, ".xz"),
+            archive_path,
+            &normalized_entry_path,
+            max_bytes,
+            chunk_bytes,
+            token,
+        ),
+    }
+}
+
 fn collect_archive_entry_records(
     archive_path: &Path,
     format: ArchiveFormat,
@@ -539,6 +674,62 @@ fn collect_zip_archive_entry_records(
     Ok(records)
 }
 
+fn read_zip_archive_entry_preview_bytes(
+    archive_path: &Path,
+    entry_path: &str,
+    max_bytes: u64,
+    chunk_bytes: usize,
+    token: &NativeTaskCancellationToken,
+) -> Result<Vec<u8>, String> {
+    let archive_file = File::open(archive_path)
+        .map(BufReader::new)
+        .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        format!(
+            "Failed to read zip archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+
+    for index in 0..archive.len() {
+        token.throw_if_cancelled()?;
+        let mut entry = archive.by_index(index).map_err(|error| {
+            format!(
+                "Failed to inspect zip archive entry {} in {}: {error}",
+                index,
+                archive_path.display()
+            )
+        })?;
+        let relative_path = entry
+            .enclosed_name()
+            .as_deref()
+            .map(path_to_archive_relative_string)
+            .ok_or_else(|| {
+                format!(
+                    "Zip archive contains an unsafe path and cannot be previewed: {}",
+                    entry.name()
+                )
+            })?;
+        if relative_path != entry_path {
+            continue;
+        }
+        if entry.is_dir() {
+            return Err(archive_entry_directory_preview_error(entry_path));
+        }
+        let entry_size = entry.size();
+        return read_reader_to_bounded_vec(
+            &mut entry,
+            Some(entry_size),
+            max_bytes,
+            chunk_bytes,
+            token,
+            "archive entry preview",
+        );
+    }
+
+    Err(archive_entry_not_found_error(archive_path, entry_path))
+}
+
 fn collect_tar_archive_entry_records<R: Read>(
     reader: R,
 ) -> Result<Vec<ArchiveEntryRecord>, String> {
@@ -579,6 +770,61 @@ fn collect_tar_archive_entry_records<R: Read>(
     Ok(records)
 }
 
+fn read_tar_archive_entry_preview_bytes<R: Read>(
+    reader: R,
+    archive_path: &Path,
+    entry_path: &str,
+    max_bytes: u64,
+    chunk_bytes: usize,
+    token: &NativeTaskCancellationToken,
+) -> Result<Vec<u8>, String> {
+    let mut archive = Archive::new(reader);
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("Failed to read tar archive entries: {error}"))?;
+
+    for entry_result in entries {
+        token.throw_if_cancelled()?;
+        let mut entry = entry_result
+            .map_err(|error| format!("Failed to inspect tar archive entry: {error}"))?;
+        let relative_path = entry
+            .path()
+            .map_err(|error| format!("Failed to read tar archive entry path: {error}"))
+            .and_then(|path| {
+                sanitize_relative_path(path.as_ref())
+                    .ok_or_else(|| {
+                        format!(
+                            "Tar archive contains an unsafe path and cannot be previewed: {}",
+                            path.display()
+                        )
+                    })
+                    .map(|path| path_to_archive_relative_string(&path))
+            })?;
+        if relative_path != entry_path {
+            continue;
+        }
+
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            return Err(archive_entry_directory_preview_error(entry_path));
+        }
+        if !entry_type.is_file() {
+            return Err(format!("Archive entry is not previewable: {entry_path}"));
+        }
+        let entry_size = entry.size();
+        return read_reader_to_bounded_vec(
+            &mut entry,
+            Some(entry_size),
+            max_bytes,
+            chunk_bytes,
+            token,
+            "archive entry preview",
+        );
+    }
+
+    Err(archive_entry_not_found_error(archive_path, entry_path))
+}
+
 fn collect_seven_zip_archive_entry_records(
     archive_path: &Path,
 ) -> Result<Vec<ArchiveEntryRecord>, String> {
@@ -608,6 +854,74 @@ fn collect_seven_zip_archive_entry_records(
     }
 
     Ok(records)
+}
+
+fn read_seven_zip_archive_entry_preview_bytes(
+    archive_path: &Path,
+    entry_path: &str,
+    max_bytes: u64,
+    chunk_bytes: usize,
+    token: &NativeTaskCancellationToken,
+) -> Result<Vec<u8>, String> {
+    let output_root = std::env::temp_dir().join("greeblefs-archive-preview");
+    fs::create_dir_all(&output_root).map_err(|error| {
+        format!(
+            "Failed to prepare archive preview staging root {}: {error}",
+            output_root.display()
+        )
+    })?;
+
+    let mut matched_any = false;
+    let mut output: Option<Vec<u8>> = None;
+
+    sevenz_rust::decompress_file_with_extract_fn(archive_path, &output_root, |entry, reader, _| {
+        token
+            .throw_if_cancelled()
+            .map_err(sevenz_rust::Error::other)?;
+        let relative_path = sanitize_relative_path(Path::new(entry.name()))
+            .ok_or_else(|| {
+                sevenz_rust::Error::other(format!(
+                    "7z archive contains an unsafe path and cannot be previewed: {}",
+                    entry.name()
+                ))
+            })
+            .map(|path| path_to_archive_relative_string(&path))?;
+        if relative_path != entry_path {
+            return Ok(false);
+        }
+        matched_any = true;
+        if entry.is_directory() {
+            return Err(sevenz_rust::Error::other(
+                archive_entry_directory_preview_error(entry_path),
+            ));
+        }
+        let bytes = read_reader_to_bounded_vec(
+            reader,
+            Some(entry.size()),
+            max_bytes,
+            chunk_bytes,
+            token,
+            "archive entry preview",
+        )
+        .map_err(sevenz_rust::Error::other)?;
+        output = Some(bytes);
+        Ok(true)
+    })
+    .map_err(|error| {
+        format!(
+            "Failed to preview 7z archive entry {} from {}: {error}",
+            entry_path,
+            archive_path.display()
+        )
+    })?;
+
+    if let Some(output) = output {
+        return Ok(output);
+    }
+    if matched_any {
+        return Err(format!("Archive entry is not previewable: {entry_path}"));
+    }
+    Err(archive_entry_not_found_error(archive_path, entry_path))
 }
 
 fn materialized_archive_entry_output_path(
@@ -999,6 +1313,40 @@ fn extract_single_stream_archive_entry_to_path<R: Read>(
 
     write_archive_reader_to_file(&mut reader, output_path)?;
     Ok(1)
+}
+
+fn read_single_stream_archive_entry_preview_bytes<R: Read>(
+    mut reader: R,
+    output_name: String,
+    archive_path: &Path,
+    entry_path: &str,
+    max_bytes: u64,
+    chunk_bytes: usize,
+    token: &NativeTaskCancellationToken,
+) -> Result<Vec<u8>, String> {
+    if entry_path != output_name {
+        return Err(archive_entry_not_found_error(archive_path, entry_path));
+    }
+    read_reader_to_bounded_vec(
+        &mut reader,
+        None,
+        max_bytes,
+        chunk_bytes,
+        token,
+        "archive entry preview",
+    )
+}
+
+fn archive_entry_directory_preview_error(entry_path: &str) -> String {
+    format!("Archive entry is a directory and cannot be previewed: {entry_path}")
+}
+
+fn archive_entry_not_found_error(archive_path: &Path, entry_path: &str) -> String {
+    format!(
+        "Archive entry was not found: {} in {}",
+        entry_path,
+        archive_path.display()
+    )
 }
 
 fn archive_record_matches_target(
@@ -1789,7 +2137,10 @@ fn unsupported_archive_error(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
     use std::io::Write;
+    use tar::{Builder, Header};
     use tempfile::tempdir;
     use zip::write::SimpleFileOptions;
 
@@ -1850,6 +2201,53 @@ mod tests {
                 .expect("write zip contents");
         }
         writer.finish().expect("finish zip archive");
+    }
+
+    fn create_tar_archive(path: &Path, entries: &[(&str, &str)]) {
+        let file = File::create(path).expect("create tar archive");
+        let mut builder = Builder::new(file);
+        for (name, contents) in entries {
+            let bytes = contents.as_bytes();
+            let mut header = Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, *name, bytes)
+                .expect("append tar entry");
+        }
+        builder.finish().expect("finish tar archive");
+    }
+
+    fn create_tar_gz_archive(path: &Path, entries: &[(&str, &str)]) {
+        let file = File::create(path).expect("create tar.gz archive");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut builder = Builder::new(encoder);
+        for (name, contents) in entries {
+            let bytes = contents.as_bytes();
+            let mut header = Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, *name, bytes)
+                .expect("append tar.gz entry");
+        }
+        let encoder = builder.into_inner().expect("finish tar builder");
+        encoder.finish().expect("finish gzip encoder");
+    }
+
+    fn create_gzip_file(path: &Path, contents: &str) {
+        let file = File::create(path).expect("create gzip file");
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder
+            .write_all(contents.as_bytes())
+            .expect("write gzip payload");
+        encoder.finish().expect("finish gzip payload");
+    }
+
+    fn preview_token() -> NativeTaskCancellationToken {
+        NativeTaskCancellationToken::new()
     }
 
     #[test]
@@ -1960,5 +2358,116 @@ mod tests {
         .expect_err("missing target directory should fail");
 
         assert!(error.contains("target directory is required"));
+    }
+
+    #[test]
+    fn streams_zip_archive_entry_preview_without_materializing() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        create_zip_archive(
+            &archive_path,
+            &[
+                ("nested/alpha.txt", "hello from zip"),
+                ("beta.txt", "world"),
+            ],
+        );
+
+        let bytes = read_archive_entry_preview_bytes(
+            &archive_path,
+            "nested/alpha.txt",
+            1024,
+            3,
+            &preview_token(),
+        )
+        .expect("stream zip entry");
+        assert_eq!(String::from_utf8(bytes).expect("utf8"), "hello from zip");
+    }
+
+    #[test]
+    fn streams_tar_archive_entry_preview() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.tar");
+        create_tar_archive(&archive_path, &[("nested/alpha.txt", "hello from tar")]);
+
+        let bytes = read_archive_entry_preview_bytes(
+            &archive_path,
+            "nested/alpha.txt",
+            1024,
+            4,
+            &preview_token(),
+        )
+        .expect("stream tar entry");
+        assert_eq!(String::from_utf8(bytes).expect("utf8"), "hello from tar");
+    }
+
+    #[test]
+    fn streams_tar_gz_archive_entry_preview() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.tar.gz");
+        create_tar_gz_archive(&archive_path, &[("nested/alpha.txt", "hello from tgz")]);
+
+        let bytes = read_archive_entry_preview_bytes(
+            &archive_path,
+            "nested/alpha.txt",
+            1024,
+            4,
+            &preview_token(),
+        )
+        .expect("stream tar.gz entry");
+        assert_eq!(String::from_utf8(bytes).expect("utf8"), "hello from tgz");
+    }
+
+    #[test]
+    fn streams_single_gzip_archive_entry_preview() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("notes.txt.gz");
+        create_gzip_file(&archive_path, "hello from gzip");
+
+        let bytes =
+            read_archive_entry_preview_bytes(&archive_path, "notes.txt", 1024, 4, &preview_token())
+                .expect("stream gzip entry");
+        assert_eq!(String::from_utf8(bytes).expect("utf8"), "hello from gzip");
+    }
+
+    #[test]
+    fn archive_entry_preview_rejects_unsafe_missing_directory_and_oversized_entries() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        create_zip_archive(&archive_path, &[("nested/alpha.txt", "hello")]);
+
+        let unsafe_error = read_archive_entry_preview_bytes(
+            &archive_path,
+            "../escape.txt",
+            1024,
+            4,
+            &preview_token(),
+        )
+        .expect_err("unsafe entry path should fail");
+        assert!(unsafe_error.contains("unsafe"));
+
+        let missing_error = read_archive_entry_preview_bytes(
+            &archive_path,
+            "missing.txt",
+            1024,
+            4,
+            &preview_token(),
+        )
+        .expect_err("missing entry should fail");
+        assert!(missing_error.contains("not found"));
+
+        let directory_error =
+            read_archive_entry_preview_bytes(&archive_path, "nested", 1024, 4, &preview_token())
+                .expect_err("directory entry should fail");
+        assert!(directory_error.contains("not found") || directory_error.contains("directory"));
+
+        let oversized_error = read_archive_entry_preview_bytes(
+            &archive_path,
+            "nested/alpha.txt",
+            4,
+            2,
+            &preview_token(),
+        )
+        .expect_err("oversized entry should fail");
+        assert!(oversized_error.contains("archive entry preview"));
     }
 }

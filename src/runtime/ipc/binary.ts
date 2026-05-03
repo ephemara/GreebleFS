@@ -2,6 +2,7 @@ import { commands } from "../tauriClient";
 
 export type IpcBinaryLane =
   | "fsPreviewBytes"
+  | "archiveEntryPreviewBytes"
   | "cloudPreviewBytes"
   | "remotePreviewBytes";
 
@@ -9,8 +10,15 @@ export async function readIpcBinaryBytes(
   lane: IpcBinaryLane,
   path: string,
   maxBytes: number,
+  entryPath?: string,
 ): Promise<Uint8Array> {
   switch (lane) {
+    case "archiveEntryPreviewBytes":
+      return commands.fsReadArchiveEntryPreviewBytes(
+        path,
+        entryPath ?? "",
+        maxBytes,
+      );
     case "cloudPreviewBytes":
       return commands.cloudReadPreviewBytes(path, maxBytes);
     case "remotePreviewBytes":

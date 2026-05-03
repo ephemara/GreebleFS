@@ -21,10 +21,15 @@ import {
   listExplorerTasks,
   listenToExplorerTaskProgress,
   openExplorerArchive,
+  readExplorerFileBase64,
+  readExplorerPreviewBytes,
+  readExplorerTextFile,
   retryExplorerTask,
   searchExplorerEntriesWithDiagnostics,
   type ExplorerTaskProgress,
 } from '../runtime/explorerBackend';
+import { buildExplorerArchiveVirtualPath } from '../config/explorerArchives';
+import { EXPLORER_PREVIEW_STREAMING_POLICY } from '../config/explorerPerformance';
 import { commands } from '../runtime/tauriClient';
 
 function makeSchedulerTask(
@@ -105,6 +110,7 @@ describe('explorer backend task bindings', () => {
     expect(typeof commands.fsExtractArchive).toBe('function');
     expect(typeof commands.fsListArchiveDir).toBe('function');
     expect(typeof commands.fsMaterializeArchiveEntry).toBe('function');
+    expect(typeof commands.fsReadArchiveEntryPreviewBytes).toBe('function');
     expect(typeof events.videoEngineStateEvent.listen).toBe('function');
     expect(typeof events.videoEngineStateEvent.emit).toBe('function');
     expect(typeof commands.videoResolvePreviewSource).toBe('function');
@@ -199,6 +205,44 @@ describe('explorer backend task bindings', () => {
     expect(extractResult.extractedEntryCount).toBe(3);
     expect(listedEntries[0]?.name).toBe('textures');
     expect(materializedEntry.outputPath).toBe('/tmp/archive-open/demo/textures');
+  });
+
+  it('streams archive virtual preview reads without materializing entries', async () => {
+    const archivePath = 'C:/workspace/demo.zip';
+    const textPath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: 'docs/readme.txt',
+    });
+    const imagePath = buildExplorerArchiveVirtualPath({
+      archivePath,
+      entryPath: 'images/preview.png',
+    });
+    const readSpy = vi
+      .spyOn(commands, 'fsReadArchiveEntryPreviewBytes')
+      .mockResolvedValue(new TextEncoder().encode('hello archive'));
+    const materializeSpy = vi.spyOn(commands, 'fsMaterializeArchiveEntry');
+
+    const rawBytes = await readExplorerPreviewBytes(textPath, 1024);
+    expect(new TextDecoder().decode(rawBytes)).toBe('hello archive');
+    expect(readSpy).toHaveBeenLastCalledWith(archivePath, 'docs/readme.txt', 1024);
+
+    const text = await readExplorerTextFile(textPath);
+    expect(text).toBe('hello archive');
+    expect(readSpy).toHaveBeenLastCalledWith(
+      archivePath,
+      'docs/readme.txt',
+      EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes,
+    );
+
+    readSpy.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const dataUri = await readExplorerFileBase64(imagePath);
+    expect(dataUri).toBe('data:image/png;base64,AQID');
+    expect(readSpy).toHaveBeenLastCalledWith(
+      archivePath,
+      'images/preview.png',
+      EXPLORER_PREVIEW_STREAMING_POLICY.dataUriMaxBytes,
+    );
+    expect(materializeSpy).not.toHaveBeenCalled();
   });
 
   it('preserves scoped search and cancel argument forwarding through the generated Tauri contract', async () => {

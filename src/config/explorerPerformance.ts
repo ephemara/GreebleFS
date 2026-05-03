@@ -93,6 +93,18 @@ export type ShippedExplorerMessageStreamsPolicy =
     telemetry?: Partial<ExplorerMessageStreamRingPolicy>;
   };
 
+export interface ExplorerPreviewStreamingPolicy {
+  enabled: boolean;
+  chunkBytes: number;
+  textMaxBytes: number;
+  dataUriMaxBytes: number;
+  binaryMaxBytes: number;
+  archiveEntryMaxBytes: number;
+}
+
+export type ShippedExplorerPreviewStreamingPolicy =
+  Partial<ExplorerPreviewStreamingPolicy>;
+
 export interface ShippedExplorerPerformanceManifest {
   version?: number;
   id?: string;
@@ -103,6 +115,7 @@ export interface ShippedExplorerPerformanceManifest {
   viewportScheduling?: ShippedExplorerViewportSchedulerPolicy;
   nativeTaskGraph?: ShippedExplorerNativeTaskGraphPolicy;
   messageStreams?: ShippedExplorerMessageStreamsPolicy;
+  previewStreaming?: ShippedExplorerPreviewStreamingPolicy;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -115,6 +128,7 @@ export interface ExplorerPerformanceManifest {
   viewportScheduling: ExplorerViewportSchedulerPolicy;
   nativeTaskGraph: ExplorerNativeTaskGraphPolicy;
   messageStreams: ExplorerMessageStreamsPolicy;
+  previewStreaming: ExplorerPreviewStreamingPolicy;
 }
 
 const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance = Object.freeze({
@@ -159,8 +173,8 @@ const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy = Obje
     recursiveSearch: 2,
     checksum: 1,
     thumbnailDecode: 0,
-    previewRead: 0,
-    archive: 0,
+    previewRead: 2,
+    archive: 1,
     indexing: 0,
     maintenance: 0,
   }),
@@ -188,6 +202,15 @@ const defaultExplorerMessageStreamsPolicy: ExplorerMessageStreamsPolicy = Object
     maxMessages: 400,
     maxBytes: 2 * 1024 * 1024,
   }),
+});
+
+const defaultExplorerPreviewStreamingPolicy: ExplorerPreviewStreamingPolicy = Object.freeze({
+  enabled: true,
+  chunkBytes: 64 * 1024,
+  textMaxBytes: 10 * 1024 * 1024,
+  dataUriMaxBytes: 12 * 1024 * 1024,
+  binaryMaxBytes: 256 * 1024 * 1024,
+  archiveEntryMaxBytes: 256 * 1024 * 1024,
 });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -500,6 +523,42 @@ function normalizeMessageStreams(
   };
 }
 
+function normalizePreviewStreaming(
+  value: ShippedExplorerPerformanceManifest["previewStreaming"],
+): ExplorerPreviewStreamingPolicy {
+  return {
+    enabled: asBoolean(
+      value?.enabled,
+      defaultExplorerPreviewStreamingPolicy.enabled,
+    ),
+    chunkBytes: Math.round(asFiniteNumber(
+      value?.chunkBytes,
+      defaultExplorerPreviewStreamingPolicy.chunkBytes,
+      { minimum: 4 * 1024, maximum: 1024 * 1024 },
+    )),
+    textMaxBytes: Math.round(asFiniteNumber(
+      value?.textMaxBytes,
+      defaultExplorerPreviewStreamingPolicy.textMaxBytes,
+      { minimum: 1024, maximum: 64 * 1024 * 1024 },
+    )),
+    dataUriMaxBytes: Math.round(asFiniteNumber(
+      value?.dataUriMaxBytes,
+      defaultExplorerPreviewStreamingPolicy.dataUriMaxBytes,
+      { minimum: 1024, maximum: 64 * 1024 * 1024 },
+    )),
+    binaryMaxBytes: Math.round(asFiniteNumber(
+      value?.binaryMaxBytes,
+      defaultExplorerPreviewStreamingPolicy.binaryMaxBytes,
+      { minimum: 1024, maximum: 512 * 1024 * 1024 },
+    )),
+    archiveEntryMaxBytes: Math.round(asFiniteNumber(
+      value?.archiveEntryMaxBytes,
+      defaultExplorerPreviewStreamingPolicy.archiveEntryMaxBytes,
+      { minimum: 1024, maximum: 512 * 1024 * 1024 },
+    )),
+  };
+}
+
 export function normalizeExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): ExplorerPerformanceManifest {
@@ -524,6 +583,7 @@ export function normalizeExplorerPerformanceManifest(
     viewportScheduling: normalizeViewportScheduling(manifest?.viewportScheduling),
     nativeTaskGraph: normalizeNativeTaskGraph(manifest?.nativeTaskGraph),
     messageStreams: normalizeMessageStreams(manifest?.messageStreams),
+    previewStreaming: normalizePreviewStreaming(manifest?.previewStreaming),
   });
 }
 
@@ -554,6 +614,9 @@ export let EXPLORER_NATIVE_TASK_GRAPH_POLICY =
 export let EXPLORER_MESSAGE_STREAMS_POLICY =
   defaultExplorerMessageStreamsPolicy;
 
+export let EXPLORER_PREVIEW_STREAMING_POLICY =
+  defaultExplorerPreviewStreamingPolicy;
+
 export function applyUsrExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): void {
@@ -572,6 +635,7 @@ export function applyUsrExplorerPerformanceManifest(
     explorerPerformance.viewportScheduling;
   EXPLORER_NATIVE_TASK_GRAPH_POLICY = explorerPerformance.nativeTaskGraph;
   EXPLORER_MESSAGE_STREAMS_POLICY = explorerPerformance.messageStreams;
+  EXPLORER_PREVIEW_STREAMING_POLICY = explorerPerformance.previewStreaming;
 }
 
 applyUsrExplorerPerformanceManifest(

@@ -1,3 +1,23 @@
+# 2026-05-03 - Native Streaming Preview And Archive Entry Reader
+
+- Implemented the clean-room native streaming preview slice. `src-tauri/src/preview_streaming.rs` now owns manifest-backed `previewStreaming` policy, bounded chunk reads, local preview bytes, strict UTF-8 text previews, data-URI previews, byte-limit checks, and cooperative cancellation checkpoints.
+- Extended archive preview truth without copying proprietary code. `src-tauri/src/archive_ops.rs` can stream a single entry for ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, 7z, Gzip, Bzip2, and XZ without materializing that entry just to preview it. Unsafe paths, directory entries, missing entries, and over-limit entries are rejected before payload delivery where possible.
+- Routed preview/archive work through the native task graph. Local `fs_read_preview_bytes`, `fs_read_text_file`, and `fs_read_file_base64` now use the `previewRead` lane internally while keeping public names. Archive open/inspect/list/materialize/extract work enters the `archive` lane instead of ad hoc `spawn_blocking`. Default lane caps are now `previewRead=2` and `archive=1`.
+- Added the raw IPC archive-entry preview bridge `fs_read_archive_entry_preview_bytes`. Binary preview payloads intentionally return as raw IPC responses; message rings stay reserved for progress/status/task output so large preview bytes do not get duplicated in retained stream memory.
+- Frontend read helpers in `src/runtime/explorerBackend.ts` now support `greeblefs://archive` virtual paths for preview bytes, text, and data URIs. `src/runtime/ipc/binary.ts` has an `archiveEntryPreviewBytes` lane, and `src/runtime/explorerArchivePreviewPolicy.ts` keeps stream-capable archive preview kinds virtual in `FileExplorer.tsx` while path-required lanes such as PDF/font/native external-open still materialize.
+- Data-driven policy changed in `src/config/explorerPerformance.ts` and `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json`: `previewStreaming` defaults are enabled, `chunkBytes=65536`, text max `10 MiB`, data-URI max `12 MiB`, binary max `256 MiB`, archive-entry max `256 MiB`, with TS/Rust normalization.
+- Validation for this pass:
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib preview_streaming`
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib archive_ops`
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib native_task_graph`
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib message_ring`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/explorerPerformance.test.ts src/test/explorerBackend.bindings.test.ts src/test/explorerArchivePreviewPolicy.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` sweep for touched TS/TSX files returned `NO_TOUCHED_FILE_TYPE_ERRORS`.
+  - Full `bunx tsc --noEmit --pretty false -p tsconfig.json` still exits non-zero on unrelated baseline diagnostics in mobile, side rail/storage drive shapes, image-cutout generated shapes, vendored Tiptap tests/deps, and older test fixtures.
+- Durable rule:
+  - New preview/archive byte reads should route through `preview_streaming.rs`, `archive_ops.rs`, `NativeTaskGraphManager`, and the typed `explorerBackend.ts` helpers. Do not add feature-local full-file reads, hidden temporary extraction for stream-capable preview lanes, or message-ring retention for large binary preview payloads.
+
 # 2026-05-03 - Terminal Baseline Uses Xterm With Retained Replay
 
 - Fixed the fresh Windows profile terminal regression by restoring `usr/profiles/default/settings.json` to `terminal.integratedHost = "xterm"`. `src/config/platform.ts` already returned xterm for Windows, but the shipped default profile is what first-run/new-user hydration actually applies.

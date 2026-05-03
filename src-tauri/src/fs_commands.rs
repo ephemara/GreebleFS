@@ -22,6 +22,10 @@ use crate::native_task_graph::{
     is_native_task_cancelled_error, NativeTaskCancellationToken, NativeTaskGraphManager,
     NativeTaskLane, NativeTaskPriority, NativeTaskRequest, NativeTaskWorkKey,
 };
+use crate::preview_streaming::{
+    read_local_file_data_url, read_local_preview_bytes, read_local_text_file,
+    resolve_preview_byte_limit, PreviewStreamingManager,
+};
 use crate::telemetry::{finish_native_span, start_native_span};
 pub use crate::volume_inventory::DriveInfo;
 use md5::Context as Md5Context;
@@ -549,15 +553,13 @@ fn dir_list_cache() -> &'static Mutex<HashMap<ExplorerPathKey, CachedDirListingV
     DIR_LIST_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn search_name_index_cache()
-    -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchIndexVariants>>
+fn search_name_index_cache() -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchIndexVariants>>
 {
     SEARCH_NAME_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn search_content_index_cache()
-    -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>>
-{
+fn search_content_index_cache(
+) -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>> {
     SEARCH_CONTENT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -4336,17 +4338,43 @@ fn execute_path(path: &Path) -> Result<(), String> {
     }
 }
 
+async fn run_native_blocking_task<T, F>(
+    native_task_graph: &NativeTaskGraphManager,
+    request: NativeTaskRequest,
+    work: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(NativeTaskCancellationToken) -> Result<T, String> + Send + 'static,
+{
+    match native_task_graph.submit_blocking(request, work) {
+        Ok(submission) => submission.wait().await,
+        Err(error) => Err(error),
+    }
+}
+
 // ─── fs_read_text_file ────────────────────────────────────────────────────────
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_read_text_file(path: String) -> Result<String, String> {
-    // Limit file size to 10 MB to avoid hanging Monaco
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    if meta.len() > 10 * 1024 * 1024 {
-        return Err("File is too large to preview (> 10 MB)".to_string());
-    }
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
+pub async fn fs_read_text_file(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    preview_streaming: State<'_, PreviewStreamingManager>,
+    path: String,
+) -> Result<String, String> {
+    let target = PathBuf::from(&path);
+    let policy = preview_streaming.policy().clone();
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::PreviewRead,
+            NativeTaskPriority::Visible,
+            "read text preview",
+        )
+        .with_work_key(NativeTaskWorkKey::new(format!("preview-text:{path}"))),
+        move |token| read_local_text_file(&target, &policy, &token),
+    )
+    .await
 }
 
 // ─── fs_open_file ─────────────────────────────────────────────────────────────
@@ -4368,56 +4396,122 @@ pub async fn fs_open_file(path: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_open_archive(path: String) -> Result<FsArchiveExtractionResult, String> {
+pub async fn fs_open_archive(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    path: String,
+) -> Result<FsArchiveExtractionResult, String> {
     let target = PathBuf::from(path);
-    tauri::async_runtime::spawn_blocking(move || archive_ops::open_archive_cached(&target))
-        .await
-        .map_err(|error| format!("Archive open task join failure: {error}"))?
+    let work_key = format!("archive-open:{}", target.display());
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::Archive,
+            NativeTaskPriority::Visible,
+            "open archive",
+        )
+        .with_work_key(NativeTaskWorkKey::new(work_key)),
+        move |token| {
+            token.throw_if_cancelled()?;
+            let result = archive_ops::open_archive_cached(&target);
+            token.throw_if_cancelled()?;
+            result
+        },
+    )
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_inspect_archive(path: String) -> Result<Vec<String>, String> {
+pub async fn fs_inspect_archive(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    path: String,
+) -> Result<Vec<String>, String> {
     let target = PathBuf::from(path);
-    tauri::async_runtime::spawn_blocking(move || archive_ops::inspect_archive(&target))
-        .await
-        .map_err(|error| format!("Archive inspect task join failure: {error}"))?
+    let work_key = format!("archive-inspect:{}", target.display());
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::Archive,
+            NativeTaskPriority::Visible,
+            "inspect archive",
+        )
+        .with_work_key(NativeTaskWorkKey::new(work_key)),
+        move |token| {
+            token.throw_if_cancelled()?;
+            let result = archive_ops::inspect_archive(&target);
+            token.throw_if_cancelled()?;
+            result
+        },
+    )
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_list_archive_dir(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     archive_path: String,
     directory_path: String,
 ) -> Result<Vec<FsArchiveEntryListingEntry>, String> {
-    let target = PathBuf::from(archive_path);
-    tauri::async_runtime::spawn_blocking(move || {
-        archive_ops::list_archive_dir(&target, &directory_path)
-    })
+    let target = PathBuf::from(&archive_path);
+    let work_key = format!("archive-list:{archive_path}:{directory_path}");
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::Archive,
+            NativeTaskPriority::Visible,
+            "list archive directory",
+        )
+        .with_work_key(NativeTaskWorkKey::new(work_key)),
+        move |token| {
+            token.throw_if_cancelled()?;
+            let result = archive_ops::list_archive_dir(&target, &directory_path);
+            token.throw_if_cancelled()?;
+            result
+        },
+    )
     .await
-    .map_err(|error| format!("Archive list task join failure: {error}"))?
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_materialize_archive_entry(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     request: FsArchiveEntryMaterializationRequest,
 ) -> Result<FsArchiveEntryMaterializationResult, String> {
-    tauri::async_runtime::spawn_blocking(move || archive_ops::materialize_archive_entry(&request))
-        .await
-        .map_err(|error| format!("Archive materialize task join failure: {error}"))?
+    let work_key = format!(
+        "archive-materialize:{}:{}:{}:{:?}",
+        request.archive_path, request.entry_path, request.entry_is_dir, request.mode
+    );
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::Archive,
+            NativeTaskPriority::UserInitiated,
+            "materialize archive entry",
+        )
+        .with_work_key(NativeTaskWorkKey::new(work_key)),
+        move |token| {
+            token.throw_if_cancelled()?;
+            let result = archive_ops::materialize_archive_entry(&request);
+            token.throw_if_cancelled()?;
+            result
+        },
+    )
+    .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_extract_archive(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     request: FsArchiveExtractionRequest,
 ) -> Result<FsArchiveExtractionResult, String> {
     if request.mode == FsArchiveExtractionMode::OpenCached {
         return Err("Use fs_open_archive for cached archive opening.".to_string());
     }
 
-    let (_, result) = run_archive_extraction_task_with_result(request).await?;
+    let (_, result) = run_archive_extraction_task_with_result(&native_task_graph, request).await?;
     Ok(result)
 }
 
@@ -5008,7 +5102,7 @@ pub async fn fs_retry_explorer_task(
             run_checksum_task(&native_task_graph, paths).await?.0
         }
         ExplorerTaskRetryContext::ArchiveExtraction { request } => {
-            run_archive_extraction_task(request).await?
+            run_archive_extraction_task(&native_task_graph, request).await?
         }
         ExplorerTaskRetryContext::AudioTransform { request } => {
             crate::audio_commands::audio_export_transform(app, request)
@@ -5249,36 +5343,69 @@ fn complete_archive_extraction_task(
 }
 
 async fn execute_archive_extraction(
+    native_task_graph: &NativeTaskGraphManager,
+    task_id: &str,
     request: FsArchiveExtractionRequest,
 ) -> Result<FsArchiveExtractionResult, String> {
-    tauri::async_runtime::spawn_blocking(move || archive_ops::extract_archive(&request))
-        .await
-        .map_err(|error| format!("Archive extraction task join failure: {error}"))?
+    let work_key = format!(
+        "archive-extract:{}:{:?}",
+        request.archive_path, request.mode
+    );
+    run_native_blocking_task(
+        native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::Archive,
+            NativeTaskPriority::UserInitiated,
+            "extract archive",
+        )
+        .with_task_id(task_id.to_string())
+        .with_work_key(NativeTaskWorkKey::new(work_key))
+        .user_visible(true),
+        move |token| {
+            token.throw_if_cancelled()?;
+            let result = archive_ops::extract_archive(&request);
+            token.throw_if_cancelled()?;
+            result
+        },
+    )
+    .await
 }
 
 async fn run_archive_extraction_task_with_result(
+    native_task_graph: &NativeTaskGraphManager,
     request: FsArchiveExtractionRequest,
 ) -> Result<(String, FsArchiveExtractionResult), String> {
     let task_id = create_manual_explorer_task(archive_task_registration(
         &request,
         archive_task_initial_output_path(&request),
     ));
-    match execute_archive_extraction(request).await {
+    let _ = set_manual_explorer_task_cancel_context(
+        &task_id,
+        ExplorerTaskCancelContext::NativeTaskGraph {
+            task_id: task_id.clone(),
+        },
+    );
+    match execute_archive_extraction(native_task_graph, &task_id, request).await {
         Ok(result) => {
             complete_archive_extraction_task(&task_id, &result)?;
             Ok((task_id, result))
         }
         Err(error) => {
-            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            if is_native_task_cancelled_error(&error) {
+                let _ = cancel_manual_explorer_task(&task_id, Some("Cancelled".to_string()));
+            } else {
+                let _ = fail_manual_explorer_task(&task_id, error.clone());
+            }
             Err(error)
         }
     }
 }
 
 async fn run_archive_extraction_task(
+    native_task_graph: &NativeTaskGraphManager,
     request: FsArchiveExtractionRequest,
 ) -> Result<String, String> {
-    let (task_id, _) = run_archive_extraction_task_with_result(request).await?;
+    let (task_id, _) = run_archive_extraction_task_with_result(native_task_graph, request).await?;
     Ok(task_id)
 }
 
@@ -5665,77 +5792,82 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 // ─── fs_read_file_base64 ─────────────────────────────────────────────────────
 // Returns the file as a data-URI so the frontend can render it without
 // needing the asset:// protocol (which requires allow-listed paths).
-const FS_READ_FILE_BASE64_MAX_BYTES: u64 = 12 * 1024 * 1024;
-const FS_READ_PREVIEW_BYTES_MAX_BYTES: u64 = 256 * 1024 * 1024;
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
-    use std::io::Read;
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    // Keep previews responsive: this path reads the full file into memory and base64 inflates it.
-    if meta.len() > FS_READ_FILE_BASE64_MAX_BYTES {
-        return Err("File is too large to preview (> 12 MB)".to_string());
-    }
-    let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut buf = Vec::new();
-    file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
-
-    // Determine MIME type from extension
-    let ext = std::path::Path::new(&path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    let mime = match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        "ico" => "image/x-icon",
-        "svg" => "image/svg+xml",
-        "tiff" | "tif" => "image/tiff",
-        "avif" => "image/avif",
-        "glb" => "model/gltf-binary",
-        "gltf" => "model/gltf+json",
-        "obj" => "text/plain",
-        "stl" => "model/stl",
-        "fbx" => "application/octet-stream",
-        _ => "application/octet-stream",
-    };
-
-    // Use a simple base64 encoder (no external crate needed — stdlib in Rust is fine)
-    let b64 = base64_encode(&buf);
-    Ok(format!("data:{};base64,{}", mime, b64))
+pub async fn fs_read_file_base64(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    preview_streaming: State<'_, PreviewStreamingManager>,
+    path: String,
+) -> Result<String, String> {
+    let target = PathBuf::from(&path);
+    let policy = preview_streaming.policy().clone();
+    run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::PreviewRead,
+            NativeTaskPriority::Visible,
+            "read data uri preview",
+        )
+        .with_work_key(NativeTaskWorkKey::new(format!("preview-data-uri:{path}"))),
+        move |token| read_local_file_data_url(&target, &policy, &token),
+    )
+    .await
 }
 
-#[tauri::command]
 pub async fn fs_read_preview_bytes(
+    native_task_graph: NativeTaskGraphManager,
+    preview_streaming: PreviewStreamingManager,
     path: String,
     max_bytes: Option<u64>,
 ) -> Result<Response, String> {
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    let allowed_bytes = resolve_preview_byte_limit(max_bytes, FS_READ_PREVIEW_BYTES_MAX_BYTES);
-    if meta.len() > allowed_bytes {
-        return Err(format!(
-            "File is too large for native preview transport (> {})",
-            format_preview_byte_limit(allowed_bytes)
-        ));
-    }
-
-    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    let target = PathBuf::from(&path);
+    let policy = preview_streaming.policy().clone();
+    let bytes = run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::PreviewRead,
+            NativeTaskPriority::Visible,
+            "read preview bytes",
+        )
+        .with_work_key(NativeTaskWorkKey::new(format!("preview-bytes:{path}"))),
+        move |token| read_local_preview_bytes(&target, max_bytes, &policy, &token),
+    )
+    .await?;
     Ok(Response::new(bytes))
 }
 
-fn resolve_preview_byte_limit(requested_bytes: Option<u64>, hard_limit_bytes: u64) -> u64 {
-    requested_bytes
-        .unwrap_or(hard_limit_bytes)
-        .max(1)
-        .min(hard_limit_bytes)
-}
-
-fn format_preview_byte_limit(limit_bytes: u64) -> String {
-    let limit_mebibytes = limit_bytes.div_ceil(1024 * 1024);
-    format!("{limit_mebibytes} MB")
+pub async fn fs_read_archive_entry_preview_bytes(
+    native_task_graph: NativeTaskGraphManager,
+    preview_streaming: PreviewStreamingManager,
+    archive_path: String,
+    entry_path: String,
+    max_bytes: Option<u64>,
+) -> Result<Response, String> {
+    let target = PathBuf::from(&archive_path);
+    let policy = preview_streaming.policy().clone();
+    let allowed_bytes = resolve_preview_byte_limit(max_bytes, policy.archive_entry_max_bytes);
+    let chunk_bytes = policy.chunk_bytes;
+    let work_key = format!("archive-entry-preview:{archive_path}:{entry_path}");
+    let bytes = run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest::new(
+            NativeTaskLane::PreviewRead,
+            NativeTaskPriority::Visible,
+            "read archive entry preview bytes",
+        )
+        .with_work_key(NativeTaskWorkKey::new(work_key)),
+        move |token| {
+            archive_ops::read_archive_entry_preview_bytes(
+                &target,
+                &entry_path,
+                allowed_bytes,
+                chunk_bytes,
+                &token,
+            )
+        },
+    )
+    .await?;
+    Ok(Response::new(bytes))
 }
 
 #[tauri::command]
@@ -5751,38 +5883,6 @@ pub async fn fs_read_image_thumbnail(
         max_width,
         max_height,
     )
-}
-
-/// Minimal, allocation-efficient base64 encoder (RFC 4648, no padding issues)
-fn base64_encode(input: &[u8]) -> String {
-    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0] as usize;
-        let b1 = if chunk.len() > 1 {
-            chunk[1] as usize
-        } else {
-            0
-        };
-        let b2 = if chunk.len() > 2 {
-            chunk[2] as usize
-        } else {
-            0
-        };
-        out.push(CHARS[b0 >> 2] as char);
-        out.push(CHARS[((b0 & 3) << 4) | (b1 >> 4)] as char);
-        out.push(if chunk.len() > 1 {
-            CHARS[((b1 & 15) << 2) | (b2 >> 6)] as char
-        } else {
-            '='
-        });
-        out.push(if chunk.len() > 2 {
-            CHARS[b2 & 63] as char
-        } else {
-            '='
-        });
-    }
-    out
 }
 
 // ─── fs_get_home_dir ──────────────────────────────────────────────────────────

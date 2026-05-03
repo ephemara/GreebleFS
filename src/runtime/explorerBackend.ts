@@ -14,6 +14,7 @@ import {
   EXPLORER_HOME_PATH,
   isExplorerVirtualPath,
 } from "../config/explorerVirtualLocations";
+import { EXPLORER_PREVIEW_STREAMING_POLICY } from "../config/explorerPerformance";
 import { isExecutableBinaryExtension } from "../config/filePreview";
 import type { RuntimePlatform } from "../config/platform";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
@@ -212,6 +213,12 @@ export type ExplorerLocationListing = {
 };
 
 export type ExplorerPolicyRuntimeMode = "go-sidecar" | "local";
+
+export interface ExplorerPreviewReadOptions {
+  priority?: "interactive" | "visible" | "prefetch" | "background";
+  generation?: number;
+  workKey?: string;
+}
 
 export type ExplorerLocalDriveInfo = DriveInfo & {
   kind: "local";
@@ -1515,7 +1522,19 @@ export async function writeExplorerFile(
   }
 }
 
-export async function readExplorerTextFile(path: string): Promise<string> {
+export async function readExplorerTextFile(
+  path: string,
+  _options?: ExplorerPreviewReadOptions,
+): Promise<string> {
+  const archiveLocation = parseExplorerArchiveVirtualPath(path);
+  if (archiveLocation) {
+    const bytes = await readExplorerPreviewBytes(
+      path,
+      EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes,
+    );
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
   switch (getExplorerPathSourceKind(path)) {
     case "cloud":
       return unwrapTauriResult(await commands.cloudReadTextFile(path));
@@ -1528,7 +1547,19 @@ export async function readExplorerTextFile(path: string): Promise<string> {
   }
 }
 
-export async function readExplorerFileBase64(path: string): Promise<string> {
+export async function readExplorerFileBase64(
+  path: string,
+  _options?: ExplorerPreviewReadOptions,
+): Promise<string> {
+  const archiveLocation = parseExplorerArchiveVirtualPath(path);
+  if (archiveLocation) {
+    const bytes = await readExplorerPreviewBytes(
+      path,
+      EXPLORER_PREVIEW_STREAMING_POLICY.dataUriMaxBytes,
+    );
+    return bytesToExplorerPreviewDataUri(path, bytes);
+  }
+
   switch (getExplorerPathSourceKind(path)) {
     case "cloud":
       return unwrapTauriResult(await commands.cloudReadFileBase64(path));
@@ -1544,7 +1575,18 @@ export async function readExplorerFileBase64(path: string): Promise<string> {
 export async function readExplorerPreviewBytes(
   path: string,
   maxBytes: number,
+  _options?: ExplorerPreviewReadOptions,
 ): Promise<Uint8Array> {
+  const archiveLocation = parseExplorerArchiveVirtualPath(path);
+  if (archiveLocation) {
+    return readIpcBinaryBytes(
+      "archiveEntryPreviewBytes",
+      archiveLocation.archivePath,
+      maxBytes,
+      archiveLocation.entryPath,
+    );
+  }
+
   switch (getExplorerPathSourceKind(path)) {
     case "cloud":
       return readIpcBinaryBytes("cloudPreviewBytes", path, maxBytes);
@@ -1554,6 +1596,65 @@ export async function readExplorerPreviewBytes(
       return readIpcBinaryBytes("fsPreviewBytes", path, maxBytes);
     default:
       throw new Error("Preview bytes are only available for local, remote, or cloud items.");
+  }
+}
+
+function bytesToExplorerPreviewDataUri(path: string, bytes: Uint8Array): string {
+  return `data:${detectExplorerPreviewMimeType(path)};base64,${bytesToBase64(bytes)}`;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const bufferCtor = (globalThis as typeof globalThis & {
+    Buffer?: { from(value: Uint8Array): { toString(encoding: "base64"): string } };
+  }).Buffer;
+  if (bufferCtor) {
+    return bufferCtor.from(bytes).toString("base64");
+  }
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+function detectExplorerPreviewMimeType(path: string): string {
+  const archiveLocation = parseExplorerArchiveVirtualPath(path);
+  const extensionSource = archiveLocation?.entryPath ?? path;
+  const extension = extensionSource.split(".").pop()?.toLowerCase() ?? "";
+  switch (extension) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "bmp":
+      return "image/bmp";
+    case "ico":
+      return "image/x-icon";
+    case "svg":
+      return "image/svg+xml";
+    case "tiff":
+    case "tif":
+      return "image/tiff";
+    case "avif":
+      return "image/avif";
+    case "glb":
+      return "model/gltf-binary";
+    case "gltf":
+      return "model/gltf+json";
+    case "obj":
+      return "text/plain";
+    case "stl":
+      return "model/stl";
+    default:
+      return "application/octet-stream";
   }
 }
 

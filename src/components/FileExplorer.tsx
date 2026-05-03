@@ -568,6 +568,7 @@ import {
   type ExplorerTagMetadataSnapshot,
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
+import { shouldMaterializeArchiveEntryForPreviewKind } from "../runtime/explorerArchivePreviewPolicy";
 import {
   canReuseBackendSortedExplorerEntries,
   compareExplorerEntries as compareSharedExplorerEntries,
@@ -14742,21 +14743,8 @@ export function FileExplorer({
         }
       }
       previewSourceEntryRef.current = entry;
-      const previewResolvedPath =
-        !entry.is_dir && isExplorerArchiveVirtualPath(entry.path)
-          ? await materializeArchiveVirtualEntry(
-              entry.path,
-              false,
-              "stageTemporary",
-            )
-          : entry.path;
-      if (!isCurrentPreviewRequest()) {
-        return;
-      }
-      const previewResolvedPathProps =
-        previewResolvedPath !== entry.path
-          ? { resolvedPath: previewResolvedPath }
-          : {};
+      let previewResolvedPath = entry.path;
+      let previewResolvedPathProps: { resolvedPath?: string } = {};
       const previewExtension = getExplorerPreviewEntryExtension(entry);
       const previewWorkbenchOverride = previewWorkbenchOverrideRef.current;
       const preferredWorkbenchId =
@@ -14785,14 +14773,33 @@ export function FileExplorer({
         documentPreviewKindResolver: getDocumentPreviewKind,
         pluginPreviewLanes,
       });
+      if (
+        !entry.is_dir &&
+        isExplorerArchiveVirtualPath(entry.path) &&
+        shouldMaterializeArchiveEntryForPreviewKind(resolvedPreview.kind)
+      ) {
+        previewResolvedPath = await materializeArchiveVirtualEntry(
+          entry.path,
+          false,
+          "stageTemporary",
+        );
+        if (!isCurrentPreviewRequest()) {
+          return;
+        }
+        previewResolvedPathProps =
+          previewResolvedPath !== entry.path
+            ? { resolvedPath: previewResolvedPath }
+            : {};
+      }
       if (isFastSwitchPreviewKind(resolvedPreview.kind)) {
         beginDelayedPreviewLoadingIndicator(requestId);
       } else {
         dismissPreviewLoadingIndicator();
       }
       if (
-        resolvedPreview.kind === "text" ||
-        resolvedPreview.kind === "unsupported"
+        !isExplorerArchiveVirtualPath(entry.path) &&
+        (resolvedPreview.kind === "text" ||
+          resolvedPreview.kind === "unsupported")
       ) {
         const executableTextScriptProbe =
           await probeExecutableTextScriptPreview({

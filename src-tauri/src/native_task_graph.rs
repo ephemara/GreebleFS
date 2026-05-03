@@ -168,8 +168,8 @@ impl Default for NativeTaskLaneConcurrency {
             recursive_search: 2,
             checksum: 1,
             thumbnail_decode: 0,
-            preview_read: 0,
-            archive: 0,
+            preview_read: 2,
+            archive: 1,
             indexing: 0,
             maintenance: 0,
         }
@@ -1526,7 +1526,9 @@ mod tests {
                         "directoryScan": 999,
                         "recursiveSearch": 0,
                         "checksum": 100,
-                        "thumbnailDecode": 3
+                        "thumbnailDecode": 3,
+                        "previewRead": 4,
+                        "archive": 2
                     }
                 }
             }"#,
@@ -1539,5 +1541,7 @@ mod tests {
         assert_eq!(clamped.lane_concurrency.recursive_search, 1);
         assert_eq!(clamped.lane_concurrency.checksum, 8);
         assert_eq!(clamped.lane_concurrency.thumbnail_decode, 3);
+        assert_eq!(clamped.lane_concurrency.preview_read, 4);
+        assert_eq!(clamped.lane_concurrency.archive, 2);
     }
 }

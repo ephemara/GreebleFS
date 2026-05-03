@@ -7,6 +7,7 @@ import {
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
   EXPLORER_MESSAGE_STREAMS_POLICY,
   EXPLORER_NATIVE_TASK_GRAPH_POLICY,
+  EXPLORER_PREVIEW_STREAMING_POLICY,
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
   EXPLORER_VIEWPORT_SCHEDULER_POLICY,
   explorerPerformance,
@@ -55,14 +56,26 @@ describe("explorerPerformance", () => {
         recursiveSearch: 2,
         checksum: 1,
         thumbnailDecode: 0,
-        previewRead: 0,
-        archive: 0,
+        previewRead: 2,
+        archive: 1,
         indexing: 0,
         maintenance: 0,
       },
     });
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan).toBe(2);
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.checksum).toBe(1);
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.previewRead).toBe(2);
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.archive).toBe(1);
+    expect(explorerPerformance.previewStreaming).toEqual({
+      enabled: true,
+      chunkBytes: 65536,
+      textMaxBytes: 10485760,
+      dataUriMaxBytes: 12582912,
+      binaryMaxBytes: 268435456,
+      archiveEntryMaxBytes: 268435456,
+    });
+    expect(EXPLORER_PREVIEW_STREAMING_POLICY.chunkBytes).toBe(65536);
+    expect(EXPLORER_PREVIEW_STREAMING_POLICY.archiveEntryMaxBytes).toBe(268435456);
     expect(explorerPerformance.messageStreams).toEqual({
       enabled: true,
       telemetryEnabled: true,
@@ -249,6 +262,28 @@ describe("explorerPerformance", () => {
         maxMessages: 12,
         maxBytes: 2048,
       },
+    });
+  });
+
+  it("normalizes preview streaming defaults and clamps authored policy values", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      previewStreaming: {
+        enabled: false,
+        chunkBytes: 1,
+        textMaxBytes: 1,
+        dataUriMaxBytes: 999999999,
+        binaryMaxBytes: 999999999,
+        archiveEntryMaxBytes: 999999999,
+      },
+    });
+
+    expect(normalized.previewStreaming).toEqual({
+      enabled: false,
+      chunkBytes: 4 * 1024,
+      textMaxBytes: 1024,
+      dataUriMaxBytes: 64 * 1024 * 1024,
+      binaryMaxBytes: 512 * 1024 * 1024,
+      archiveEntryMaxBytes: 512 * 1024 * 1024,
     });
   });
 });

@@ -5,7 +5,6 @@ pub mod acceleration_runtime;
 pub mod acceleration_runtime;
 #[cfg(not(test))]
 pub mod action_commands;
-#[cfg(not(test))]
 pub mod archive_ops;
 #[cfg(not(test))]
 pub mod audio_commands;
@@ -52,6 +51,7 @@ pub mod open_with;
 pub mod pdf_commands;
 #[cfg(not(test))]
 pub mod plugin_commands;
+pub mod preview_streaming;
 #[cfg(not(test))]
 pub mod python_commands;
 #[cfg(not(test))]
@@ -127,6 +127,7 @@ use fs_commands::initialize_fs_command_events;
 use native_task_graph::NativeTaskGraphManager;
 #[cfg(not(test))]
 use plugin_commands::PluginWatcherState;
+use preview_streaming::PreviewStreamingManager;
 #[cfg(not(test))]
 use remote_storage_commands::RemoteStorageState;
 #[cfg(not(test))]
@@ -147,6 +148,15 @@ use window_commands::{TrayVisibilityState, MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL}
 #[serde(rename_all = "camelCase")]
 struct PreviewBytesInvokeArgs {
     path: String,
+    max_bytes: Option<u64>,
+}
+
+#[cfg(not(test))]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArchiveEntryPreviewBytesInvokeArgs {
+    archive_path: String,
+    entry_path: String,
     max_bytes: Option<u64>,
 }
 
@@ -187,9 +197,47 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
                 }
             };
             let resolver = invoke.resolver;
+            let app = invoke.message.webview().app_handle().clone();
+            let native_task_graph =
+                NativeTaskGraphManager::clone(&*app.state::<NativeTaskGraphManager>());
+            let preview_streaming =
+                PreviewStreamingManager::clone(&*app.state::<PreviewStreamingManager>());
             ipc_runtime::binary::spawn_raw_invoke_response(
                 resolver,
-                fs_commands::fs_read_preview_bytes(args.path, args.max_bytes),
+                fs_commands::fs_read_preview_bytes(
+                    native_task_graph,
+                    preview_streaming,
+                    args.path,
+                    args.max_bytes,
+                ),
+            );
+            true
+        }
+        "fs_read_archive_entry_preview_bytes" => {
+            let args =
+                match parse_json_invoke_args::<ArchiveEntryPreviewBytesInvokeArgs>(&invoke.message)
+                {
+                    Ok(args) => args,
+                    Err(error) => {
+                        invoke.resolver.reject(error);
+                        return true;
+                    }
+                };
+            let resolver = invoke.resolver;
+            let app = invoke.message.webview().app_handle().clone();
+            let native_task_graph =
+                NativeTaskGraphManager::clone(&*app.state::<NativeTaskGraphManager>());
+            let preview_streaming =
+                PreviewStreamingManager::clone(&*app.state::<PreviewStreamingManager>());
+            ipc_runtime::binary::spawn_raw_invoke_response(
+                resolver,
+                fs_commands::fs_read_archive_entry_preview_bytes(
+                    native_task_graph,
+                    preview_streaming,
+                    args.archive_path,
+                    args.entry_path,
+                    args.max_bytes,
+                ),
             );
             true
         }
@@ -299,6 +347,7 @@ pub fn run() {
     let invoke_handler =
         move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke.message.command() {
             "fs_read_preview_bytes"
+            | "fs_read_archive_entry_preview_bytes"
             | "cloud_read_preview_bytes"
             | "remote_read_preview_bytes"
             | "runtime_read_artifact_bytes"
@@ -353,6 +402,7 @@ pub fn run() {
             app.manage(vst_host_runtime::VstHostRuntimeManager::default());
             app.manage(TelemetryManager::from_app(&app.handle()));
             app.manage(NativeTaskGraphManager::from_app(&app.handle()));
+            app.manage(PreviewStreamingManager::from_app(&app.handle()));
             let startup_span = start_native_span(
                 &app.handle(),
                 "startup",

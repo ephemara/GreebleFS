@@ -29,6 +29,8 @@ use crate::fs_commands::{
 };
 use crate::global_search::{GlobalSearchIndexQueryRequest, GlobalSearchScanSettings};
 use crate::ipc_runtime::IpcRuntimeState;
+use crate::native_task_graph::NativeTaskGraphManager;
+use crate::preview_streaming::PreviewStreamingManager;
 use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
 use crate::runtime_pipeline::cache::{CacheKeyParts, CompileCacheLayout};
 use crate::runtime_pipeline::command_runtime::{
@@ -657,7 +659,9 @@ async fn runtime_host_list_explorer_location(
     }
 
     if let Some(archive_location) = parse_runtime_archive_virtual_path(path.as_str()) {
+        let native_task_graph = app.state::<NativeTaskGraphManager>();
         let entries = fs_list_archive_dir(
+            native_task_graph,
             archive_location.archive_path.clone(),
             archive_location.entry_path.clone(),
         )
@@ -1501,7 +1505,10 @@ async fn dispatch_extension_host_call(
             )?;
             let payload: ExtensionHostReadTextRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
-            let content = fs_read_text_file(payload.path).await?;
+            let native_task_graph = app.state::<NativeTaskGraphManager>();
+            let preview_streaming = app.state::<PreviewStreamingManager>();
+            let content =
+                fs_read_text_file(native_task_graph, preview_streaming, payload.path).await?;
             encode_runtime_host_bridge_result(&content)
         }
         "files.write_text" => {
