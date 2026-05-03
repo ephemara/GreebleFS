@@ -9,6 +9,157 @@ This note turns the four reference systems into concrete guidance for GreebleFS.
 - Conditional fit: a dedicated buddy-style pool for thumbnail/preview scratch buffers.
 - Weak fit as a full rewrite: literal OS-style paging or replacing React state with intrusive runtime structures.
 
+## Top 5 Worth Stealing
+
+If we only steal five things from this tree, these are the five with the best payoff for GreebleFS.
+
+### 1. Explicit Cancellable Work Items And Thread Pools
+
+Reference files:
+
+- `system/threadpool.h`
+- `system/task.h`
+- `net/task2.h`
+
+Why this is top five:
+
+- This is the strongest reusable systems pattern in the whole reference tree.
+- It turns background work into explicit owned jobs with cancellation, priority, routing, and completion semantics.
+- GreebleFS already has native and worker-side async work everywhere, but much of it is still feature-local orchestration instead of one shared scheduling language.
+
+Best GreebleFS landing zones:
+
+- `src-tauri/src/fs_commands.rs`
+- `src-tauri/src/audio_commands.rs`
+- `src/runtime/workerHost.ts`
+- the planned explorer viewport scheduler
+
+Steal the idea, not the console API:
+
+- explicit job objects
+- cooperative cancellation
+- scheduler-owned queues
+- clear active vs stale work ownership
+
+### 2. Normalized Hash Identity
+
+Reference files:
+
+- `atl/hashstring.h`
+- `string/stringhash.h`
+
+Why this is top five:
+
+- This is the cleanest direct hit between the reference tree and the current explorer architecture.
+- Large explorer systems should not pay string-compare costs for every hot-path identity check.
+- Typed hash keys are exactly the kind of boring backend primitive that quietly improves everything.
+
+Best GreebleFS landing zones:
+
+- `src-tauri/src/explorer_identity.rs`
+- `src-tauri/src/fs_commands.rs`
+- `src/runtime/explorerBackend.ts`
+
+Steal the idea, not the exact hash flavor:
+
+- deterministic path normalization
+- typed hash wrappers
+- integer-first lookup keys internally
+- canonical strings preserved at API and debugging boundaries
+
+### 3. Bounded Ring Buffers And Message Queues
+
+Reference files:
+
+- `audiohardware/ringbuffer.h`
+- `system/lockfreering.h`
+- `system/messagequeue.h`
+
+Why this is top five:
+
+- A lot of sluggish desktop behavior is queue policy failure, not raw compute.
+- The reference code is valuable because it forces every queue to declare capacity and what happens under pressure.
+- GreebleFS already has several local bounded histories and pending queues that would benefit from one deliberate policy vocabulary.
+
+Best GreebleFS landing zones:
+
+- `src-tauri/src/runtime_pipeline/host_events.rs`
+- `src-tauri/src/telemetry.rs`
+- `src-tauri/src/terminal.rs`
+- a shared thumbnail or preview scheduling runtime
+
+Steal the idea, not the macho lock-free mystique:
+
+- fixed-capacity lanes
+- overwrite/drop/block behavior chosen per subsystem
+- queue semantics visible in code
+- fewer unbounded `VecDeque`-style feature-local policies
+
+### 4. Intrusive Containers For Hot Native Graphs
+
+Reference files:
+
+- `atl/inlist.h`
+- `atl/inmap.h`
+- `atl/atinbintree.h`
+
+Why this is top five:
+
+- This is still one of the strongest zero-allocation reference sets in the tree.
+- It matters when metadata volume is huge and cache locality matters more than ergonomic container APIs.
+- If GreebleFS grows more native-side explorer indexing and reconciliation logic, this is the right kind of ruthlessness to borrow.
+
+Best GreebleFS landing zones:
+
+- `src-tauri/src/fs_commands.rs`
+- `src-tauri/src/explorer_identity.rs`
+- future native cache/index modules
+
+Steal the idea, not the entire app model:
+
+- embed links inside hot objects
+- avoid per-node heap churn
+- keep intrusive structures behind Rust-native boundaries
+- do not leak this shape into React state or Tauri payloads
+
+### 5. SIMD Vector Math And SoA Math Discipline
+
+Reference files:
+
+- `vectormath/vectormath.h`
+- `vectormath/mathops.h`
+
+Why this is top five:
+
+- This is the highest-ceiling "crazy" reference in the tree that could still pay off here.
+- It is less immediately useful than job systems or hashes, but it is the best source for how Rockstar treated math as infrastructure instead of utility code.
+- GreebleFS already has enough graph/layout/preview/visualization surface area that serious math infrastructure could eventually matter.
+
+Best GreebleFS landing zones:
+
+- `src/components/explorer/constellationGraph.ts`
+- `src/components/explorer/constellationLayout.ts`
+- future native preview, model, image, and GPU-adjacent pipelines
+- any worker/native lane that does repeated geometry, clustering, transforms, or interpolation
+
+Steal the idea, not the exact platform intrinsics:
+
+- structure-of-arrays thinking where batch math matters
+- deterministic small math primitives instead of ad hoc vector helpers
+- aggressive specialization for hot geometry and interpolation paths
+- move expensive repeated math into worker/native lanes when the browser path starts to bend
+
+### Strong Honorable Mention: Dense Bitsets
+
+Reference file:
+
+- `atl/bitset.h`
+
+Why it narrowly misses top five:
+
+- It is probably a more immediate explorer optimization than vectormath for huge-folder filtering and selection math.
+- It misses the top five only because the user asked for the highest-value overall steals, including complex infrastructure, and vectormath has a higher long-term ceiling.
+
 The main reason these ideas are sliceable here is that GreebleFS already has the right seams:
 
 - `src-tauri/src/fs_commands.rs` already owns directory listing caches, search caches, cache policy, and the `Vec<FileEntry>` materialization path.

@@ -1,3 +1,16 @@
+# 2026-05-02 - RAGE Reference Top 5 Worth Stealing
+
+- Tightened `reference/src/research.md` from a broad pattern catalog into a ranked shortlist for future implementation planning.
+- Current top five references, in order:
+  - explicit cancellable work items and scheduler ownership from `system/threadpool.h`, `system/task.h`, and `net/task2.h`
+  - normalized typed hash identity from `atl/hashstring.h` and `string/stringhash.h`
+  - bounded ring buffers and message queues from `audiohardware/ringbuffer.h`, `system/lockfreering.h`, and `system/messagequeue.h`
+  - intrusive native containers from `atl/inlist.h`, `atl/inmap.h`, and `atl/atinbintree.h`
+  - SIMD/SoA math discipline from `vectormath/vectormath.h` and `vectormath/mathops.h`
+- Durable ranking rule:
+  - The most valuable RAGE references for GreebleFS are the ones that impose discipline on background work, identity, queue pressure, and hot-path data layout.
+  - Bitsets remain a very strong honorable mention for huge explorer-domain set math, but they are slightly narrower in scope than the top-five list above.
+
 # 2026-05-02 - Additional High-Value RAGE Reference Slices For GreebleFS
 
 - Extended `reference/src/research.md` beyond the initial four patterns with more useful infrastructure references from the RAGE tree.
