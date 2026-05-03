@@ -757,6 +757,10 @@ const XTermPane = memo(function XTermPane({
         bufferedOutputRef.current += packet.data;
         scheduleBufferedFlush();
       },
+      {
+        replayFromSequence: 0,
+        releaseOnUnsubscribe: false,
+      },
     );
     term.onData(data => {
       onFocusRef.current?.(id);

@@ -104,11 +104,11 @@ func renderTerminalPanel(mount panel.Mount) (panel.Unmount, error) {
 		model:    newPlainTerminalModel(max(256, config.Scrollback)),
 	}
 	panelState.mountDOM()
-	if err := panelState.spawnTerminal(); err != nil {
+	if err := panelState.installHostSubscriptions(); err != nil {
 		return nil, err
 	}
-	if err := panelState.installHostSubscriptions(); err != nil {
-		_ = services.Terminal.Kill(config.TerminalID)
+	if err := panelState.spawnTerminal(); err != nil {
+		panelState.unmount()
 		return nil, err
 	}
 	panelState.installDomListeners()

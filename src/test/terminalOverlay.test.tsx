@@ -145,6 +145,29 @@ describe('TerminalOverlay', () => {
             kind: 'terminal-output',
             eventName: `ipc-stream-terminal-output-${terminalId}`,
           };
+        case 'ipc_replay_stream':
+          return {
+            streamId: typeof invokeArgs?.id === 'string' ? invokeArgs.id : `stream-${terminalId}`,
+            packets: [],
+            replayGap: null,
+            telemetry: {
+              retainedMessages: 0,
+              retainedBytes: 0,
+              oldestSequence: null,
+              nextSequence: 0,
+              totalWrittenMessages: 0,
+              totalWrittenBytes: 0,
+              chunkedMessages: 0,
+              overflow: {
+                overflowed: false,
+                overflowCount: 0,
+                droppedMessages: 0,
+                droppedBytes: 0,
+                firstDroppedSequence: null,
+                latestDroppedSequence: null,
+              },
+            },
+          };
         case 'terminal_register_shell_integration':
         case 'terminal_sync_cwd':
         case 'terminal_set_prompt_state':
@@ -217,6 +240,112 @@ describe('TerminalOverlay', () => {
         'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json',
       );
     });
+  }, 20000);
+
+  it('replays retained xterm output without releasing terminal-owned streams on teardown', async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockImplementation(async (command: string, args?: unknown) => {
+      const invokeArgs =
+        typeof args === 'object' && args !== null
+          ? (args as Record<string, unknown>)
+          : undefined;
+
+      if (command === 'terminal_open_output_stream') {
+        return {
+          id: 'stream-overlay-0',
+          kind: 'terminal-output',
+          eventName: 'ipc-stream-terminal-output-overlay-0',
+        };
+      }
+
+      if (command === 'ipc_replay_stream') {
+        return {
+          streamId: 'stream-overlay-0',
+          packets: [
+            {
+              metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
+              frameMetadata: {
+                sequence: 0,
+                emittedAtEpochMs: 1,
+                byteLength: 120,
+                frameIndex: 0,
+                frameCount: 1,
+                chunked: false,
+              },
+              payloadJson: JSON.stringify({
+                terminalId: 'overlay-0',
+                metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
+                data: 'PS C:\\Dev\\GreebleFS> ',
+              }),
+            },
+          ],
+          replayGap: null,
+          telemetry: {
+            retainedMessages: 1,
+            retainedBytes: 120,
+            oldestSequence: 0,
+            nextSequence: 1,
+            totalWrittenMessages: 1,
+            totalWrittenBytes: 120,
+            chunkedMessages: 0,
+            overflow: {
+              overflowed: false,
+              overflowCount: 0,
+              droppedMessages: 0,
+              droppedBytes: 0,
+              firstDroppedSequence: null,
+              latestDroppedSequence: null,
+            },
+          },
+        };
+      }
+
+      if (
+        command === 'terminal_register_shell_integration' ||
+        command === 'terminal_sync_cwd' ||
+        command === 'terminal_set_prompt_state'
+      ) {
+        return {
+          shellKind: 'unknown',
+          supportsAutoCd: true,
+          atPrompt: true,
+          reportedCwd: null,
+          pendingCwd: null,
+          lastSyncedCwd: null,
+        };
+      }
+
+      if (
+        command === 'terminal_spawn' ||
+        command === 'terminal_write' ||
+        command === 'terminal_write_many' ||
+        command === 'terminal_resize' ||
+        command === 'terminal_kill' ||
+        command === 'ipc_release_stream'
+      ) {
+        return null;
+      }
+
+      return invokeArgs ?? null;
+    });
+
+    const { unmount } = render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('ipc_replay_stream', {
+        id: 'stream-overlay-0',
+        fromSequence: 0,
+        limit: null,
+      });
+      expect(mockXtermInstances[0]?.write).toHaveBeenCalledWith('PS C:\\Dev\\GreebleFS> ');
+    });
+
+    unmount();
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_kill', { id: 'overlay-0' });
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith('ipc_release_stream', expect.anything());
   }, 20000);
 
   it('keeps the embedded terminal root pinned to the parent bounds', () => {
@@ -558,6 +687,31 @@ describe('TerminalOverlay', () => {
           id: 'stream-overlay-0',
           kind: 'terminal-output',
           eventName: 'ipc-stream-terminal-output-overlay-0',
+        };
+      }
+
+      if (command === 'ipc_replay_stream') {
+        return {
+          streamId: 'stream-overlay-0',
+          packets: [],
+          replayGap: null,
+          telemetry: {
+            retainedMessages: 0,
+            retainedBytes: 0,
+            oldestSequence: null,
+            nextSequence: 0,
+            totalWrittenMessages: 0,
+            totalWrittenBytes: 0,
+            chunkedMessages: 0,
+            overflow: {
+              overflowed: false,
+              overflowCount: 0,
+              droppedMessages: 0,
+              droppedBytes: 0,
+              firstDroppedSequence: null,
+              latestDroppedSequence: null,
+            },
+          },
         };
       }
 

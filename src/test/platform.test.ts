@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   createDefaultCommandBookmarks,
   createDefaultDirectoryBookmarks,
@@ -39,6 +41,16 @@ describe('platform config', () => {
     expect(getDefaultIntegratedShell('macos')).toBe('/bin/zsh -l');
     expect(getDefaultIntegratedShell('linux')).toBe('/bin/bash -l');
     expect(getDefaultIntegratedShell('unknown')).toBe('');
+  });
+
+  it('keeps the shipped default profile on the stable Windows terminal host', () => {
+    const defaultProfileSettings = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'usr/profiles/default/settings.json'), 'utf8'),
+    ) as { terminal?: { integratedHost?: unknown } };
+
+    expect(defaultProfileSettings.terminal?.integratedHost).toBe(
+      getDefaultIntegratedTerminalHost('windows'),
+    );
   });
 
   it('returns platform-specific integrated terminal profiles', () => {

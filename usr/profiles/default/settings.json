@@ -2961,7 +2961,7 @@
     "externalTerminalProfile": "auto",
     "fontFamily": "JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace",
     "fontSize": 13,
-    "integratedHost": "go-pty-panel",
+    "integratedHost": "xterm",
     "overlayAnchor": "bottom",
     "overlayHeight": 912,
     "overlayWidth": 1707,

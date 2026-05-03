@@ -1,3 +1,10 @@
+# 2026-05-03 - Terminal Baseline Uses Xterm With Retained Replay
+
+- Fixed the fresh Windows profile terminal regression by restoring `usr/profiles/default/settings.json` to `terminal.integratedHost = "xterm"`. `src/config/platform.ts` already returned xterm for Windows, but the shipped default profile is what first-run/new-user hydration actually applies.
+- XTerm panes now subscribe to terminal IPC streams with `replayFromSequence: 0` and `releaseOnUnsubscribe: false`. This closes the message-ring race where PowerShell can emit the initial prompt before the WebView listener attaches, while leaving stream lifetime owned by `terminal_kill`.
+- The Go PTY panel now installs host-event subscriptions before spawning the terminal, so the experimental path does not miss early PTY output if a user explicitly opts into it. Keep xterm as the Windows baseline until Go PTY proves stable enough for the default flow.
+- Durable regression rule: when terminal output appears blank after a ring-buffer change, check both the shipped profile host selection and whether the WebView subscriber is replaying retained stream packets before chasing shell-specific behavior.
+
 # 2026-05-03 - Go Runtime Cache Now Tracks Local SDK Replacements
 
 - Fixed the reason the `go-pty-panel` bridge-token error persisted after the SDK parser fix.
