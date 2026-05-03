@@ -501,7 +501,7 @@ import {
 } from "../store/settingsStore";
 import type { SettingsSectionKey } from "../config/settingsNavigation";
 import {
-  explorerActivityLaneDefinitions,
+  explorerActivityRailDefinitionsBySide,
   type ExplorerActivityLaneId,
 } from "../config/explorerActivityRail";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
@@ -21081,6 +21081,7 @@ export function FileExplorer({
   }, [closeSourcesPanel, openSourcesPanel, shouldRenderRail]);
   const actionsPaneVisible = actionsVisible;
   const openActionsPanel = useCallback(() => {
+    actionsPaneAutoOpenedForCustomizeRef.current = false;
     setActionsVisible(true);
   }, []);
   const closeActionsPanel = useCallback(() => {
@@ -21100,65 +21101,111 @@ export function FileExplorer({
   }, [actionsPaneVisible, closeActionsPanel, openActionsPanel]);
   const selectExplorerActivityLane = useCallback(
     (laneId: ExplorerActivityLaneId) => {
-      setActiveActivityLane(laneId);
-
       if (laneId === "files") {
-        setActivityPaneVisible(true);
-        setSourcesVisible(true);
+        if (shouldRenderRail) {
+          closeSourcesPanel();
+          return;
+        }
+        openSourcesPanel();
         return;
       }
 
       if (laneId === "search") {
+        if (activityPaneVisible && activeActivityLane === "search") {
+          setActivityPaneVisible(false);
+          setSourcesVisible(false);
+          return;
+        }
         openExplorerUtilityPane("search");
-        setActionsVisible(false);
         return;
       }
 
       if (laneId === "semantic") {
+        if (activityPaneVisible && activeActivityLane === "semantic") {
+          setActivityPaneVisible(false);
+          setSourcesVisible(false);
+          return;
+        }
         openExplorerUtilityPane("semantic");
-        setActionsVisible(false);
         setSearchMode("semantic");
         return;
       }
 
       if (laneId === "tasks") {
+        if (activityPaneVisible && activeActivityLane === "tasks") {
+          setActivityPaneVisible(false);
+          setSourcesVisible(false);
+          return;
+        }
         openExplorerUtilityPane("tasks");
-        setActionsVisible(false);
         return;
       }
 
       if (laneId === "preview") {
-        setActivityPaneVisible(false);
-        setSourcesVisible(false);
+        if (previewPanelVisible) {
+          void togglePreviewEnabled();
+          return;
+        }
+        setPreviewSplitMode("pane");
         setPreviewEnabled(true);
         return;
       }
 
       if (laneId === "terminal") {
-        setActivityPaneVisible(false);
-        setSourcesVisible(false);
+        if (bottomTerminalVisible) {
+          toggleBottomExplorerTerminal();
+          return;
+        }
         revealBottomExplorerTerminal();
         return;
       }
 
-      setActivityPaneVisible(false);
-      setSourcesVisible(false);
-      setActionsVisible(true);
-      if (laneId === "customize" && !activeChromeEditSession) {
+      if (laneId === "actions") {
+        if (actionsPaneVisible && !activeChromeEditSession) {
+          closeActionsPanel();
+          return;
+        }
+        if (activeChromeEditSession) {
+          actionsPaneAutoOpenedForCustomizeRef.current = false;
+          saveExplorerChromeCustomization();
+        }
+        openActionsPanel();
+        return;
+      }
+
+      if (actionsPaneVisible && activeChromeEditSession) {
+        closeActionsPanel();
+        return;
+      }
+      openActionsPanel();
+      if (!activeChromeEditSession) {
         beginExplorerChromeCustomization();
       }
     },
     [
+      actionsPaneVisible,
+      activeActivityLane,
       activeChromeEditSession,
+      activityPaneVisible,
       beginExplorerChromeCustomization,
+      bottomTerminalVisible,
+      closeActionsPanel,
+      closeSourcesPanel,
       openExplorerUtilityPane,
+      openActionsPanel,
+      openSourcesPanel,
+      previewPanelVisible,
       revealBottomExplorerTerminal,
+      saveExplorerChromeCustomization,
       setPreviewEnabled,
+      setPreviewSplitMode,
       setSearchMode,
+      shouldRenderRail,
+      toggleBottomExplorerTerminal,
+      togglePreviewEnabled,
     ],
   );
   const previewSplitIsPane = previewPanelVisible && previewSplitMode === "pane";
-  const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
     preview.type === "text"
       ? preview.pythonPreview != null
@@ -21890,9 +21937,6 @@ export function FileExplorer({
       visibleEntries,
     ],
   );
-  const effectiveRailPosition = isCompactDock
-    ? "left"
-    : explorerTheme.railPosition;
   const idleEntrySurface = useMemo(
     () => getExplorerEntryStateSurface(explorerTheme, "idle"),
     [explorerTheme],
@@ -22060,26 +22104,20 @@ export function FileExplorer({
       minHeight: 0,
       minWidth: 0,
       overflow: "hidden",
-      flexDirection: effectiveRailPosition === "right" ? "row-reverse" : "row",
+      flexDirection: "row",
     }),
-    [effectiveRailPosition],
+    [],
   );
   const sidebarPaneStyle = useMemo<CSSProperties>(
     () => ({
-      borderRight:
-        effectiveRailPosition === "left"
-          ? "1px solid var(--overlay-explorer-sidebar-border)"
-          : "none",
-      borderLeft:
-        effectiveRailPosition === "right"
-          ? "1px solid var(--overlay-explorer-sidebar-border)"
-          : "none",
+      borderRight: "1px solid var(--overlay-explorer-sidebar-border)",
+      borderLeft: "none",
       background: "var(--overlay-explorer-sidebar-bg)",
       display: "flex",
       flexDirection: "column",
       minHeight: 0,
     }),
-    [effectiveRailPosition],
+    [],
   );
   const toolbarContainerStyle = useMemo<CSSProperties>(() => {
     const usesFloatingShell =
@@ -22274,7 +22312,6 @@ export function FileExplorer({
     }),
     [],
   );
-  const hasDockedFileAreaPane = previewSplitIsPane || actionsPaneVisible;
   const fileAreaStyle = useMemo<CSSProperties>(
     () => ({
       flex: 1,
@@ -22284,11 +22321,11 @@ export function FileExplorer({
       minWidth: 0,
       overflow: "hidden",
       background: "var(--overlay-explorer-content-bg)",
-      gap: hasDockedFileAreaPane ? 10 : 0,
-      padding: hasDockedFileAreaPane ? "10px" : 0,
+      gap: 0,
+      padding: 0,
       boxSizing: "border-box",
     }),
-    [hasDockedFileAreaPane],
+    [],
   );
   const contentPaneShellStyle = useMemo<CSSProperties>(
     () => ({
@@ -22299,15 +22336,8 @@ export function FileExplorer({
       flexDirection: "column",
       overflow: "hidden",
       background: "var(--overlay-explorer-content-bg)",
-      ...(hasDockedFileAreaPane
-        ? {
-            border: "1px solid var(--overlay-explorer-toolbar-border)",
-            borderRadius: "var(--overlay-explorer-panel-radius)",
-            boxShadow: "var(--overlay-explorer-toolbar-shadow)",
-          }
-        : {}),
     }),
-    [hasDockedFileAreaPane],
+    [],
   );
   const batchRenameTargetCount = useMemo(
     () =>
@@ -31029,6 +31059,38 @@ export function FileExplorer({
     }),
     [homeTasks.length, searchResults.length],
   );
+  const activeExplorerActivityLaneIds = useMemo(() => {
+    const laneIds = new Set<ExplorerActivityLaneId>();
+    if (shouldRenderRail) {
+      laneIds.add("files");
+    }
+    if (
+      activityPaneVisible &&
+      (activeActivityLane === "search" ||
+        activeActivityLane === "semantic" ||
+        activeActivityLane === "tasks")
+    ) {
+      laneIds.add(activeActivityLane);
+    }
+    if (previewPanelVisible) {
+      laneIds.add("preview");
+    }
+    if (actionsPaneVisible) {
+      laneIds.add(activeChromeEditSession ? "customize" : "actions");
+    }
+    if (bottomTerminalVisible) {
+      laneIds.add("terminal");
+    }
+    return laneIds;
+  }, [
+    actionsPaneVisible,
+    activeActivityLane,
+    activeChromeEditSession,
+    activityPaneVisible,
+    bottomTerminalVisible,
+    previewPanelVisible,
+    shouldRenderRail,
+  ]);
   const explorerUtilityDockPane = useMemo(() => {
     const utilityLaneActive =
       activityPaneVisible &&
@@ -31056,7 +31118,7 @@ export function FileExplorer({
             maxSize={Math.max(sidebarBounds.maxWidth, 560)}
             onSizeChange={setSidebarWidth}
             borderColor={`${accent}55`}
-            handleSide={effectiveRailPosition === "right" ? "left" : "right"}
+            handleSide="right"
             style={sidebarPaneStyle}
           >
             <ExplorerDockLayoutAdapter
@@ -31161,7 +31223,6 @@ export function FileExplorer({
     activityPaneVisible,
     clearSearch,
     currentPath,
-    effectiveRailPosition,
     explorerSlateTone,
     handleSearchLaneModeChange,
     handleSearchLaneQueryChange,
@@ -31208,7 +31269,7 @@ export function FileExplorer({
             maxSize={sidebarBounds.maxWidth}
             onSizeChange={setSidebarWidth}
             borderColor={`${accent}55`}
-            handleSide={effectiveRailPosition === "right" ? "left" : "right"}
+            handleSide="right"
             style={sidebarPaneStyle}
           >
             <ExplorerSideRail
@@ -31276,12 +31337,11 @@ export function FileExplorer({
     drivesLoading,
     explorerDropScopeId,
     effectiveChromeLayoutId,
-    effectiveRailPosition,
-      explorerChromeEditMode,
-      explorerChromeOverride,
-      explorerRailHeaderLayoutDynamics,
-      explorerTheme.railBrandLabel,
-      goHome,
+    explorerChromeEditMode,
+    explorerChromeOverride,
+    explorerRailHeaderLayoutDynamics,
+    explorerTheme.railBrandLabel,
+    goHome,
     handleBookmarkCreated,
     isCompactDock,
     localTreeRefreshRevision,
@@ -31680,7 +31740,7 @@ export function FileExplorer({
         appearance={appearance}
         preview={preview}
         width={previewWidth}
-        placement={previewPlacement}
+        placement="trailing"
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
         previewJumpToFolderEnabled={previewJumpToFolderEnabled}
@@ -31825,7 +31885,6 @@ export function FileExplorer({
     previewJumpToFolderEnabled,
     previewLocked,
     previewPanelVisible,
-    previewPlacement,
     previewRefreshRevision,
     previewSplitMode,
     previewSurfaceMode,
@@ -32047,7 +32106,7 @@ export function FileExplorer({
           maxSize={EXPLORER_ACTIONS_WIDTH_BOUNDS.max}
           onSizeChange={setActionsWidth}
           borderColor={`${accent}55`}
-          handleSide={previewPlacement === "leading" ? "right" : "left"}
+          handleSide="left"
           style={actionsPaneShellStyle}
         >
           <ExplorerActionsPane
@@ -32120,7 +32179,6 @@ export function FileExplorer({
     explorerCustomizeCatalog,
     openContextMenuComposerSettings,
     pendingExplorerHotkeyPrompt,
-    previewPlacement,
     requestExplorerChromeHotkeyCapture,
     selectExplorerCustomizeControl,
     selectedExplorerCustomizeCommandBinding,
@@ -32132,6 +32190,34 @@ export function FileExplorer({
     setSelectedExplorerChromeShowLabel,
     setSelectedExplorerChromeSizeVariant,
   ]);
+  const explorerRightActivityDockPane = useMemo(() => {
+    if (!explorerPreviewPane && !explorerActionsPane) {
+      return null;
+    }
+
+    const split = Boolean(explorerPreviewPane && explorerActionsPane);
+    return (
+      <div
+        data-overlay-explorer-plane="right-activity-dock"
+        data-overlay-explorer-right-activity-split={split ? "true" : "false"}
+        style={{
+          display: "flex",
+          alignItems: "stretch",
+          gap: split ? 10 : 0,
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+          padding: "10px 0 10px 10px",
+          boxSizing: "border-box",
+          background: "var(--overlay-explorer-content-bg)",
+          flexShrink: 0,
+        }}
+      >
+        {explorerPreviewPane}
+        {explorerActionsPane}
+      </div>
+    );
+  }, [explorerActionsPane, explorerPreviewPane]);
 
   return (
     <div
@@ -32359,9 +32445,12 @@ export function FileExplorer({
         <div style={explorerContentRowStyle}>
           <ExplorerActivityRail
             activeLaneId={activeActivityLane}
-            laneDefinitions={explorerActivityLaneDefinitions}
+            activeLaneIds={activeExplorerActivityLaneIds}
+            appearance={appearance}
+            laneDefinitions={explorerActivityRailDefinitionsBySide.left}
             laneBadges={activityLaneBadges}
             onSelectLane={selectExplorerActivityLane}
+            railSide="left"
             tone={explorerSlateTone}
           />
           {explorerRailPane}
@@ -32376,8 +32465,6 @@ export function FileExplorer({
               }
               style={fileAreaStyle}
             >
-              {previewPlacement === "leading" ? explorerPreviewPane : null}
-              {previewPlacement === "leading" ? explorerActionsPane : null}
               <div
                 data-overlay-explorer-plane="content-shell"
                 style={contentPaneShellStyle}
@@ -32985,10 +33072,18 @@ export function FileExplorer({
                   </div>
                 </OverlayScrollArea>
               </div>
-              {previewPlacement === "trailing" ? explorerPreviewPane : null}
-              {previewPlacement === "trailing" ? explorerActionsPane : null}
             </div>
           </div>
+          {explorerRightActivityDockPane}
+          <ExplorerActivityRail
+            activeLaneIds={activeExplorerActivityLaneIds}
+            appearance={appearance}
+            laneDefinitions={explorerActivityRailDefinitionsBySide.right}
+            laneBadges={activityLaneBadges}
+            onSelectLane={selectExplorerActivityLane}
+            railSide="right"
+            tone={explorerSlateTone}
+          />
         </div>
       </div>
 

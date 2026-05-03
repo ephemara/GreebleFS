@@ -23,6 +23,8 @@ export interface ExplorerActivityLaneDefinition {
   utilityPane: "left" | "right" | "bottom" | "inline";
 }
 
+export type ExplorerActivityRailSide = "left" | "right";
+
 export const defaultExplorerActivityLaneId: ExplorerActivityLaneId = "files";
 
 export const explorerActivityLaneDefinitions: readonly ExplorerActivityLaneDefinition[] =
@@ -92,4 +94,19 @@ export function getExplorerActivityLaneDefinition(
     explorerActivityLaneDefinitions.find((lane) => lane.id === laneId) ??
     explorerActivityLaneDefinitions[0]
   );
+}
+
+export const explorerActivityRailDefinitionsBySide = {
+  left: explorerActivityLaneDefinitions.filter(
+    (lane) => lane.utilityPane === "left" || lane.utilityPane === "bottom",
+  ),
+  right: explorerActivityLaneDefinitions.filter(
+    (lane) => lane.utilityPane === "right",
+  ),
+} satisfies Record<ExplorerActivityRailSide, readonly ExplorerActivityLaneDefinition[]>;
+
+export function getExplorerActivityLaneDefinitionsForRailSide(
+  side: ExplorerActivityRailSide,
+): readonly ExplorerActivityLaneDefinition[] {
+  return explorerActivityRailDefinitionsBySide[side];
 }

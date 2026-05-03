@@ -82,6 +82,10 @@ import { ExplorerDockLayoutAdapter } from '../components/explorer/ExplorerDockLa
 import { ExplorerSearchLane } from '../components/explorer/ExplorerSearchLane';
 import { ExplorerSemanticLane } from '../components/explorer/ExplorerSemanticLane';
 import type { ExplorerPaneTone } from '../components/explorer/ExplorerPanePrimitives';
+import {
+  getExplorerActivityLaneDefinitionsForRailSide,
+  type ExplorerActivityLaneId,
+} from '../config/explorerActivityRail';
 
 const tone: ExplorerPaneTone = {
   accent: '#7c3aed',
@@ -110,6 +114,38 @@ describe('Explorer activity dock surfaces', () => {
 
     expect(onSelectLane).toHaveBeenCalledWith('search');
     expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('splits left and right rail definitions while tracking multiple open lanes', () => {
+    expect(
+      getExplorerActivityLaneDefinitionsForRailSide('left').map(
+        (lane) => lane.id,
+      ),
+    ).toEqual(['files', 'search', 'semantic', 'tasks', 'terminal']);
+    expect(
+      getExplorerActivityLaneDefinitionsForRailSide('right').map(
+        (lane) => lane.id,
+      ),
+    ).toEqual(['preview', 'actions', 'customize']);
+
+    const onSelectLane = vi.fn();
+    render(
+      <ExplorerActivityRail
+        activeLaneIds={new Set<ExplorerActivityLaneId>(['search', 'preview'])}
+        laneDefinitions={getExplorerActivityLaneDefinitionsForRailSide('right')}
+        onSelectLane={onSelectLane}
+        railSide="right"
+        tone={tone}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Preview' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+
+    expect(onSelectLane).toHaveBeenCalledWith('actions');
   });
 
   it('keeps flexlayout dock state behind an adapter callback', () => {

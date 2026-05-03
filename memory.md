@@ -1,3 +1,16 @@
+# 2026-05-03 - Explorer Activity Rail Split Navigation Pass
+
+- Split the Explorer activity rail into authored left/right rail definitions through `explorerActivityRailDefinitionsBySide` in `src/config/explorerActivityRail.ts`. Left rail lanes now cover Files/Search/Semantic/Tasks plus the bottom Terminal toggle; right rail lanes cover Preview/Actions/Customize.
+- `ExplorerActivityRail.tsx` now renders premium icon-only buttons directly, with shared interaction-motion binding, side-aware active indicators, `aria-pressed` state, badges, and `railSide` metadata. It accepts `activeLaneIds` so split lanes can be highlighted at the same time instead of pretending one global lane owns every surface.
+- `FileExplorer.tsx` now treats right-side lanes as independent toggles. Clicking an already-open Files/Search/Semantic/Tasks lane closes that left pane; clicking Preview opens/closes the right preview dock; clicking Actions opens/closes the right actions dock; clicking Customize opens the same right dock in chrome-edit mode and can close it by clicking Customize again. Preview and Actions now render inside `right-activity-dock` next to the right rail, so they can split together without displacing the left navigation/search/task dock.
+- No new keyboard commands were added in this pass; existing toolbar and keybinding paths continue to call the same preview, source, actions, and terminal toggles.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerActivityDock.test.tsx --reporter=dot --testTimeout=30000`.
+  - Passed: `bun run test -- src/test/explorerActivityDock.test.tsx src/test/explorerSideRail.test.tsx src/test/explorerMenuRuntime.test.ts src/test/explorerContextMenuRenderer.test.tsx`.
+  - Passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` sweep returned `NO_TOUCHED_FILE_TYPE_ERRORS` for the touched Explorer rail files.
+  - Passed: `git diff --check`; it only printed existing LF-to-CRLF working-copy warnings.
+- Durable rule: future Explorer utility lanes should decide their rail side in `explorerActivityRail.ts` and should expose open state through a set-like active-lane model. Do not route right-side lanes through `activeActivityLane` if they need to coexist with Search/Semantic/Tasks on the left.
+
 # 2026-05-03 - Tauri Callback Warnings And Window Flicker Guard
 
 - Treated repeated `[TAURI] Couldn't find callback id ...` warnings as relevant because the shell was visibly flickering. The warning is usually a symptom of stale frontend callback registrations or a WebView reload, but in this case the app-level window path also had stale async listener/application races.
