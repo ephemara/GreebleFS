@@ -360,9 +360,7 @@ impl RuntimeManifest {
         let display_name = raw.display_name.unwrap_or_else(|| raw.id.clone());
         let language = raw.language.unwrap_or_else(|| match raw.compiler {
             RuntimeCompiler::PythonSidecar => "python".to_string(),
-            RuntimeCompiler::CargoNative | RuntimeCompiler::CargoWasmBindgen => {
-                "rust".to_string()
-            }
+            RuntimeCompiler::CargoNative | RuntimeCompiler::CargoWasmBindgen => "rust".to_string(),
             RuntimeCompiler::CNative => "c".to_string(),
             _ => "go".to_string(),
         });

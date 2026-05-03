@@ -264,7 +264,10 @@ impl SecondaryWindowManagerState {
             .remove(window_id)
     }
 
-    pub fn find_descriptor_by_window_id(&self, window_id: &str) -> Option<SecondaryWindowDescriptor> {
+    pub fn find_descriptor_by_window_id(
+        &self,
+        window_id: &str,
+    ) -> Option<SecondaryWindowDescriptor> {
         self.descriptors_by_window_id
             .lock()
             .expect("secondary window descriptor registry poisoned")
@@ -339,7 +342,9 @@ fn normalize_secondary_window_descriptor(
 
     let sanitized_window_id = sanitize_secondary_window_id(trimmed_window_id);
     if sanitized_window_id.is_empty() {
-        return Err("secondary window id must contain at least one ASCII letter or digit".to_string());
+        return Err(
+            "secondary window id must contain at least one ASCII letter or digit".to_string(),
+        );
     }
 
     let policy = resolve_secondary_window_policy(
@@ -348,8 +353,7 @@ fn normalize_secondary_window_descriptor(
         request.initial_size,
         request.min_size,
     );
-    let window_label =
-        resolve_secondary_window_label(&sanitized_window_id, &request.surface_kind);
+    let window_label = resolve_secondary_window_label(&sanitized_window_id, &request.surface_kind);
 
     Ok(SecondaryWindowDescriptor {
         window_id: trimmed_window_id.to_string(),
@@ -528,7 +532,9 @@ fn resolve_secondary_window_label(
         _ => {
             let prefix = match surface_kind {
                 SecondaryWindowSurfaceKind::Panel => SECONDARY_PANEL_WINDOW_LABEL_PREFIX,
-                SecondaryWindowSurfaceKind::PluginPanel => SECONDARY_PLUGIN_PANEL_WINDOW_LABEL_PREFIX,
+                SecondaryWindowSurfaceKind::PluginPanel => {
+                    SECONDARY_PLUGIN_PANEL_WINDOW_LABEL_PREFIX
+                }
                 SecondaryWindowSurfaceKind::ActionWidget => {
                     SECONDARY_ACTION_WIDGET_WINDOW_LABEL_PREFIX
                 }
@@ -547,10 +553,7 @@ fn normalize_dock_target(value: SecondaryWindowDockTarget) -> Option<SecondaryWi
 
     Some(SecondaryWindowDockTarget {
         surface_id: surface_id.to_string(),
-        restore_placement: value
-            .restore_placement
-            .as_deref()
-            .and_then(trim_to_option),
+        restore_placement: value.restore_placement.as_deref().and_then(trim_to_option),
     })
 }
 
@@ -658,10 +661,7 @@ mod tests {
             EXPLORER_PICKER_WINDOW_LABEL
         );
         assert_eq!(
-            resolve_secondary_window_label(
-                "notes-panel",
-                &SecondaryWindowSurfaceKind::Panel,
-            ),
+            resolve_secondary_window_label("notes-panel", &SecondaryWindowSurfaceKind::Panel,),
             "secondary-panel-notes-panel"
         );
     }
@@ -718,8 +718,12 @@ mod tests {
         assert!(should_window_label_remember_bounds("dock"));
         assert!(should_window_label_remember_bounds("file-operations"));
         assert!(should_window_label_remember_bounds("secondary-panel-notes"));
-        assert!(should_window_label_remember_bounds("secondary-plugin-panel-sketchfab"));
+        assert!(should_window_label_remember_bounds(
+            "secondary-plugin-panel-sketchfab"
+        ));
         assert!(!should_window_label_remember_bounds("picker"));
-        assert!(!should_window_label_remember_bounds("secondary-action-widget-clock"));
+        assert!(!should_window_label_remember_bounds(
+            "secondary-action-widget-clock"
+        ));
     }
 }

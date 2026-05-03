@@ -10,8 +10,8 @@ use tauri_specta::Event;
 
 use crate::usr::{
     build_usr_profile_relative_directory, load_usr_manifest, resolve_bundled_usr_root,
-    resolve_shared_usr_root, resolve_shipped_usr_entry_relative_directory, DEFAULT_USR_PROFILE_ID,
-    UsrProfileLaneMode,
+    resolve_shared_usr_root, resolve_shipped_usr_entry_relative_directory, UsrProfileLaneMode,
+    DEFAULT_USR_PROFILE_ID,
 };
 
 const PROFILE_CATALOG_VERSION: u32 = 1;
@@ -198,7 +198,10 @@ fn default_profile_overlay_directory(shared_usr_root: &Path, relative_directory:
     ))
 }
 
-fn legacy_profile_overlay_root_directory(shared_usr_root: &Path, relative_directory: &str) -> PathBuf {
+fn legacy_profile_overlay_root_directory(
+    shared_usr_root: &Path,
+    relative_directory: &str,
+) -> PathBuf {
     shared_usr_root.join(relative_directory)
 }
 
@@ -310,7 +313,9 @@ fn parse_settings_json_object(json: &str, label: &str) -> Result<JsonObject, Str
     }
 }
 
-fn parse_settings_from_legacy_storage_json(legacy_storage_json: &str) -> Result<JsonObject, String> {
+fn parse_settings_from_legacy_storage_json(
+    legacy_storage_json: &str,
+) -> Result<JsonObject, String> {
     let storage_value: serde_json::Value = serde_json::from_str(legacy_storage_json)
         .map_err(|error| format!("Failed to parse legacy ultacode-settings JSON: {error}"))?;
     let storage_object = storage_value.as_object().ok_or_else(|| {
@@ -365,7 +370,10 @@ fn partition_settings_object(settings: &JsonObject) -> (JsonObject, JsonObject) 
     (shared_settings, profile_settings)
 }
 
-fn merge_settings_objects(shared_settings: &JsonObject, profile_settings: &JsonObject) -> JsonObject {
+fn merge_settings_objects(
+    shared_settings: &JsonObject,
+    profile_settings: &JsonObject,
+) -> JsonObject {
     let mut merged_settings = shared_settings.clone();
     for (key, value) in profile_settings {
         merged_settings.insert(key.clone(), value.clone());
@@ -377,7 +385,11 @@ fn serialize_json_object(object: &JsonObject, label: &str) -> Result<String, Str
     serde_json::to_string(object).map_err(|error| format!("Failed to serialize {label}: {error}"))
 }
 
-fn create_profile_manifest_file(profile_id: &str, name: &str, timestamp_ms: u64) -> UsrProfileManifestFile {
+fn create_profile_manifest_file(
+    profile_id: &str,
+    name: &str,
+    timestamp_ms: u64,
+) -> UsrProfileManifestFile {
     UsrProfileManifestFile {
         id: profile_id.to_string(),
         name: sanitize_profile_name(name),
@@ -387,7 +399,10 @@ fn create_profile_manifest_file(profile_id: &str, name: &str, timestamp_ms: u64)
     }
 }
 
-fn read_profile_manifest_file(shared_usr_root: &Path, profile_id: &str) -> Result<UsrProfileManifestFile, String> {
+fn read_profile_manifest_file(
+    shared_usr_root: &Path,
+    profile_id: &str,
+) -> Result<UsrProfileManifestFile, String> {
     read_json_file(&profile_metadata_path(shared_usr_root, profile_id))
 }
 
@@ -395,14 +410,20 @@ fn write_profile_manifest_file(
     shared_usr_root: &Path,
     manifest: &UsrProfileManifestFile,
 ) -> Result<(), String> {
-    write_json_file(&profile_metadata_path(shared_usr_root, &manifest.id), manifest)
+    write_json_file(
+        &profile_metadata_path(shared_usr_root, &manifest.id),
+        manifest,
+    )
 }
 
 fn load_profile_catalog(shared_usr_root: &Path) -> Result<UsrProfileCatalogFile, String> {
     read_json_file(&profile_catalog_path(shared_usr_root))
 }
 
-fn write_profile_catalog(shared_usr_root: &Path, catalog: &UsrProfileCatalogFile) -> Result<(), String> {
+fn write_profile_catalog(
+    shared_usr_root: &Path,
+    catalog: &UsrProfileCatalogFile,
+) -> Result<(), String> {
     write_json_file(&profile_catalog_path(shared_usr_root), catalog)
 }
 
@@ -419,8 +440,8 @@ fn unique_profile_id(
     let requested_candidate = requested_profile_id
         .map(normalize_profile_id_fragment)
         .filter(|value| !value.is_empty());
-    let base_profile_id = requested_candidate
-        .unwrap_or_else(|| normalize_profile_id_fragment(profile_name));
+    let base_profile_id =
+        requested_candidate.unwrap_or_else(|| normalize_profile_id_fragment(profile_name));
     let base_profile_id = if base_profile_id.is_empty() {
         "profile".to_string()
     } else {
@@ -443,12 +464,14 @@ fn move_or_merge_legacy_profile_overlay_directory(
     shared_usr_root: &Path,
     relative_directory: &str,
 ) -> Result<(), String> {
-    let legacy_directory = legacy_profile_overlay_root_directory(shared_usr_root, relative_directory);
+    let legacy_directory =
+        legacy_profile_overlay_root_directory(shared_usr_root, relative_directory);
     if !legacy_directory.exists() {
         return Ok(());
     }
 
-    let canonical_directory = default_profile_overlay_directory(shared_usr_root, relative_directory);
+    let canonical_directory =
+        default_profile_overlay_directory(shared_usr_root, relative_directory);
     if !canonical_directory.exists() {
         ensure_parent_directory(&canonical_directory)?;
         match fs::rename(&legacy_directory, &canonical_directory) {
@@ -489,19 +512,28 @@ fn copy_profile_overlay_lane_directories(
             continue;
         }
 
-        let source_directory = profile_directory(shared_usr_root, source_profile_id).join(&entry.relative_directory);
+        let source_directory =
+            profile_directory(shared_usr_root, source_profile_id).join(&entry.relative_directory);
         if !source_directory.exists() {
             continue;
         }
 
-        let target_directory = profile_directory(shared_usr_root, target_profile_id).join(&entry.relative_directory);
+        let target_directory =
+            profile_directory(shared_usr_root, target_profile_id).join(&entry.relative_directory);
         copy_missing_entries(&source_directory, &target_directory)?;
     }
     Ok(())
 }
 
-fn ensure_catalog_profile_exists(catalog: &UsrProfileCatalogFile, profile_id: &str) -> Result<(), String> {
-    if catalog.profile_order.iter().any(|entry| entry == profile_id) {
+fn ensure_catalog_profile_exists(
+    catalog: &UsrProfileCatalogFile,
+    profile_id: &str,
+) -> Result<(), String> {
+    if catalog
+        .profile_order
+        .iter()
+        .any(|entry| entry == profile_id)
+    {
         Ok(())
     } else {
         Err(format!("Usr profile '{profile_id}' does not exist"))
@@ -524,18 +556,15 @@ fn seed_default_profile(
         let backup_path = legacy_settings_backup_path(shared_usr_root);
         if !backup_path.exists() {
             ensure_parent_directory(&backup_path)?;
-            fs::write(&backup_path, legacy_settings_storage_json).map_err(|error| {
-                format!(
-                    "Failed to write {}: {error}",
-                    backup_path.display()
-                )
-            })?;
+            fs::write(&backup_path, legacy_settings_storage_json)
+                .map_err(|error| format!("Failed to write {}: {error}", backup_path.display()))?;
         }
     }
 
     let seed_settings_object =
         resolve_seed_settings_object(current_settings_json, legacy_settings_storage_json)?;
-    let (shared_settings, default_profile_settings) = partition_settings_object(&seed_settings_object);
+    let (shared_settings, default_profile_settings) =
+        partition_settings_object(&seed_settings_object);
     let timestamp_ms = current_timestamp_ms();
     let default_profile_manifest =
         create_profile_manifest_file(DEFAULT_PROFILE_ID, DEFAULT_PROFILE_NAME, timestamp_ms);
@@ -561,8 +590,12 @@ fn load_or_initialize_catalog(
     current_settings_json: Option<&str>,
     legacy_settings_storage_json: Option<&str>,
 ) -> Result<UsrProfileCatalogFile, String> {
-    fs::create_dir_all(profiles_root(shared_usr_root))
-        .map_err(|error| format!("Failed to create {}: {error}", profiles_root(shared_usr_root).display()))?;
+    fs::create_dir_all(profiles_root(shared_usr_root)).map_err(|error| {
+        format!(
+            "Failed to create {}: {error}",
+            profiles_root(shared_usr_root).display()
+        )
+    })?;
     fs::create_dir_all(shared_profiles_directory(shared_usr_root)).map_err(|error| {
         format!(
             "Failed to create {}: {error}",
@@ -583,7 +616,11 @@ fn load_or_initialize_catalog(
 
     let mut catalog = load_profile_catalog(shared_usr_root)?;
     if catalog.profile_order.is_empty() {
-        catalog = seed_default_profile(shared_usr_root, current_settings_json, legacy_settings_storage_json)?;
+        catalog = seed_default_profile(
+            shared_usr_root,
+            current_settings_json,
+            legacy_settings_storage_json,
+        )?;
     }
     migrate_legacy_profile_overlay_lanes(shared_usr_root)?;
 
@@ -676,9 +713,10 @@ fn build_directory_stacks(
             bundled_usr_root.join(resolve_shipped_usr_entry_relative_directory(&entry));
         let profile_directory_path = match entry.profile_mode {
             UsrProfileLaneMode::SharedRoot => None,
-            UsrProfileLaneMode::ProfileOverlay => {
-                Some(profile_directory(shared_usr_root, active_profile_id).join(&entry.relative_directory))
-            }
+            UsrProfileLaneMode::ProfileOverlay => Some(
+                profile_directory(shared_usr_root, active_profile_id)
+                    .join(&entry.relative_directory),
+            ),
         };
 
         let writable_directory = profile_directory_path
@@ -723,8 +761,13 @@ fn build_runtime_snapshot_from_catalog(
         .profile_order
         .iter()
         .map(|profile_id| {
-            read_profile_manifest_file(shared_usr_root, profile_id)
-                .map(|manifest| to_profile_summary(shared_usr_root, manifest, profile_id == &catalog.active_profile_id))
+            read_profile_manifest_file(shared_usr_root, profile_id).map(|manifest| {
+                to_profile_summary(
+                    shared_usr_root,
+                    manifest,
+                    profile_id == &catalog.active_profile_id,
+                )
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -735,7 +778,9 @@ fn build_runtime_snapshot_from_catalog(
 
     Ok(UsrProfileRuntimeSnapshot {
         active_profile_id: catalog.active_profile_id.clone(),
-        profiles_root: profiles_root(shared_usr_root).to_string_lossy().into_owned(),
+        profiles_root: profiles_root(shared_usr_root)
+            .to_string_lossy()
+            .into_owned(),
         shared_settings_path: shared_settings_path(shared_usr_root)
             .to_string_lossy()
             .into_owned(),
@@ -822,7 +867,8 @@ pub async fn usr_profiles_switch(
     ensure_catalog_profile_exists(&catalog, &profile_id)?;
 
     if let Some(current_settings_json) = current_settings_json.as_deref() {
-        let settings = parse_settings_json_object(current_settings_json, "active settings snapshot")?;
+        let settings =
+            parse_settings_json_object(current_settings_json, "active settings snapshot")?;
         persist_partitioned_settings(&shared_usr_root, &catalog.active_profile_id, &settings)?;
     }
 
@@ -850,16 +896,18 @@ pub async fn usr_profiles_create(
     );
     let timestamp_ms = current_timestamp_ms();
     let manifest = create_profile_manifest_file(&new_profile_id, &profile_name, timestamp_ms);
-    let seed_profile_settings = if let Some(seed_settings_json) = request.seed_settings_json.as_deref() {
-        let seed_settings = parse_settings_json_object(seed_settings_json, "new profile seed settings")?;
-        let (_, profile_settings) = partition_settings_object(&seed_settings);
-        profile_settings
-    } else {
-        read_json_object_file(&profile_settings_path(
-            &shared_usr_root,
-            &catalog.active_profile_id,
-        ))?
-    };
+    let seed_profile_settings =
+        if let Some(seed_settings_json) = request.seed_settings_json.as_deref() {
+            let seed_settings =
+                parse_settings_json_object(seed_settings_json, "new profile seed settings")?;
+            let (_, profile_settings) = partition_settings_object(&seed_settings);
+            profile_settings
+        } else {
+            read_json_object_file(&profile_settings_path(
+                &shared_usr_root,
+                &catalog.active_profile_id,
+            ))?
+        };
 
     write_profile_manifest_file(&shared_usr_root, &manifest)?;
     write_json_file(
@@ -895,7 +943,8 @@ pub async fn usr_profiles_duplicate(
 
     if request.source_profile_id == catalog.active_profile_id {
         if let Some(current_settings_json) = request.current_settings_json.as_deref() {
-            let settings = parse_settings_json_object(current_settings_json, "active settings snapshot")?;
+            let settings =
+                parse_settings_json_object(current_settings_json, "active settings snapshot")?;
             persist_partitioned_settings(&shared_usr_root, &catalog.active_profile_id, &settings)?;
         }
     }
@@ -916,8 +965,10 @@ pub async fn usr_profiles_duplicate(
         created_at_ms: timestamp_ms,
         updated_at_ms: timestamp_ms,
     };
-    let source_settings =
-        read_json_object_file(&profile_settings_path(&shared_usr_root, &request.source_profile_id))?;
+    let source_settings = read_json_object_file(&profile_settings_path(
+        &shared_usr_root,
+        &request.source_profile_id,
+    ))?;
 
     write_profile_manifest_file(&shared_usr_root, &duplicate_manifest)?;
     write_json_file(
@@ -997,7 +1048,9 @@ pub async fn usr_profiles_delete(
         })?;
     }
 
-    catalog.profile_order.retain(|profile_id| profile_id != &request.profile_id);
+    catalog
+        .profile_order
+        .retain(|profile_id| profile_id != &request.profile_id);
     if catalog.active_profile_id == request.profile_id {
         catalog.active_profile_id = fallback_profile_id;
     }

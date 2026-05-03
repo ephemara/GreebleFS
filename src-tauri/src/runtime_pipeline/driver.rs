@@ -404,12 +404,8 @@ fn invoke_cargo_wasm_bindgen_build(
         ));
     }
 
-    let built_wasm_path = resolve_cargo_built_wasm_path(
-        &cargo_target_directory,
-        &cargo_target,
-        mode,
-        &crate_stem,
-    );
+    let built_wasm_path =
+        resolve_cargo_built_wasm_path(&cargo_target_directory, &cargo_target, mode, &crate_stem);
     let output_directory = artifact_path.parent().ok_or_else(|| {
         format!(
             "runtime artifact {} has no parent directory",
@@ -753,10 +749,7 @@ mod tests {
             "notes-preview.wasm"
         );
         assert_eq!(
-            artifact_name_for_compiler(
-                RuntimeCompiler::CargoWasmBindgen,
-                "notes-preview"
-            ),
+            artifact_name_for_compiler(RuntimeCompiler::CargoWasmBindgen, "notes-preview"),
             "notes-preview.js"
         );
         assert_eq!(

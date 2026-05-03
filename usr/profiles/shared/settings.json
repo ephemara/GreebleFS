@@ -4,7 +4,7 @@
       "chromeScale": 1.08,
       "directoriesFirst": true,
       "gridZoom": 1,
-      "interfaceScale": 1.05,
+      "interfaceScale": 1.08,
       "pagePadding": 16,
       "showHiddenFiles": false,
       "showTabLabels": true,
@@ -13,14 +13,14 @@
       "touchComfort": "comfortable",
       "viewMode": "icons-m"
     },
-    "remoteAccessMode": "tailscale",
+    "remoteAccessMode": "lan",
     "tailscaleHostname": "",
     "tailscaleLoginServer": ""
   },
   "models": {
     "capabilityBindings": {
       "image-cutout": {
-        "backendPreference": "cuda",
+        "backendPreference": "auto",
         "modelId": "image-cutout-sam2-small"
       },
       "local-inference": {
@@ -29,7 +29,7 @@
       },
       "semantic-indexing": {
         "backendPreference": "auto",
-        "modelId": "image-cutout-sam2-small"
+        "modelId": "semantic-minilm-l6-v2"
       },
       "source-separation": {
         "backendPreference": "cuda",
@@ -61,22 +61,22 @@
     "showGrid": true
   },
   "system": {
-    "accelerationRoutingMode": "preferCuda",
+    "accelerationRoutingMode": "auto",
     "consumerDiagnosticsEnabled": false,
-    "consumerDiagnosticsIncludePerfSamples": false,
-    "consumerDiagnosticsIncludePluginRuntime": false,
-    "consumerDiagnosticsIncludeRendererRuntime": false,
+    "consumerDiagnosticsIncludePerfSamples": true,
+    "consumerDiagnosticsIncludePluginRuntime": true,
+    "consumerDiagnosticsIncludeRendererRuntime": true,
     "devTelemetryHudVisible": false,
     "developerMode": false,
     "developerTelemetryCaptureMode": "raw",
     "developerTelemetryEnabled": false,
     "developerTelemetryMaxFileSizeMb": 64,
     "developerTelemetryPayloadMode": "metadata+small-payloads",
-    "developerTelemetryShowInspector": false,
-    "developerTelemetryWriteToFile": false,
+    "developerTelemetryShowInspector": true,
+    "developerTelemetryWriteToFile": true,
     "developerTestSettingsEnabled": false,
-    "gpuTierMode": "discrete",
-    "hideAppInTray": false,
+    "gpuTierMode": "auto",
+    "hideAppInTray": true,
     "launchAtStartup": false,
     "linuxDisplayBackendPreference": "auto",
     "linuxNvidiaWebkitWorkaroundMode": "auto",

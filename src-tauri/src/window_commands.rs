@@ -177,7 +177,8 @@ pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
         .tray_by_id(MAIN_TRAY_ICON_ID)
         .ok_or_else(|| "Main tray icon not found".to_string())?;
 
-    tray.set_visible(visible).map_err(|error| error.to_string())?;
+    tray.set_visible(visible)
+        .map_err(|error| error.to_string())?;
     Ok(())
 }
 
