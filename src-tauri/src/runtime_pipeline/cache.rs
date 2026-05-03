@@ -4,11 +4,13 @@
 //!   `{runtime_id}-{compiler}-{toolchain_version}-{target}-{mode}-{source_sig}`
 //!
 //! `source_sig` is a deterministic SHA-256 over a sorted (relative-path, size,
-//! mtime, len-of-contents-for-text) descriptor of the runtime source tree.
-//! That is fast enough on cold starts but fully invalidates the cache when
-//! anything in the module dir changes. Authors who need stricter invalidation
-//! can add a `.runtime-cache-bust` file inside the module dir.
+//! mtime, len-of-contents-for-text) descriptor of the runtime source tree plus
+//! local Go `replace` dependency roots. That is fast enough on cold starts but
+//! fully invalidates the cache when the module dir or first-party Go SDK code
+//! changes. Authors who need stricter invalidation can add a `.runtime-cache-bust`
+//! file inside the module dir.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -109,7 +111,21 @@ use tauri::Manager as _;
 /// builds this is sensitive enough; full content hashing can be opt-in later.
 pub fn compute_source_signature(module_dir: &Path) -> Result<String, String> {
     let mut entries = Vec::new();
-    visit_for_signature(module_dir, module_dir, &mut entries)?;
+    visit_for_signature("module", module_dir, module_dir, &mut entries)?;
+    for replacement_root in collect_local_go_replacement_roots(module_dir) {
+        if !replacement_root.path.exists() {
+            continue;
+        }
+        if same_canonical_path(module_dir, &replacement_root.path) {
+            continue;
+        }
+        visit_for_signature(
+            &format!("go-replace/{}", replacement_root.label),
+            &replacement_root.path,
+            &replacement_root.path,
+            &mut entries,
+        )?;
+    }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut hasher = Sha256::new();
@@ -126,7 +142,98 @@ pub fn compute_source_signature(module_dir: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+#[derive(Debug, Clone)]
+struct SignatureRoot {
+    label: String,
+    path: PathBuf,
+}
+
+fn collect_local_go_replacement_roots(module_dir: &Path) -> Vec<SignatureRoot> {
+    let go_mod = module_dir.join("go.mod");
+    let Ok(text) = std::fs::read_to_string(&go_mod) else {
+        return Vec::new();
+    };
+
+    let mut roots = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut in_replace_block = false;
+    for raw_line in text.lines() {
+        let line = strip_go_mod_comment(raw_line).trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "replace (" {
+            in_replace_block = true;
+            continue;
+        }
+        if in_replace_block && line == ")" {
+            in_replace_block = false;
+            continue;
+        }
+
+        let directive = if let Some(rest) = line.strip_prefix("replace ") {
+            Some(rest)
+        } else if in_replace_block {
+            Some(line)
+        } else {
+            None
+        };
+        let Some(directive) = directive else {
+            continue;
+        };
+        let Some((label, path)) = parse_local_go_replace_target(module_dir, directive) else {
+            continue;
+        };
+        if seen.insert(label.clone()) {
+            roots.push(SignatureRoot { label, path });
+        }
+    }
+    roots
+}
+
+fn strip_go_mod_comment(line: &str) -> &str {
+    line.split_once("//")
+        .map(|(before_comment, _)| before_comment)
+        .unwrap_or(line)
+}
+
+fn parse_local_go_replace_target(module_dir: &Path, directive: &str) -> Option<(String, PathBuf)> {
+    let (_, target) = directive.split_once("=>")?;
+    let target_path = target.split_whitespace().next()?.trim();
+    if !is_local_go_replace_path(target_path) {
+        return None;
+    }
+    let path = resolve_go_replace_path(module_dir, target_path);
+    Some((normalize_signature_path_label(target_path), path))
+}
+
+fn is_local_go_replace_path(path: &str) -> bool {
+    let candidate = Path::new(path);
+    candidate.is_absolute() || path.starts_with('.')
+}
+
+fn resolve_go_replace_path(module_dir: &Path, target_path: &str) -> PathBuf {
+    let candidate = Path::new(target_path);
+    if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        module_dir.join(candidate)
+    }
+}
+
+fn normalize_signature_path_label(path: &str) -> String {
+    path.replace('\\', "/").trim_matches('/').to_string()
+}
+
+fn same_canonical_path(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn visit_for_signature(
+    label_prefix: &str,
     root: &Path,
     current: &Path,
     out: &mut Vec<(String, u64, i64, Vec<u8>)>,
@@ -159,13 +266,14 @@ fn visit_for_signature(
             Err(_) => continue,
         };
         if metadata.is_dir() {
-            visit_for_signature(root, &path, out)?;
+            visit_for_signature(label_prefix, root, &path, out)?;
             continue;
         }
         let relative = path
             .strip_prefix(root)
             .map(|p| p.to_string_lossy().replace('\\', "/").to_string())
             .unwrap_or_else(|_| path.to_string_lossy().to_string());
+        let signature_path = format!("{label_prefix}/{relative}");
 
         let size = metadata.len();
         let mtime = metadata
@@ -180,7 +288,7 @@ fn visit_for_signature(
                 head.extend(bytes.iter().take(4096));
             }
         }
-        out.push((relative, size, mtime, head));
+        out.push((signature_path, size, mtime, head));
     }
     Ok(())
 }
@@ -246,5 +354,41 @@ mod tests {
         std::fs::write(dir.path().join(".runtime-cache/junk"), "noise").expect("write");
         let signature_b = compute_source_signature(dir.path()).expect("sig b");
         assert_eq!(signature_a, signature_b);
+    }
+
+    #[test]
+    fn source_signature_changes_with_local_go_replace_dependency() {
+        let dir = tempdir().expect("tempdir");
+        let runtime_dir = dir.path().join("runtime");
+        let sdk_dir = dir.path().join("sdk");
+        std::fs::create_dir_all(&runtime_dir).expect("runtime dir");
+        std::fs::create_dir_all(&sdk_dir).expect("sdk dir");
+        std::fs::write(
+            runtime_dir.join("go.mod"),
+            r#"
+module example.com/runtime
+
+require example.com/sdk v0.0.0
+
+replace example.com/sdk => ../sdk
+"#,
+        )
+        .expect("write go.mod");
+        std::fs::write(runtime_dir.join("main.go"), "package main\n").expect("write main");
+        std::fs::write(
+            sdk_dir.join("hostapi.go"),
+            "package sdk\nconst Version = 1\n",
+        )
+        .expect("write sdk");
+
+        let signature_a = compute_source_signature(&runtime_dir).expect("sig a");
+        std::fs::write(
+            sdk_dir.join("hostapi.go"),
+            "package sdk\nconst Version = 2\n",
+        )
+        .expect("rewrite sdk");
+        let signature_b = compute_source_signature(&runtime_dir).expect("sig b");
+
+        assert_ne!(signature_a, signature_b);
     }
 }

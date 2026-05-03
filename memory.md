@@ -1,3 +1,21 @@
+# 2026-05-03 - Go Runtime Cache Now Tracks Local SDK Replacements
+
+- Fixed the reason the `go-pty-panel` bridge-token error persisted after the SDK parser fix.
+  - `go-pty-panel/go.mod` imports `greeblefs.dev/sdk/greeblefs-go` through `replace ... => ../../sdk/greeblefs-go`.
+  - The runtime cache signature only hashed the panel module directory, so SDK-only edits did not change the app-local `runtime-cache` key and stale `.wasm` kept loading.
+  - `src-tauri/src/runtime_pipeline/cache.rs` now parses local `go.mod replace` targets, fingerprints those dependency roots alongside the module root, and has coverage proving a local SDK file change changes the source signature.
+- Immediate machine cleanup:
+  - Removed stale generated cache artifact `C:\Users\Admin\AppData\Local\co.greeblefs.app\runtime-cache\6e0ec5ebe87335ae1fc1f5e09654b37b26b469d6d95fc620dd84e8a4686a3a6f\go-pty-panel.wasm` after verifying it was inside the app runtime-cache root. The next panel open must rebuild instead of serving the stale wasm.
+  - Removed generated `C:\Dev\GreebleFS\target\debug\incremental` after verifying it was inside the repo target debug root. C: free space rose from roughly 677 MB to roughly 24 GB, and the focused Rust cache test could then link and run.
+- Validation for this pass:
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline::cache --lib`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - Passed: `go test ./sdk/greeblefs-go/...`
+  - Passed: `GOOS=js GOARCH=wasm go build -o <temp> ./builtin-runtimes/go-pty-panel`
+  - Passed: `bunx vitest run src/test/goPanelHost.test.tsx --reporter=dot`
+- Durable regression rule:
+  - If a Go/TinyGo runtime keeps exhibiting old SDK behavior after source fixes, inspect app-local `runtime-cache` and `compute_source_signature(...)` before debugging the frontend bridge again.
+
 # 2026-05-03 - Native Message Ring Owns Hot Host Streams
 
 - Implemented the clean-room native message-framed ring slice for high-volume host output. The design is additive and does not copy proprietary source: it keeps fixed capacity, message boundaries, replay cursors, overflow visibility, chunk metadata, and bounded ownership as GreebleFS-native Rust/TS contracts.
