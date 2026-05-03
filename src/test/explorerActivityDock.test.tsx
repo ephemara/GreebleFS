@@ -1,5 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const flexLayoutModelFromJsonSpy = vi.hoisted(() => vi.fn());
 
 vi.mock('@tanstack/react-virtual', () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
@@ -18,6 +21,7 @@ vi.mock('flexlayout-react', () => {
   class MockModel {
     constructor(private json: Record<string, any>) {}
     static fromJson(json: Record<string, any>) {
+      flexLayoutModelFromJsonSpy(json);
       return new MockModel(json);
     }
     toJson() {
@@ -30,7 +34,7 @@ vi.mock('flexlayout-react', () => {
     model,
     onModelChange,
   }: {
-    factory: (node: { getComponent: () => string }) => unknown;
+    factory: (node: { getComponent: () => string }) => ReactNode;
     model: MockModel;
     onModelChange: (model: MockModel, action: unknown) => void;
   }) {
@@ -87,6 +91,10 @@ const tone: ExplorerPaneTone = {
 };
 
 describe('Explorer activity dock surfaces', () => {
+  beforeEach(() => {
+    flexLayoutModelFromJsonSpy.mockClear();
+  });
+
   it('switches lanes from the data-driven activity rail', () => {
     const onSelectLane = vi.fn();
     render(
@@ -122,6 +130,37 @@ describe('Explorer activity dock surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Select second dock tab' }));
 
     expect(onActivePaneChange).toHaveBeenCalledWith('semantic');
+  });
+
+  it('keeps the flexlayout model stable while live search content changes', () => {
+    const renderDock = (query: string) => (
+      <ExplorerDockLayoutAdapter
+        activePaneId="search"
+        panes={[
+          {
+            id: 'search',
+            title: 'Search',
+            content: (
+              <input aria-label="dock search query" readOnly value={query} />
+            ),
+          },
+          { id: 'semantic', title: 'Semantic', content: <div>Semantic Pane</div> },
+        ]}
+      />
+    );
+
+    const { rerender } = render(renderDock('a'));
+    const inputBefore = screen.getByRole('textbox', {
+      name: 'dock search query',
+    });
+
+    rerender(renderDock('ab'));
+
+    expect(flexLayoutModelFromJsonSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('textbox', { name: 'dock search query' })).toBe(
+      inputBefore,
+    );
+    expect(inputBefore).toHaveValue('ab');
   });
 
   it('filters already-loaded search results locally and opens the selected result', () => {

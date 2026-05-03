@@ -1,4 +1,10 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  type ReactNode,
+} from "react";
 import {
   Layout as FlexLayout,
   Model,
@@ -12,6 +18,20 @@ export interface ExplorerDockLayoutPane {
   id: string;
   title: string;
   content: ReactNode;
+}
+
+type ExplorerDockLayoutPaneDescriptor = Pick<
+  ExplorerDockLayoutPane,
+  "id" | "title"
+>;
+
+const ExplorerDockLayoutPaneContentContext = createContext(
+  new Map<string, ExplorerDockLayoutPane>(),
+);
+
+function ExplorerDockLayoutPaneContent({ paneId }: { paneId: string }) {
+  const panesById = useContext(ExplorerDockLayoutPaneContentContext);
+  return panesById.get(paneId)?.content ?? null;
 }
 
 export function ExplorerDockLayoutAdapter({
@@ -28,6 +48,13 @@ export function ExplorerDockLayoutAdapter({
   const panesById = useMemo(
     () => new Map(panes.map((pane) => [pane.id, pane] as const)),
     [panes],
+  );
+  const paneStructureKey = JSON.stringify(
+    panes.map(({ id, title }) => ({ id, title })),
+  );
+  const paneDescriptors = useMemo<ExplorerDockLayoutPaneDescriptor[]>(
+    () => JSON.parse(paneStructureKey) as ExplorerDockLayoutPaneDescriptor[],
+    [paneStructureKey],
   );
   const selectedIndex = Math.max(
     0,
@@ -51,7 +78,7 @@ export function ExplorerDockLayoutAdapter({
             type: "tabset",
             id: "explorer-utility-tabset",
             selected: selectedIndex,
-            children: panes.map((pane) => ({
+            children: paneDescriptors.map((pane) => ({
               type: "tab",
               id: pane.id,
               name: pane.title,
@@ -63,16 +90,14 @@ export function ExplorerDockLayoutAdapter({
         ],
       },
     }),
-    [panes, selectedIndex],
+    [paneDescriptors, selectedIndex],
   );
   const model = useMemo(() => Model.fromJson(modelJson), [modelJson]);
-  const factory = useCallback(
-    (node: TabNode) => {
-      const pane = panesById.get(node.getComponent() ?? "");
-      return pane?.content ?? null;
-    },
-    [panesById],
-  );
+  const factory = useCallback((node: TabNode) => {
+    return (
+      <ExplorerDockLayoutPaneContent paneId={node.getComponent() ?? ""} />
+    );
+  }, []);
   const handleModelChange = useCallback(
     (nextModel: Model, _action: Action) => {
       const nextJson = nextModel.toJson();
@@ -115,13 +140,15 @@ export function ExplorerDockLayoutAdapter({
         ["--font-size" as string]: "11px",
       }}
     >
-      <FlexLayout
-        model={model}
-        factory={factory}
-        onModelChange={handleModelChange}
-        realtimeResize
-        supportsPopout={false}
-      />
+      <ExplorerDockLayoutPaneContentContext.Provider value={panesById}>
+        <FlexLayout
+          model={model}
+          factory={factory}
+          onModelChange={handleModelChange}
+          realtimeResize
+          supportsPopout={false}
+        />
+      </ExplorerDockLayoutPaneContentContext.Provider>
     </div>
   );
 }
