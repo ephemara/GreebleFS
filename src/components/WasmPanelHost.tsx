@@ -183,8 +183,9 @@ async function bootGoPanelRuntime(args: {
   prepared: RuntimePreparePackageResponse;
   runtimeId: string;
   bridgeToken: string;
+  onRuntimeExit: (message: string, error?: unknown) => void;
 }): Promise<() => void> {
-  const { prepared, runtimeId, bridgeToken } = args;
+  const { prepared, runtimeId, bridgeToken, onRuntimeExit } = args;
   await ensureGoWasmExecLoaded();
   if (!window.Go) {
     throw new Error('wasm_exec.js failed to expose `window.Go`');
@@ -210,9 +211,22 @@ async function bootGoPanelRuntime(args: {
     wasmBytes,
     goInstance.importObject,
   );
-  void goInstance.run(wasmModule.instance);
+  let disposed = false;
+  void goInstance.run(wasmModule.instance).then(
+    () => {
+      if (!disposed) {
+        onRuntimeExit(`Go wasm runtime ${runtimeId} exited before host cleanup.`);
+      }
+    },
+    (error) => {
+      if (!disposed) {
+        onRuntimeExit(`Go wasm runtime ${runtimeId} failed.`, error);
+      }
+    },
+  );
 
   return () => {
+    disposed = true;
     try {
       goInstance.exit?.(0);
     } catch {
@@ -461,6 +475,14 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
               prepared,
               runtimeId,
               bridgeToken: token,
+              onRuntimeExit: (message, runtimeError) => {
+                if (cancelled) {
+                  return;
+                }
+                console.error(`[WasmPanelHost:${runtimeId}]`, message, runtimeError);
+                setError(message);
+                onEvent?.({ kind: 'error', message });
+              },
             });
           } else if (compiler === 'cargo-wasm-bindgen') {
             runtimeCleanupRef.current = await bootRustWasmBindgenPanelRuntime({

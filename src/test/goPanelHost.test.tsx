@@ -82,12 +82,17 @@ function makeContext(): GoPanelHostContext {
 
 const originalGo = (window as Window & { Go?: unknown }).Go;
 const originalWebAssembly = (globalThis as { WebAssembly?: unknown }).WebAssembly;
+let fakeGoRunMode: 'long-running' | 'exit-immediately' = 'long-running';
+let fakeGoInstances: FakeGoInstance[] = [];
 
 class FakeGoInstance {
   importObject = {} as WebAssembly.Imports;
   argv: string[] = [];
   exit = vi.fn();
   run = vi.fn(async () => {
+    if (fakeGoRunMode === 'exit-immediately') {
+      return;
+    }
     // Simulate a long-running runtime: never resolve unless `exit` is called.
     await new Promise<void>(resolve => {
       const interval = setInterval(() => {
@@ -98,6 +103,10 @@ class FakeGoInstance {
       }, 5);
     });
   });
+
+  constructor() {
+    fakeGoInstances.push(this);
+  }
 }
 
 beforeEach(() => {
@@ -108,6 +117,8 @@ beforeEach(() => {
   extensionHostCallMock.mockClear();
   extensionHostSubscribeMock.mockClear();
   extensionHostUnsubscribeMock.mockClear();
+  fakeGoRunMode = 'long-running';
+  fakeGoInstances = [];
   if (typeof window !== 'undefined') {
     delete (window as Window & { __greeblefsRuntimeHostBridge?: unknown }).__greeblefsRuntimeHostBridge;
   }
@@ -141,6 +152,11 @@ describe('GoPanelHost', () => {
       cacheKey: 'fake-cache-key',
       artifactKind: 'sample-panel.wasm',
     });
+    await waitFor(() => {
+      expect(fakeGoInstances.length).toBe(1);
+    });
+    expect(fakeGoInstances[0]?.argv).toContain('--runtime-id=sample-panel');
+    expect(fakeGoInstances[0]?.argv.some(arg => arg.startsWith('--bridge-token='))).toBe(true);
 
     await waitFor(() => {
       expect(events.some(event => event.kind === 'ready')).toBe(true);
@@ -263,5 +279,26 @@ describe('GoPanelHost', () => {
     const alert = await findByRole('alert');
     expect(alert.textContent).toContain('toolchain missing');
     expect(events.some(event => event.kind === 'error')).toBe(true);
+  });
+
+  it('emits an error event when the Go wasm runtime exits before cleanup', async () => {
+    fakeGoRunMode = 'exit-immediately';
+    const events: GoPanelHostEvent[] = [];
+    const { unmount } = render(
+      <GoPanelHost
+        runtimeId="sample-panel"
+        context={makeContext()}
+        onEvent={event => events.push(event)}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(events.some(event => (
+        event.kind === 'error' &&
+        /exited before host cleanup/i.test(event.message)
+      ))).toBe(true);
+    });
+
+    unmount();
   });
 });

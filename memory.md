@@ -1,3 +1,21 @@
+# 2026-05-03 - Go PTY Bridge Token Now Reads From Go `os.Args`
+
+- Fixed the follow-up Go PTY `wasm-panel` boot failure: `greeblefs hostapi: --bridge-token argument missing`.
+  - `WasmPanelHost.tsx` was already setting `window.Go().argv` with `--bridge-token=<token>`.
+  - `public/runtime/wasm_exec.js` copies `Go.argv` into the Go runtime's `os.Args`.
+  - The Go SDK was incorrectly looking at JavaScript `process.argv`; `src-go/sdk/greeblefs-go/hostapi` now parses `--bridge-token` from `os.Args` and only falls back to JS `process.argv` when Go args are unavailable.
+- The React host now treats an unexpectedly resolved/rejected `goInstance.run(...)` promise as a runtime failure and emits an error event. For the integrated terminal that means `GoPtyTerminalPane` can request the existing one-way xterm fallback instead of leaving a dead Go panel that looks ready.
+- Durable regression rule:
+  - For Go/TinyGo `wasm-panel` boot flags, the contract is `WasmPanelHost -> Go.argv -> wasm_exec.js -> os.Args -> hostapi`. If `--bridge-token` is missing again, inspect that chain before touching Tauri permissions or terminal PTY spawn code.
+- Validation for this pass:
+  - Passed: `go test ./sdk/greeblefs-go/hostapi`
+  - Passed: `go test ./sdk/greeblefs-go/...`
+  - Passed: `GOOS=js GOARCH=wasm go build -o <temp> ./builtin-runtimes/go-pty-panel`
+  - Passed: `bunx vitest run src/test/goPanelHost.test.tsx --reporter=dot`
+  - Passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` sweep found no diagnostics in `WasmPanelHost.tsx` or `goPanelHost.test.tsx`
+- Next recommended step:
+  - If the desktop app still appears to reload repeatedly during `tauri dev`, inspect generated binding writes and Vite watch triggers separately from the Go PTY runtime; the bridge-token crash should now either boot successfully or fall back once to xterm.
+
 # 2026-05-03 - Explorer Hot Path Path Keys And Viewport Thumbnail Scheduler
 
 - Implemented the first clean-room Explorer hot-path slice from the reference research without copying proprietary source, names, comments, or implementation details.

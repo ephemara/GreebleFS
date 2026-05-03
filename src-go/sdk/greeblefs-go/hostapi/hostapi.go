@@ -10,7 +10,7 @@ package hostapi
 
 import (
 	"errors"
-	"flag"
+	"os"
 	"syscall/js"
 )
 
@@ -106,14 +106,14 @@ func (b *Bridge) WriteStorageBlob(next string) {
 // parseBridgeToken pulls the `--bridge-token=<id>` argument out of os.Args
 // without disturbing any other flag parsing the runtime author may want.
 func parseBridgeToken() string {
-	flagSet := flag.NewFlagSet("greeblefs-hostapi", flag.ContinueOnError)
-	flagSet.SetOutput(noopWriter{})
-	tokenFlag := flagSet.String("bridge-token", "", "host bridge token")
-	_ = flagSet.Parse(rawArgsAfterProgram())
-	return *tokenFlag
+	return parseBridgeTokenFromArgs(rawArgsAfterProgram())
 }
 
 func rawArgsAfterProgram() []string {
+	if len(os.Args) > 1 {
+		return append([]string(nil), os.Args[1:]...)
+	}
+
 	global := js.Global()
 	process := global.Get("process")
 	if !process.IsUndefined() && !process.IsNull() {
@@ -128,10 +128,6 @@ func rawArgsAfterProgram() []string {
 	}
 	return nil
 }
-
-type noopWriter struct{}
-
-func (noopWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 func toJSValue(value any) js.Value {
 	if value == nil {
