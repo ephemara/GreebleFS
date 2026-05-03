@@ -1,3 +1,30 @@
+# 2026-05-03 - Native Message Ring Owns Hot Host Streams
+
+- Implemented the clean-room native message-framed ring slice for high-volume host output. The design is additive and does not copy proprietary source: it keeps fixed capacity, message boundaries, replay cursors, overflow visibility, chunk metadata, and bounded ownership as GreebleFS-native Rust/TS contracts.
+- New native runtime:
+  - `src-tauri/src/message_ring.rs` owns `MessageFramedRing<T>`, monotonic sequence numbers, count/byte caps, max-frame chunking metadata, replay cursor windows, stale replay-gap reporting, sticky overflow snapshots, dropped message/byte counters, and `messageStreams` policy loading from the Explorer performance manifest.
+  - `src-tauri/src/ipc_runtime/streams.rs` now stores stream packets in rings instead of only incrementing `next_sequence`, with additive replay/status commands exposed as `ipc_replay_stream` and `ipc_get_stream_status`.
+  - `src-tauri/src/runtime_pipeline/host_events.rs` now retains per-topic event rings so `HostSubscriptionRequest.replayFrom` is functional for browser plugins, sidecars, task output, terminal mirrors, and any plugin IPC that already routes through host events.
+  - `src-tauri/src/terminal.rs` publishes terminal reader chunks through `IpcRuntimeState::publish_stream_packet` before live emission, so output can be replayed by cursor while preserving existing stream events.
+  - `src-tauri/src/telemetry.rs` replaced its fixed recent-record `VecDeque` with a ring-backed store and includes recent-record overflow/telemetry in status and support bundle manifests.
+- Frontend/runtime integration:
+  - `src/runtime/ipc/streams.ts` supports optional `replayFromSequence` and dedupes replay/live packets by stream sequence while keeping existing subscription and release behavior.
+  - `src/runtime/extensionHostApi.ts` now treats `HostSubscriptionRequest.replayFrom` as a snapshot/replay request without changing plugin-facing method names.
+  - `src/generated/tauri.ts` was regenerated because Specta-facing replay/status and message-ring types were added.
+- Data-driven policy:
+  - `src/config/explorerPerformance.ts` and `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json` now normalize `messageStreams` defaults: default topic `256 / 1 MiB`, terminal `2048 / 4 MiB`, task output `1024 / 2 MiB`, telemetry `400 / 2 MiB`, max frame bytes `32768`, replay response limit `512`, telemetry enabled, and overflow policy `drop-oldest`.
+- Validation for this pass:
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib message_ring`
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib ipc_runtime::streams`
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib runtime_pipeline::host_events`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - Passed: `bunx vitest run src/test/ipcStreamsRuntime.test.ts src/test/extensionHostApi.test.ts src/test/telemetry.test.ts src/test/explorerPerformance.test.ts src/test/terminalOverlay.test.tsx --reporter=dot --testTimeout=30000`
+- Durable rule:
+  - New hot host-output paths should prefer `MessageFramedRing` through IPC streams or host-event topic rings instead of raw `VecDeque`, unbounded event history, feature-local replay maps, or one-off sequence counters. The native task graph should emit user-visible/high-volume progress and task output into this bounded stream pipeline rather than inventing another retention model.
+- Next recommended step:
+  - After real sessions show pressure, migrate archive extraction, semantic indexing, GPU upload progress, and media transform streams one adapter at a time. Use ring telemetry to choose caps and decide when a stream deserves a dedicated lane rather than broadening every producer at once.
+
 # 2026-05-03 - Native Task Graph Owns Explorer Scan-Class Work
 
 - Implemented the clean-room native cancellable task graph slice for Explorer hot-path scan work.

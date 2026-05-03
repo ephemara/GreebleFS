@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -9,9 +9,12 @@ use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 use uuid::Uuid;
 
+use crate::message_ring::{
+    MessageFramedRing, MessageRingOverflowSnapshot, MessageRingTelemetry, MessageStreamsPolicy,
+};
+
 const TELEMETRY_DIRECTORY_NAME: &str = ".telemetry";
 const TELEMETRY_EXPORTS_DIRECTORY_NAME: &str = "exports";
-const MAX_RECENT_RECORDS: usize = 400;
 const MAX_SESSIONS: usize = 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -109,6 +112,8 @@ pub struct TelemetrySessionStatus {
     pub current_file_path: Option<String>,
     pub session_file_paths: Vec<String>,
     pub recent_record_count: usize,
+    pub recent_records_telemetry: MessageRingTelemetry,
+    pub recent_records_overflow: MessageRingOverflowSnapshot,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -137,7 +142,7 @@ struct TelemetryManagerInner {
     current_file_index: usize,
     current_file_path: PathBuf,
     session_file_paths: Vec<PathBuf>,
-    recent_records: VecDeque<TelemetryRecord>,
+    recent_records: MessageFramedRing<TelemetryRecord>,
 }
 
 pub struct TelemetryManager {
@@ -146,6 +151,12 @@ pub struct TelemetryManager {
 
 impl Default for TelemetryManager {
     fn default() -> Self {
+        Self::new(MessageStreamsPolicy::default())
+    }
+}
+
+impl TelemetryManager {
+    pub fn new(message_stream_policy: MessageStreamsPolicy) -> Self {
         Self {
             inner: Mutex::new(TelemetryManagerInner {
                 config: TelemetryConfig::default(),
@@ -154,13 +165,16 @@ impl Default for TelemetryManager {
                 current_file_index: 1,
                 current_file_path: PathBuf::new(),
                 session_file_paths: Vec::new(),
-                recent_records: VecDeque::new(),
+                recent_records: MessageFramedRing::new(message_stream_policy.telemetry),
             }),
         }
     }
-}
 
-impl TelemetryManager {
+    #[cfg(not(test))]
+    pub fn from_app(app: &AppHandle) -> Self {
+        Self::new(MessageStreamsPolicy::from_app(app))
+    }
+
     fn ensure_session(inner: &mut TelemetryManagerInner, app: &AppHandle) -> Result<(), String> {
         if !inner.trace_directory.as_os_str().is_empty()
             && !inner.current_file_path.as_os_str().is_empty()
@@ -222,10 +236,9 @@ impl TelemetryManager {
         }
 
         Self::ensure_session(&mut inner, app)?;
-        if inner.recent_records.len() >= MAX_RECENT_RECORDS {
-            inner.recent_records.pop_front();
-        }
-        inner.recent_records.push_back(record.clone());
+        let serialized = serde_json::to_string(&record)
+            .map_err(|error| format!("Failed to serialize telemetry record: {error}"))?;
+        inner.recent_records.write(record.clone(), serialized.len());
 
         if inner.config.developer_telemetry_write_to_file {
             Self::rotate_file_if_needed(&mut inner)?;
@@ -234,8 +247,6 @@ impl TelemetryManager {
                 .append(true)
                 .open(&inner.current_file_path)
                 .map_err(|error| format!("Failed to open telemetry file: {error}"))?;
-            let serialized = serde_json::to_string(&record)
-                .map_err(|error| format!("Failed to serialize telemetry record: {error}"))?;
             writeln!(file, "{serialized}")
                 .map_err(|error| format!("Failed to write telemetry record: {error}"))?;
         }
@@ -261,6 +272,7 @@ impl TelemetryManager {
         if inner.config.is_enabled() {
             Self::ensure_session(&mut inner, app)?;
         }
+        let recent_records_telemetry = inner.recent_records.telemetry_snapshot();
         Ok(TelemetrySessionStatus {
             config: inner.config.clone(),
             session_id: inner.session_id.clone(),
@@ -276,7 +288,9 @@ impl TelemetryManager {
                 .iter()
                 .map(|path| path.to_string_lossy().to_string())
                 .collect(),
-            recent_record_count: inner.recent_records.len(),
+            recent_record_count: recent_records_telemetry.retained_messages,
+            recent_records_overflow: recent_records_telemetry.overflow.clone(),
+            recent_records_telemetry,
         })
     }
 
@@ -286,14 +300,12 @@ impl TelemetryManager {
             .lock()
             .map_err(|_| "telemetry manager lock poisoned".to_string())?;
         let limit = limit.unwrap_or(60).max(1);
-        let records = inner
+        Ok(inner
             .recent_records
-            .iter()
-            .rev()
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>();
-        Ok(records.into_iter().rev().collect())
+            .latest(Some(limit))
+            .into_iter()
+            .map(|entry| entry.message)
+            .collect())
     }
 
     fn clear_sessions(&self, app: &AppHandle) -> Result<(), String> {
@@ -311,7 +323,7 @@ impl TelemetryManager {
         inner.current_file_index = 1;
         inner.session_id = Uuid::new_v4().to_string();
         inner.session_file_paths.clear();
-        inner.recent_records.clear();
+        inner.recent_records.reset();
         Ok(())
     }
 
@@ -346,6 +358,13 @@ impl TelemetryManager {
             exported_files.push(destination.to_string_lossy().to_string());
         }
 
+        let recent_records = inner
+            .recent_records
+            .latest(None)
+            .into_iter()
+            .map(|entry| entry.message)
+            .collect::<Vec<_>>();
+        let recent_records_telemetry = inner.recent_records.telemetry_snapshot();
         let manifest_path = export_root.join("manifest.json");
         let manifest = serde_json::json!({
             "sessionId": inner.session_id,
@@ -353,7 +372,9 @@ impl TelemetryManager {
             "appVersion": env!("CARGO_PKG_VERSION"),
             "platform": std::env::consts::OS,
             "sessionFiles": exported_files,
-            "recentRecords": inner.recent_records,
+            "recentRecords": recent_records,
+            "recentRecordsTelemetry": recent_records_telemetry,
+            "recentRecordsOverflow": recent_records_telemetry.overflow,
         });
         fs::write(
             &manifest_path,

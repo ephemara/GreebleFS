@@ -598,7 +598,7 @@ describe('TerminalOverlay', () => {
 
     expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
       id: 'overlay-0',
-      data: "'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
+      data: "& 'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
     });
   }, 20000);
 

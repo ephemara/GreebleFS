@@ -47,5 +47,28 @@
       "indexing": 0,
       "maintenance": 0
     }
+  },
+  "messageStreams": {
+    "enabled": true,
+    "telemetryEnabled": true,
+    "maxFrameBytes": 32768,
+    "replayResponseLimit": 512,
+    "overflowPolicy": "drop-oldest",
+    "defaultTopic": {
+      "maxMessages": 256,
+      "maxBytes": 1048576
+    },
+    "terminal": {
+      "maxMessages": 2048,
+      "maxBytes": 4194304
+    },
+    "taskOutput": {
+      "maxMessages": 1024,
+      "maxBytes": 2097152
+    },
+    "telemetry": {
+      "maxMessages": 400,
+      "maxBytes": 2097152
+    }
   }
 }

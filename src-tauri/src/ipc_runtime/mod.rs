@@ -3,16 +3,16 @@ pub mod binary;
 pub mod resources;
 pub mod streams;
 
+use crate::message_ring::{MessageRingWriteOutcome, MessageStreamsPolicy};
 use artifacts::{ArtifactRegistry, RegisterArtifactPathRequest};
 use greeble_ipc_contracts::{
     IpcArtifactDescriptor, IpcRegisterArtifactPathRequest, IpcResourceHandle, IpcStreamHandle,
 };
 use resources::ResourceRegistry;
 use std::path::PathBuf;
-use streams::StreamRegistry;
+use streams::{IpcStreamReplayResponse, IpcStreamStatus, StreamRegistry};
 use tauri::State;
 
-#[derive(Default)]
 pub struct IpcRuntimeState {
     artifacts: ArtifactRegistry,
     resources: ResourceRegistry,
@@ -21,7 +21,20 @@ pub struct IpcRuntimeState {
 
 impl IpcRuntimeState {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_message_stream_policy(MessageStreamsPolicy::default())
+    }
+
+    pub fn with_message_stream_policy(message_stream_policy: MessageStreamsPolicy) -> Self {
+        Self {
+            artifacts: ArtifactRegistry::default(),
+            resources: ResourceRegistry::default(),
+            streams: StreamRegistry::new(message_stream_policy),
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn from_app(app: &tauri::AppHandle) -> Self {
+        Self::with_message_stream_policy(MessageStreamsPolicy::from_app(app))
     }
 
     pub fn register_artifact_path(
@@ -64,6 +77,37 @@ impl IpcRuntimeState {
         id: &str,
     ) -> Result<greeble_ipc_contracts::IpcStreamPacketMetadata, String> {
         self.streams.next_packet_metadata(id)
+    }
+
+    pub fn publish_stream_packet<TPayload, TBuild>(
+        &self,
+        id: &str,
+        build: TBuild,
+    ) -> Result<(TPayload, MessageRingWriteOutcome), String>
+    where
+        TPayload: serde::Serialize,
+        TBuild: FnOnce(greeble_ipc_contracts::IpcStreamPacketMetadata) -> Result<TPayload, String>,
+    {
+        self.streams.publish_packet(id, build)
+    }
+
+    pub fn replay_stream(
+        &self,
+        id: &str,
+        from_sequence: Option<u64>,
+        limit: Option<usize>,
+    ) -> Result<IpcStreamReplayResponse, String> {
+        self.streams.replay(id, from_sequence, limit)
+    }
+
+    pub fn stream_status(&self, id: &str) -> Result<IpcStreamStatus, String> {
+        self.streams.status(id)
+    }
+}
+
+impl Default for IpcRuntimeState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -114,4 +158,24 @@ pub async fn ipc_release_stream(
     id: String,
 ) -> Result<(), String> {
     state.release_stream(&id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn ipc_replay_stream(
+    state: State<'_, IpcRuntimeState>,
+    id: String,
+    from_sequence: Option<u64>,
+    limit: Option<usize>,
+) -> Result<IpcStreamReplayResponse, String> {
+    state.replay_stream(&id, from_sequence, limit)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn ipc_get_stream_status(
+    state: State<'_, IpcRuntimeState>,
+    id: String,
+) -> Result<IpcStreamStatus, String> {
+    state.stream_status(&id)
 }

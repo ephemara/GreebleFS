@@ -137,6 +137,11 @@ use crate::thumbnail_commands::{
     ExplorerEntryThumbnail, ExplorerEntryThumbnailRequest, ExplorerThumbnailArtifact,
     ExplorerThumbnailKind, ExplorerVideoHoverFrame,
 };
+use crate::usr_profiles::{
+    UsrManagedContentDirectoryStack, UsrProfileChangedEvent, UsrProfileCreateRequest,
+    UsrProfileDeleteRequest, UsrProfileDuplicateRequest, UsrProfileRenameRequest,
+    UsrProfileRuntimeSnapshot, UsrProfileSummary,
+};
 use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
     VideoTrimExportResult,
@@ -144,11 +149,6 @@ use crate::video_commands::{
 use crate::video_engine::{
     VideoEngineLoadSourceRequest, VideoEngineLoopRegion, VideoEngineLoopRegionRequest,
     VideoEngineSeekRequest, VideoEngineStateEvent, VideoEngineStateSnapshot, VideoPlaybackBackend,
-};
-use crate::usr_profiles::{
-    UsrManagedContentDirectoryStack, UsrProfileChangedEvent, UsrProfileCreateRequest,
-    UsrProfileDeleteRequest, UsrProfileDuplicateRequest, UsrProfileRenameRequest,
-    UsrProfileRuntimeSnapshot, UsrProfileSummary,
 };
 use crate::vst_commands::{VstPluginEntry, VstScanPath, VstScanPathKind};
 use crate::vst_host_runtime::{
@@ -210,6 +210,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::ipc_runtime::ipc_release_artifact,
             crate::ipc_runtime::ipc_release_resource,
             crate::ipc_runtime::ipc_release_stream,
+            crate::ipc_runtime::ipc_replay_stream,
+            crate::ipc_runtime::ipc_get_stream_status,
             crate::terminal::terminal_spawn,
             crate::terminal::terminal_open_output_stream,
             crate::terminal::terminal_write,
@@ -498,6 +500,17 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<IpcResourceHandle>()
         .typ::<IpcStreamHandle>()
         .typ::<IpcStreamPacketMetadata>()
+        .typ::<crate::message_ring::MessageRingOverflowPolicy>()
+        .typ::<crate::message_ring::MessageRingPolicy>()
+        .typ::<crate::message_ring::MessageRingFrameMetadata>()
+        .typ::<crate::message_ring::MessageRingOverflowSnapshot>()
+        .typ::<crate::message_ring::MessageRingTelemetry>()
+        .typ::<crate::message_ring::MessageRingReplayGap>()
+        .typ::<crate::message_ring::MessageRingWriteOutcome>()
+        .typ::<crate::message_ring::MessageStreamsPolicy>()
+        .typ::<crate::ipc_runtime::streams::IpcStreamReplayPacket>()
+        .typ::<crate::ipc_runtime::streams::IpcStreamReplayResponse>()
+        .typ::<crate::ipc_runtime::streams::IpcStreamStatus>()
         .typ::<CloudAccountSummary>()
         .typ::<CloudAccountsSnapshot>()
         .typ::<CloudAuthSession>()

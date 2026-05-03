@@ -608,7 +608,7 @@ fn handle_runtime_sidecar_subscription_packet(
                 ..ExternalSidecarPacket::default()
             });
 
-            if request.include_snapshot {
+            if request.include_snapshot || request.replay_from.is_some() {
                 let snapshots = host_event_bus.snapshots_for_request(&request);
                 for mut snapshot in snapshots {
                     snapshot.subscription_id = Some(subscription.subscription_id.clone());

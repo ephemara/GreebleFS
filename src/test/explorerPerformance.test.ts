@@ -5,6 +5,7 @@ import {
   EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
+  EXPLORER_MESSAGE_STREAMS_POLICY,
   EXPLORER_NATIVE_TASK_GRAPH_POLICY,
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
   EXPLORER_VIEWPORT_SCHEDULER_POLICY,
@@ -62,6 +63,31 @@ describe("explorerPerformance", () => {
     });
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan).toBe(2);
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.checksum).toBe(1);
+    expect(explorerPerformance.messageStreams).toEqual({
+      enabled: true,
+      telemetryEnabled: true,
+      maxFrameBytes: 32768,
+      replayResponseLimit: 512,
+      overflowPolicy: "drop-oldest",
+      defaultTopic: {
+        maxMessages: 256,
+        maxBytes: 1048576,
+      },
+      terminal: {
+        maxMessages: 2048,
+        maxBytes: 4194304,
+      },
+      taskOutput: {
+        maxMessages: 1024,
+        maxBytes: 2097152,
+      },
+      telemetry: {
+        maxMessages: 400,
+        maxBytes: 2097152,
+      },
+    });
+    expect(EXPLORER_MESSAGE_STREAMS_POLICY.terminal.maxMessages).toBe(2048);
+    expect(EXPLORER_MESSAGE_STREAMS_POLICY.telemetry.maxBytes).toBe(2097152);
   });
 
   it("normalizes viewport scheduling defaults and clamps authored policy values", () => {
@@ -170,6 +196,58 @@ describe("explorerPerformance", () => {
         archive: 8,
         indexing: 0,
         maintenance: 4,
+      },
+    });
+  });
+
+  it("normalizes message stream defaults and clamps authored policy values", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      messageStreams: {
+        enabled: false,
+        telemetryEnabled: false,
+        maxFrameBytes: 1,
+        replayResponseLimit: 999999,
+        overflowPolicy: "explode" as never,
+        defaultTopic: {
+          maxMessages: 0,
+          maxBytes: 1,
+        },
+        terminal: {
+          maxMessages: 999999,
+          maxBytes: 999999999,
+        },
+        taskOutput: {
+          maxMessages: Number.NaN,
+          maxBytes: Number.NaN,
+        },
+        telemetry: {
+          maxMessages: 12,
+          maxBytes: 2048,
+        },
+      },
+    });
+
+    expect(normalized.messageStreams).toEqual({
+      enabled: false,
+      telemetryEnabled: false,
+      maxFrameBytes: 1024,
+      replayResponseLimit: 4096,
+      overflowPolicy: "drop-oldest",
+      defaultTopic: {
+        maxMessages: 1,
+        maxBytes: 1024,
+      },
+      terminal: {
+        maxMessages: 65536,
+        maxBytes: 256 * 1024 * 1024,
+      },
+      taskOutput: {
+        maxMessages: 1024,
+        maxBytes: 2 * 1024 * 1024,
+      },
+      telemetry: {
+        maxMessages: 12,
+        maxBytes: 2048,
       },
     });
   });

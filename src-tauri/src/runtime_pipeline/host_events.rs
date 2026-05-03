@@ -5,16 +5,17 @@
 //! durable event contract and subscription lifecycle; transports such as
 //! browser IPC streams and stdio sidecars simply plug into the same bus.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use greeble_ipc_contracts::IpcStreamHandle;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::ipc_runtime::IpcRuntimeState;
+use crate::message_ring::{MessageFramedRing, MessageStreamsPolicy};
 use crate::runtime_pipeline::extension_host::{ExecutionContextSnapshot, FileTypeDescriptor};
 
 pub const HOST_EVENT_TOPIC_SELECTION_CHANGED: &str = "selection.changed";
@@ -119,16 +120,28 @@ struct HostEventBusRecords {
     contexts_by_location: HashMap<String, ExecutionContextSnapshot>,
     subscriptions: HashMap<String, HostEventSubscriptionRecord>,
     latest_by_topic: HashMap<String, HostEventEnvelope>,
-    history_by_topic: HashMap<String, VecDeque<HostEventEnvelope>>,
+    history_by_topic: HashMap<String, MessageFramedRing<HostEventEnvelope>>,
     next_sequence: u64,
 }
 
-#[derive(Default)]
 pub struct HostEventBusState {
     records: Mutex<HostEventBusRecords>,
+    message_stream_policy: MessageStreamsPolicy,
 }
 
 impl HostEventBusState {
+    pub fn new(message_stream_policy: MessageStreamsPolicy) -> Self {
+        Self {
+            records: Mutex::new(HostEventBusRecords::default()),
+            message_stream_policy,
+        }
+    }
+
+    #[cfg(not(test))]
+    pub fn from_app(app: &AppHandle) -> Self {
+        Self::new(MessageStreamsPolicy::from_app(app))
+    }
+
     fn records_guard(&self) -> MutexGuard<'_, HostEventBusRecords> {
         self.records
             .lock()
@@ -187,8 +200,14 @@ impl HostEventBusState {
             ipc_runtime.register_stream("host-events", Some(subscription_id.as_str()))?;
         let app_handle = app.clone();
         let event_name = stream_handle.event_name.clone();
+        let stream_id = stream_handle.id.clone();
         let sink: HostEventSink = Arc::new(move |event| {
-            let _ = app_handle.emit(event_name.as_str(), event);
+            let retained_event = app_handle
+                .state::<IpcRuntimeState>()
+                .publish_stream_packet(stream_id.as_str(), |_metadata| Ok(event.clone()))
+                .map(|(packet, _outcome)| packet)
+                .unwrap_or(event);
+            let _ = app_handle.emit(event_name.as_str(), retained_event);
         });
         self.register_subscription(
             subscription_id,
@@ -257,14 +276,36 @@ impl HostEventBusState {
         request: &HostSubscriptionRequest,
     ) -> Vec<HostEventEnvelope> {
         let records = self.records_guard();
-        let mut events = build_context_snapshot_events(records.active_execution_context.as_ref());
-        events.extend(
-            records
-                .latest_by_topic
-                .values()
-                .filter(|event| !is_context_snapshot_topic(event.topic.as_str()))
-                .cloned(),
-        );
+        let mut events = if request.include_snapshot {
+            build_context_snapshot_events(records.active_execution_context.as_ref())
+        } else {
+            Vec::new()
+        };
+
+        if let Some(replay_from) = request.replay_from {
+            for ring in records.history_by_topic.values() {
+                events.extend(
+                    ring.replay_from(replay_from, None)
+                        .messages
+                        .into_iter()
+                        .map(|entry| entry.message),
+                );
+            }
+            events.sort_by(|left, right| {
+                left.sequence
+                    .cmp(&right.sequence)
+                    .then_with(|| left.event_id.cmp(&right.event_id))
+            });
+        } else {
+            events.extend(
+                records
+                    .latest_by_topic
+                    .values()
+                    .filter(|event| !is_context_snapshot_topic(event.topic.as_str()))
+                    .cloned(),
+            );
+        }
+
         filter_host_events(events, request, None)
     }
 
@@ -447,6 +488,7 @@ impl HostEventBusState {
                 activation_triggers: Vec::new(),
             });
 
+        let history_policy = self.message_stream_policy.host_topic_policy(topic);
         let mut records = self.records_guard();
         let next_sequence = records.next_sequence;
         records.next_sequence += 1;
@@ -470,15 +512,24 @@ impl HostEventBusState {
         records
             .latest_by_topic
             .insert(envelope.topic.clone(), envelope.clone());
-        let replay_depth = topic_descriptor.replay_depth.max(1) as usize;
-        let history = records
+        let history_byte_length = serde_json::to_vec(&envelope)
+            .map(|bytes| bytes.len())
+            .unwrap_or_else(|_| {
+                envelope
+                    .payload_json
+                    .as_ref()
+                    .map_or(1, |payload| payload.len())
+            });
+        records
             .history_by_topic
             .entry(envelope.topic.clone())
-            .or_default();
-        history.push_back(envelope.clone());
-        while history.len() > replay_depth {
-            history.pop_front();
-        }
+            .or_insert_with(|| MessageFramedRing::new(history_policy))
+            .write_with_sequence(
+                envelope.clone(),
+                envelope.sequence,
+                envelope.emitted_at_ms,
+                history_byte_length,
+            );
 
         let subscribers: Vec<(String, HostSubscriptionRequest, HostEventSink)> = records
             .subscriptions
@@ -505,6 +556,12 @@ impl HostEventBusState {
         }
 
         Ok(envelope)
+    }
+}
+
+impl Default for HostEventBusState {
+    fn default() -> Self {
+        Self::new(MessageStreamsPolicy::default())
     }
 }
 
@@ -973,10 +1030,12 @@ fn infer_active_file_type_descriptor(
 #[cfg(test)]
 mod tests {
     use super::{
-        HostContextSyncRequest, HostEventBusState, HostSubscriptionRequest,
+        HostContextSyncRequest, HostEventBusState, HostEventScope, HostSubscriptionRequest,
         HOST_EVENT_TOPIC_CWD_CHANGED, HOST_EVENT_TOPIC_EXPLORER_LOCATION_CHANGED,
         HOST_EVENT_TOPIC_PREVIEW_SESSION_CHANGED, HOST_EVENT_TOPIC_SELECTION_CHANGED,
+        HOST_EVENT_TOPIC_TASKS_OUTPUT,
     };
+    use crate::message_ring::{MessageRingPolicy, MessageStreamsPolicy};
     use crate::runtime_pipeline::extension_host::{
         ExecutionContextEntry, ExecutionContextPreviewSession, ExecutionContextSnapshot,
     };
@@ -1084,5 +1143,118 @@ mod tests {
         assert!(snapshots
             .iter()
             .any(|event| event.topic.starts_with("preview.")));
+    }
+
+    #[test]
+    fn replay_from_returns_retained_events_after_cursor() {
+        let bus = HostEventBusState::default();
+        let first = bus
+            .publish_host_topic(
+                HOST_EVENT_TOPIC_TASKS_OUTPUT,
+                Some(r#"{"chunk":"one"}"#.to_string()),
+                None,
+                HostEventScope {
+                    task_id: Some("task-a".to_string()),
+                    ..HostEventScope::default()
+                },
+                false,
+            )
+            .expect("first task output should publish");
+        let second = bus
+            .publish_host_topic(
+                HOST_EVENT_TOPIC_TASKS_OUTPUT,
+                Some(r#"{"chunk":"two"}"#.to_string()),
+                None,
+                HostEventScope {
+                    task_id: Some("task-a".to_string()),
+                    ..HostEventScope::default()
+                },
+                false,
+            )
+            .expect("second task output should publish");
+
+        let replay = bus.snapshots_for_request(&HostSubscriptionRequest {
+            topics: vec![HOST_EVENT_TOPIC_TASKS_OUTPUT.to_string()],
+            replay_from: Some(first.sequence + 1),
+            ..HostSubscriptionRequest::default()
+        });
+
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].sequence, second.sequence);
+        assert_eq!(
+            replay[0].payload_json.as_deref(),
+            Some(r#"{"chunk":"two"}"#)
+        );
+    }
+
+    #[test]
+    fn replay_from_respects_task_filters() {
+        let bus = HostEventBusState::default();
+        for task_id in ["task-a", "task-b"] {
+            bus.publish_host_topic(
+                HOST_EVENT_TOPIC_TASKS_OUTPUT,
+                Some(format!(r#"{{"task":"{task_id}"}}"#)),
+                None,
+                HostEventScope {
+                    task_id: Some(task_id.to_string()),
+                    ..HostEventScope::default()
+                },
+                false,
+            )
+            .expect("task output should publish");
+        }
+
+        let replay = bus.snapshots_for_request(&HostSubscriptionRequest {
+            topics: vec![HOST_EVENT_TOPIC_TASKS_OUTPUT.to_string()],
+            filters: Some(super::HostEventFilter {
+                task_id: Some("task-b".to_string()),
+                ..super::HostEventFilter::default()
+            }),
+            replay_from: Some(0),
+            ..HostSubscriptionRequest::default()
+        });
+
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].scope.task_id.as_deref(), Some("task-b"));
+    }
+
+    #[test]
+    fn replay_history_is_bounded_by_message_stream_policy() {
+        let mut policy = MessageStreamsPolicy::default();
+        policy.task_output = MessageRingPolicy {
+            max_messages: 2,
+            max_bytes: 1024,
+            ..policy.task_output.clone()
+        }
+        .normalized();
+        let bus = HostEventBusState::new(policy);
+
+        for value in ["one", "two", "three"] {
+            bus.publish_host_topic(
+                HOST_EVENT_TOPIC_TASKS_OUTPUT,
+                Some(format!(r#"{{"chunk":"{value}"}}"#)),
+                None,
+                HostEventScope {
+                    task_id: Some("task-a".to_string()),
+                    ..HostEventScope::default()
+                },
+                false,
+            )
+            .expect("task output should publish");
+        }
+
+        let replay = bus.snapshots_for_request(&HostSubscriptionRequest {
+            topics: vec![HOST_EVENT_TOPIC_TASKS_OUTPUT.to_string()],
+            replay_from: Some(0),
+            ..HostSubscriptionRequest::default()
+        });
+
+        assert_eq!(replay.len(), 2);
+        assert_eq!(replay[0].sequence, 1);
+        assert!(replay[0]
+            .payload_json
+            .as_deref()
+            .unwrap_or_default()
+            .contains("two"));
     }
 }

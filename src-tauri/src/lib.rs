@@ -19,9 +19,9 @@ pub mod desktop_integration;
 pub mod domain_commands;
 #[cfg(not(test))]
 pub mod entry_size_cache;
-pub mod explorer_path_key;
 #[cfg(not(test))]
 pub mod explorer_identity;
+pub mod explorer_path_key;
 #[cfg(not(test))]
 pub mod explorer_pro_commands;
 #[cfg(not(test))]
@@ -37,12 +37,12 @@ pub mod gpu_runtime;
 pub mod image_commands;
 #[cfg(not(test))]
 pub mod image_cutout_commands;
-#[cfg(not(test))]
 pub mod ipc_runtime;
 #[cfg(not(test))]
 pub mod lan_share;
 #[cfg(not(test))]
 mod linux_graphics;
+pub mod message_ring;
 pub mod native_task_graph;
 #[cfg(not(test))]
 pub mod native_terminal;
@@ -64,6 +64,9 @@ pub mod python_sidecar;
 #[cfg(not(test))]
 pub mod remote_storage_commands;
 #[cfg(not(test))]
+pub mod runtime_pipeline;
+#[cfg(test)]
+#[path = "runtime_pipeline_test_stub.rs"]
 pub mod runtime_pipeline;
 #[cfg(not(test))]
 pub mod screenshot_commands;
@@ -329,7 +332,7 @@ pub fn run() {
             initialize_explorer_identity_store(app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
             gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());
-            app.manage(ipc_runtime::IpcRuntimeState::new());
+            app.manage(ipc_runtime::IpcRuntimeState::from_app(&app.handle()));
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(RemoteStorageState::default());
@@ -341,14 +344,14 @@ pub fn run() {
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(python_sidecar::PythonSidecarManager::default());
-            app.manage(runtime_pipeline::HostEventBusState::default());
+            app.manage(runtime_pipeline::HostEventBusState::from_app(&app.handle()));
             app.manage(runtime_pipeline::commands::RuntimeFileWatchManager::default());
             app.manage(runtime_pipeline::commands::RuntimeTaskProcessManager::default());
             app.manage(runtime_pipeline::RuntimeRegistryState::default());
             app.manage(runtime_pipeline::sidecar::ExternalSidecarManager::default());
             app.manage(video_engine::VideoEngineManager::default());
             app.manage(vst_host_runtime::VstHostRuntimeManager::default());
-            app.manage(TelemetryManager::default());
+            app.manage(TelemetryManager::from_app(&app.handle()));
             app.manage(NativeTaskGraphManager::from_app(&app.handle()));
             let startup_span = start_native_span(
                 &app.handle(),

@@ -906,24 +906,24 @@ impl TerminalManager {
                                 .consume(&parsed_chunk.visible_output);
                             if !visible_output.is_empty() {
                                 let data = String::from_utf8_lossy(&visible_output).to_string();
-                                let metadata = match app
+                                let packet = match app
                                     .state::<IpcRuntimeState>()
-                                    .next_stream_packet_metadata(&stream_handle.id)
-                                {
-                                    Ok(metadata) => metadata,
+                                    .publish_stream_packet(&stream_handle.id, |metadata| {
+                                        Ok(TerminalOutputStreamPacket {
+                                            terminal_id: terminal_id.clone(),
+                                            metadata,
+                                            data,
+                                        })
+                                    }) {
+                                    Ok((packet, _outcome)) => packet,
                                     Err(error) => {
                                         log::warn!(
-                                            "failed to advance terminal stream packet metadata for {}: {}",
+                                            "failed to publish terminal stream packet for {}: {}",
                                             terminal_id,
                                             error
                                         );
                                         continue;
                                     }
-                                };
-                                let packet = TerminalOutputStreamPacket {
-                                    terminal_id: terminal_id.clone(),
-                                    metadata,
-                                    data,
                                 };
                                 let _ = app.emit(&stream_handle.event_name, packet.clone());
                                 publish_terminal_output_host_event(&app, &packet);

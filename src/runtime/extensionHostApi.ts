@@ -447,7 +447,7 @@ export function createExtensionHostClient(
           request,
         );
         const snapshots =
-          request.includeSnapshot === true
+          request.includeSnapshot === true || request.replayFrom != null
             ? await call<HostEventEnvelope[], HostSubscriptionRequest>(
                 'events.get_snapshot',
                 request,
