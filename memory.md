@@ -1,3 +1,20 @@
+# 2026-05-02 - Additional High-Value RAGE Reference Slices For GreebleFS
+
+- Extended `reference/src/research.md` beyond the initial four patterns with more useful infrastructure references from the RAGE tree.
+- Highest-value additional slices identified:
+  - bounded queues and ring buffers from `audiohardware/ringbuffer.h`, `system/lockfreering.h`, and `system/messagequeue.h`
+  - explicit cancellable work items and pool scheduling from `system/threadpool.h` and `system/task.h`
+  - tiny hot caches from `atl/cache.h` and `atl/simplecache.h`
+  - dense set/mask math from `atl/bitset.h`
+  - small reusable allocation primitives from `atl/freelist.h`, `system/poolallocator.h`, and `system/tinybuddyheap.h`
+- Durable fit assessment:
+  - The strongest GreebleFS matches are not console-specific graphics tricks. They are queue discipline, cancellation discipline, tiny hot caches, and dense set math for huge explorer domains.
+  - The repo already shows the exact seams these references would strengthen:
+    - bounded `VecDeque` histories in `src-tauri/src/runtime_pipeline/host_events.rs`, `src-tauri/src/telemetry.rs`, and `src-tauri/src/terminal.rs`
+    - worker/native orchestration in `src/runtime/workerHost.ts`, `src/runtime/explorerVisibleEntriesRuntime.ts`, and `src-tauri/src/fs_commands.rs`
+    - heavy `Set<string>` usage in explorer selection/filter/constellation compute
+  - The next profitable implementation slices remain a viewport scheduler plus stronger native work-item/cancellation ownership, not a broad engine-style rewrite.
+
 # 2026-05-02 - Reference Pipeline Research For Intrusive Containers, Buddy Pools, Path Hashing, And Paging
 
 - Research target:

@@ -184,12 +184,233 @@ Existing signals in GreebleFS:
 
 Treat this as a viewport-driven scheduler for explorer data. Do not try to emulate OS virtual memory inside the app.
 
+## 5. Ring Buffers And Bounded Queues
+
+### Reference files
+
+- `audiohardware/ringbuffer.h`
+- `system/lockfreering.h`
+- `system/messagequeue.h`
+
+### What they actually guarantee
+
+- Fixed-capacity FIFO behavior with explicit overwrite, full, or block semantics.
+- Predictable memory usage under sustained producer/consumer pressure.
+- In the lock-free variant, bounded MPMC-style push/pop without a heap allocation path.
+- In the semaphore-backed queue variant, explicit blocking and timeout behavior instead of ad hoc polling.
+
+### Why it matters
+
+A lot of desktop sluggishness is really queue discipline failure. If a system can only grow, it eventually becomes bursty, stale, and impossible to prioritize.
+
+### How it slices into GreebleFS
+
+Best candidates:
+
+- host event replay and live event fanout
+- terminal output and command-echo suppression buffers
+- telemetry recent-history buffers
+- viewport scheduler work queues for thumbnails, previews, and icon loads
+- IPC stream packet staging
+
+Existing signals in GreebleFS:
+
+- `src-tauri/src/runtime_pipeline/host_events.rs` already keeps bounded per-topic `VecDeque` history.
+- `src-tauri/src/telemetry.rs` already keeps a bounded `recent_records` deque.
+- `src-tauri/src/terminal.rs` already uses `VecDeque` for pending command-echo suppression.
+
+### Best landing zone
+
+- `src-tauri/src/runtime_pipeline/host_events.rs`
+- `src-tauri/src/terminal.rs`
+- `src-tauri/src/telemetry.rs`
+- a future shared native scheduler/runtime queue module
+
+### Practical take
+
+The value here is not "use a ring buffer because games do." The value is to replace several ad hoc bounded deques with one deliberate queue policy layer that can express overwrite-oldest, reject-newest, or block-and-wait semantics per subsystem.
+
+## 6. Cancellable Work Items And Thread Pools
+
+### Reference files
+
+- `system/threadpool.h`
+- `system/task.h`
+
+### What they actually guarantee
+
+- Work enters the system as explicit items, not anonymous closures.
+- Work has a visible lifecycle: queued, active, finished, canceled.
+- Cancellation is cooperative and durable, not a best-effort boolean glued onto a random async call.
+- Scheduling is treated as a first-class policy surface rather than "spawn and hope."
+
+### Why it matters
+
+RAGE was built for machines that could not afford uncontrolled background work. The useful pattern is not the PS3-specific API shape, but the insistence on explicit ownership, cancellation, and scheduler choice.
+
+### How it slices into GreebleFS
+
+Best candidates:
+
+- native thumbnail generation batches
+- archive extraction/materialization jobs
+- semantic indexing and duplicate scanning
+- media transform/export work
+- any future viewport-driven prefetch scheduler
+
+Existing signals in GreebleFS:
+
+- `src-tauri/src/audio_commands.rs` already hand-rolls cancellable native task runtime state.
+- `src-tauri/src/fs_commands.rs` already owns long-running explorer task registration and progress.
+- `src/runtime/workerHost.ts` already formalizes a worker-lane model for frontend CPU work.
+
+### Best landing zone
+
+- `src-tauri/src/fs_commands.rs`
+- `src-tauri/src/audio_commands.rs`
+- `src/runtime/workerHost.ts`
+
+### Practical take
+
+This is one of the highest-value references in the whole tree. GreebleFS already has async work everywhere, but not all of it is modeled as explicit cancellable work items. A shared explorer-native job contract would pay off more than another isolated `spawn_blocking` lane.
+
+## 7. Tiny Hot Caches
+
+### Reference files
+
+- `atl/cache.h`
+- `atl/simplecache.h`
+
+### What they actually guarantee
+
+- Extremely cheap small-capacity caches with deterministic replacement behavior.
+- Tight key/value lookup for hot call sites where a full hash map is overkill.
+- Optional fuzzy equality traits for "close enough" reuse.
+- In the SPU-oriented cache, explicit dependence on small, repeatedly reused working sets.
+
+### Why it matters
+
+Not every repeated lookup deserves a big general-purpose cache. Some hot paths just need a tiny MRU or LRU memory of the last few expensive answers.
+
+### How it slices into GreebleFS
+
+Best candidates:
+
+- preview capability resolution by extension and view mode
+- native icon association lookups
+- repeated folder-preview metadata probes
+- tiny per-pane recent-path or recent-selection helper caches
+- micro-caches inside expensive normalization or manifest-resolution helpers
+
+Existing signals in GreebleFS:
+
+- `src/components/explorer/explorerDirectoryCache.ts` already provides directory-level reuse.
+- `src/runtime/explorerThumbnailArtifactRuntime.ts` and `src/runtime/modelThumbnailBackend.ts` already keep resolved and pending thumbnail maps.
+- `src/runtime/explorerBackend.ts` already centralizes many repeated capability and path-kind decisions.
+
+### Best landing zone
+
+- `src/runtime/explorerBackend.ts`
+- `src/components/explorer/explorerDirectoryCache.ts`
+- thumbnail and preview helper runtimes under `src/runtime/`
+
+### Practical take
+
+Use this pattern surgically. Tiny caches are best when they remove repeated hot-path branching or repeated backend capability checks without growing into another eviction-heavy global cache subsystem.
+
+## 8. Bitsets And Set Algebra
+
+### Reference file
+
+- `atl/bitset.h`
+
+### What it actually guarantees
+
+- Dense boolean membership storage.
+- Cheap intersection, union, toggle, count, and any-set operations.
+- A representation that scales much better than pointer-heavy set structures when the domain is large and indexable.
+
+### Why it matters
+
+A surprising amount of explorer work is set math: selected entries, tagged entries, filtered entries, search matches, bookmarked entries, and visibility masks. Doing that with many JavaScript `Set<string>` objects is flexible but not especially cheap for huge folders.
+
+### How it slices into GreebleFS
+
+Best candidates:
+
+- worker-side visible-entry shaping
+- tag-filter and search-result intersection passes
+- large multi-selection masks
+- constellation/adaptive view membership and clustering passes
+- native-side search/index candidate masks
+
+Existing signals in GreebleFS:
+
+- `src/runtime/explorerVisibleEntries.ts` already owns canonical filtering and sorting work.
+- `src/runtime/explorerVisibleEntriesRuntime.ts` already offloads heavy visible-entry shaping into a worker lane.
+- `src/components/FileExplorer.tsx` and the constellation helpers already use many `Set<string>` structures for selection, pins, bookmarks, and routing.
+
+### Best landing zone
+
+- `src/runtime/explorerVisibleEntries.ts`
+- `src/runtime/explorerVisibleEntriesRuntime.ts`
+- heavy experimental explorer compute helpers
+
+### Practical take
+
+This is not worth forcing into every UI state path. It is worth considering in worker/native compute when the domain can be indexed once and then intersected repeatedly, especially for 50k to 100k entry folders.
+
+## 9. Small Fixed Pools And Free Lists
+
+### Reference files
+
+- `atl/freelist.h`
+- `system/poolallocator.h`
+- `system/tinybuddyheap.h`
+
+### What they actually guarantee
+
+- Fast reuse of small fixed-size objects.
+- Bounded fragmentation in high-churn lanes.
+- A design bias toward reusing prepared slots instead of allocating and freeing tiny objects constantly.
+
+### Why it matters
+
+The best fit here is not massive asset heaps. It is boring object churn: task descriptors, queue nodes, event envelopes, and decode/request bookkeeping that gets created and destroyed constantly.
+
+### How it slices into GreebleFS
+
+Best candidates:
+
+- thumbnail scheduler request records
+- native task and cancellation bookkeeping
+- event-bus envelope/object reuse
+- high-frequency IPC packet or command wrapper allocation
+
+Existing signals in GreebleFS:
+
+- `src-tauri/src/runtime_pipeline/host_events.rs` allocates per-event envelopes and bounded history records.
+- `src-tauri/src/fs_commands.rs` and native task lanes create transient progress and runtime records.
+- the planned viewport scheduler would naturally create a lot of short-lived queue/request objects if left fully heap-backed.
+
+### Best landing zone
+
+- native explorer task/runtime modules in `src-tauri/src/`
+- a future shared thumbnail or viewport scheduling runtime
+
+### Practical take
+
+This is a supporting optimization, not a first move. It becomes attractive once a real scheduler exists and profiling shows object-churn pressure around requests and event envelopes.
+
 ## Recommended Build Order
 
 1. Add normalized path-hash keys to the backend cache/identity layer.
 2. Use viewport metrics and visible-entry windows to drive thumbnail and preview prefetch.
 3. If hot metadata still churns too much, move the backend caches for those paths to intrusive structures.
 4. Only add a dedicated buddy allocator if profiling shows decode-buffer allocation churn is still a problem.
+5. Unify bounded queue policy for event, terminal, telemetry, and viewport scheduling lanes.
+6. Promote heavy native background work to explicit cancellable work-item scheduling instead of one-off async tasks.
+7. Use bitsets or tiny caches only in the worker/native hot paths where profiling shows `Set<string>` or repeated map lookups becoming a cost center.
 
 ## Risks And Constraints
 
@@ -197,6 +418,9 @@ Treat this as a viewport-driven scheduler for explorer data. Do not try to emula
 - Intrusive containers are a backend data-structure choice, not a UI architecture choice.
 - Buddy allocation only pays off if there is sustained media-buffer churn.
 - Paging should be framed as a scheduling problem, not as a promise to manage OS virtual memory directly.
+- Ring buffers and message queues only help if each lane has an explicit drop/block/overwrite policy.
+- Bitsets need a stable integer index domain; they are much less useful if every pass must rebuild the mapping from scratch.
+- Thread-pool style work items only pay off if cancellation, progress, and queue ownership are shared across subsystems instead of hidden inside feature-local code.
 
 ## Best Reference Files To Revisit
 
@@ -207,6 +431,11 @@ Treat this as a viewport-driven scheduler for explorer data. Do not try to emula
 - `system/virtualallocator.h` for page-based allocation and explicit mapping strategy.
 - `atl/hashstring.h` and `string/stringhash.h` for normalized path hashing.
 - `paging/streamer.h` for explicit async load/cancel/priority control.
+- `audiohardware/ringbuffer.h`, `system/lockfreering.h`, and `system/messagequeue.h` for bounded producer/consumer discipline.
+- `system/threadpool.h` and `system/task.h` for explicit cancellable work ownership.
+- `atl/cache.h` and `atl/simplecache.h` for tiny hot-path cache design.
+- `atl/bitset.h` for dense selection/filter/mask math.
+- `system/poolallocator.h`, `atl/freelist.h`, and `system/tinybuddyheap.h` for short-lived object reuse once scheduler pressure is real.
 
 ## Bottom Line
 
@@ -215,5 +444,6 @@ If we slice these ideas into GreebleFS in the right order, the app gets most of 
 - hashes for fast internal identity
 - intrusive structures for backend hot paths
 - a viewport scheduler for thumbnails and previews
+- bounded queues and cancellable work items for background discipline
+- bitset-style set math where huge explorer domains make `Set<string>` too costly
 - a dedicated buffer pool only where media allocation churn justifies it
-
