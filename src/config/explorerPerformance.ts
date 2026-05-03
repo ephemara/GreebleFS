@@ -38,6 +38,34 @@ export type ShippedExplorerViewportSchedulerPolicy =
     previewPrefetch?: Partial<ExplorerViewportPreviewPrefetchPolicy>;
   };
 
+export type ExplorerNativeTaskGraphOverflowPolicy = "cancelStaleQueuedFirst";
+
+export interface ExplorerNativeTaskGraphLaneConcurrency {
+  directoryScan: number;
+  recursiveSearch: number;
+  checksum: number;
+  thumbnailDecode: number;
+  previewRead: number;
+  archive: number;
+  indexing: number;
+  maintenance: number;
+}
+
+export interface ExplorerNativeTaskGraphPolicy {
+  enabled: boolean;
+  maxQueuedTasks: number;
+  staleCancellationEnabled: boolean;
+  telemetryEnabled: boolean;
+  progressEmitIntervalMs: number;
+  overflowPolicy: ExplorerNativeTaskGraphOverflowPolicy;
+  laneConcurrency: ExplorerNativeTaskGraphLaneConcurrency;
+}
+
+export type ShippedExplorerNativeTaskGraphPolicy =
+  Partial<Omit<ExplorerNativeTaskGraphPolicy, "laneConcurrency">> & {
+    laneConcurrency?: Partial<ExplorerNativeTaskGraphLaneConcurrency>;
+  };
+
 export interface ShippedExplorerPerformanceManifest {
   version?: number;
   id?: string;
@@ -46,6 +74,7 @@ export interface ShippedExplorerPerformanceManifest {
   folderActivation?: Partial<ExplorerFolderActivationPerformance>;
   budgets?: Partial<ExplorerPerformanceBudgets>;
   viewportScheduling?: ShippedExplorerViewportSchedulerPolicy;
+  nativeTaskGraph?: ShippedExplorerNativeTaskGraphPolicy;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -56,6 +85,7 @@ export interface ExplorerPerformanceManifest {
   folderActivation: ExplorerFolderActivationPerformance;
   budgets: ExplorerPerformanceBudgets;
   viewportScheduling: ExplorerViewportSchedulerPolicy;
+  nativeTaskGraph: ExplorerNativeTaskGraphPolicy;
 }
 
 const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance = Object.freeze({
@@ -85,6 +115,25 @@ const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy = 
     maxConcurrentPreviewReads: 2,
     forwardPrefetchViewports: 0.5,
     backwardPrefetchViewports: 0.25,
+  }),
+});
+
+const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy = Object.freeze({
+  enabled: true,
+  maxQueuedTasks: 256,
+  staleCancellationEnabled: true,
+  telemetryEnabled: true,
+  progressEmitIntervalMs: 80,
+  overflowPolicy: "cancelStaleQueuedFirst",
+  laneConcurrency: Object.freeze({
+    directoryScan: 2,
+    recursiveSearch: 2,
+    checksum: 1,
+    thumbnailDecode: 0,
+    previewRead: 0,
+    archive: 0,
+    indexing: 0,
+    maintenance: 0,
   }),
 });
 
@@ -125,6 +174,13 @@ function asQueueOverflowStrategy(
     return value;
   }
   return fallback;
+}
+
+function asNativeTaskGraphOverflowPolicy(
+  value: unknown,
+  fallback: ExplorerNativeTaskGraphOverflowPolicy,
+): ExplorerNativeTaskGraphOverflowPolicy {
+  return value === "cancelStaleQueuedFirst" ? value : fallback;
 }
 
 function normalizeFolderActivationPerformance(
@@ -243,6 +299,81 @@ function normalizeViewportScheduling(
   };
 }
 
+function normalizeNativeTaskGraph(
+  value: ShippedExplorerPerformanceManifest["nativeTaskGraph"],
+): ExplorerNativeTaskGraphPolicy {
+  const laneConcurrency = value?.laneConcurrency;
+  const defaultLanes = defaultExplorerNativeTaskGraphPolicy.laneConcurrency;
+
+  return {
+    enabled: asBoolean(value?.enabled, defaultExplorerNativeTaskGraphPolicy.enabled),
+    maxQueuedTasks: Math.round(asFiniteNumber(
+      value?.maxQueuedTasks,
+      defaultExplorerNativeTaskGraphPolicy.maxQueuedTasks,
+      { minimum: 1, maximum: 4096 },
+    )),
+    staleCancellationEnabled: asBoolean(
+      value?.staleCancellationEnabled,
+      defaultExplorerNativeTaskGraphPolicy.staleCancellationEnabled,
+    ),
+    telemetryEnabled: asBoolean(
+      value?.telemetryEnabled,
+      defaultExplorerNativeTaskGraphPolicy.telemetryEnabled,
+    ),
+    progressEmitIntervalMs: Math.round(asFiniteNumber(
+      value?.progressEmitIntervalMs,
+      defaultExplorerNativeTaskGraphPolicy.progressEmitIntervalMs,
+      { minimum: 16, maximum: 1000 },
+    )),
+    overflowPolicy: asNativeTaskGraphOverflowPolicy(
+      value?.overflowPolicy,
+      defaultExplorerNativeTaskGraphPolicy.overflowPolicy,
+    ),
+    laneConcurrency: {
+      directoryScan: Math.round(asFiniteNumber(
+        laneConcurrency?.directoryScan,
+        defaultLanes.directoryScan,
+        { minimum: 1, maximum: 16 },
+      )),
+      recursiveSearch: Math.round(asFiniteNumber(
+        laneConcurrency?.recursiveSearch,
+        defaultLanes.recursiveSearch,
+        { minimum: 1, maximum: 16 },
+      )),
+      checksum: Math.round(asFiniteNumber(
+        laneConcurrency?.checksum,
+        defaultLanes.checksum,
+        { minimum: 1, maximum: 8 },
+      )),
+      thumbnailDecode: Math.round(asFiniteNumber(
+        laneConcurrency?.thumbnailDecode,
+        defaultLanes.thumbnailDecode,
+        { minimum: 0, maximum: 16 },
+      )),
+      previewRead: Math.round(asFiniteNumber(
+        laneConcurrency?.previewRead,
+        defaultLanes.previewRead,
+        { minimum: 0, maximum: 16 },
+      )),
+      archive: Math.round(asFiniteNumber(
+        laneConcurrency?.archive,
+        defaultLanes.archive,
+        { minimum: 0, maximum: 8 },
+      )),
+      indexing: Math.round(asFiniteNumber(
+        laneConcurrency?.indexing,
+        defaultLanes.indexing,
+        { minimum: 0, maximum: 8 },
+      )),
+      maintenance: Math.round(asFiniteNumber(
+        laneConcurrency?.maintenance,
+        defaultLanes.maintenance,
+        { minimum: 0, maximum: 4 },
+      )),
+    },
+  };
+}
+
 export function normalizeExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): ExplorerPerformanceManifest {
@@ -265,6 +396,7 @@ export function normalizeExplorerPerformanceManifest(
     ),
     budgets: normalizeBudgets(manifest?.budgets),
     viewportScheduling: normalizeViewportScheduling(manifest?.viewportScheduling),
+    nativeTaskGraph: normalizeNativeTaskGraph(manifest?.nativeTaskGraph),
   });
 }
 
@@ -289,6 +421,9 @@ export let EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
 export let EXPLORER_VIEWPORT_SCHEDULER_POLICY =
   defaultExplorerViewportSchedulerPolicy;
 
+export let EXPLORER_NATIVE_TASK_GRAPH_POLICY =
+  defaultExplorerNativeTaskGraphPolicy;
+
 export function applyUsrExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): void {
@@ -305,6 +440,7 @@ export function applyUsrExplorerPerformanceManifest(
     explorerPerformance.budgets.doubleClickSecondClickToNavigateDispatchMs;
   EXPLORER_VIEWPORT_SCHEDULER_POLICY =
     explorerPerformance.viewportScheduling;
+  EXPLORER_NATIVE_TASK_GRAPH_POLICY = explorerPerformance.nativeTaskGraph;
 }
 
 applyUsrExplorerPerformanceManifest(

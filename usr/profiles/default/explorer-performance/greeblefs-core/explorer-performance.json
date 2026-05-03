@@ -29,5 +29,23 @@
       "forwardPrefetchViewports": 0.5,
       "backwardPrefetchViewports": 0.25
     }
+  },
+  "nativeTaskGraph": {
+    "enabled": true,
+    "maxQueuedTasks": 256,
+    "staleCancellationEnabled": true,
+    "telemetryEnabled": true,
+    "progressEmitIntervalMs": 80,
+    "overflowPolicy": "cancelStaleQueuedFirst",
+    "laneConcurrency": {
+      "directoryScan": 2,
+      "recursiveSearch": 2,
+      "checksum": 1,
+      "thumbnailDecode": 0,
+      "previewRead": 0,
+      "archive": 0,
+      "indexing": 0,
+      "maintenance": 0
+    }
   }
 }

@@ -43,6 +43,7 @@ pub mod ipc_runtime;
 pub mod lan_share;
 #[cfg(not(test))]
 mod linux_graphics;
+pub mod native_task_graph;
 #[cfg(not(test))]
 pub mod native_terminal;
 #[cfg(not(test))]
@@ -119,6 +120,8 @@ use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
 use explorer_identity::{initialize_explorer_identity_store, ExplorerIdentityManager};
 #[cfg(not(test))]
 use fs_commands::initialize_fs_command_events;
+#[cfg(not(test))]
+use native_task_graph::NativeTaskGraphManager;
 #[cfg(not(test))]
 use plugin_commands::PluginWatcherState;
 #[cfg(not(test))]
@@ -346,6 +349,7 @@ pub fn run() {
             app.manage(video_engine::VideoEngineManager::default());
             app.manage(vst_host_runtime::VstHostRuntimeManager::default());
             app.manage(TelemetryManager::default());
+            app.manage(NativeTaskGraphManager::from_app(&app.handle()));
             let startup_span = start_native_span(
                 &app.handle(),
                 "startup",

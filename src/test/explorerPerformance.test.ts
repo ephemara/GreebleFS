@@ -5,6 +5,7 @@ import {
   EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
+  EXPLORER_NATIVE_TASK_GRAPH_POLICY,
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
   EXPLORER_VIEWPORT_SCHEDULER_POLICY,
   explorerPerformance,
@@ -41,6 +42,26 @@ describe("explorerPerformance", () => {
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxConcurrentThumbnailReads).toBe(4);
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth).toBe(96);
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(4);
+    expect(explorerPerformance.nativeTaskGraph).toEqual({
+      enabled: true,
+      maxQueuedTasks: 256,
+      staleCancellationEnabled: true,
+      telemetryEnabled: true,
+      progressEmitIntervalMs: 80,
+      overflowPolicy: "cancelStaleQueuedFirst",
+      laneConcurrency: {
+        directoryScan: 2,
+        recursiveSearch: 2,
+        checksum: 1,
+        thumbnailDecode: 0,
+        previewRead: 0,
+        archive: 0,
+        indexing: 0,
+        maintenance: 0,
+      },
+    });
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan).toBe(2);
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.checksum).toBe(1);
   });
 
   it("normalizes viewport scheduling defaults and clamps authored policy values", () => {
@@ -108,6 +129,48 @@ describe("explorerPerformance", () => {
       maxConcurrentPreviewReads: 2,
       forwardPrefetchViewports: 0.5,
       backwardPrefetchViewports: 0.25,
+    });
+  });
+
+  it("normalizes native task graph defaults and clamps authored policy values", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      nativeTaskGraph: {
+        enabled: false,
+        maxQueuedTasks: 999999,
+        staleCancellationEnabled: false,
+        telemetryEnabled: false,
+        progressEmitIntervalMs: 1,
+        overflowPolicy: "explode" as never,
+        laneConcurrency: {
+          directoryScan: 99,
+          recursiveSearch: 0,
+          checksum: 99,
+          thumbnailDecode: 99,
+          previewRead: -1,
+          archive: 99,
+          indexing: Number.NaN,
+          maintenance: 99,
+        },
+      },
+    });
+
+    expect(normalized.nativeTaskGraph).toEqual({
+      enabled: false,
+      maxQueuedTasks: 4096,
+      staleCancellationEnabled: false,
+      telemetryEnabled: false,
+      progressEmitIntervalMs: 16,
+      overflowPolicy: "cancelStaleQueuedFirst",
+      laneConcurrency: {
+        directoryScan: 16,
+        recursiveSearch: 1,
+        checksum: 8,
+        thumbnailDecode: 16,
+        previewRead: 0,
+        archive: 8,
+        indexing: 0,
+        maintenance: 4,
+      },
     });
   });
 });

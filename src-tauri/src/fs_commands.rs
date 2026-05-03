@@ -18,6 +18,10 @@ use crate::explorer_identity::{
 };
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::explorer_pro_commands::FsBatchRenameItem;
+use crate::native_task_graph::{
+    is_native_task_cancelled_error, NativeTaskCancellationToken, NativeTaskGraphManager,
+    NativeTaskLane, NativeTaskPriority, NativeTaskRequest, NativeTaskWorkKey,
+};
 use crate::telemetry::{finish_native_span, start_native_span};
 pub use crate::volume_inventory::DriveInfo;
 use md5::Context as Md5Context;
@@ -270,6 +274,7 @@ pub(crate) enum ExplorerTaskRetryContext {
 #[derive(Debug, Clone)]
 pub(crate) enum ExplorerTaskCancelContext {
     Yazi { scheduler_task_id: YaziTaskId },
+    NativeTaskGraph { task_id: String },
     DuplicateScan { scan_id: String },
     AudioOperation { operation_id: String },
 }
@@ -1049,7 +1054,19 @@ fn normalize_batch_delete_paths(paths: Vec<String>) -> Vec<String> {
     normalized
 }
 
+#[cfg(test)]
 fn calculate_file_checksums(path: &Path) -> Result<FsChecksumEntryInfo, String> {
+    calculate_file_checksums_with_cancel(path, None)
+}
+
+fn calculate_file_checksums_with_cancel(
+    path: &Path,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
+) -> Result<FsChecksumEntryInfo, String> {
+    if let Some(token) = cancellation_token {
+        token.throw_if_cancelled()?;
+    }
+
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
     if metadata.is_dir() {
@@ -1071,6 +1088,10 @@ fn calculate_file_checksums(path: &Path) -> Result<FsChecksumEntryInfo, String> 
     let mut bytes = 0_u64;
 
     loop {
+        if let Some(token) = cancellation_token {
+            token.throw_if_cancelled()?;
+        }
+
         let read = file
             .read(&mut buffer)
             .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
@@ -1178,6 +1199,7 @@ fn fuzzy_score_entry(query: &str, entry: &FsJumpFilterEntry) -> Option<(i64, Vec
 }
 
 async fn run_recursive_size_task(
+    native_task_graph: &NativeTaskGraphManager,
     paths: Vec<String>,
     force_refresh: bool,
 ) -> Result<(String, Vec<EntryStorageInfo>), String> {
@@ -1190,30 +1212,59 @@ async fn run_recursive_size_task(
         paths.clone(),
         force_refresh,
     ));
-    let task_id_for_thread = task_id.clone();
+    let _ = set_manual_explorer_task_cancel_context(
+        &task_id,
+        ExplorerTaskCancelContext::NativeTaskGraph {
+            task_id: task_id.clone(),
+        },
+    );
+    let task_id_for_worker = task_id.clone();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut results = Vec::with_capacity(total);
-        for (index, path) in paths.iter().enumerate() {
-            let mut measured = measure_entry_sizes_blocking(vec![path.clone()], force_refresh);
-            let entry = measured.pop().unwrap_or_else(|| EntryStorageInfo {
-                path: path.clone(),
-                bytes: 0,
-                is_dir: Path::new(path).is_dir(),
-                is_complete: false,
-            });
-            results.push(entry);
-            let _ = update_manual_explorer_task(
-                &task_id_for_thread,
-                Some(recursive_size_task_detail(index + 1, total)),
-                Some((index + 1) as u64),
-                Some(total as u64),
-            );
+    let submission = native_task_graph.submit_blocking(
+        NativeTaskRequest::new(
+            NativeTaskLane::DirectoryScan,
+            NativeTaskPriority::UserInitiated,
+            "recursive size",
+        )
+        .with_task_id(task_id.clone())
+        .user_visible(true),
+        move |token| {
+            let mut results = Vec::with_capacity(total);
+            for (index, path) in paths.iter().enumerate() {
+                token.throw_if_cancelled()?;
+                let mut measured = measure_entry_sizes_blocking_with_cancel(
+                    vec![path.clone()],
+                    force_refresh,
+                    Some(&token),
+                )?;
+                token.throw_if_cancelled()?;
+                let entry = measured.pop().unwrap_or_else(|| EntryStorageInfo {
+                    path: path.clone(),
+                    bytes: 0,
+                    is_dir: Path::new(path).is_dir(),
+                    is_complete: false,
+                });
+                results.push(entry);
+                let _ = update_manual_explorer_task(
+                    &task_id_for_worker,
+                    Some(recursive_size_task_detail(index + 1, total)),
+                    Some((index + 1) as u64),
+                    Some(total as u64),
+                );
+            }
+            Ok::<Vec<EntryStorageInfo>, String>(results)
+        },
+    );
+
+    let submission = match submission {
+        Ok(submission) => submission,
+        Err(error) => {
+            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            return Err(error);
         }
-        Ok::<Vec<EntryStorageInfo>, String>(results)
-    })
-    .await
-    .map_err(|error| format!("Recursive size task join failure: {error}"))?;
+    };
+
+    let result = submission.wait().await;
 
     match result {
         Ok(results) => {
@@ -1225,13 +1276,18 @@ async fn run_recursive_size_task(
             Ok((task_id, results))
         }
         Err(error) => {
-            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            if is_native_task_cancelled_error(&error) {
+                let _ = cancel_manual_explorer_task(&task_id, Some("Cancelled".to_string()));
+            } else {
+                let _ = fail_manual_explorer_task(&task_id, error.clone());
+            }
             Err(error)
         }
     }
 }
 
 async fn run_checksum_task(
+    native_task_graph: &NativeTaskGraphManager,
     paths: Vec<String>,
 ) -> Result<(String, Vec<FsChecksumEntryInfo>), String> {
     if paths.is_empty() {
@@ -1240,34 +1296,60 @@ async fn run_checksum_task(
     let total = paths.len();
 
     let task_id = create_manual_explorer_task(batch_checksum_task_registration(paths.clone()));
-    let task_id_for_thread = task_id.clone();
+    let _ = set_manual_explorer_task_cancel_context(
+        &task_id,
+        ExplorerTaskCancelContext::NativeTaskGraph {
+            task_id: task_id.clone(),
+        },
+    );
+    let task_id_for_worker = task_id.clone();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let mut results = Vec::with_capacity(total);
-        for (index, path) in paths.iter().enumerate() {
-            let entry = match calculate_file_checksums(Path::new(path)) {
-                Ok(entry) => entry,
-                Err(error) => FsChecksumEntryInfo {
-                    path: path.clone(),
-                    bytes: 0,
-                    is_dir: Path::new(path).is_dir(),
-                    md5: None,
-                    sha256: None,
-                    error: Some(error),
-                },
-            };
-            results.push(entry);
-            let _ = update_manual_explorer_task(
-                &task_id_for_thread,
-                Some(checksum_task_detail(index + 1, total)),
-                Some((index + 1) as u64),
-                Some(total as u64),
-            );
+    let submission = native_task_graph.submit_blocking(
+        NativeTaskRequest::new(
+            NativeTaskLane::Checksum,
+            NativeTaskPriority::UserInitiated,
+            "checksum",
+        )
+        .with_task_id(task_id.clone())
+        .user_visible(true),
+        move |token| {
+            let mut results = Vec::with_capacity(total);
+            for (index, path) in paths.iter().enumerate() {
+                token.throw_if_cancelled()?;
+                let entry =
+                    match calculate_file_checksums_with_cancel(Path::new(path), Some(&token)) {
+                        Ok(entry) => entry,
+                        Err(error) => FsChecksumEntryInfo {
+                            path: path.clone(),
+                            bytes: 0,
+                            is_dir: Path::new(path).is_dir(),
+                            md5: None,
+                            sha256: None,
+                            error: Some(error),
+                        },
+                    };
+                token.throw_if_cancelled()?;
+                results.push(entry);
+                let _ = update_manual_explorer_task(
+                    &task_id_for_worker,
+                    Some(checksum_task_detail(index + 1, total)),
+                    Some((index + 1) as u64),
+                    Some(total as u64),
+                );
+            }
+            Ok::<Vec<FsChecksumEntryInfo>, String>(results)
+        },
+    );
+
+    let submission = match submission {
+        Ok(submission) => submission,
+        Err(error) => {
+            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            return Err(error);
         }
-        Ok::<Vec<FsChecksumEntryInfo>, String>(results)
-    })
-    .await
-    .map_err(|error| format!("Checksum task join failure: {error}"))?;
+    };
+
+    let result = submission.wait().await;
 
     match result {
         Ok(results) => {
@@ -1279,7 +1361,11 @@ async fn run_checksum_task(
             Ok((task_id, results))
         }
         Err(error) => {
-            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            if is_native_task_cancelled_error(&error) {
+                let _ = cancel_manual_explorer_task(&task_id, Some("Cancelled".to_string()));
+            } else {
+                let _ = fail_manual_explorer_task(&task_id, error.clone());
+            }
             Err(error)
         }
     }
@@ -2170,50 +2256,68 @@ fn measured_to_persisted_entry(path: &Path, measurement: &MeasuredPathSize) -> P
     }
 }
 
+#[cfg(test)]
 fn measure_path_size(path: &Path) -> MeasuredPathSize {
+    measure_path_size_with_cancel(path, None).unwrap_or_else(|_| MeasuredPathSize {
+        bytes: 0,
+        is_dir: path.is_dir(),
+        is_complete: false,
+        modified_ms: None,
+        entry_bytes: None,
+    })
+}
+
+fn measure_path_size_with_cancel(
+    path: &Path,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
+) -> Result<MeasuredPathSize, String> {
+    if let Some(token) = cancellation_token {
+        token.throw_if_cancelled()?;
+    }
+
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(_) => {
-            return MeasuredPathSize {
+            return Ok(MeasuredPathSize {
                 bytes: 0,
                 is_dir: false,
                 is_complete: false,
                 modified_ms: None,
                 entry_bytes: None,
-            }
+            })
         }
     };
 
     let file_type = metadata.file_type();
     let modified_ms = metadata_modified_ms(&metadata);
     if file_type.is_symlink() {
-        return MeasuredPathSize {
+        return Ok(MeasuredPathSize {
             bytes: 0,
             is_dir: path.is_dir(),
             is_complete: true,
             modified_ms,
             entry_bytes: None,
-        };
+        });
     }
 
     if metadata.is_file() {
-        return MeasuredPathSize {
+        return Ok(MeasuredPathSize {
             bytes: metadata.len(),
             is_dir: false,
             is_complete: true,
             modified_ms,
             entry_bytes: Some(metadata.len()),
-        };
+        });
     }
 
     if !metadata.is_dir() {
-        return MeasuredPathSize {
+        return Ok(MeasuredPathSize {
             bytes: 0,
             is_dir: false,
             is_complete: false,
             modified_ms,
             entry_bytes: None,
-        };
+        });
     }
 
     let mut total_bytes = 0_u64;
@@ -2222,14 +2326,18 @@ fn measure_path_size(path: &Path) -> MeasuredPathSize {
     let deadline = Instant::now() + fs_cache_policy().entry_size_scan_budget;
 
     while let Some(dir) = stack.pop() {
+        if let Some(token) = cancellation_token {
+            token.throw_if_cancelled()?;
+        }
+
         if Instant::now() >= deadline {
-            return MeasuredPathSize {
+            return Ok(MeasuredPathSize {
                 bytes: total_bytes,
                 is_dir: true,
                 is_complete: false,
                 modified_ms,
                 entry_bytes: None,
-            };
+            });
         }
 
         let canonical = dir.canonicalize().unwrap_or(dir.clone());
@@ -2243,14 +2351,18 @@ fn measure_path_size(path: &Path) -> MeasuredPathSize {
         };
 
         for entry in read_dir.flatten() {
+            if let Some(token) = cancellation_token {
+                token.throw_if_cancelled()?;
+            }
+
             if Instant::now() >= deadline {
-                return MeasuredPathSize {
+                return Ok(MeasuredPathSize {
                     bytes: total_bytes,
                     is_dir: true,
                     is_complete: false,
                     modified_ms,
                     entry_bytes: None,
-                };
+                });
             }
 
             let entry_path = entry.path();
@@ -2275,16 +2387,25 @@ fn measure_path_size(path: &Path) -> MeasuredPathSize {
         }
     }
 
-    MeasuredPathSize {
+    Ok(MeasuredPathSize {
         bytes: total_bytes,
         is_dir: true,
         is_complete: true,
         modified_ms,
         entry_bytes: None,
-    }
+    })
 }
 
+#[cfg(test)]
 fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<EntryStorageInfo> {
+    measure_entry_sizes_blocking_with_cancel(paths, force_refresh, None).unwrap_or_default()
+}
+
+fn measure_entry_sizes_blocking_with_cancel(
+    paths: Vec<String>,
+    force_refresh: bool,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
+) -> Result<Vec<EntryStorageInfo>, String> {
     let now = Instant::now();
     let entry_size_cache_ttl = fs_cache_policy().entry_size_cache_ttl;
     let mut results = Vec::with_capacity(paths.len());
@@ -2342,13 +2463,17 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
     }
 
     if pending.is_empty() {
-        return results;
+        return Ok(results);
     }
 
     let mut cache_updates = Vec::with_capacity(pending.len());
     let mut persisted_updates = Vec::with_capacity(pending.len());
     for (index, path, key) in pending {
-        let measured = measure_path_size(&path);
+        if let Some(token) = cancellation_token {
+            token.throw_if_cancelled()?;
+        }
+
+        let measured = measure_path_size_with_cancel(&path, cancellation_token)?;
         results[index] = EntryStorageInfo {
             path: key.clone(),
             bytes: measured.bytes,
@@ -2377,7 +2502,7 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
 
     let _ = upsert_entry_size_cache(&persisted_updates);
 
-    results
+    Ok(results)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -2845,6 +2970,7 @@ pub async fn fs_list_dir_uncached(
 #[specta::specta]
 pub async fn fs_measure_entry_sizes(
     app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     paths: Vec<String>,
     force_refresh: Option<bool>,
 ) -> Result<Vec<EntryStorageInfo>, String> {
@@ -2868,11 +2994,29 @@ pub async fn fs_measure_entry_sizes(
         .filter(|path| !path.trim().is_empty())
         .collect::<Vec<_>>();
 
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        measure_entry_sizes_blocking(deduped_paths, force_refresh.unwrap_or(false))
-    })
-    .await
-    .map_err(|error| format!("Failed to measure entry sizes: {error}"));
+    let force_refresh_value = force_refresh.unwrap_or(false);
+    let result = match native_task_graph.submit_blocking(
+        NativeTaskRequest::new(
+            NativeTaskLane::DirectoryScan,
+            NativeTaskPriority::Visible,
+            "measure entry sizes",
+        )
+        .with_work_key(NativeTaskWorkKey::new(format!(
+            "measure-entry-sizes:{}:{}",
+            force_refresh_value,
+            deduped_paths.join("|")
+        ))),
+        move |token| {
+            measure_entry_sizes_blocking_with_cancel(
+                deduped_paths,
+                force_refresh_value,
+                Some(&token),
+            )
+        },
+    ) {
+        Ok(submission) => submission.wait().await,
+        Err(error) => Err(error),
+    };
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
     let output_count = result
@@ -2898,10 +3042,12 @@ pub async fn fs_measure_entry_sizes(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_calculate_recursive_sizes(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     paths: Vec<String>,
     force_refresh: Option<bool>,
 ) -> Result<Vec<EntryStorageInfo>, String> {
     let (_, results) = run_recursive_size_task(
+        &native_task_graph,
         paths
             .into_iter()
             .filter(|path| !path.trim().is_empty())
@@ -2915,9 +3061,11 @@ pub async fn fs_calculate_recursive_sizes(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_calculate_checksums(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     paths: Vec<String>,
 ) -> Result<Vec<FsChecksumEntryInfo>, String> {
     let (_, results) = run_checksum_task(
+        &native_task_graph,
         paths
             .into_iter()
             .filter(|path| !path.trim().is_empty())
@@ -3075,10 +3223,17 @@ fn search_reader_for_match<R: std::io::BufRead>(
     query_lower: &str,
     request_scope: &str,
     request_id: u64,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
 ) -> Result<Option<(String, Option<u64>)>, ()> {
     for (idx, line_result) in reader.lines().enumerate() {
-        if idx % 32 == 0 && !is_search_request_active(request_scope, request_id) {
-            return Err(());
+        if idx % 32 == 0 {
+            if cancellation_token
+                .map(|token| token.is_cancelled())
+                .unwrap_or(false)
+                || !is_search_request_active(request_scope, request_id)
+            {
+                return Err(());
+            }
         }
         let line = match line_result {
             Ok(value) => value,
@@ -3100,6 +3255,7 @@ fn search_file_content_for_match(
     query_lower: &str,
     request_scope: &str,
     request_id: u64,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
 ) -> Result<Option<(String, Option<u64>)>, ()> {
     let file = match std::fs::File::open(path) {
         Ok(value) => value,
@@ -3111,6 +3267,7 @@ fn search_file_content_for_match(
         query_lower,
         request_scope,
         request_id,
+        cancellation_token,
     )
 }
 
@@ -3119,12 +3276,14 @@ fn search_cached_content_for_match(
     query_lower: &str,
     request_scope: &str,
     request_id: u64,
+    cancellation_token: Option<&NativeTaskCancellationToken>,
 ) -> Result<Option<(String, Option<u64>)>, ()> {
     search_reader_for_match(
         std::io::Cursor::new(content.as_bytes()),
         query_lower,
         request_scope,
         request_id,
+        cancellation_token,
     )
 }
 
@@ -3262,6 +3421,7 @@ fn lookup_cached_content_search_results(
                 query_lower,
                 request_scope,
                 request_id,
+                None,
             ) {
                 Ok(value) => value,
                 Err(()) => return Some((Vec::new(), cached_entries.len())),
@@ -3364,6 +3524,7 @@ fn empty_search_response(
 }
 
 async fn search_entries(
+    native_task_graph: &NativeTaskGraphManager,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3463,47 +3624,262 @@ async fn search_entries(
         }
     }
 
-    let mut stack = vec![root.clone()];
-    let mut combined_matches: Vec<FileSearchResult> = Vec::new();
-    let mut content_matches: Vec<FileSearchResult> = Vec::new();
-    let mut name_matches: Vec<FileSearchResult> = Vec::new();
-    let mut cached_name_entries: Vec<CachedSearchNameEntry> = Vec::new();
-    let mut cached_content_entries = include_content.then(|| Vec::new());
-    let mut content_cache_complete = include_content;
-    let mut cached_content_bytes = 0_u64;
-    let mut truncated_by_scan_budget = false;
-    let content_cache_enabled = include_content
-        && !policy.search_content_index_cache_ttl.is_zero()
-        && policy.search_content_index_total_bytes_budget > 0;
-    let mut scanned_entry_count = 0_u64;
-    let mut content_cache_status = if include_content {
-        if content_cache_enabled {
-            FileSearchContentCacheStatus::Warmed
-        } else {
-            FileSearchContentCacheStatus::Disabled
-        }
-    } else {
-        FileSearchContentCacheStatus::NotRequested
-    };
+    let root_for_scan = root.clone();
+    let query_lower_for_scan = query_lower.clone();
+    let request_scope_for_scan = request_scope.clone();
+    let search_work_key = NativeTaskWorkKey::new(format!(
+        "recursive-search:{}:{}:{}",
+        request_scope, show_hidden, include_content
+    ));
+    let submission = native_task_graph.submit_async(
+        NativeTaskRequest::new(
+            NativeTaskLane::RecursiveSearch,
+            NativeTaskPriority::Visible,
+            "recursive search live scan",
+        )
+        .with_work_key(search_work_key)
+        .with_generation(request_id)
+        .cancel_stale(true),
+        move |token| async move {
+            let policy = fs_cache_policy();
+            let root = root_for_scan;
+            let query_lower = query_lower_for_scan;
+            let request_scope = request_scope_for_scan;
+            let mut stack = vec![root.clone()];
+            let mut combined_matches: Vec<FileSearchResult> = Vec::new();
+            let mut content_matches: Vec<FileSearchResult> = Vec::new();
+            let mut name_matches: Vec<FileSearchResult> = Vec::new();
+            let mut cached_name_entries: Vec<CachedSearchNameEntry> = Vec::new();
+            let mut cached_content_entries = include_content.then(|| Vec::new());
+            let mut content_cache_complete = include_content;
+            let mut cached_content_bytes = 0_u64;
+            let mut truncated_by_scan_budget = false;
+            let content_cache_enabled = include_content
+                && !policy.search_content_index_cache_ttl.is_zero()
+                && policy.search_content_index_total_bytes_budget > 0;
+            let mut scanned_entry_count = 0_u64;
+            let mut content_cache_status = if include_content {
+                if content_cache_enabled {
+                    FileSearchContentCacheStatus::Warmed
+                } else {
+                    FileSearchContentCacheStatus::Disabled
+                }
+            } else {
+                FileSearchContentCacheStatus::NotRequested
+            };
 
-    'search: while let Some(current_dir) = stack.pop() {
-        if !is_search_request_active(&request_scope, request_id) {
-            return Ok(empty_search_response(
-                FileSearchExecutionStrategy::LiveScan,
-                content_cache_status,
-                scanned_entry_count,
-                cached_name_entries.len() as u64,
-                truncated_by_scan_budget,
-            ));
-        }
+            'search: while let Some(current_dir) = stack.pop() {
+                if token.is_cancelled() || !is_search_request_active(&request_scope, request_id) {
+                    return Ok(empty_search_response(
+                        FileSearchExecutionStrategy::LiveScan,
+                        content_cache_status,
+                        scanned_entry_count,
+                        cached_name_entries.len() as u64,
+                        truncated_by_scan_budget,
+                    ));
+                }
+                token.throw_if_cancelled()?;
 
-        let mut read_dir = match Local::regular(&current_dir).read_dir().await {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
+                let mut read_dir = match Local::regular(&current_dir).read_dir().await {
+                    Ok(entries) => entries,
+                    Err(_) => continue,
+                };
 
-        loop {
-            if !is_search_request_active(&request_scope, request_id) {
+                loop {
+                    if token.is_cancelled() || !is_search_request_active(&request_scope, request_id)
+                    {
+                        return Ok(empty_search_response(
+                            FileSearchExecutionStrategy::LiveScan,
+                            content_cache_status,
+                            scanned_entry_count,
+                            cached_name_entries.len() as u64,
+                            truncated_by_scan_budget,
+                        ));
+                    }
+                    token.throw_if_cancelled()?;
+                    pause_search_entry_scan_for_tests();
+                    record_search_entry_scan_for_tests();
+
+                    if scanned_entry_count >= policy.search_max_indexed_entries as u64 {
+                        truncated_by_scan_budget = true;
+                        break 'search;
+                    }
+
+                    let entry = match read_dir.next().await {
+                        Ok(Some(value)) => value,
+                        Ok(None) => break,
+                        Err(_) => break,
+                    };
+                    scanned_entry_count = scanned_entry_count.saturating_add(1);
+
+                    let Some(candidate) = build_searchable_entry(
+                        entry,
+                        &root,
+                        show_hidden,
+                        policy.max_search_content_file_bytes,
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+
+                    let SearchableEntry {
+                        path: path_buf,
+                        name_lower,
+                        result: cached_name_result,
+                        content_searchable,
+                    } = candidate;
+                    cached_name_entries.push(CachedSearchNameEntry {
+                        name_lower: name_lower.clone(),
+                        path_lower: cached_name_result.path.to_ascii_lowercase(),
+                        result: cached_name_result.clone(),
+                    });
+                    let name_hit = name_lower.contains(&query_lower);
+
+                    if cached_name_result.is_dir {
+                        if name_hit {
+                            name_matches.push(cached_name_result.clone());
+                        }
+
+                        if !cached_name_result.is_symlink {
+                            stack.push(path_buf);
+                        }
+                        continue;
+                    }
+
+                    let mut content_hit = false;
+                    let mut snippet = String::new();
+                    let mut line_number = None;
+                    let mut cached_content = None;
+
+                    if include_content && content_searchable {
+                        if content_cache_complete
+                            && cached_content_bytes.saturating_add(cached_name_result.size)
+                                <= policy.search_content_index_total_bytes_budget
+                        {
+                            match Local::regular(&path_buf).read_to_string().await {
+                                Ok(content) => {
+                                    match search_cached_content_for_match(
+                                        &content,
+                                        &query_lower,
+                                        &request_scope,
+                                        request_id,
+                                        Some(&token),
+                                    ) {
+                                        Ok(Some((matched_snippet, matched_line_number))) => {
+                                            content_hit = true;
+                                            snippet = matched_snippet;
+                                            line_number = matched_line_number;
+                                        }
+                                        Ok(None) => {}
+                                        Err(()) => {
+                                            return Ok(empty_search_response(
+                                                FileSearchExecutionStrategy::LiveScan,
+                                                content_cache_status,
+                                                scanned_entry_count,
+                                                cached_name_entries.len() as u64,
+                                                truncated_by_scan_budget,
+                                            ))
+                                        }
+                                    }
+                                    cached_content_bytes = cached_content_bytes
+                                        .saturating_add(cached_name_result.size);
+                                    cached_content = Some(Arc::<str>::from(content));
+                                }
+                                Err(_) => {
+                                    content_cache_complete = false;
+                                    if content_cache_enabled {
+                                        content_cache_status =
+                                            FileSearchContentCacheStatus::ReadFailureFallback;
+                                    }
+                                    match search_file_content_for_match(
+                                        &path_buf,
+                                        &query_lower,
+                                        &request_scope,
+                                        request_id,
+                                        Some(&token),
+                                    ) {
+                                        Ok(Some((matched_snippet, matched_line_number))) => {
+                                            content_hit = true;
+                                            snippet = matched_snippet;
+                                            line_number = matched_line_number;
+                                        }
+                                        Ok(None) => {}
+                                        Err(()) => {
+                                            return Ok(empty_search_response(
+                                                FileSearchExecutionStrategy::LiveScan,
+                                                content_cache_status,
+                                                scanned_entry_count,
+                                                cached_name_entries.len() as u64,
+                                                truncated_by_scan_budget,
+                                            ))
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            content_cache_complete = false;
+                            if content_cache_enabled {
+                                content_cache_status =
+                                    FileSearchContentCacheStatus::OverBudgetFallback;
+                            }
+                            match search_file_content_for_match(
+                                &path_buf,
+                                &query_lower,
+                                &request_scope,
+                                request_id,
+                                Some(&token),
+                            ) {
+                                Ok(Some((matched_snippet, matched_line_number))) => {
+                                    content_hit = true;
+                                    snippet = matched_snippet;
+                                    line_number = matched_line_number;
+                                }
+                                Ok(None) => {}
+                                Err(()) => {
+                                    return Ok(empty_search_response(
+                                        FileSearchExecutionStrategy::LiveScan,
+                                        content_cache_status,
+                                        scanned_entry_count,
+                                        cached_name_entries.len() as u64,
+                                        truncated_by_scan_budget,
+                                    ))
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(entries) = cached_content_entries.as_mut() {
+                        entries.push(CachedSearchContentEntry {
+                            name_lower: name_lower.clone(),
+                            path_lower: cached_name_result.path.to_ascii_lowercase(),
+                            result: cached_name_result.clone(),
+                            content: cached_content,
+                        });
+                    }
+
+                    if !name_hit && !content_hit {
+                        continue;
+                    }
+
+                    let mut result = cached_name_result;
+                    result.match_kind = match (name_hit, content_hit) {
+                        (true, true) => FileSearchMatchKind::NameAndContent,
+                        (false, true) => FileSearchMatchKind::Content,
+                        _ => FileSearchMatchKind::Name,
+                    };
+                    result.snippet = snippet;
+                    result.line_number = line_number;
+
+                    match result.match_kind {
+                        FileSearchMatchKind::NameAndContent => combined_matches.push(result),
+                        FileSearchMatchKind::Content => content_matches.push(result),
+                        FileSearchMatchKind::Name => name_matches.push(result),
+                    }
+                }
+            }
+
+            if token.is_cancelled() || !is_search_request_active(&request_scope, request_id) {
                 return Ok(empty_search_response(
                     FileSearchExecutionStrategy::LiveScan,
                     content_cache_status,
@@ -3512,231 +3888,49 @@ async fn search_entries(
                     truncated_by_scan_budget,
                 ));
             }
-            pause_search_entry_scan_for_tests();
-            record_search_entry_scan_for_tests();
-
-            if scanned_entry_count >= policy.search_max_indexed_entries as u64 {
-                truncated_by_scan_budget = true;
-                break 'search;
+            let indexed_entry_count = cached_name_entries.len() as u64;
+            if !truncated_by_scan_budget {
+                store_search_name_index(&root, show_hidden, cached_name_entries);
             }
-
-            let entry = match read_dir.next().await {
-                Ok(Some(value)) => value,
-                Ok(None) => break,
-                Err(_) => break,
-            };
-            scanned_entry_count = scanned_entry_count.saturating_add(1);
-
-            let Some(candidate) = build_searchable_entry(
-                entry,
-                &root,
-                show_hidden,
-                policy.max_search_content_file_bytes,
-            )
-            .await
-            else {
-                continue;
-            };
-
-            let SearchableEntry {
-                path: path_buf,
-                name_lower,
-                result: cached_name_result,
-                content_searchable,
-            } = candidate;
-            cached_name_entries.push(CachedSearchNameEntry {
-                name_lower: name_lower.clone(),
-                path_lower: cached_name_result.path.to_ascii_lowercase(),
-                result: cached_name_result.clone(),
-            });
-            let name_hit = name_lower.contains(&query_lower);
-
-            if cached_name_result.is_dir {
-                if name_hit {
-                    name_matches.push(cached_name_result.clone());
-                }
-
-                if !cached_name_result.is_symlink {
-                    stack.push(path_buf);
-                }
-                continue;
-            }
-
-            let mut content_hit = false;
-            let mut snippet = String::new();
-            let mut line_number = None;
-            let mut cached_content = None;
-
-            if include_content && content_searchable {
-                if content_cache_complete
-                    && cached_content_bytes.saturating_add(cached_name_result.size)
-                        <= policy.search_content_index_total_bytes_budget
-                {
-                    match Local::regular(&path_buf).read_to_string().await {
-                        Ok(content) => {
-                            match search_cached_content_for_match(
-                                &content,
-                                &query_lower,
-                                &request_scope,
-                                request_id,
-                            ) {
-                                Ok(Some((matched_snippet, matched_line_number))) => {
-                                    content_hit = true;
-                                    snippet = matched_snippet;
-                                    line_number = matched_line_number;
-                                }
-                                Ok(None) => {}
-                                Err(()) => {
-                                    return Ok(empty_search_response(
-                                        FileSearchExecutionStrategy::LiveScan,
-                                        content_cache_status,
-                                        scanned_entry_count,
-                                        cached_name_entries.len() as u64,
-                                        truncated_by_scan_budget,
-                                    ))
-                                }
-                            }
-                            cached_content_bytes =
-                                cached_content_bytes.saturating_add(cached_name_result.size);
-                            cached_content = Some(Arc::<str>::from(content));
-                        }
-                        Err(_) => {
-                            content_cache_complete = false;
-                            if content_cache_enabled {
-                                content_cache_status =
-                                    FileSearchContentCacheStatus::ReadFailureFallback;
-                            }
-                            match search_file_content_for_match(
-                                &path_buf,
-                                &query_lower,
-                                &request_scope,
-                                request_id,
-                            ) {
-                                Ok(Some((matched_snippet, matched_line_number))) => {
-                                    content_hit = true;
-                                    snippet = matched_snippet;
-                                    line_number = matched_line_number;
-                                }
-                                Ok(None) => {}
-                                Err(()) => {
-                                    return Ok(empty_search_response(
-                                        FileSearchExecutionStrategy::LiveScan,
-                                        content_cache_status,
-                                        scanned_entry_count,
-                                        cached_name_entries.len() as u64,
-                                        truncated_by_scan_budget,
-                                    ))
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    content_cache_complete = false;
-                    if content_cache_enabled {
-                        content_cache_status = FileSearchContentCacheStatus::OverBudgetFallback;
-                    }
-                    match search_file_content_for_match(
-                        &path_buf,
-                        &query_lower,
-                        &request_scope,
-                        request_id,
-                    ) {
-                        Ok(Some((matched_snippet, matched_line_number))) => {
-                            content_hit = true;
-                            snippet = matched_snippet;
-                            line_number = matched_line_number;
-                        }
-                        Ok(None) => {}
-                        Err(()) => {
-                            return Ok(empty_search_response(
-                                FileSearchExecutionStrategy::LiveScan,
-                                content_cache_status,
-                                scanned_entry_count,
-                                cached_name_entries.len() as u64,
-                                truncated_by_scan_budget,
-                            ))
-                        }
-                    }
+            let mut content_cache_stored_file_count = 0_u64;
+            let mut content_cache_stored_byte_count = 0_u64;
+            if content_cache_complete && !truncated_by_scan_budget {
+                if let Some(entries) = cached_content_entries {
+                    content_cache_stored_file_count = entries
+                        .iter()
+                        .filter(|entry| entry.content.is_some())
+                        .count() as u64;
+                    content_cache_stored_byte_count = cached_content_bytes;
+                    store_search_content_index(&root, show_hidden, entries);
                 }
             }
 
-            if let Some(entries) = cached_content_entries.as_mut() {
-                entries.push(CachedSearchContentEntry {
-                    name_lower: name_lower.clone(),
-                    path_lower: cached_name_result.path.to_ascii_lowercase(),
-                    result: cached_name_result.clone(),
-                    content: cached_content,
-                });
-            }
-
-            if !name_hit && !content_hit {
-                continue;
-            }
-
-            let mut result = cached_name_result;
-            result.match_kind = match (name_hit, content_hit) {
-                (true, true) => FileSearchMatchKind::NameAndContent,
-                (false, true) => FileSearchMatchKind::Content,
-                _ => FileSearchMatchKind::Name,
-            };
-            result.snippet = snippet;
-            result.line_number = line_number;
-
-            match result.match_kind {
-                FileSearchMatchKind::NameAndContent => combined_matches.push(result),
-                FileSearchMatchKind::Content => content_matches.push(result),
-                FileSearchMatchKind::Name => name_matches.push(result),
-            }
-        }
-    }
-
-    if !is_search_request_active(&request_scope, request_id) {
-        return Ok(empty_search_response(
-            FileSearchExecutionStrategy::LiveScan,
-            content_cache_status,
-            scanned_entry_count,
-            cached_name_entries.len() as u64,
-            truncated_by_scan_budget,
-        ));
-    }
-    let indexed_entry_count = cached_name_entries.len() as u64;
-    if !truncated_by_scan_budget {
-        store_search_name_index(&root, show_hidden, cached_name_entries);
-    }
-    let mut content_cache_stored_file_count = 0_u64;
-    let mut content_cache_stored_byte_count = 0_u64;
-    if content_cache_complete && !truncated_by_scan_budget {
-        if let Some(entries) = cached_content_entries {
-            content_cache_stored_file_count = entries
-                .iter()
-                .filter(|entry| entry.content.is_some())
-                .count() as u64;
-            content_cache_stored_byte_count = cached_content_bytes;
-            store_search_content_index(&root, show_hidden, entries);
-        }
-    }
-
-    let mut results = Vec::new();
-    results.extend(combined_matches);
-    results.extend(content_matches);
-    results.extend(name_matches);
-    sort_search_results(&mut results);
-    results.truncate(max_results);
-    Ok(FileSearchResponse {
-        results,
-        diagnostics: FileSearchDiagnostics {
-            execution_strategy: FileSearchExecutionStrategy::LiveScan,
-            content_cache_status,
-            scanned_entry_count,
-            indexed_entry_count,
-            content_cache_stored_file_count,
-            content_cache_stored_byte_count,
-            truncated_by_scan_budget,
+            let mut results = Vec::new();
+            results.extend(combined_matches);
+            results.extend(content_matches);
+            results.extend(name_matches);
+            sort_search_results(&mut results);
+            results.truncate(max_results);
+            Ok(FileSearchResponse {
+                results,
+                diagnostics: FileSearchDiagnostics {
+                    execution_strategy: FileSearchExecutionStrategy::LiveScan,
+                    content_cache_status,
+                    scanned_entry_count,
+                    indexed_entry_count,
+                    content_cache_stored_file_count,
+                    content_cache_stored_byte_count,
+                    truncated_by_scan_budget,
+                },
+            })
         },
-    })
+    )?;
+
+    submission.wait().await
 }
 
 async fn execute_search_entries_command(
+    native_task_graph: &NativeTaskGraphManager,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3749,6 +3943,7 @@ async fn execute_search_entries_command(
     let active_request_id = register_search_request(&scope, request_id);
 
     search_entries(
+        native_task_graph,
         path,
         query,
         show_hidden,
@@ -3763,12 +3958,22 @@ async fn execute_search_entries_command(
 #[tauri::command]
 #[specta::specta]
 pub fn fs_cancel_search_entries(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     path: String,
     request_id: Option<u64>,
     request_scope: Option<String>,
 ) -> Result<(), String> {
     let scope = search_request_scope(&path, request_scope);
     register_search_request(&scope, request_id);
+    let work_key = NativeTaskWorkKey::new(format!("recursive-search:{}:{}:{}", scope, true, true));
+    native_task_graph.cancel_work_key(&work_key);
+    let work_key = NativeTaskWorkKey::new(format!("recursive-search:{}:{}:{}", scope, true, false));
+    native_task_graph.cancel_work_key(&work_key);
+    let work_key = NativeTaskWorkKey::new(format!("recursive-search:{}:{}:{}", scope, false, true));
+    native_task_graph.cancel_work_key(&work_key);
+    let work_key =
+        NativeTaskWorkKey::new(format!("recursive-search:{}:{}:{}", scope, false, false));
+    native_task_graph.cancel_work_key(&work_key);
     Ok(())
 }
 
@@ -3776,6 +3981,7 @@ pub fn fs_cancel_search_entries(
 #[specta::specta]
 pub async fn fs_search_entries(
     app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3799,6 +4005,7 @@ pub async fn fs_search_entries(
         .collect(),
     );
     let result = execute_search_entries_command(
+        &native_task_graph,
         path,
         query,
         show_hidden,
@@ -3831,6 +4038,7 @@ pub async fn fs_search_entries(
 #[specta::specta]
 pub async fn fs_search_entries_with_diagnostics(
     app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3854,6 +4062,7 @@ pub async fn fs_search_entries_with_diagnostics(
         .collect(),
     );
     let result = execute_search_entries_command(
+        &native_task_graph,
         path,
         query,
         show_hidden,
@@ -4762,6 +4971,7 @@ fn retry_context_for_task(task_id: &str) -> Result<ExplorerTaskRetryContext, Str
 #[specta::specta]
 pub async fn fs_retry_explorer_task(
     app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     task_id: String,
 ) -> Result<ExplorerTaskRecord, String> {
     let retry_context = retry_context_for_task(&task_id)?;
@@ -4789,8 +4999,14 @@ pub async fn fs_retry_explorer_task(
         ExplorerTaskRetryContext::RecursiveSize {
             paths,
             force_refresh,
-        } => run_recursive_size_task(paths, force_refresh).await?.0,
-        ExplorerTaskRetryContext::Checksum { paths } => run_checksum_task(paths).await?.0,
+        } => {
+            run_recursive_size_task(&native_task_graph, paths, force_refresh)
+                .await?
+                .0
+        }
+        ExplorerTaskRetryContext::Checksum { paths } => {
+            run_checksum_task(&native_task_graph, paths).await?.0
+        }
         ExplorerTaskRetryContext::ArchiveExtraction { request } => {
             run_archive_extraction_task(request).await?
         }
@@ -4832,13 +5048,19 @@ fn cancel_context_for_task(task_id: &str) -> Result<ExplorerTaskCancelContext, S
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_cancel_explorer_task(task_id: String) -> Result<ExplorerTaskRecord, String> {
+pub async fn fs_cancel_explorer_task(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    task_id: String,
+) -> Result<ExplorerTaskRecord, String> {
     let cancel_context = cancel_context_for_task(&task_id)?;
     match cancel_context {
         ExplorerTaskCancelContext::Yazi { scheduler_task_id } => {
             if let Ok(scheduler) = fs_command_scheduler() {
                 scheduler.cancel(scheduler_task_id);
             }
+        }
+        ExplorerTaskCancelContext::NativeTaskGraph { task_id } => {
+            native_task_graph.cancel(&task_id);
         }
         ExplorerTaskCancelContext::DuplicateScan { scan_id } => {
             crate::explorer_pro_commands::cancel_duplicate_scan_task(&scan_id)?;
@@ -5913,7 +6135,9 @@ mod tests {
         request_id: Option<u64>,
         request_scope: Option<String>,
     ) -> Result<Vec<FileSearchResult>, String> {
+        let native_task_graph = NativeTaskGraphManager::default();
         Ok(execute_search_entries_command(
+            &native_task_graph,
             path,
             query,
             show_hidden,
@@ -5935,7 +6159,9 @@ mod tests {
         request_id: Option<u64>,
         request_scope: Option<String>,
     ) -> Result<FileSearchResponse, String> {
+        let native_task_graph = NativeTaskGraphManager::default();
         execute_search_entries_command(
+            &native_task_graph,
             path,
             query,
             show_hidden,
@@ -6707,9 +6933,13 @@ mod tests {
         let content = b"hello world";
         fs::write(&file_path, content).unwrap();
 
-        let results = fs_calculate_checksums(vec![file_path.to_string_lossy().into_owned()])
-            .await
-            .expect("fs_calculate_checksums failed");
+        let native_task_graph = NativeTaskGraphManager::default();
+        let (_, results) = run_checksum_task(
+            &native_task_graph,
+            vec![file_path.to_string_lossy().into_owned()],
+        )
+        .await
+        .expect("fs_calculate_checksums failed");
 
         assert_eq!(results.len(), 1);
         let entry = &results[0];
@@ -6731,10 +6961,14 @@ mod tests {
         fs::write(root.join("a.bin"), vec![0_u8; 32]).unwrap();
         fs::write(nested.join("b.bin"), vec![0_u8; 64]).unwrap();
 
-        let results =
-            fs_calculate_recursive_sizes(vec![root.to_string_lossy().into_owned()], Some(true))
-                .await
-                .expect("fs_calculate_recursive_sizes failed");
+        let native_task_graph = NativeTaskGraphManager::default();
+        let (_, results) = run_recursive_size_task(
+            &native_task_graph,
+            vec![root.to_string_lossy().into_owned()],
+            true,
+        )
+        .await
+        .expect("fs_calculate_recursive_sizes failed");
 
         assert_eq!(results.len(), 1);
         let entry = &results[0];

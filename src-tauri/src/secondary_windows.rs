@@ -594,8 +594,14 @@ fn emit_optional_event<T: serde::Serialize + Clone>(app: &AppHandle, event: &str
 }
 
 pub fn should_window_label_remember_bounds(label: &str) -> bool {
-    label == crate::window_commands::MAIN_WINDOW_LABEL
-        || label == crate::wayland_dock::WAYLAND_DOCK_WINDOW_LABEL
+    #[cfg(not(test))]
+    let is_primary_shell_label = label == crate::window_commands::MAIN_WINDOW_LABEL
+        || label == crate::wayland_dock::WAYLAND_DOCK_WINDOW_LABEL;
+
+    #[cfg(test)]
+    let is_primary_shell_label = label == "main" || label == "dock";
+
+    is_primary_shell_label
         || label == FILE_OPERATIONS_WINDOW_LABEL
         || label.starts_with(SECONDARY_PANEL_WINDOW_LABEL_PREFIX)
         || label.starts_with(SECONDARY_PLUGIN_PANEL_WINDOW_LABEL_PREFIX)

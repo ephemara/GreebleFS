@@ -1,3 +1,24 @@
+# 2026-05-03 - Native Task Graph Owns Explorer Scan-Class Work
+
+- Implemented the clean-room native cancellable task graph slice for Explorer hot-path scan work.
+- New native runtime:
+  - `src-tauri/src/native_task_graph.rs` owns `NativeTaskGraphManager`, typed task ids/work keys/generations, priority lanes, bounded queue pressure, stable FIFO ties, lane concurrency caps, cooperative cancellation tokens, parent/child cancellation metadata, typed `submit_blocking` / `submit_async`, and telemetry snapshots.
+  - `src-tauri/src/lib.rs` registers the manager as Tauri state and loads `nativeTaskGraph` from `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json`.
+  - The authored policy defaults are enabled, max queued tasks `256`, stale cancellation enabled, telemetry enabled, progress emit interval `80ms`, lane caps `directoryScan=2`, `recursiveSearch=2`, `checksum=1`, and reserved future lanes disabled at cap `0`.
+- Explorer consumers:
+  - `fs_measure_entry_sizes` now schedules cache-miss size work through the `directoryScan` lane.
+  - Recursive size and checksum task-center jobs keep existing task ids, retry contexts, progress events, and cancel UI, but their work now runs through the graph with cooperative checkpoints.
+  - Recursive search keeps the same public command/request-id shape. Cache hits remain inline; live cache-miss scans run through the `recursiveSearch` lane with work-key generation cancellation, while `fs_cancel_search_entries` also cancels matching native graph work keys.
+- Config/testing:
+  - `src/config/explorerPerformance.ts` now normalizes `nativeTaskGraph`; `src/test/explorerPerformance.test.ts` covers shipped defaults and clamp/fallback behavior.
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib native_task_graph` passes 8 native graph tests.
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib fs_commands::tests` currently runs 0 tests because `lib.rs` still uses the `fs_commands_test_stub` under `cfg(test)`; command behavior is covered by `cargo check --manifest-path src-tauri/Cargo.toml --lib` for now.
+  - `bunx vitest run src/test/explorerPerformance.test.ts --reporter=dot --testTimeout=30000` passes.
+- Durable rule:
+  - New native Explorer background work that is user-visible, cancellable, scan-class, cache-warming, or contention-prone should enter through `NativeTaskGraphManager` instead of ad hoc `spawn_blocking`. Keep thumbnails/previews on the TS bounded lane until a dedicated native adapter is intentionally added.
+- Next recommended step:
+  - Add a narrow graph telemetry surfacing command or native telemetry event feed only after real Explorer sessions show pressure. Then migrate thumbnail decode, preview reads, archive work, indexing, or media transforms one lane at a time instead of broadening the graph spec prematurely.
+
 # 2026-05-03 - Nitro SDK Reference Research For GreebleFS
 
 - Added `reference/sdk/research.md` as a clean-room research map for the Nintendo DS Nitro SDK reference pack under `reference/sdk`.
