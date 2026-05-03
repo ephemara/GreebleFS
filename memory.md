@@ -1,3 +1,18 @@
+# 2026-05-03 - Nitro SDK Reference Research For GreebleFS
+
+- Added `reference/sdk/research.md` as a clean-room research map for the Nintendo DS Nitro SDK reference pack under `reference/sdk`.
+- Highest-value Nitro slices identified:
+  - FS archive and overlay lifecycles from `NitroSDK/include/nitro/fs/*` for future archive/provider/plugin package command models.
+  - message-framed ring buffers, OS message queues, fixed task tables, and VRAM transfer queues from `NitroSystem/include/nnsys/mcs/*`, `NitroSDK/include/nitro/os/common/message.h`, `NitroDWC/include/gs/core.h`, and `NitroSystem/include/nnsys/gfd/*` for host events, terminal/task streams, bounded worker lanes, and GPU upload staging.
+  - MI streaming reader/decompression contexts from `NitroSDK/include/nitro/mi/*` for archive/thumbnail/preview work that should not materialize whole files when only progressive bytes are needed.
+  - FND frame/unit/expanded heaps from `NitroSystem/include/nnsys/fnd/*` for narrow native scratch arenas and fixed request/event pools where profiling proves churn.
+  - G3D command buffers/display-list style command tapes from `NitroSystem/include/nnsys/g3d/*` and `NitroSystem/build/libraries/g3d/src/*` for future GPU/preview/constellation command batching.
+- Second-wave useful references include PRC stroke recognition for cutout/gesture tools, fixed-point math for deterministic layout/geometry lanes, G2D char/text canvas for dense atlas-style explorer rendering, WCM async phase machines for LAN/mobile/provider readiness, and VCT jitter/VAD telemetry for audio/collaboration lanes.
+- Durable rule:
+  - Nitro's value for GreebleFS is explicit capacity, phase, memory ownership, and overflow semantics under tiny-hardware constraints. Do not copy proprietary source; reimplement the patterns in GreebleFS-owned Rust/TS/WebGPU runtimes and keep API boundaries canonical/string-safe.
+- Next recommended step:
+  - The most actionable first Nitro slice is a Rust bounded message ring for `src-tauri/src/runtime_pipeline/host_events.rs` and terminal/task streams, because it is narrow, measurable, and complements the existing `src/runtime/boundedWorkLane.ts` scheduler without replacing it.
+
 # 2026-05-03 - Explorer Bounded Work Lanes Own Thumbnail And Preview Prefetch Pressure
 
 - Implemented the next clean-room Explorer hot-path slice as a TypeScript bounded work-lane runtime instead of a native task-graph rewrite.
