@@ -1,4 +1,8 @@
 import type { ExplorerViewportSchedulerPolicy } from "../config/explorerPerformance";
+import {
+  runBoundedWorkLane,
+  type BoundedWorkLaneCandidate,
+} from "./boundedWorkLane";
 
 export type ExplorerViewportWorkPriority =
   | "visible"
@@ -6,7 +10,8 @@ export type ExplorerViewportWorkPriority =
   | "backward-prefetch"
   | "hover";
 
-export interface ExplorerViewportWorkCandidate<TEntry> {
+export interface ExplorerViewportWorkCandidate<TEntry>
+  extends BoundedWorkLaneCandidate<ExplorerViewportWorkPriority> {
   entry: TEntry;
   path: string;
   identityKey: string;
@@ -22,8 +27,13 @@ export interface ExplorerViewportSchedulerTelemetry {
   scheduledCount: number;
   completedCount: number;
   failedCount: number;
+  queuedCount: number;
+  droppedCount: number;
+  coalescedCount: number;
   cancelled: boolean;
   maxConcurrentThumbnailReads: number;
+  maxCandidateQueueDepth: number;
+  queueOverflowStrategy: ExplorerViewportSchedulerPolicy["queueOverflowStrategy"];
   priorityCounts: Record<ExplorerViewportWorkPriority, number>;
 }
 
@@ -114,9 +124,12 @@ export function buildExplorerViewportThumbnailWorkCandidates<TEntry>(
       entry,
       path: input.getEntryPath(entry),
       identityKey,
+      workKey: identityKey,
       index,
       priority,
+      priorityRank: priorityRank(priority),
       distanceFromViewport,
+      distanceFromFocus: distanceFromViewport,
       isModelPreview: input.isModelPreviewEntry?.(entry) ?? false,
       sequence,
     });
@@ -153,93 +166,39 @@ export function buildExplorerViewportThumbnailWorkCandidates<TEntry>(
 export async function runExplorerViewportThumbnailScheduler<TEntry, TValue>(
   input: RunExplorerViewportThumbnailSchedulerInput<TEntry, TValue>,
 ): Promise<ExplorerViewportSchedulerRunResult<TEntry, TValue>> {
-  const scheduledCandidates = input.candidates.slice(
-    0,
-    Math.max(1, Math.floor(input.policy.batchSize)),
-  );
-  const priorityCounts = createPriorityCounts(scheduledCandidates);
-  const maxConcurrentThumbnailReads = Math.max(
-    1,
-    Math.min(
-      Math.floor(input.policy.maxConcurrentThumbnailReads),
-      scheduledCandidates.length || 1,
-    ),
-  );
-  const results: ExplorerViewportSchedulerCandidateResult<TEntry, TValue>[] = [];
-  let nextCandidateIndex = 0;
-  let cancelled = false;
-
-  const takeNextCandidate = () => {
-    if (input.policy.cancelStaleBatches && input.isStale?.()) {
-      cancelled = true;
-      return null;
-    }
-    if (nextCandidateIndex >= scheduledCandidates.length) {
-      return null;
-    }
-    const scheduledIndex = nextCandidateIndex;
-    nextCandidateIndex += 1;
-    return {
-      candidate: scheduledCandidates[scheduledIndex],
-      scheduledIndex,
-    };
-  };
-
-  const workers = Array.from(
-    { length: maxConcurrentThumbnailReads },
-    async () => {
-      for (;;) {
-        const next = takeNextCandidate();
-        if (!next) {
-          return;
-        }
-
-        try {
-          const value = await input.readCandidate(next.candidate);
-          if (input.policy.cancelStaleBatches && input.isStale?.()) {
-            cancelled = true;
-            return;
-          }
-          results.push({
-            candidate: next.candidate,
-            scheduledIndex: next.scheduledIndex,
-            status: "fulfilled",
-            value,
-            error: null,
-          });
-        } catch (error) {
-          if (input.policy.cancelStaleBatches && input.isStale?.()) {
-            cancelled = true;
-            return;
-          }
-          results.push({
-            candidate: next.candidate,
-            scheduledIndex: next.scheduledIndex,
-            status: "rejected",
-            value: null,
-            error,
-          });
-        }
-      }
+  const laneResult = await runBoundedWorkLane<
+    ExplorerViewportWorkCandidate<TEntry>,
+    TValue,
+    ExplorerViewportWorkPriority
+  >({
+    candidates: input.candidates,
+    policy: {
+      batchSize: input.policy.batchSize,
+      maxConcurrentWork: input.policy.maxConcurrentThumbnailReads,
+      maxCandidateQueueDepth: input.policy.maxCandidateQueueDepth,
+      queueOverflowStrategy: input.policy.queueOverflowStrategy,
+      cancelStaleBatches: input.policy.cancelStaleBatches,
     },
-  );
+    isStale: input.isStale,
+    runCandidate: input.readCandidate,
+  });
 
-  await Promise.all(workers);
-  results.sort((left, right) => left.scheduledIndex - right.scheduledIndex);
-
-  const failedCount = results.filter((result) => result.status === "rejected")
-    .length;
   return {
-    scheduledCandidates,
-    results,
+    scheduledCandidates: laneResult.scheduledCandidates,
+    results: laneResult.results,
     telemetry: {
       candidateCount: input.candidates.length,
-      scheduledCount: scheduledCandidates.length,
-      completedCount: results.length,
-      failedCount,
-      cancelled,
-      maxConcurrentThumbnailReads,
-      priorityCounts,
+      queuedCount: laneResult.telemetry.queuedCount,
+      scheduledCount: laneResult.telemetry.scheduledCount,
+      completedCount: laneResult.telemetry.completedCount,
+      failedCount: laneResult.telemetry.failedCount,
+      droppedCount: laneResult.telemetry.droppedCount,
+      coalescedCount: laneResult.telemetry.coalescedCount,
+      cancelled: laneResult.telemetry.cancelled,
+      maxConcurrentThumbnailReads: laneResult.telemetry.maxConcurrentWork,
+      maxCandidateQueueDepth: laneResult.telemetry.maxCandidateQueueDepth,
+      queueOverflowStrategy: laneResult.telemetry.queueOverflowStrategy,
+      priorityCounts: createPriorityCounts(laneResult.scheduledCandidates),
     },
   };
 }

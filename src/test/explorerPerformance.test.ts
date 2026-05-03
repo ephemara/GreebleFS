@@ -27,9 +27,20 @@ describe("explorerPerformance", () => {
       forwardPrefetchViewports: 1,
       backwardPrefetchViewports: 0.5,
       cancelStaleBatches: true,
+      maxCandidateQueueDepth: 96,
+      queueOverflowStrategy: "drop-lowest-priority",
+      previewPrefetch: {
+        enabled: true,
+        batchSize: 4,
+        maxConcurrentPreviewReads: 2,
+        forwardPrefetchViewports: 0.5,
+        backwardPrefetchViewports: 0.25,
+      },
     });
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize).toBe(12);
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxConcurrentThumbnailReads).toBe(4);
+    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth).toBe(96);
+    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(4);
   });
 
   it("normalizes viewport scheduling defaults and clamps authored policy values", () => {
@@ -42,6 +53,15 @@ describe("explorerPerformance", () => {
         forwardPrefetchViewports: Number.NaN,
         backwardPrefetchViewports: 99,
         cancelStaleBatches: false,
+        maxCandidateQueueDepth: 4096,
+        queueOverflowStrategy: "drop-oldest",
+        previewPrefetch: {
+          enabled: false,
+          batchSize: 999,
+          maxConcurrentPreviewReads: 0,
+          forwardPrefetchViewports: 99,
+          backwardPrefetchViewports: Number.NaN,
+        },
       },
     });
 
@@ -53,6 +73,41 @@ describe("explorerPerformance", () => {
       forwardPrefetchViewports: 1,
       backwardPrefetchViewports: 8,
       cancelStaleBatches: false,
+      maxCandidateQueueDepth: 1024,
+      queueOverflowStrategy: "drop-oldest",
+      previewPrefetch: {
+        enabled: false,
+        batchSize: 64,
+        maxConcurrentPreviewReads: 1,
+        forwardPrefetchViewports: 4,
+        backwardPrefetchViewports: 0.25,
+      },
+    });
+  });
+
+  it("falls back to safe queue defaults for malformed scheduler policy", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      viewportScheduling: {
+        maxCandidateQueueDepth: Number.NaN,
+        queueOverflowStrategy: "explode" as never,
+        previewPrefetch: {
+          batchSize: Number.POSITIVE_INFINITY,
+          maxConcurrentPreviewReads: Number.NEGATIVE_INFINITY,
+          forwardPrefetchViewports: "fast" as never,
+        },
+      },
+    });
+
+    expect(normalized.viewportScheduling.maxCandidateQueueDepth).toBe(96);
+    expect(normalized.viewportScheduling.queueOverflowStrategy).toBe(
+      "drop-lowest-priority",
+    );
+    expect(normalized.viewportScheduling.previewPrefetch).toEqual({
+      enabled: true,
+      batchSize: 4,
+      maxConcurrentPreviewReads: 2,
+      forwardPrefetchViewports: 0.5,
+      backwardPrefetchViewports: 0.25,
     });
   });
 });

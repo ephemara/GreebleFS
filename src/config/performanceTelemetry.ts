@@ -34,6 +34,11 @@ export const explorerPerformanceBudgets = {
     targetMs: 150,
     description: 'A single explorer thumbnail artifact batch resolving for the visible viewport.',
   },
+  explorer_preview_prefetch_batch: {
+    label: 'Preview Prefetch Batch',
+    targetMs: 120,
+    description: 'A scheduler-owned preview cache warming batch around the active Explorer viewport.',
+  },
   explorer_refresh_reconcile: {
     label: 'Refresh Reconcile',
     targetMs: 55,
@@ -367,6 +372,7 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_entry_size_batch: factory('explorer_entry_size_batch'),
     explorer_native_icon_batch: factory('explorer_native_icon_batch'),
     explorer_thumbnail_batch: factory('explorer_thumbnail_batch'),
+    explorer_preview_prefetch_batch: factory('explorer_preview_prefetch_batch'),
     explorer_refresh_reconcile: factory('explorer_refresh_reconcile'),
     explorer_first_interactive: factory('explorer_first_interactive'),
     explorer_layout_zoom: factory('explorer_layout_zoom'),

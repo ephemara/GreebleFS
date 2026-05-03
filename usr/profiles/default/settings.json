@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.725,
+    "appZoom": 0.9000000000000001,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -933,15 +933,15 @@
   },
   "dock": {
     "activePresentationId": "greeblefs-core-dock-presentations:yakuake-workbench",
-    "defaultTerminalColumns": 41,
-    "defaultTerminalRows": 8,
-    "edgeSize": 150,
-    "edgeWidth": 400,
+    "defaultTerminalColumns": 203,
+    "defaultTerminalRows": 44,
+    "edgeSize": 912,
+    "edgeWidth": 1707,
     "floatingBounds": {
-      "height": 150,
-      "width": 400,
-      "x": -32000,
-      "y": -32000
+      "height": 1368,
+      "width": 2560,
+      "x": -11,
+      "y": -11
     },
     "placementMode": "floating",
     "previewEnabled": true,
@@ -2371,7 +2371,7 @@
         }
       }
     },
-    "collectionPreviewMode": "list",
+    "collectionPreviewMode": "overview",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
     "contextMenuLayoutOverridesByContext": {},
@@ -2717,7 +2717,7 @@
     },
     "panelStateByProfile": {
       "overlay-classic": {
-        "activePanelId": "explorer",
+        "activePanelId": "terminal",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "explorer",
@@ -2951,7 +2951,7 @@
     "valuesByPluginId": {}
   },
   "presentation": {
-    "windowMode": "dock"
+    "windowMode": "windowed"
   },
   "terminal": {
     "cursorBlink": true,
@@ -2963,8 +2963,8 @@
     "fontSize": 13,
     "integratedHost": "go-pty-panel",
     "overlayAnchor": "bottom",
-    "overlayHeight": 150,
-    "overlayWidth": 400,
+    "overlayHeight": 912,
+    "overlayWidth": 1707,
     "preferredOpenMode": "integrated",
     "scrollback": 10000,
     "shell": "powershell.exe -NoLogo",
@@ -2972,7 +2972,7 @@
     "shellPath": "powershell.exe",
     "shellProfile": "powershell",
     "showSidebar": false,
-    "windowMode": "overlay",
+    "windowMode": "windowed",
     "windowedHeight": 888,
     "windowedWidth": 1440
   }

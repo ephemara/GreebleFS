@@ -19,6 +19,15 @@
     "settleDelayMs": 88,
     "forwardPrefetchViewports": 1,
     "backwardPrefetchViewports": 0.5,
-    "cancelStaleBatches": true
+    "cancelStaleBatches": true,
+    "maxCandidateQueueDepth": 96,
+    "queueOverflowStrategy": "drop-lowest-priority",
+    "previewPrefetch": {
+      "enabled": true,
+      "batchSize": 4,
+      "maxConcurrentPreviewReads": 2,
+      "forwardPrefetchViewports": 0.5,
+      "backwardPrefetchViewports": 0.25
+    }
   }
 }

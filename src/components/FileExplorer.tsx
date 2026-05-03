@@ -542,6 +542,7 @@ import {
 } from "../config/pluginContributions";
 import {
   explorerBackendContract,
+  getExplorerPathSourceKind,
   isCloudExplorerPath,
   type ExplorerBatchRenamePreview,
   type ExplorerBatchRenameRecipeInput,
@@ -582,6 +583,12 @@ import {
   buildExplorerViewportThumbnailWorkCandidates,
   runExplorerViewportThumbnailScheduler,
 } from "../runtime/explorerViewportThumbnailScheduler";
+import {
+  buildExplorerViewportPreviewPrefetchCandidates,
+  runExplorerViewportPreviewPrefetchScheduler,
+  type ExplorerViewportPreviewPrefetchCandidate,
+  type ExplorerViewportPreviewPrefetchWork,
+} from "../runtime/explorerViewportPreviewPrefetchScheduler";
 import {
   executeExplorerAction,
   normalizeExplorerActionOutputTarget,
@@ -9057,6 +9064,7 @@ export function FileExplorer({
     string | null
   >(null);
   const thumbnailSchedulerBatchIdRef = useRef(0);
+  const previewPrefetchSchedulerBatchIdRef = useRef(0);
   const [folderActivationPrimedPath, setFolderActivationPrimedPath] = useState<
     string | null
   >(null);
@@ -14298,14 +14306,10 @@ export function FileExplorer({
     return true;
   }, [clearPreviewSurface, flushPreviewTextSave, requestCurrentPreviewClose]);
 
-  const prefetchExplorerAdjacentPreview = useCallback(
-    async (entry: FileEntry) => {
-      if (
-        entry.is_dir ||
-        isExplorerArchiveVirtualPath(entry.path) ||
-        isCloudExplorerPath(entry.path)
-      ) {
-        return;
+  const resolveExplorerViewportPreviewPrefetchWork = useCallback(
+    (entry: FileEntry): ExplorerViewportPreviewPrefetchWork | null => {
+      if (entry.is_dir || getExplorerPathSourceKind(entry.path) !== "local") {
+        return null;
       }
 
       const resolvedPreview = resolveExplorerPreviewWorkbenchSelection(entry, {
@@ -14318,7 +14322,7 @@ export function FileExplorer({
           ] ?? null,
       }).activeWorkbench?.descriptor;
       if (!resolvedPreview || !isAdjacentPreviewPrefetchKind(resolvedPreview.kind)) {
-        return;
+        return null;
       }
 
       const previewCacheKey = getExplorerPreviewCacheKey(
@@ -14329,44 +14333,59 @@ export function FileExplorer({
         readCachedExplorerPreview<string>(previewCacheKey) != null ||
         previewPrefetchInFlightRef.current.has(previewCacheKey)
       ) {
-        return;
+        return null;
       }
 
-      previewPrefetchInFlightRef.current.add(previewCacheKey);
-      try {
-        if (resolvedPreview.kind === "image") {
-          const dataUri = await readExplorerFileBase64(entry.path);
-          storeCachedExplorerPreview({
-            key: previewCacheKey,
-            path: entry.path,
-            value: dataUri,
-            bytes: estimateStringPreviewCacheBytes(dataUri),
-          });
-          return;
-        }
-
-        const content = await readExplorerTextFile(entry.path);
-        storeCachedExplorerPreview({
-          key: previewCacheKey,
-          path: entry.path,
-          value: content,
-          bytes: estimateStringPreviewCacheBytes(content),
-        });
-      } catch {
-        // Adjacent prefetch should stay invisible; real preview requests own errors.
-      } finally {
-        previewPrefetchInFlightRef.current.delete(previewCacheKey);
-      }
+      return {
+        previewKind: resolvedPreview.kind,
+        previewCacheKey,
+      };
     },
     [
       getDocumentPreviewKind,
       getPreviewAssetUrl,
       explorerSettings.preferredWorkbenchByExtension,
-      isCloudExplorerPath,
       pluginPreviewLanes,
-      readExplorerFileBase64,
-      readExplorerTextFile,
     ],
+  );
+
+  const prefetchExplorerViewportPreviewCandidate = useCallback(
+    async (
+      candidate: ExplorerViewportPreviewPrefetchCandidate<FileEntry>,
+    ): Promise<string | null> => {
+      if (
+        readCachedExplorerPreview<string>(candidate.previewCacheKey) != null ||
+        previewPrefetchInFlightRef.current.has(candidate.previewCacheKey)
+      ) {
+        return null;
+      }
+
+      previewPrefetchInFlightRef.current.add(candidate.previewCacheKey);
+      try {
+        if (candidate.previewKind === "image") {
+          const dataUri = await readExplorerFileBase64(candidate.path);
+          storeCachedExplorerPreview({
+            key: candidate.previewCacheKey,
+            path: candidate.path,
+            value: dataUri,
+            bytes: estimateStringPreviewCacheBytes(dataUri),
+          });
+          return candidate.previewCacheKey;
+        }
+
+        const content = await readExplorerTextFile(candidate.path);
+        storeCachedExplorerPreview({
+          key: candidate.previewCacheKey,
+          path: candidate.path,
+          value: content,
+          bytes: estimateStringPreviewCacheBytes(content),
+        });
+        return candidate.previewCacheKey;
+      } finally {
+        previewPrefetchInFlightRef.current.delete(candidate.previewCacheKey);
+      }
+    },
+    [readExplorerFileBase64, readExplorerTextFile],
   );
 
   useEffect(() => {
@@ -15993,34 +16012,6 @@ export function FileExplorer({
     clearPendingFolderActivationPrime,
     folderActivationPrimedPath,
     selected,
-  ]);
-
-  useEffect(() => {
-    if (!previewEnabled || !dockPreviewAllowed || selectedEntries.length !== 1) {
-      return;
-    }
-
-    const anchorEntry = selectedEntries[0];
-    const anchorIndex = visibleEntryIndexLookup.get(anchorEntry.path);
-    if (anchorIndex == null) {
-      return;
-    }
-
-    const adjacentCandidates = [
-      visibleEntries[anchorIndex - 1] ?? null,
-      visibleEntries[anchorIndex + 1] ?? null,
-    ].filter((entry): entry is FileEntry => Boolean(entry));
-
-    adjacentCandidates.forEach((candidate) => {
-      void prefetchExplorerAdjacentPreview(candidate);
-    });
-  }, [
-    dockPreviewAllowed,
-    prefetchExplorerAdjacentPreview,
-    previewEnabled,
-    selectedEntries,
-    visibleEntries,
-    visibleEntryIndexLookup,
   ]);
 
   const openPreviewOnlyCollectionEntry = useCallback(
@@ -26638,6 +26629,115 @@ export function FileExplorer({
     visibleEntries.length,
   ]);
 
+  useEffect(() => {
+    const schedulerPolicy = EXPLORER_VIEWPORT_SCHEDULER_POLICY;
+    if (
+      !previewEnabled ||
+      !dockPreviewAllowed ||
+      !schedulerPolicy.previewPrefetch.enabled ||
+      visibleEntries.length === 0
+    ) {
+      return;
+    }
+
+    const selectedEntryPath =
+      selectedEntries.length === 1 ? selectedEntries[0]?.path ?? null : null;
+    const selectedEntryIndex =
+      selectedEntryPath === null
+        ? null
+        : (visibleEntryIndexLookup.get(selectedEntryPath) ?? null);
+    const previewPrefetchCandidates = buildExplorerViewportPreviewPrefetchCandidates({
+      entries: visibleEntries,
+      viewportStartIndex: virtualWindow.startIndex,
+      viewportEndIndex: virtualWindow.endIndex,
+      selectedEntryPath,
+      selectedEntryIndex,
+      policy: schedulerPolicy.previewPrefetch,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: buildExplorerEntryIdentityRevisionKey,
+      resolvePreviewWork: resolveExplorerViewportPreviewPrefetchWork,
+    });
+    if (previewPrefetchCandidates.length === 0) {
+      return;
+    }
+
+    const schedulerBatchId = previewPrefetchSchedulerBatchIdRef.current + 1;
+    previewPrefetchSchedulerBatchIdRef.current = schedulerBatchId;
+    const batchTimer = window.setTimeout(() => {
+      const startedAt = getExplorerPerformanceNow();
+      void runExplorerViewportPreviewPrefetchScheduler({
+        candidates: previewPrefetchCandidates,
+        policy: schedulerPolicy,
+        isStale: () =>
+          !isExplorerMountedRef.current ||
+          previewPrefetchSchedulerBatchIdRef.current !== schedulerBatchId,
+        prefetchCandidate: prefetchExplorerViewportPreviewCandidate,
+      }).then((schedulerResult) => {
+        if (
+          !isExplorerMountedRef.current ||
+          previewPrefetchSchedulerBatchIdRef.current !== schedulerBatchId
+        ) {
+          return;
+        }
+
+        recordExplorerMetric({
+          metricId: "explorer_preview_prefetch_batch",
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            pathCount: schedulerResult.telemetry.scheduledCount,
+            candidateCount: schedulerResult.telemetry.candidateCount,
+            queuedCount: schedulerResult.telemetry.queuedCount,
+            resultCount: schedulerResult.results.filter(
+              (result) => result.status === "fulfilled" && result.value !== null,
+            )
+              .length,
+            visibleCount: schedulerResult.telemetry.priorityCounts.visible,
+            selectedAdjacentCount:
+              schedulerResult.telemetry.priorityCounts["selected-adjacent"],
+            forwardPrefetchCount:
+              schedulerResult.telemetry.priorityCounts["forward-prefetch"],
+            backwardPrefetchCount:
+              schedulerResult.telemetry.priorityCounts["backward-prefetch"],
+            droppedCount: schedulerResult.telemetry.droppedCount,
+            coalescedCount: schedulerResult.telemetry.coalescedCount,
+            failedCount: schedulerResult.telemetry.failedCount,
+            cancelled: schedulerResult.telemetry.cancelled,
+            maxConcurrentPreviewReads:
+              schedulerResult.telemetry.maxConcurrentPreviewReads,
+            maxCandidateQueueDepth:
+              schedulerResult.telemetry.maxCandidateQueueDepth,
+            queueOverflowStrategy:
+              schedulerResult.telemetry.queueOverflowStrategy,
+            success:
+              schedulerResult.telemetry.failedCount === 0 &&
+              !schedulerResult.telemetry.cancelled,
+          },
+        });
+      });
+    }, schedulerPolicy.settleDelayMs);
+
+    return () => {
+      window.clearTimeout(batchTimer);
+      if (
+        schedulerPolicy.cancelStaleBatches &&
+        previewPrefetchSchedulerBatchIdRef.current === schedulerBatchId
+      ) {
+        previewPrefetchSchedulerBatchIdRef.current += 1;
+      }
+    };
+  }, [
+    dockPreviewAllowed,
+    prefetchExplorerViewportPreviewCandidate,
+    previewEnabled,
+    recordExplorerMetric,
+    resolveExplorerViewportPreviewPrefetchWork,
+    selectedEntries,
+    virtualWindow.endIndex,
+    virtualWindow.startIndex,
+    visibleEntries,
+    visibleEntryIndexLookup,
+  ]);
+
   const cancelRename = useCallback(
     () => setRename({ active: false, path: "", name: "" }),
     [],
@@ -28795,9 +28895,16 @@ export function FileExplorer({
       return;
     }
 
+    const scheduledThumbnailCandidateLimit = Math.min(
+      Math.max(1, Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize)),
+      Math.max(
+        1,
+        Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth),
+      ),
+    );
     const scheduledCandidates = thumbnailCandidates.slice(
       0,
-      Math.max(1, Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize)),
+      scheduledThumbnailCandidateLimit,
     );
     const pendingPaths = scheduledCandidates.map((candidate) => candidate.path);
     const schedulerBatchId = thumbnailSchedulerBatchIdRef.current + 1;
@@ -28851,6 +28958,7 @@ export function FileExplorer({
           metadata: {
             pathCount: schedulerResult.telemetry.scheduledCount,
             candidateCount: schedulerResult.telemetry.candidateCount,
+            queuedCount: schedulerResult.telemetry.queuedCount,
             resultCount: fulfilledResults.filter((result) => result.value !== null)
               .length,
             modelCount: schedulerResult.scheduledCandidates.filter(
@@ -28864,9 +28972,15 @@ export function FileExplorer({
             backwardPrefetchCount:
               schedulerResult.telemetry.priorityCounts["backward-prefetch"],
             failedCount: schedulerResult.telemetry.failedCount,
+            droppedCount: schedulerResult.telemetry.droppedCount,
+            coalescedCount: schedulerResult.telemetry.coalescedCount,
             cancelled: schedulerResult.telemetry.cancelled,
             maxConcurrentThumbnailReads:
               schedulerResult.telemetry.maxConcurrentThumbnailReads,
+            maxCandidateQueueDepth:
+              schedulerResult.telemetry.maxCandidateQueueDepth,
+            queueOverflowStrategy:
+              schedulerResult.telemetry.queueOverflowStrategy,
             hoverScrub: false,
             success:
               schedulerResult.telemetry.failedCount === 0 &&

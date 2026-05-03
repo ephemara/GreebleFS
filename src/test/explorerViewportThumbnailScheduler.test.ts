@@ -21,6 +21,15 @@ const basePolicy: ExplorerViewportSchedulerPolicy = {
   forwardPrefetchViewports: 1,
   backwardPrefetchViewports: 0.5,
   cancelStaleBatches: true,
+  maxCandidateQueueDepth: 96,
+  queueOverflowStrategy: "drop-lowest-priority",
+  previewPrefetch: {
+    enabled: true,
+    batchSize: 4,
+    maxConcurrentPreviewReads: 2,
+    forwardPrefetchViewports: 0.5,
+    backwardPrefetchViewports: 0.25,
+  },
 };
 
 function createEntry(
@@ -172,5 +181,42 @@ describe("explorerViewportThumbnailScheduler", () => {
     expect(result.results).toHaveLength(6);
     expect(result.telemetry.maxConcurrentThumbnailReads).toBe(2);
     expect(maxActiveReads).toBeLessThanOrEqual(2);
+  });
+
+  it("reports bounded queue telemetry and drops overflow work by priority", async () => {
+    const entries = Array.from({ length: 8 }, (_, index) => createEntry(index));
+    const policy: ExplorerViewportSchedulerPolicy = {
+      ...basePolicy,
+      batchSize: 8,
+      maxCandidateQueueDepth: 3,
+      forwardPrefetchViewports: 1,
+      backwardPrefetchViewports: 0,
+    };
+    const candidates = buildExplorerViewportThumbnailWorkCandidates({
+      entries,
+      viewportStartIndex: 0,
+      viewportEndIndex: 4,
+      policy,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: (entry) =>
+        `${entry.entityId}::${entry.contentRevision}`,
+      shouldScheduleEntry: () => true,
+    });
+
+    const result = await runExplorerViewportThumbnailScheduler({
+      candidates,
+      policy,
+      readCandidate: async (candidate) => `thumbnail:${candidate.path}`,
+    });
+
+    expect(result.scheduledCandidates.map((candidate) => candidate.path)).toEqual([
+      "/entry-0.png",
+      "/entry-1.png",
+      "/entry-2.png",
+    ]);
+    expect(result.telemetry.queuedCount).toBe(3);
+    expect(result.telemetry.droppedCount).toBe(5);
+    expect(result.telemetry.maxCandidateQueueDepth).toBe(3);
+    expect(result.telemetry.queueOverflowStrategy).toBe("drop-lowest-priority");
   });
 });

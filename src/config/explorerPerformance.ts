@@ -1,4 +1,5 @@
 import shippedExplorerPerformanceManifestJson from "../../usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json";
+import type { BoundedWorkLaneOverflowStrategy } from "../runtime/boundedWorkLane";
 
 export interface ExplorerFolderActivationPerformance {
   doubleClickPreviewPrimeDelayMs: number;
@@ -19,7 +20,23 @@ export interface ExplorerViewportSchedulerPolicy {
   forwardPrefetchViewports: number;
   backwardPrefetchViewports: number;
   cancelStaleBatches: boolean;
+  maxCandidateQueueDepth: number;
+  queueOverflowStrategy: BoundedWorkLaneOverflowStrategy;
+  previewPrefetch: ExplorerViewportPreviewPrefetchPolicy;
 }
+
+export interface ExplorerViewportPreviewPrefetchPolicy {
+  enabled: boolean;
+  batchSize: number;
+  maxConcurrentPreviewReads: number;
+  forwardPrefetchViewports: number;
+  backwardPrefetchViewports: number;
+}
+
+export type ShippedExplorerViewportSchedulerPolicy =
+  Partial<Omit<ExplorerViewportSchedulerPolicy, "previewPrefetch">> & {
+    previewPrefetch?: Partial<ExplorerViewportPreviewPrefetchPolicy>;
+  };
 
 export interface ShippedExplorerPerformanceManifest {
   version?: number;
@@ -28,7 +45,7 @@ export interface ShippedExplorerPerformanceManifest {
   description?: string;
   folderActivation?: Partial<ExplorerFolderActivationPerformance>;
   budgets?: Partial<ExplorerPerformanceBudgets>;
-  viewportScheduling?: Partial<ExplorerViewportSchedulerPolicy>;
+  viewportScheduling?: ShippedExplorerViewportSchedulerPolicy;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -60,6 +77,15 @@ const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy = 
   forwardPrefetchViewports: 1,
   backwardPrefetchViewports: 0.5,
   cancelStaleBatches: true,
+  maxCandidateQueueDepth: 96,
+  queueOverflowStrategy: "drop-lowest-priority",
+  previewPrefetch: Object.freeze({
+    enabled: true,
+    batchSize: 4,
+    maxConcurrentPreviewReads: 2,
+    forwardPrefetchViewports: 0.5,
+    backwardPrefetchViewports: 0.25,
+  }),
 });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -85,6 +111,20 @@ function asString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : fallback;
+}
+
+function asQueueOverflowStrategy(
+  value: unknown,
+  fallback: BoundedWorkLaneOverflowStrategy,
+): BoundedWorkLaneOverflowStrategy {
+  if (
+    value === "drop-lowest-priority" ||
+    value === "drop-newest" ||
+    value === "drop-oldest"
+  ) {
+    return value;
+  }
+  return fallback;
 }
 
 function normalizeFolderActivationPerformance(
@@ -127,6 +167,7 @@ function normalizeBudgets(
 function normalizeViewportScheduling(
   value: ShippedExplorerPerformanceManifest["viewportScheduling"],
 ): ExplorerViewportSchedulerPolicy {
+  const previewPrefetch = value?.previewPrefetch;
   return {
     enabled: asBoolean(
       value?.enabled,
@@ -161,6 +202,44 @@ function normalizeViewportScheduling(
       value?.cancelStaleBatches,
       defaultExplorerViewportSchedulerPolicy.cancelStaleBatches,
     ),
+    maxCandidateQueueDepth: Math.round(asFiniteNumber(
+      value?.maxCandidateQueueDepth,
+      defaultExplorerViewportSchedulerPolicy.maxCandidateQueueDepth,
+      { minimum: 1, maximum: 1024 },
+    )),
+    queueOverflowStrategy: asQueueOverflowStrategy(
+      value?.queueOverflowStrategy,
+      defaultExplorerViewportSchedulerPolicy.queueOverflowStrategy,
+    ),
+    previewPrefetch: {
+      enabled: asBoolean(
+        previewPrefetch?.enabled,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch.enabled,
+      ),
+      batchSize: Math.round(asFiniteNumber(
+        previewPrefetch?.batchSize,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch.batchSize,
+        { minimum: 1, maximum: 64 },
+      )),
+      maxConcurrentPreviewReads: Math.round(asFiniteNumber(
+        previewPrefetch?.maxConcurrentPreviewReads,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch
+          .maxConcurrentPreviewReads,
+        { minimum: 1, maximum: 16 },
+      )),
+      forwardPrefetchViewports: asFiniteNumber(
+        previewPrefetch?.forwardPrefetchViewports,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch
+          .forwardPrefetchViewports,
+        { minimum: 0, maximum: 4 },
+      ),
+      backwardPrefetchViewports: asFiniteNumber(
+        previewPrefetch?.backwardPrefetchViewports,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch
+          .backwardPrefetchViewports,
+        { minimum: 0, maximum: 4 },
+      ),
+    },
   };
 }
 

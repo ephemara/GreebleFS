@@ -1,3 +1,25 @@
+# 2026-05-03 - Explorer Bounded Work Lanes Own Thumbnail And Preview Prefetch Pressure
+
+- Implemented the next clean-room Explorer hot-path slice as a TypeScript bounded work-lane runtime instead of a native task-graph rewrite.
+- New scheduler runtime:
+  - `src/runtime/boundedWorkLane.ts` owns capacity bounds, priority ordering, work-key coalescing, stale-generation cancellation, concurrency caps, dropped/coalesced telemetry, and per-priority counts.
+  - `src/runtime/explorerViewportThumbnailScheduler.ts` now delegates queue execution to that bounded lane while keeping thumbnail artifact/model rendering behind the existing thumbnail runtimes.
+  - `src/runtime/explorerViewportPreviewPrefetchScheduler.ts` is the new viewport/adjacent preview-warming scheduler. It decides order/concurrency only; cached preview values still use the existing image/text/script cache formats and read paths.
+- Explorer integration:
+  - `FileExplorer.tsx` no longer uses the old selected-adjacent preview `forEach` prefetch path. Thumbnail hydration and local-only preview warming now route through scheduler-owned batches with generation cancellation and telemetry.
+  - Preview prefetch accepts only local, non-directory entries in the FileExplorer resolver. Cloud/archive/remote/virtual paths stay out of this warm path so permission and materialization behavior remains owned by explicit preview requests.
+- Data-driven policy:
+  - `src/config/explorerPerformance.ts` and `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json` now extend `viewportScheduling` with `maxCandidateQueueDepth`, `queueOverflowStrategy`, and nested `previewPrefetch` defaults.
+  - `src/config/performanceTelemetry.ts` added `explorer_preview_prefetch_batch` alongside thumbnail batch telemetry.
+- Validation for this pass:
+  - Passed: `bunx vitest run src/test/boundedWorkLane.test.ts src/test/explorerViewportThumbnailScheduler.test.ts src/test/explorerViewportPreviewPrefetchScheduler.test.ts src/test/explorerPerformance.test.ts src/test/explorerThumbnails.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Touched-file TypeScript sweep returned `NO_TOUCHED_FILE_TYPE_ERRORS`; full `tsc --noEmit` still exits non-zero on unrelated baseline diagnostics.
+- Durable rule:
+  - New Explorer hot-path background work should enter through `boundedWorkLane.ts` or a typed adapter over it before adding feature-local pending sets, ad hoc `Promise.all` batches, or unbounded `forEach` warmers.
+- Next recommended step:
+  - Use the new dropped/coalesced/queue-depth telemetry from large-folder scroll sessions to decide whether the next slice should be a native cancellable task graph, a tiny hot metadata cache, or decode/media buffer pools.
+
 # 2026-05-03 - Go PTY Bridge Token Now Reads From Go `os.Args`
 
 - Fixed the follow-up Go PTY `wasm-panel` boot failure: `greeblefs hostapi: --bridge-token argument missing`.
