@@ -154,6 +154,7 @@ func (service *explorerPolicyService) navigate(
 
 	service.mu.Lock()
 	session := normalizePolicySessionSnapshot(service.sessions[sessionID])
+	previousSession := clonePolicySessionSnapshot(session)
 	nextHistory, nextHistoryIdx := applyNavigationHistory(
 		session,
 		nextPath,
@@ -184,6 +185,7 @@ func (service *explorerPolicyService) navigate(
 		},
 	)
 	if err != nil {
+		service.rollbackFailedNavigation(sessionID, previousSession, session)
 		return explorerPolicyNavigateResult{}, err
 	}
 
@@ -193,6 +195,21 @@ func (service *explorerPolicyService) navigate(
 		IsHome:         false,
 		ClearSelection: true,
 	}, nil
+}
+
+func (service *explorerPolicyService) rollbackFailedNavigation(
+	sessionID string,
+	previousSession explorerPolicySessionSnapshot,
+	attemptedSession explorerPolicySessionSnapshot,
+) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+
+	currentSession := normalizePolicySessionSnapshot(service.sessions[sessionID])
+	if !samePolicySessionSnapshot(currentSession, attemptedSession) {
+		return
+	}
+	service.sessions[sessionID] = clonePolicySessionSnapshot(previousSession)
 }
 
 func (service *explorerPolicyService) resolveOpenEntry(
@@ -261,6 +278,23 @@ func clonePolicySessionSnapshot(snapshot explorerPolicySessionSnapshot) explorer
 		History:     append([]string(nil), snapshot.History...),
 		HistoryIdx:  snapshot.HistoryIdx,
 	}
+}
+
+func samePolicySessionSnapshot(left explorerPolicySessionSnapshot, right explorerPolicySessionSnapshot) bool {
+	left = normalizePolicySessionSnapshot(left)
+	right = normalizePolicySessionSnapshot(right)
+	if left.CurrentPath != right.CurrentPath || left.HistoryIdx != right.HistoryIdx {
+		return false
+	}
+	if len(left.History) != len(right.History) {
+		return false
+	}
+	for index, leftEntry := range left.History {
+		if leftEntry != right.History[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func applyNavigationHistory(

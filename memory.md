@@ -1,3 +1,15 @@
+# 2026-05-03 - Explorer Navigation Lock Guard
+
+- Fixed a folder-lock/desync path in the Go explorer policy service. `navigate` still records the attempted session immediately for latest-navigation ordering, but now rolls back to the previous session if the host listing fails and no newer navigation has replaced that attempted session. This prevents a failed folder listing from leaving the policy session at a path the React Explorer never committed.
+- Stabilized `FileExplorer` boot navigation. The boot effect now reads navigation/home/drives/session-update callables from a latest-value ref and only re-runs for real boot inputs (`defaultPath`, `instanceId`, `runtimePlatform`). Restored session paths are treated as one-shot boot seeds, so later render churn or settings changes cannot keep replaying the original folder.
+- Added `TestNavigateRollsBackSessionWhenHostListingFails` in `src-go/builtin-runtimes/explorer-policy-service/service_test.go`.
+- Validation for this pass:
+  - Passed: `go test ./...` from `src-go/builtin-runtimes/explorer-policy-service`
+  - Passed: `bun run test:unit -- src/test/fileExplorer.viewModes.test.tsx -t "boot navigation|current folder mounted|cancels folder preview priming"`
+  - Full `bunx tsc --noEmit` still exits non-zero on unrelated baseline diagnostics in mobile, side rail/storage drive shapes, image cutout generated shapes, icon/theme compatibility, vendored Tiptap deps/tests, and older fixtures.
+  - Full `bun run test:unit -- src/test/fileExplorer.viewModes.test.tsx` still has unrelated baseline failures. Confirmed at least `keeps the sources rail toggle compact in multi-pane mode` and `keeps the selection summary visible while a selected empty folder waits on size measurement` fail even with this pass stashed.
+- Durable rule: direct folder activation should continue to call the direct `navigate(entry.path)` hot path, but policy-session state must never stay advanced after the underlying listing fails. If a future lock appears, inspect both React boot replay dependencies and Go policy rollback behavior before changing double-click dispatch.
+
 # 2026-05-03 - Native Streaming Preview And Archive Entry Reader
 
 - Implemented the clean-room native streaming preview slice. `src-tauri/src/preview_streaming.rs` now owns manifest-backed `previewStreaming` policy, bounded chunk reads, local preview bytes, strict UTF-8 text previews, data-URI previews, byte-limit checks, and cooperative cancellation checkpoints.

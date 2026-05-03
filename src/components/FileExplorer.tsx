@@ -8961,6 +8961,7 @@ export function FileExplorer({
     [instanceId],
   );
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
+  const restoredSessionBootConsumedRef = useRef(false);
   const initialExplorerPolicySessionRef = useRef<ExplorerPolicySessionSnapshot>({
     currentPath: initialSession.currentPath,
     history: [...initialSession.history],
@@ -10701,6 +10702,30 @@ export function FileExplorer({
     ],
   );
 
+  const bootNavigationRuntimeRef = useRef({
+    getExplorerDrives,
+    getExplorerHomeDir,
+    navigate,
+    syncExplorerPolicySession,
+    updateExplorerSessionForInstance,
+  });
+
+  useEffect(() => {
+    bootNavigationRuntimeRef.current = {
+      getExplorerDrives,
+      getExplorerHomeDir,
+      navigate,
+      syncExplorerPolicySession,
+      updateExplorerSessionForInstance,
+    };
+  }, [
+    getExplorerDrives,
+    getExplorerHomeDir,
+    navigate,
+    syncExplorerPolicySession,
+    updateExplorerSessionForInstance,
+  ]);
+
   useEffect(() => {
     void syncExplorerPolicySession(initialExplorerPolicySessionRef.current).catch(
       () => {},
@@ -10715,23 +10740,6 @@ export function FileExplorer({
     historyIdxRef.current = historyIdx;
   }, [historyIdx]);
 
-  const runDeferredBootNavigation = useCallback(
-    async (generation: number, path: string, push = true) => {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0);
-      });
-      if (
-        !isExplorerMountedRef.current ||
-        bootNavigationSequenceRef.current !== generation
-      ) {
-        return false;
-      }
-      await navigate(path, push);
-      return true;
-    },
-    [navigate],
-  );
-
   // ── Boot ──
   useEffect(() => {
     let disposed = false;
@@ -10743,8 +10751,27 @@ export function FileExplorer({
       isExplorerMountedRef.current &&
       bootNavigationSequenceRef.current === generation;
 
+    const runDeferredBootNavigation = async (
+      bootGeneration: number,
+      path: string,
+      push = true,
+    ) => {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+      if (
+        !isExplorerMountedRef.current ||
+        bootNavigationSequenceRef.current !== bootGeneration
+      ) {
+        return false;
+      }
+      await bootNavigationRuntimeRef.current.navigate(path, push);
+      return true;
+    };
+
     setDrivesLoading(true);
-    getExplorerDrives()
+    bootNavigationRuntimeRef.current
+      .getExplorerDrives()
       .then((nextDrives) => {
         if (!disposed) {
           setDrives(nextDrives);
@@ -10764,7 +10791,8 @@ export function FileExplorer({
     const navigateToResolvedHome = async () => {
       let fallbackPath = getFallbackExplorerPath(runtimePlatform);
       try {
-        const resolvedHome = await getExplorerHomeDir();
+        const resolvedHome =
+          await bootNavigationRuntimeRef.current.getExplorerHomeDir();
         if (resolvedHome.trim()) {
           fallbackPath = resolvedHome;
         }
@@ -10796,29 +10824,41 @@ export function FileExplorer({
       setCurrentPath("");
       setHistory([]);
       setHistoryIdx(-1);
-      void syncExplorerPolicySession({
-        currentPath: "",
-        history: [],
-        historyIdx: -1,
-      }).catch(() => {});
-      updateExplorerSessionForInstance(instanceId, {
-        currentPath: "",
-        history: [],
-        historyIdx: -1,
-      });
+      void bootNavigationRuntimeRef.current
+        .syncExplorerPolicySession({
+          currentPath: "",
+          history: [],
+          historyIdx: -1,
+        })
+        .catch(() => {});
+      bootNavigationRuntimeRef.current.updateExplorerSessionForInstance(
+        instanceId,
+        {
+          currentPath: "",
+          history: [],
+          historyIdx: -1,
+        },
+      );
     };
 
     const startBootNavigation = async () => {
-      const restoredPath = initialSessionPathRef.current;
+      const restoredPath = restoredSessionBootConsumedRef.current
+        ? ""
+        : initialSessionPathRef.current;
       if (restoredPath) {
         const restored = await runDeferredBootNavigation(
           generation,
           restoredPath,
           false,
         );
-        if (restored || !isActiveBootNavigation()) {
+        if (restored) {
+          restoredSessionBootConsumedRef.current = true;
           return;
         }
+        if (!isActiveBootNavigation()) {
+          return;
+        }
+        restoredSessionBootConsumedRef.current = true;
         resetBootSession();
       }
 
@@ -10842,12 +10882,8 @@ export function FileExplorer({
     };
   }, [
     explorerSettings.defaultPath,
-    getExplorerDrives,
-    getExplorerHomeDir,
     instanceId,
-    runDeferredBootNavigation,
     runtimePlatform,
-    updateExplorerSessionForInstance,
   ]);
 
   const runSearch = useCallback(

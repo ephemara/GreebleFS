@@ -47,6 +47,38 @@ func TestResolveOpenEntryPrefersPreviewForInlineFiles(t *testing.T) {
 	}
 }
 
+func TestNavigateRollsBackSessionWhenHostListingFails(t *testing.T) {
+	service := newExplorerPolicyService()
+	sessionID := "pane-1"
+	startingSession := explorerPolicySessionSnapshot{
+		CurrentPath: "/Users/alice",
+		History:     []string{"/", "/Users/alice"},
+		HistoryIdx:  1,
+	}
+	service.bootstrap(explorerPolicyBootstrapRequest{
+		SessionID: sessionID,
+		Session:   startingSession,
+	})
+
+	_, err := service.navigate(nil, explorerPolicyNavigateRequest{
+		SessionID:   sessionID,
+		Path:        "/Users/alice/LockedFolder",
+		PushHistory: true,
+		ShowHidden:  false,
+	})
+	if err == nil {
+		t.Fatalf("expected missing host bridge to fail navigation")
+	}
+
+	service.mu.Lock()
+	storedSession := clonePolicySessionSnapshot(service.sessions[sessionID])
+	service.mu.Unlock()
+
+	if !samePolicySessionSnapshot(storedSession, startingSession) {
+		t.Fatalf("expected failed navigation to preserve %#v, got %#v", startingSession, storedSession)
+	}
+}
+
 func TestResolveOpenEntryMarksArchiveVirtualOpenForMaterialization(t *testing.T) {
 	service := newExplorerPolicyService()
 	result, err := service.resolveOpenEntry(nil, explorerPolicyResolveOpenEntryRequest{
