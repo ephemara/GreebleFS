@@ -1,3 +1,14 @@
+# 2026-05-03 - Tauri Callback Warnings And Window Flicker Guard
+
+- Treated repeated `[TAURI] Couldn't find callback id ...` warnings as relevant because the shell was visibly flickering. The warning is usually a symptom of stale frontend callback registrations or a WebView reload, but in this case the app-level window path also had stale async listener/application races.
+- Added `src/runtime/deferredUnlisten.ts` for Tauri APIs whose unlisten callbacks arrive asynchronously. `App.tsx` now uses it for overlay toggle/show listeners, close interception, resize/move listeners, and plugin panel open requests so React StrictMode cleanup cannot leave late-resolving native listeners active.
+- Hardened dock/app mode transitions by giving `applyDockOverlayLayout(...)` an `isApplyCurrent` predicate and passing generation/window-mode guards from each caller. Stale dock re-anchors now bail immediately before native geometry application instead of landing after app-mode restoration starts.
+- Validation:
+  - Passed: `bunx vitest run src/test/deferredUnlisten.test.ts src/test/app.dockMode.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: touched-file TypeScript diagnostic sweep for `src/App.tsx`, `src/runtime/deferredUnlisten.ts`, and `src/test/deferredUnlisten.test.ts`
+  - Passed: `git diff --check` with only pre-existing line-ending warnings on dirty workspace files.
+- Durable rule: new async Tauri `listen(...)`, `onResized(...)`, `onMoved(...)`, `onCloseRequested(...)`, or similar registrations should use `bindDeferredUnlisten(...)` unless the code already proves cleanup-after-late-resolution. New native window presentation paths should put the stale-generation guard immediately next to the native apply, not only before upstream async monitor/scale calculations.
+
 # 2026-05-03 - Explorer Activity Rail, Search, Semantic, And Stabilization Pass
 
 - Stabilized the Explorer shell and moved the annoying preview/actions/tree toggles behind a dense activity-rail model. `src/config/explorerActivityRail.ts` is now the authored lane catalog, `explorerStore` persists `activeActivityLane` and `activityPaneVisible`, and `FileExplorer.tsx` routes Files/Search/Semantic/Preview/Actions/Tasks/Terminal/Customize through that lane selector.

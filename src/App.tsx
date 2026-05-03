@@ -253,6 +253,7 @@ import {
   parseExternalArgs,
   type PanelWindowLayout,
 } from './runtime/overlayRuntimeUtils';
+import { bindDeferredUnlisten } from './runtime/deferredUnlisten';
 import {
   FILESYSTEM_AQUARIUM_PANEL_ID,
   requestFilesystemAquariumOpen,
@@ -2300,13 +2301,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     };
 
     void sync();
-    const unlistenResize = win.onResized(() => {
+    const stopResizeListener = bindDeferredUnlisten(win.onResized(() => {
       void sync();
+    }), {
+      onError: error => {
+        console.warn('OverlayTerm: failed to manage window resize listener', error);
+      },
     });
 
     return () => {
       cancelled = true;
-      void unlistenResize.then(unlisten => unlisten());
+      stopResizeListener();
     };
   }, [isWindowedMode]);
 
@@ -2420,6 +2425,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     scaleFactor: number;
     currentBounds?: OverlayWindowBounds | null;
     deferMs?: number;
+    isApplyCurrent?: () => boolean;
   }) => {
     const layout = resolveDockOverlayLayout(args);
     const constraints = computeOverlayWindowConstraints({
@@ -2449,6 +2455,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     if (args.deferMs && args.deferMs > 0) {
       await new Promise(resolve => window.setTimeout(resolve, args.deferMs));
+    }
+
+    if (args.isApplyCurrent && !args.isApplyCurrent()) {
+      return layout;
     }
 
     if (currentHostUsesWaylandDockLayerShell) {
@@ -2540,6 +2550,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         monitor,
         scaleFactor,
         currentBounds: rememberedBounds,
+        isApplyCurrent: () => isWindowPresentationApplyCurrent(applyGeneration, 'overlay'),
       });
       if (!isWindowPresentationApplyCurrent(applyGeneration, 'overlay')) {
         isProgrammaticResizeRef.current = false;
@@ -2558,6 +2569,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
             y: layout.y,
           },
           deferMs: 34,
+          isApplyCurrent: () => isWindowPresentationApplyCurrent(applyGeneration, 'overlay'),
         });
       }
 
@@ -3074,43 +3086,47 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
-    let unlistenToggle: (() => void) | null = null;
-    let unlistenShowWindowMode: (() => void) | null = null;
-    listen(TOGGLE_OVERLAY_REQUEST_EVENT, () => {
-      handleToggleOverlayRequest();
-    }).then(listener => {
-      unlistenToggle = listener;
-    }).catch(error => {
-      console.warn('OverlayTerm: failed to listen for toggle requests', error);
-    });
+    const stopToggleListener = bindDeferredUnlisten(
+      listen(TOGGLE_OVERLAY_REQUEST_EVENT, () => {
+        handleToggleOverlayRequest();
+      }),
+      {
+        onError: error => {
+          console.warn('OverlayTerm: failed to listen for toggle requests', error);
+        },
+      },
+    );
 
-    listen<TerminalWindowMode>(SHOW_WINDOW_MODE_REQUEST_EVENT, event => {
-      const nextWindowMode = event.payload === 'windowed' ? 'windowed' : 'overlay';
-      const shouldAcceptWaylandDockShowRequest = currentWindowHostRole === DOCK_WINDOW_HOST_LABEL
-        && nextWindowMode === 'overlay';
-      const targetHostLabel = resolvePresentationHostLabel({
-        windowMode: nextWindowMode,
-        useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
-      });
-      if (!shouldAcceptWaylandDockShowRequest && currentWindowHostRole !== targetHostLabel) {
-        return;
-      }
+    const stopShowWindowModeListener = bindDeferredUnlisten(
+      listen<TerminalWindowMode>(SHOW_WINDOW_MODE_REQUEST_EVENT, event => {
+        const nextWindowMode = event.payload === 'windowed' ? 'windowed' : 'overlay';
+        const shouldAcceptWaylandDockShowRequest = currentWindowHostRole === DOCK_WINDOW_HOST_LABEL
+          && nextWindowMode === 'overlay';
+        const targetHostLabel = resolvePresentationHostLabel({
+          windowMode: nextWindowMode,
+          useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+        });
+        if (!shouldAcceptWaylandDockShowRequest && currentWindowHostRole !== targetHostLabel) {
+          return;
+        }
 
-      if (nextWindowMode === 'windowed') {
-        void showWindowedPanel();
-        return;
-      }
+        if (nextWindowMode === 'windowed') {
+          void showWindowedPanel();
+          return;
+        }
 
-      void positionAndShow();
-    }).then(listener => {
-      unlistenShowWindowMode = listener;
-    }).catch(error => {
-      console.warn('OverlayTerm: failed to listen for window mode show requests', error);
-    });
+        void positionAndShow();
+      }),
+      {
+        onError: error => {
+          console.warn('OverlayTerm: failed to listen for window mode show requests', error);
+        },
+      },
+    );
 
     return () => {
-      unlistenToggle?.();
-      unlistenShowWindowMode?.();
+      stopToggleListener();
+      stopShowWindowModeListener();
     };
   }, [
     currentWindowHostRole,
@@ -3249,6 +3265,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         currentBounds: shouldRestoreFloatingBounds
           ? (runtimeOverlayBoundsRef.current ?? dockStore.floatingBounds)
           : null,
+        isApplyCurrent: () => isWindowPresentationApplyCurrent(applyGeneration, 'overlay'),
       });
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
@@ -3323,24 +3340,22 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
-    let unlisten: (() => void) | null = null;
-    getCurrentWindow().onCloseRequested(async event => {
-      event.preventDefault();
-      const currentPhase = overlayPhaseRef.current;
-      if (currentPhase === 'open') {
-        await hideOverlay();
-        return;
-      }
-      await getCurrentWindow().hide().catch(() => {});
-    }).then(listener => {
-      unlisten = listener;
-    }).catch(error => {
-      console.warn('OverlayTerm: failed to intercept close requests', error);
-    });
-
-    return () => {
-      unlisten?.();
-    };
+    return bindDeferredUnlisten(
+      getCurrentWindow().onCloseRequested(async event => {
+        event.preventDefault();
+        const currentPhase = overlayPhaseRef.current;
+        if (currentPhase === 'open') {
+          await hideOverlay();
+          return;
+        }
+        await getCurrentWindow().hide().catch(() => {});
+      }),
+      {
+        onError: error => {
+          console.warn('OverlayTerm: failed to intercept close requests', error);
+        },
+      },
+    );
   }, [hideOverlay, isDedicatedSecondaryWindowHost]);
 
   useEffect(() => {
@@ -3371,6 +3386,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           monitor,
           scaleFactor,
           currentBounds: runtimeOverlayBoundsRef.current,
+          isApplyCurrent: () => (
+            !cancelled && isWindowPresentationApplyCurrent(applyGeneration, 'overlay')
+          ),
         });
       } catch (error) {
         console.warn('OverlayTerm: failed to re-anchor overlay', error);
@@ -3525,7 +3543,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
   // ── Persist resize ──
   useEffect(() => {
-    const unlistenResize = getCurrentWindow().onResized(async ev => {
+    const stopResizeListener = bindDeferredUnlisten(getCurrentWindow().onResized(async ev => {
       if (
         currentHostUsesWaylandDockLayerShell
         || !isCurrentWindowPresentationHost
@@ -3623,11 +3641,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
             monitor,
             scaleFactor: await getCurrentWindow().scaleFactor().catch(() => factor),
             currentBounds: runtimeOverlayBoundsRef.current,
+            isApplyCurrent: () => (
+              overlayVisibleRef.current && windowModeRef.current === 'overlay'
+            ),
           });
         })();
       }, 220);
+    }), {
+      onError: error => {
+        console.warn('OverlayTerm: failed to manage presentation resize listener', error);
+      },
     });
-    return () => { unlistenResize.then(fn => fn()); };
+    return stopResizeListener;
   }, [
     applyDockOverlayLayout,
     currentHostUsesWaylandDockLayerShell,
@@ -3637,7 +3662,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   ]);
 
   useEffect(() => {
-    const unlistenMove = getCurrentWindow().onMoved(async ev => {
+    const stopMoveListener = bindDeferredUnlisten(getCurrentWindow().onMoved(async ev => {
       if (
         currentHostUsesWaylandDockLayerShell
         || !isCurrentWindowPresentationHost
@@ -3674,10 +3699,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           monitor,
           scaleFactor,
           currentBounds,
+          isApplyCurrent: () => (
+            overlayVisibleRef.current && windowModeRef.current === 'overlay'
+          ),
         });
       }
+    }), {
+      onError: error => {
+        console.warn('OverlayTerm: failed to manage presentation move listener', error);
+      },
     });
-    return () => { unlistenMove.then(fn => fn()); };
+    return stopMoveListener;
   }, [applyDockOverlayLayout, currentHostUsesWaylandDockLayerShell, isCurrentWindowPresentationHost, resolvePreferredMonitor]);
 
   useEffect(() => () => {
@@ -5387,18 +5419,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     window.addEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handleBrowserPluginPanelOpenRequest);
 
-    let tauriUnlisten: (() => void) | null = null;
+    let stopTauriPluginPanelListener: (() => void) | null = null;
     if (isTauri()) {
-      void listen<PluginPanelOpenRequest>(PLUGIN_PANEL_OPEN_REQUEST_EVENT, (event) => {
-        handlePluginPanelOpenRequest(event.payload);
-      }).then((unlistenPluginPanelRequest) => {
-        tauriUnlisten = unlistenPluginPanelRequest;
-      }).catch(() => undefined);
+      stopTauriPluginPanelListener = bindDeferredUnlisten(
+        listen<PluginPanelOpenRequest>(PLUGIN_PANEL_OPEN_REQUEST_EVENT, (event) => {
+          handlePluginPanelOpenRequest(event.payload);
+        }),
+      );
     }
 
     return () => {
       window.removeEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handleBrowserPluginPanelOpenRequest);
-      tauriUnlisten?.();
+      stopTauriPluginPanelListener?.();
     };
   }, [
     activeShellUsesIdeWorkbench,
