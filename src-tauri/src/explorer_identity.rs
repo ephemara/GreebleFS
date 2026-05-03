@@ -1,3 +1,4 @@
+use crate::explorer_path_key::ExplorerPathKey;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -472,8 +473,7 @@ fn identity_kind_from_storage(value: &str) -> Result<ExplorerIdentityKind, Strin
 }
 
 fn normalize_path_key(path: &Path) -> String {
-    let raw = path.to_string_lossy().to_string();
-    raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
+    ExplorerPathKey::from_path(path).into_string()
 }
 
 fn now_ms() -> u64 {

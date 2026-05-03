@@ -1,3 +1,23 @@
+# 2026-05-03 - Explorer Hot Path Path Keys And Viewport Thumbnail Scheduler
+
+- Implemented the first clean-room Explorer hot-path slice from the reference research without copying proprietary source, names, comments, or implementation details.
+- Native path identity:
+  - `src-tauri/src/explorer_path_key.rs` now owns internal `ExplorerPathKey` / `ExplorerPathHash64` normalization and deterministic hash behavior.
+  - `src-tauri/src/fs_commands.rs` now keys directory-list and recursive search caches with `ExplorerPathKey` so invalidation can use collision-safe equality plus prefix-aware descendant checks instead of ad hoc string-prefix logic.
+  - `src-tauri/src/entry_size_cache.rs` and `src-tauri/src/explorer_identity.rs` now share the same path normalization while still persisting/exposing canonical path strings at DB/API boundaries.
+- Thumbnail scheduling:
+  - `src/runtime/explorerViewportThumbnailScheduler.ts` is now the first-class viewport scheduler for thumbnail read order and concurrency. It supports `hover`, `visible`, `forward-prefetch`, and `backward-prefetch` lanes, dedupes by `entityId::contentRevision`, enforces batch/concurrency caps, and cancels stale batches.
+  - `src/components/FileExplorer.tsx` now delegates poster/model thumbnail ordering to that scheduler while keeping actual artifact/model rendering in the existing thumbnail runtimes.
+  - `src/config/explorerPerformance.ts` and `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json` now own the authored `viewportScheduling` policy (`batchSize=12`, max concurrent reads `4`, settle delay `88ms`, forward prefetch `1 viewport`, backward prefetch `0.5 viewport`, stale cancellation enabled).
+- Tests/validation for this pass:
+  - Passed: standalone `rustc --edition=2021 --test src-tauri/src/explorer_path_key.rs -o target\explorer_path_key_tests.exe; target\explorer_path_key_tests.exe`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/explorerViewportThumbnailScheduler.test.ts src/test/explorerPerformance.test.ts src/test/explorerThumbnails.test.ts --reporter=dot --testTimeout=30000`
+  - Limitation: requested `cargo test --manifest-path src-tauri/Cargo.toml --lib explorer_path_key` is still blocked before path-key tests run by the existing lib-test cfg issue in `src-tauri/src/secondary_windows.rs` (`window_commands` / `wayland_dock` unavailable under test cfg).
+  - Limitation: full `bunx tsc --noEmit --pretty false -p tsconfig.json` still exits non-zero on baseline diagnostics, but a filtered sweep found no diagnostics in the touched scheduler/performance/FileExplorer files.
+- Next recommended step:
+  - Capture scheduler telemetry from real large-folder scroll sessions before pulling in intrusive native containers, native cancellable task graphs, or thumbnail decode buffer pools. The current slice gives enough measurement surface to decide those next pieces instead of guessing.
+
 # 2026-05-02 - RAGE Reference Top 5 Worth Stealing
 
 - Tightened `reference/src/research.md` from a broad pattern catalog into a ranked shortlist for future implementation planning.

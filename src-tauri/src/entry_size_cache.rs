@@ -1,3 +1,4 @@
+use crate::explorer_path_key::ExplorerPathKey;
 use crate::fs_commands::invalidate_all_fs_caches_for_path;
 use notify::{RecursiveMode, Watcher};
 use rusqlite::{params, params_from_iter, Connection, Row};
@@ -28,8 +29,7 @@ pub struct PersistedEntrySize {
 }
 
 pub fn normalize_cache_path(path: &Path) -> String {
-    let raw = path.to_string_lossy().to_string();
-    raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
+    ExplorerPathKey::from_path(path).into_string()
 }
 
 pub fn initialize_entry_size_cache(app: &AppHandle) -> Result<(), String> {

@@ -9,13 +9,14 @@ use crate::archive_ops::{
 };
 use crate::entry_size_cache::{
     delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
-    normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
+    upsert_entry_size_cache, PersistedEntrySize,
 };
 use crate::explorer_identity::{
     apply_move_operation_continuity, build_content_revision, build_virtual_identity,
     prepare_move_operation_continuity, resolve_fast_local_listing_identity, resolve_local_identity,
     ExplorerIdentityKind, ExplorerIdentityManager,
 };
+use crate::explorer_path_key::ExplorerPathKey;
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use crate::telemetry::{finish_native_span, start_native_span};
 pub use crate::volume_inventory::DriveInfo;
@@ -462,11 +463,13 @@ impl FsCachePolicy {
 }
 
 static FS_CACHE_POLICY: OnceLock<FsCachePolicy> = OnceLock::new();
-static DIR_LIST_CACHE: OnceLock<Mutex<HashMap<String, CachedDirListingVariants>>> = OnceLock::new();
-static SEARCH_NAME_INDEX_CACHE: OnceLock<Mutex<HashMap<String, CachedSearchIndexVariants>>> =
+static DIR_LIST_CACHE: OnceLock<Mutex<HashMap<ExplorerPathKey, CachedDirListingVariants>>> =
     OnceLock::new();
+static SEARCH_NAME_INDEX_CACHE: OnceLock<
+    Mutex<HashMap<ExplorerPathKey, CachedSearchIndexVariants>>,
+> = OnceLock::new();
 static SEARCH_CONTENT_INDEX_CACHE: OnceLock<
-    Mutex<HashMap<String, CachedSearchContentIndexVariants>>,
+    Mutex<HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>>,
 > = OnceLock::new();
 static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
 static SEARCH_REQUESTS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
@@ -537,15 +540,18 @@ fn fs_cache_policy() -> &'static FsCachePolicy {
     FS_CACHE_POLICY.get_or_init(load_fs_cache_policy)
 }
 
-fn dir_list_cache() -> &'static Mutex<HashMap<String, CachedDirListingVariants>> {
+fn dir_list_cache() -> &'static Mutex<HashMap<ExplorerPathKey, CachedDirListingVariants>> {
     DIR_LIST_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn search_name_index_cache() -> &'static Mutex<HashMap<String, CachedSearchIndexVariants>> {
+fn search_name_index_cache()
+    -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchIndexVariants>>
+{
     SEARCH_NAME_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn search_content_index_cache() -> &'static Mutex<HashMap<String, CachedSearchContentIndexVariants>>
+fn search_content_index_cache()
+    -> &'static Mutex<HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>>
 {
     SEARCH_CONTENT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -1617,11 +1623,15 @@ async fn await_explorer_yazi_task(
     }
 }
 
-fn path_cache_key(path: &Path) -> String {
-    normalize_cache_path(path)
+fn path_cache_key(path: &Path) -> ExplorerPathKey {
+    ExplorerPathKey::from_path(path)
 }
 
-fn prune_expired_dir_list_cache(cache: &mut HashMap<String, CachedDirListingVariants>) {
+fn path_cache_key_string(path: &Path) -> String {
+    path_cache_key(path).into_string()
+}
+
+fn prune_expired_dir_list_cache(cache: &mut HashMap<ExplorerPathKey, CachedDirListingVariants>) {
     let ttl = fs_cache_policy().dir_list_cache_ttl;
     if ttl.is_zero() {
         cache.clear();
@@ -1652,7 +1662,9 @@ fn prune_expired_dir_list_cache(cache: &mut HashMap<String, CachedDirListingVari
         .retain(|_, variants| variants.visible_only.is_some() || variants.include_hidden.is_some());
 }
 
-fn prune_expired_search_name_index_cache(cache: &mut HashMap<String, CachedSearchIndexVariants>) {
+fn prune_expired_search_name_index_cache(
+    cache: &mut HashMap<ExplorerPathKey, CachedSearchIndexVariants>,
+) {
     let ttl = fs_cache_policy().search_name_index_cache_ttl;
     if ttl.is_zero() {
         cache.clear();
@@ -1684,7 +1696,7 @@ fn prune_expired_search_name_index_cache(cache: &mut HashMap<String, CachedSearc
 }
 
 fn prune_expired_search_content_index_cache(
-    cache: &mut HashMap<String, CachedSearchContentIndexVariants>,
+    cache: &mut HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>,
 ) {
     let ttl = fs_cache_policy().search_content_index_cache_ttl;
     if ttl.is_zero() {
@@ -1720,7 +1732,7 @@ fn search_request_scope(path: &str, request_scope: Option<String>) -> String {
     request_scope
         .map(|scope| scope.trim().to_string())
         .filter(|scope| !scope.is_empty())
-        .unwrap_or_else(|| normalize_cache_path(Path::new(path)))
+        .unwrap_or_else(|| path_cache_key_string(Path::new(path)))
 }
 
 fn register_search_request(scope: &str, request_id: Option<u64>) -> u64 {
@@ -1773,7 +1785,7 @@ fn record_search_entry_scan_for_tests() {
 fn record_search_entry_scan_for_tests() {}
 
 fn invalidate_entry_size_cache(path: &Path) {
-    let key = path_cache_key(path);
+    let key = path_cache_key_string(path);
     let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
         key.clone()
     } else {
@@ -1799,65 +1811,36 @@ fn invalidate_entry_size_cache(path: &Path) {
 
 fn invalidate_dir_list_cache(path: &Path) {
     let key = path_cache_key(path);
-    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
-        key.clone()
-    } else {
-        format!("{key}{}", std::path::MAIN_SEPARATOR)
-    };
 
     if let Ok(mut cache) = dir_list_cache().lock() {
-        cache.retain(|cached_path, _| {
-            cached_path != &key && !cached_path.starts_with(&key_with_separator)
-        });
+        cache.retain(|cached_path, _| !cached_path.is_same_or_descendant_of(&key));
     }
 }
 
 fn invalidate_search_name_index_cache(path: &Path) {
     let key = path_cache_key(path);
-    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
-        key.clone()
-    } else {
-        format!("{key}{}", std::path::MAIN_SEPARATOR)
-    };
 
     if let Ok(mut cache) = search_name_index_cache().lock() {
         cache.retain(|cached_path, _| {
-            if cached_path == &key || cached_path.starts_with(&key_with_separator) {
+            if cached_path.is_same_or_descendant_of(&key) {
                 return false;
             }
 
-            let cached_path_with_separator = if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
-                cached_path.clone()
-            } else {
-                format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
-            };
-
-            !key.starts_with(&cached_path_with_separator)
+            !key.is_same_or_descendant_of(cached_path)
         });
     }
 }
 
 fn invalidate_search_content_index_cache(path: &Path) {
     let key = path_cache_key(path);
-    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
-        key.clone()
-    } else {
-        format!("{key}{}", std::path::MAIN_SEPARATOR)
-    };
 
     if let Ok(mut cache) = search_content_index_cache().lock() {
         cache.retain(|cached_path, _| {
-            if cached_path == &key || cached_path.starts_with(&key_with_separator) {
+            if cached_path.is_same_or_descendant_of(&key) {
                 return false;
             }
 
-            let cached_path_with_separator = if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
-                cached_path.clone()
-            } else {
-                format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
-            };
-
-            !key.starts_with(&cached_path_with_separator)
+            !key.is_same_or_descendant_of(cached_path)
         });
     }
 }
@@ -2176,7 +2159,7 @@ fn persisted_entry_is_valid(path: &Path, entry: &PersistedEntrySize) -> bool {
 
 fn measured_to_persisted_entry(path: &Path, measurement: &MeasuredPathSize) -> PersistedEntrySize {
     PersistedEntrySize {
-        path: path_cache_key(path),
+        path: path_cache_key_string(path),
         bytes: measurement.bytes,
         is_dir: measurement.is_dir,
         is_complete: measurement.is_complete,
@@ -2316,7 +2299,7 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
     if let Ok(cache) = entry_size_cache().lock() {
         for (index, raw_path) in paths.iter().enumerate() {
             let path = PathBuf::from(raw_path);
-            let key = path_cache_key(&path);
+            let key = path_cache_key_string(&path);
             let cached = if force_refresh {
                 None
             } else {
@@ -6523,7 +6506,8 @@ mod tests {
         let expired_at = Instant::now()
             .checked_sub(dir_list_ttl + Duration::from_millis(25))
             .expect("failed to construct expired instant");
-        let stale_key = format!("prune-test-{}", current_time_millis());
+        let stale_key =
+            ExplorerPathKey::from_raw(&format!("/prune-test-{}", current_time_millis()));
 
         {
             let mut cache = dir_list_cache().lock().expect("dir list cache poisoned");

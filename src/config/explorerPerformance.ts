@@ -11,13 +11,24 @@ export interface ExplorerPerformanceBudgets {
   doubleClickSecondClickToNavigateDispatchMs: number;
 }
 
-interface ShippedExplorerPerformanceManifest {
+export interface ExplorerViewportSchedulerPolicy {
+  enabled: boolean;
+  batchSize: number;
+  maxConcurrentThumbnailReads: number;
+  settleDelayMs: number;
+  forwardPrefetchViewports: number;
+  backwardPrefetchViewports: number;
+  cancelStaleBatches: boolean;
+}
+
+export interface ShippedExplorerPerformanceManifest {
   version?: number;
   id?: string;
   name?: string;
   description?: string;
   folderActivation?: Partial<ExplorerFolderActivationPerformance>;
   budgets?: Partial<ExplorerPerformanceBudgets>;
+  viewportScheduling?: Partial<ExplorerViewportSchedulerPolicy>;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -27,6 +38,7 @@ export interface ExplorerPerformanceManifest {
   description: string;
   folderActivation: ExplorerFolderActivationPerformance;
   budgets: ExplorerPerformanceBudgets;
+  viewportScheduling: ExplorerViewportSchedulerPolicy;
 }
 
 const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance = Object.freeze({
@@ -38,6 +50,16 @@ const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance = 
 
 const defaultExplorerPerformanceBudgets: ExplorerPerformanceBudgets = Object.freeze({
   doubleClickSecondClickToNavigateDispatchMs: 1,
+});
+
+const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy = Object.freeze({
+  enabled: true,
+  batchSize: 12,
+  maxConcurrentThumbnailReads: 4,
+  settleDelayMs: 88,
+  forwardPrefetchViewports: 1,
+  backwardPrefetchViewports: 0.5,
+  cancelStaleBatches: true,
 });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -102,7 +124,47 @@ function normalizeBudgets(
   };
 }
 
-function createExplorerPerformanceManifest(
+function normalizeViewportScheduling(
+  value: ShippedExplorerPerformanceManifest["viewportScheduling"],
+): ExplorerViewportSchedulerPolicy {
+  return {
+    enabled: asBoolean(
+      value?.enabled,
+      defaultExplorerViewportSchedulerPolicy.enabled,
+    ),
+    batchSize: Math.round(asFiniteNumber(
+      value?.batchSize,
+      defaultExplorerViewportSchedulerPolicy.batchSize,
+      { minimum: 1, maximum: 128 },
+    )),
+    maxConcurrentThumbnailReads: Math.round(asFiniteNumber(
+      value?.maxConcurrentThumbnailReads,
+      defaultExplorerViewportSchedulerPolicy.maxConcurrentThumbnailReads,
+      { minimum: 1, maximum: 32 },
+    )),
+    settleDelayMs: Math.round(asFiniteNumber(
+      value?.settleDelayMs,
+      defaultExplorerViewportSchedulerPolicy.settleDelayMs,
+      { minimum: 0, maximum: 1000 },
+    )),
+    forwardPrefetchViewports: asFiniteNumber(
+      value?.forwardPrefetchViewports,
+      defaultExplorerViewportSchedulerPolicy.forwardPrefetchViewports,
+      { minimum: 0, maximum: 8 },
+    ),
+    backwardPrefetchViewports: asFiniteNumber(
+      value?.backwardPrefetchViewports,
+      defaultExplorerViewportSchedulerPolicy.backwardPrefetchViewports,
+      { minimum: 0, maximum: 8 },
+    ),
+    cancelStaleBatches: asBoolean(
+      value?.cancelStaleBatches,
+      defaultExplorerViewportSchedulerPolicy.cancelStaleBatches,
+    ),
+  };
+}
+
+export function normalizeExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): ExplorerPerformanceManifest {
   return Object.freeze({
@@ -123,11 +185,12 @@ function createExplorerPerformanceManifest(
       manifest?.folderActivation,
     ),
     budgets: normalizeBudgets(manifest?.budgets),
+    viewportScheduling: normalizeViewportScheduling(manifest?.viewportScheduling),
   });
 }
 
 export let explorerPerformance: ExplorerPerformanceManifest =
-  createExplorerPerformanceManifest(null);
+  normalizeExplorerPerformanceManifest(null);
 
 export let EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
   defaultFolderActivationPerformance.doubleClickPreviewPrimeDelayMs;
@@ -144,10 +207,13 @@ export let EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
 export let EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
   defaultExplorerPerformanceBudgets.doubleClickSecondClickToNavigateDispatchMs;
 
+export let EXPLORER_VIEWPORT_SCHEDULER_POLICY =
+  defaultExplorerViewportSchedulerPolicy;
+
 export function applyUsrExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): void {
-  explorerPerformance = createExplorerPerformanceManifest(manifest);
+  explorerPerformance = normalizeExplorerPerformanceManifest(manifest);
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
     explorerPerformance.folderActivation.doubleClickPreviewPrimeDelayMs;
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION =
@@ -158,6 +224,8 @@ export function applyUsrExplorerPerformanceManifest(
     explorerPerformance.folderActivation.pointerDownDirectoryWarmEnabled;
   EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
     explorerPerformance.budgets.doubleClickSecondClickToNavigateDispatchMs;
+  EXPLORER_VIEWPORT_SCHEDULER_POLICY =
+    explorerPerformance.viewportScheduling;
 }
 
 applyUsrExplorerPerformanceManifest(

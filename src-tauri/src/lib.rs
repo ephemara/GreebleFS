@@ -19,6 +19,7 @@ pub mod desktop_integration;
 pub mod domain_commands;
 #[cfg(not(test))]
 pub mod entry_size_cache;
+pub mod explorer_path_key;
 #[cfg(not(test))]
 pub mod explorer_identity;
 #[cfg(not(test))]

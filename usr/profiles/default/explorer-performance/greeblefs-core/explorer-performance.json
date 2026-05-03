@@ -11,5 +11,14 @@
   },
   "budgets": {
     "doubleClickSecondClickToNavigateDispatchMs": 1
+  },
+  "viewportScheduling": {
+    "enabled": true,
+    "batchSize": 12,
+    "maxConcurrentThumbnailReads": 4,
+    "settleDelayMs": 88,
+    "forwardPrefetchViewports": 1,
+    "backwardPrefetchViewports": 0.5,
+    "cancelStaleBatches": true
   }
 }

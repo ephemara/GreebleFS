@@ -579,6 +579,10 @@ import {
 } from "../runtime/explorerVisibleEntries";
 import { computeExplorerBaseVisibleEntriesInBackground } from "../runtime/explorerVisibleEntriesRuntime";
 import {
+  buildExplorerViewportThumbnailWorkCandidates,
+  runExplorerViewportThumbnailScheduler,
+} from "../runtime/explorerViewportThumbnailScheduler";
+import {
   executeExplorerAction,
   normalizeExplorerActionOutputTarget,
   type ExplorerActionExecutionInput,
@@ -660,6 +664,7 @@ import {
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
+  EXPLORER_VIEWPORT_SCHEDULER_POLICY,
 } from "../config/explorerPerformance";
 import {
   cycleExplorerSearchMode,
@@ -698,7 +703,6 @@ const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
 >(["code", "shader"]);
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
-const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
 const EXPLORER_AUTO_MEASURE_DIRECTORY_SIZES = false;
 const EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE = String(
   (import.meta.env as Record<string, string | boolean | undefined>)
@@ -9052,6 +9056,7 @@ export function FileExplorer({
   const [hoveredVideoThumbnailPath, setHoveredVideoThumbnailPath] = useState<
     string | null
   >(null);
+  const thumbnailSchedulerBatchIdRef = useRef(0);
   const [folderActivationPrimedPath, setFolderActivationPrimedPath] = useState<
     string | null
   >(null);
@@ -28753,36 +28758,50 @@ export function FileExplorer({
   ]);
 
   useEffect(() => {
+    const thumbnailStageSize =
+      virtualWindow.kind === "grid"
+        ? (activeGridMetrics?.iconStageSize ?? 0)
+        : Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
     if (
       loading ||
       isSearchActive ||
       currentPathIsCloud ||
-      (virtualWindow.kind === "grid"
-        ? (activeGridMetrics?.iconStageSize ?? 0)
-        : Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28)) <
-        EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx ||
-      deferredVirtualizedEntries.length === 0
+      thumbnailStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx ||
+      visibleEntries.length === 0
     ) {
       return;
     }
 
-    const pendingEntries = deferredVirtualizedEntries
-      .filter(
-        (entry) =>
-          canRenderEntryThumbnail(entry) &&
-          entryThumbnailMap[entry.path] === undefined &&
-          peekExplorerThumbnailForEntry(
-            buildExplorerPosterThumbnailRequest(entry),
-          ) === undefined &&
-          !entryThumbnailLoadingPaths.has(entry.path),
-      )
-      .slice(0, EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.batchSize);
+    const thumbnailCandidates = buildExplorerViewportThumbnailWorkCandidates({
+      entries: visibleEntries,
+      viewportStartIndex: virtualWindow.startIndex,
+      viewportEndIndex: virtualWindow.endIndex,
+      hoveredEntryPath: hoveredVideoThumbnailPath,
+      policy: EXPLORER_VIEWPORT_SCHEDULER_POLICY,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: buildExplorerEntryIdentityRevisionKey,
+      shouldScheduleEntry: (entry) =>
+        canRenderEntryThumbnail(entry) &&
+        entryThumbnailMap[entry.path] === undefined &&
+        peekExplorerThumbnailForEntry(
+          buildExplorerPosterThumbnailRequest(entry),
+        ) === undefined &&
+        !entryThumbnailLoadingPaths.has(entry.path),
+      isModelPreviewEntry: (entry) =>
+        Boolean(getModelPreviewFormat(entry.extension)),
+    });
 
-    if (pendingEntries.length === 0) {
+    if (thumbnailCandidates.length === 0) {
       return;
     }
 
-    const pendingPaths = pendingEntries.map((entry) => entry.path);
+    const scheduledCandidates = thumbnailCandidates.slice(
+      0,
+      Math.max(1, Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize)),
+    );
+    const pendingPaths = scheduledCandidates.map((candidate) => candidate.path);
+    const schedulerBatchId = thumbnailSchedulerBatchIdRef.current + 1;
+    thumbnailSchedulerBatchIdRef.current = schedulerBatchId;
     const batchTimer = window.setTimeout(() => {
       const startedAt = getExplorerPerformanceNow();
       setEntryThumbnailLoadingPaths((current) => {
@@ -28797,63 +28816,78 @@ export function FileExplorer({
         return changed ? next : current;
       });
 
-      void Promise.all(
-        pendingEntries.map(async (entry) => {
-          try {
-            const modelPreviewFormat = getModelPreviewFormat(entry.extension);
-            const thumbnail = modelPreviewFormat
-              ? await readExplorerModelThumbnail({
-                  entry,
-                  maxWidth:
-                    EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-                  maxHeight:
-                    EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-                })
-              : await readExplorerThumbnailForEntry(
-                  buildExplorerPosterThumbnailRequest(entry),
-                );
-            return {
-              path: entry.path,
-              thumbnail,
-              usedModelRenderer: Boolean(modelPreviewFormat),
-            };
-          } catch {
-            return {
-              path: entry.path,
-              thumbnail: null,
-              usedModelRenderer: false,
-            };
+      void runExplorerViewportThumbnailScheduler({
+        candidates: thumbnailCandidates,
+        policy: EXPLORER_VIEWPORT_SCHEDULER_POLICY,
+        isStale: () =>
+          !isExplorerMountedRef.current ||
+          thumbnailSchedulerBatchIdRef.current !== schedulerBatchId,
+        readCandidate: async (candidate) => {
+          if (candidate.isModelPreview) {
+            return readExplorerModelThumbnail({
+              entry: candidate.entry,
+              maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+              maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+            });
           }
-        }),
-      ).then((results) => {
-        if (!isExplorerMountedRef.current) {
+          return readExplorerThumbnailForEntry(
+            buildExplorerPosterThumbnailRequest(candidate.entry),
+          );
+        },
+      }).then((schedulerResult) => {
+        if (
+          !isExplorerMountedRef.current ||
+          thumbnailSchedulerBatchIdRef.current !== schedulerBatchId
+        ) {
           return;
         }
 
+        const fulfilledResults = schedulerResult.results.filter(
+          (result) => result.status === "fulfilled",
+        );
         recordExplorerMetric({
           metricId: "explorer_thumbnail_batch",
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
-            pathCount: pendingEntries.length,
-            resultCount: results.filter((result) => result.thumbnail !== null)
+            pathCount: schedulerResult.telemetry.scheduledCount,
+            candidateCount: schedulerResult.telemetry.candidateCount,
+            resultCount: fulfilledResults.filter((result) => result.value !== null)
               .length,
-            modelCount: results.filter((result) => result.usedModelRenderer)
+            modelCount: schedulerResult.scheduledCandidates.filter(
+              (candidate) => candidate.isModelPreview,
+            )
               .length,
+            visibleCount:
+              schedulerResult.telemetry.priorityCounts.visible,
+            forwardPrefetchCount:
+              schedulerResult.telemetry.priorityCounts["forward-prefetch"],
+            backwardPrefetchCount:
+              schedulerResult.telemetry.priorityCounts["backward-prefetch"],
+            failedCount: schedulerResult.telemetry.failedCount,
+            cancelled: schedulerResult.telemetry.cancelled,
+            maxConcurrentThumbnailReads:
+              schedulerResult.telemetry.maxConcurrentThumbnailReads,
             hoverScrub: false,
-            success: true,
+            success:
+              schedulerResult.telemetry.failedCount === 0 &&
+              !schedulerResult.telemetry.cancelled,
           },
         });
 
         startTransition(() => {
           setEntryThumbnailMap((current) => {
             const next = { ...current };
-            for (const result of results) {
-              next[result.path] = result.thumbnail;
+            for (const result of schedulerResult.results) {
+              next[result.candidate.path] =
+                result.status === "fulfilled" ? result.value : null;
             }
             return next;
           });
         });
-
+      }).finally(() => {
+        if (!isExplorerMountedRef.current) {
+          return;
+        }
         setEntryThumbnailLoadingPaths((current) => {
           const next = new Set(current);
           for (const path of pendingPaths) {
@@ -28862,10 +28896,16 @@ export function FileExplorer({
           return next.size === current.size ? current : next;
         });
       });
-    }, EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS);
+    }, EXPLORER_VIEWPORT_SCHEDULER_POLICY.settleDelayMs);
 
     return () => {
       window.clearTimeout(batchTimer);
+      if (
+        EXPLORER_VIEWPORT_SCHEDULER_POLICY.cancelStaleBatches &&
+        thumbnailSchedulerBatchIdRef.current === schedulerBatchId
+      ) {
+        thumbnailSchedulerBatchIdRef.current += 1;
+      }
     };
   }, [
     activeGridMetrics,
@@ -28874,11 +28914,14 @@ export function FileExplorer({
     currentPathIsCloud,
     entryThumbnailLoadingPaths,
     entryThumbnailMap,
+    hoveredVideoThumbnailPath,
     isSearchActive,
     loading,
     recordExplorerMetric,
+    virtualWindow.endIndex,
     virtualWindow.kind,
-    deferredVirtualizedEntries,
+    virtualWindow.startIndex,
+    visibleEntries,
   ]);
 
   useEffect(() => {
