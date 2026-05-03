@@ -1722,7 +1722,7 @@ describe("FileExplorer view modes", () => {
       name: /explorer layout menu/i,
     });
     expect(layoutMenu.closest("[data-overlay-explorer]")).not.toBeNull();
-    expect(layoutMenu.style.background).toBe("var(--overlay-explorer-popup-bg)");
+    expect(layoutMenu.style.background).toContain("--overlay-explorer-popup-bg");
     fireEvent.click(screen.getByRole("menuitemradio", { name: /columns/i }));
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(

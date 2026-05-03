@@ -2548,7 +2548,7 @@ function SettingsRailButton({
       type="button"
       onClick={onClick}
       title={subtitle}
-      className="group w-full rounded px-2 py-1.5 text-left transition-colors"
+      className="group w-full overflow-hidden rounded px-2 py-1.5 text-left transition-colors"
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
       onPointerLeave={motionBinding?.onPointerLeave}
@@ -2565,7 +2565,7 @@ function SettingsRailButton({
         ...motionBinding?.motionStyle,
       }}
     >
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 overflow-hidden">
         <div
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
           style={{
@@ -2583,8 +2583,16 @@ function SettingsRailButton({
             {label}
           </div>
           <div
-            className="truncate text-[9px] leading-3"
-            style={{ color: active ? accent : muted }}
+            className="text-[9px] leading-3"
+            style={{
+              color: active ? accent : muted,
+              display: "-webkit-box",
+              overflow: "hidden",
+              overflowWrap: "anywhere",
+              whiteSpace: "normal",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+            }}
           >
             {summary}
           </div>

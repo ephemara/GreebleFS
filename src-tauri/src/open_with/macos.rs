@@ -1,4 +1,6 @@
-use crate::open_with::types::{AssociatedProgram, GetAssociatedProgramsResult, OpenWithResult};
+use crate::open_with::types::{
+    AssociatedProgram, AssociatedProgramLaunchKind, GetAssociatedProgramsResult, OpenWithResult,
+};
 use file_opening::{FileOpener, OpenResult};
 use file_opening_macos::MacFileOpener;
 use std::path::Path;
@@ -22,11 +24,17 @@ pub fn get_associated_programs_impl(file_path: &str) -> GetAssociatedProgramsRes
             success: true,
             recommended_programs: apps
                 .into_iter()
-                .map(|app| AssociatedProgram {
-                    name: app.name,
-                    path: app.id,
-                    icon: app.icon,
-                    is_default: false,
+                .map(|app| {
+                    let launch_id = app.id;
+                    AssociatedProgram {
+                        name: app.name,
+                        path: launch_id.clone(),
+                        launch_id: Some(launch_id),
+                        launch_kind: Some(AssociatedProgramLaunchKind::BundleId),
+                        executable_path: None,
+                        icon: app.icon,
+                        is_default: false,
+                    }
                 })
                 .collect(),
             other_programs: vec![],

@@ -331,9 +331,22 @@ import {
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
+import { ExplorerActivityRail } from "./explorer/ExplorerActivityRail";
+import { ExplorerDockLayoutAdapter } from "./explorer/ExplorerDockLayoutAdapter";
+import {
+  ExplorerSearchLane,
+  type ExplorerUtilitySearchResult,
+} from "./explorer/ExplorerSearchLane";
+import { ExplorerSemanticLane } from "./explorer/ExplorerSemanticLane";
+import {
+  ExplorerSlatePane,
+  ExplorerSlatePaneHeader,
+  type ExplorerPaneTone,
+} from "./explorer/ExplorerPanePrimitives";
 import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
 import { ExplorerFloatingSurface } from "./explorer/ExplorerFloatingSurface";
 import { ExplorerPopupSurface } from "./explorer/ExplorerPopupSurface";
+import { ExplorerTaskCenterContent } from "./explorer/ExplorerTaskCenterContent";
 import { ExplorerWorkflowModal } from "./explorer/ExplorerWorkflowModal";
 import {
   buildExplorerRuntimeMenu,
@@ -487,6 +500,10 @@ import {
   type PresentationWindowMode,
 } from "../store/settingsStore";
 import type { SettingsSectionKey } from "../config/settingsNavigation";
+import {
+  explorerActivityLaneDefinitions,
+  type ExplorerActivityLaneId,
+} from "../config/explorerActivityRail";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
 import {
   EXPLORER_HOME_PATH,
@@ -9116,6 +9133,11 @@ export function FileExplorer({
   const [sourcesVisible, setSourcesVisible] = useState(
     () => initialSession.sourcesVisible,
   );
+  const [activeActivityLane, setActiveActivityLane] =
+    useState<ExplorerActivityLaneId>(() => initialSession.activeActivityLane);
+  const [activityPaneVisible, setActivityPaneVisible] = useState(
+    () => initialSession.activityPaneVisible,
+  );
   const [layoutBandMetricsDraft, setLayoutBandMetricsDraft] =
     useState<ExplorerLayoutBandMetrics>(
       () => resolvedExplorerLayout?.bandMetrics ?? {},
@@ -10447,6 +10469,8 @@ export function FileExplorer({
       searchMode,
       documentViewMode,
       sourcesVisible,
+      activeActivityLane,
+      activityPaneVisible,
       actionsVisible,
       constellation: {
         activeLens: constellationActiveLens,
@@ -10455,6 +10479,8 @@ export function FileExplorer({
       },
     });
   }, [
+    activeActivityLane,
+    activityPaneVisible,
     constellationActiveLens,
     constellationPinnedPaths,
     constellationRouteModeEnabled,
@@ -11532,6 +11558,28 @@ export function FileExplorer({
     setSemanticSearchSourcePath(null);
     setSemanticSearchDiagnostics(null);
   }, []);
+
+  const openSearchLaneResult = useCallback(
+    (result: ExplorerUtilitySearchResult) => {
+      const targetPath = result.path.trim();
+      if (!targetPath) {
+        return;
+      }
+
+      if (result.is_dir) {
+        void navigate(targetPath);
+        return;
+      }
+
+      const parentPath = getPathParent(targetPath) ?? currentPath;
+      void navigate(parentPath).finally(() => {
+        setSelected(new Set([targetPath]));
+        lastSelected.current = targetPath;
+        selectionRangeAnchorPathRef.current = targetPath;
+      });
+    },
+    [currentPath, navigate],
+  );
 
   const submitAddressDraft = useCallback(
     async (rawValue: string) => {
@@ -21006,11 +21054,22 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation === "grid"
       ? (activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT)
       : (activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT);
-  const shouldRenderRail = sourcesVisible;
+  const shouldRenderRail =
+    activityPaneVisible && activeActivityLane === "files" && sourcesVisible;
   const openSourcesPanel = useCallback(() => {
+    setActiveActivityLane("files");
+    setActivityPaneVisible(true);
     setSourcesVisible(true);
   }, []);
   const closeSourcesPanel = useCallback(() => {
+    setSourcesVisible(false);
+    if (activeActivityLane === "files") {
+      setActivityPaneVisible(false);
+    }
+  }, [activeActivityLane]);
+  const openExplorerUtilityPane = useCallback((laneId: ExplorerActivityLaneId) => {
+    setActiveActivityLane(laneId);
+    setActivityPaneVisible(true);
     setSourcesVisible(false);
   }, []);
   const toggleSourcesPanel = useCallback(() => {
@@ -21039,6 +21098,65 @@ export function FileExplorer({
     }
     openActionsPanel();
   }, [actionsPaneVisible, closeActionsPanel, openActionsPanel]);
+  const selectExplorerActivityLane = useCallback(
+    (laneId: ExplorerActivityLaneId) => {
+      setActiveActivityLane(laneId);
+
+      if (laneId === "files") {
+        setActivityPaneVisible(true);
+        setSourcesVisible(true);
+        return;
+      }
+
+      if (laneId === "search") {
+        openExplorerUtilityPane("search");
+        setActionsVisible(false);
+        return;
+      }
+
+      if (laneId === "semantic") {
+        openExplorerUtilityPane("semantic");
+        setActionsVisible(false);
+        setSearchMode("semantic");
+        return;
+      }
+
+      if (laneId === "tasks") {
+        openExplorerUtilityPane("tasks");
+        setActionsVisible(false);
+        return;
+      }
+
+      if (laneId === "preview") {
+        setActivityPaneVisible(false);
+        setSourcesVisible(false);
+        setPreviewEnabled(true);
+        return;
+      }
+
+      if (laneId === "terminal") {
+        setActivityPaneVisible(false);
+        setSourcesVisible(false);
+        revealBottomExplorerTerminal();
+        return;
+      }
+
+      setActivityPaneVisible(false);
+      setSourcesVisible(false);
+      setActionsVisible(true);
+      if (laneId === "customize" && !activeChromeEditSession) {
+        beginExplorerChromeCustomization();
+      }
+    },
+    [
+      activeChromeEditSession,
+      beginExplorerChromeCustomization,
+      openExplorerUtilityPane,
+      revealBottomExplorerTerminal,
+      setPreviewEnabled,
+      setSearchMode,
+    ],
+  );
   const previewSplitIsPane = previewPanelVisible && previewSplitMode === "pane";
   const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
@@ -30865,6 +30983,209 @@ export function FileExplorer({
   const showBlockingExplorerLoadingState =
     loading && !hasResolvedExplorerLocation;
   const shouldRenderExplorerContent = !showBlockingExplorerLoadingState;
+  const explorerSlateTone = useMemo<ExplorerPaneTone>(
+    () => ({
+      accent,
+      border: "var(--overlay-explorer-panel-border)",
+      muted: EXP.muted,
+      text: EXP.text,
+    }),
+    [accent],
+  );
+  const toggleSearchLaneHiddenFiles = useCallback(() => {
+    updateExplorerSettings({ showHiddenFiles: !showHidden });
+  }, [showHidden, updateExplorerSettings]);
+  const handleSearchLaneModeChange = useCallback(
+    (nextMode: ExplorerSearchModeValue) => {
+      setSearchMode(nextMode);
+      setSemanticSearchSourcePath(null);
+      setSemanticSearchDiagnostics(null);
+    },
+    [],
+  );
+  const handleSearchLaneQueryChange = useCallback((nextQuery: string) => {
+    setSearch(nextQuery);
+    setSemanticSearchSourcePath(null);
+  }, []);
+  const runSemanticLaneFindSimilar = useCallback(() => {
+    if (semanticSelectionCandidate) {
+      triggerFindSimilarForPath(semanticSelectionCandidate.path);
+    }
+  }, [semanticSelectionCandidate, triggerFindSimilarForPath]);
+  const activityLaneBadges = useMemo(
+    () => ({
+      search:
+        searchResults.length > 0
+          ? searchResults.length > 99
+            ? "99+"
+            : searchResults.length
+          : null,
+      tasks:
+        homeTasks.length > 0
+          ? homeTasks.length > 99
+            ? "99+"
+            : homeTasks.length
+          : null,
+    }),
+    [homeTasks.length, searchResults.length],
+  );
+  const explorerUtilityDockPane = useMemo(() => {
+    const utilityLaneActive =
+      activityPaneVisible &&
+      (activeActivityLane === "search" ||
+        activeActivityLane === "semantic" ||
+        activeActivityLane === "tasks");
+    if (!utilityLaneActive) {
+      return null;
+    }
+
+    return (
+      <div
+        data-overlay-explorer-plane="utility-dock"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+          minWidth: 0,
+        }}
+      >
+        <div style={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1 }}>
+          <ResizablePane
+            size={sidebarWidth}
+            minSize={Math.max(300, sidebarBounds.minWidth)}
+            maxSize={Math.max(sidebarBounds.maxWidth, 560)}
+            onSizeChange={setSidebarWidth}
+            borderColor={`${accent}55`}
+            handleSide={effectiveRailPosition === "right" ? "left" : "right"}
+            style={sidebarPaneStyle}
+          >
+            <ExplorerDockLayoutAdapter
+              activePaneId={activeActivityLane}
+              onActivePaneChange={(paneId) => {
+                if (
+                  paneId === "search" ||
+                  paneId === "semantic" ||
+                  paneId === "tasks"
+                ) {
+                  setActiveActivityLane(paneId);
+                  if (paneId === "semantic") {
+                    setSearchMode("semantic");
+                  }
+                }
+              }}
+              panes={[
+                {
+                  id: "search",
+                  title: "Search",
+                  content: (
+                    <ExplorerSearchLane
+                      currentPath={currentPath}
+                      loading={searchLoading}
+                      mode={searchMode}
+                      onCancel={clearSearch}
+                      onModeChange={handleSearchLaneModeChange}
+                      onOpenResult={openSearchLaneResult}
+                      onQueryChange={handleSearchLaneQueryChange}
+                      onToggleHidden={toggleSearchLaneHiddenFiles}
+                      query={search}
+                      results={searchResults}
+                      showHidden={showHidden}
+                      tone={explorerSlateTone}
+                    />
+                  ),
+                },
+                {
+                  id: "semantic",
+                  title: "Semantic",
+                  content: (
+                    <ExplorerSemanticLane
+                      currentPath={currentPath}
+                      diagnostics={semanticSearchDiagnostics}
+                      onBuild={() => void requestSemanticIndexBuild("build")}
+                      onClear={() => void requestSemanticIndexBuild("clear")}
+                      onFindSimilar={runSemanticLaneFindSimilar}
+                      onQueryChange={(nextQuery) => {
+                        setSearchMode("semantic");
+                        setSemanticSearchSourcePath(null);
+                        setSearch(nextQuery);
+                      }}
+                      onRebuild={() => void requestSemanticIndexBuild("rebuild")}
+                      query={searchMode === "semantic" ? search : ""}
+                      selectedPath={semanticSelectionCandidate?.path ?? null}
+                      statusLabel={semanticIndexStatusLabel}
+                      summary={semanticIndexSummary}
+                      tone={explorerSlateTone}
+                    />
+                  ),
+                },
+                {
+                  id: "tasks",
+                  title: "Tasks",
+                  content: (
+                    <ExplorerSlatePane tone={explorerSlateTone}>
+                      <ExplorerSlatePaneHeader
+                        title="Tasks"
+                        subtitle="Explorer background work"
+                        tone={explorerSlateTone}
+                      />
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          overflow: "auto",
+                          padding: 12,
+                        }}
+                      >
+                        <ExplorerTaskCenterContent
+                          accent={accent}
+                          border="var(--overlay-explorer-panel-border)"
+                          danger={EXP.red}
+                          muted={EXP.muted}
+                          tasks={homeTasks}
+                          text={EXP.text}
+                          title="Explorer Tasks"
+                        />
+                      </div>
+                    </ExplorerSlatePane>
+                  ),
+                },
+              ]}
+            />
+          </ResizablePane>
+        </div>
+      </div>
+    );
+  }, [
+    accent,
+    activeActivityLane,
+    activityPaneVisible,
+    clearSearch,
+    currentPath,
+    effectiveRailPosition,
+    explorerSlateTone,
+    handleSearchLaneModeChange,
+    handleSearchLaneQueryChange,
+    homeTasks,
+    openSearchLaneResult,
+    requestSemanticIndexBuild,
+    runSemanticLaneFindSimilar,
+    search,
+    searchLoading,
+    searchMode,
+    searchResults,
+    semanticIndexStatusLabel,
+    semanticIndexSummary,
+    semanticSearchDiagnostics,
+    semanticSelectionCandidate,
+    setSearchMode,
+    setSidebarWidth,
+    showHidden,
+    sidebarBounds.maxWidth,
+    sidebarBounds.minWidth,
+    sidebarPaneStyle,
+    sidebarWidth,
+    toggleSearchLaneHiddenFiles,
+  ]);
   const explorerRailPane = useMemo(() => {
     if (!shouldRenderRail) {
       return null;
@@ -32036,7 +32357,15 @@ export function FileExplorer({
         </div>
 
         <div style={explorerContentRowStyle}>
+          <ExplorerActivityRail
+            activeLaneId={activeActivityLane}
+            laneDefinitions={explorerActivityLaneDefinitions}
+            laneBadges={activityLaneBadges}
+            onSelectLane={selectExplorerActivityLane}
+            tone={explorerSlateTone}
+          />
           {explorerRailPane}
+          {explorerUtilityDockPane}
 
           <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
             <div

@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
   ChevronRight,
@@ -544,30 +545,26 @@ export function ExplorerSideRail({
     return matchedDriveIndex >= 0 ? ancestors.slice(matchedDriveIndex) : [];
   }, [currentPath, localDrivePaths]);
 
+  const autoExpandedFolderPaths = useMemo(
+    () => normalizeLocalTreePathList(currentPathAncestors),
+    [currentPathAncestors],
+  );
+  const effectiveExpandedFolderPaths = useMemo(
+    () =>
+      autoExpandToOpenFolder
+        ? mergeNormalizedLocalTreePathLists(
+            expandedFolderPaths,
+            autoExpandedFolderPaths,
+          )
+        : expandedFolderPaths,
+    [autoExpandToOpenFolder, autoExpandedFolderPaths, expandedFolderPaths],
+  );
+
   useEffect(() => {
-    const normalizedAncestors = currentPathAncestors.map((path) =>
-      normalizeLocalTreePath(path),
-    );
-    if (!autoExpandToOpenFolder) {
-      updateFolderChildrenByPath((current) =>
-        pruneLocalFolderTreeState(current, expandedFolderPaths),
-      );
-      return;
-    }
-    setExpandedFolderPaths((current) =>
-      areNormalizedPathListsEqual(current, normalizedAncestors)
-        ? current
-        : normalizedAncestors,
-    );
     updateFolderChildrenByPath((current) =>
-      pruneLocalFolderTreeState(current, normalizedAncestors),
+      pruneLocalFolderTreeState(current, effectiveExpandedFolderPaths),
     );
-  }, [
-    autoExpandToOpenFolder,
-    currentPathAncestors,
-    expandedFolderPaths,
-    updateFolderChildrenByPath,
-  ]);
+  }, [effectiveExpandedFolderPaths, updateFolderChildrenByPath]);
 
   useEffect(() => {
     if (!shouldForceRefreshLocalTree) {
@@ -575,9 +572,7 @@ export function ExplorerSideRail({
     }
     lastLocalTreeRefreshRevisionRef.current = localTreeRefreshRevision;
     updateFolderChildrenByPath({});
-    const refreshTargets = autoExpandToOpenFolder
-      ? currentPathAncestors
-      : expandedFolderPaths;
+    const refreshTargets = effectiveExpandedFolderPaths;
     if (refreshTargets.length === 0) {
       return;
     }
@@ -597,9 +592,7 @@ export function ExplorerSideRail({
       cancelled = true;
     };
   }, [
-    autoExpandToOpenFolder,
-    currentPathAncestors,
-    expandedFolderPaths,
+    effectiveExpandedFolderPaths,
     loadFolderChildren,
     localTreeRefreshRevision,
     shouldForceRefreshLocalTree,
@@ -607,9 +600,7 @@ export function ExplorerSideRail({
   ]);
 
   useEffect(() => {
-    const folderPathsToLoad = autoExpandToOpenFolder
-      ? currentPathAncestors
-      : expandedFolderPaths;
+    const folderPathsToLoad = effectiveExpandedFolderPaths;
     if (folderPathsToLoad.length === 0) {
       return;
     }
@@ -629,9 +620,7 @@ export function ExplorerSideRail({
       cancelled = true;
     };
   }, [
-    autoExpandToOpenFolder,
-    currentPathAncestors,
-    expandedFolderPaths,
+    effectiveExpandedFolderPaths,
     loadFolderChildren,
     localTreeRefreshRevision,
   ]);
@@ -1297,15 +1286,14 @@ export function ExplorerSideRail({
                 );
               }
 
-              const usedBytes = Math.max(
-                drive.total_bytes - drive.free_bytes,
-                0,
-              );
+              const totalBytes = getLocalDriveTotalBytes(drive);
+              const freeBytes = getLocalDriveFreeBytes(drive);
+              const usedBytes = Math.max(totalBytes - freeBytes, 0);
               const usedRatio =
-                drive.total_bytes > 0 ? usedBytes / drive.total_bytes : 0;
+                totalBytes > 0 ? usedBytes / totalBytes : 0;
               const normalizedDrivePath = normalizeLocalTreePath(drive.path);
               const isExpanded =
-                expandedFolderPaths.includes(normalizedDrivePath);
+                effectiveExpandedFolderPaths.includes(normalizedDrivePath);
               const driveRowMotion = bindRailMotion(
                 isActive || isExpanded,
                 index,
@@ -1405,10 +1393,10 @@ export function ExplorerSideRail({
                             marginTop: 0,
                           }}
                         >
-                          {drive.letter}
+                          {getDriveCompactLabel(drive)}
                         </span>
                       </div>
-                      {showDriveCapacity && (
+                      {showDriveCapacity && totalBytes > 0 && (
                         <>
                           <div
                             style={{
@@ -1441,7 +1429,7 @@ export function ExplorerSideRail({
                             }}
                           >
                             <span>{formatBytes(usedBytes)} used</span>
-                            <span>{formatBytes(drive.total_bytes)} total</span>
+                            <span>{formatBytes(totalBytes)} total</span>
                           </div>
                         </>
                       )}
@@ -1464,7 +1452,7 @@ export function ExplorerSideRail({
                         dropScopeId={dropScopeId}
                         path={normalizedDrivePath}
                         depth={0}
-                        expandedFolderPaths={expandedFolderPaths}
+                        expandedFolderPaths={effectiveExpandedFolderPaths}
                         folderChildrenByPath={folderChildrenByPath}
                         showSupportingMeta={showSupportingMeta}
                         treeIndentStep={railViewMode.treeIndentStep}
@@ -2421,6 +2409,19 @@ function LocalFolderTreeRow({
   const childFolders = loadState?.childFolders ?? [];
   const feedbackIndent =
     depth === 0 ? 0 : (compactTree ? 10 : 12) + depth * treeIndentStep;
+  const virtualScrollerRef = useRef<HTMLDivElement | null>(null);
+  const canVirtualizeLocalTreeChildren =
+    childFolders.length > 120 &&
+    childFolders.every(
+      (childFolder) =>
+        !expandedFolderPaths.includes(normalizeLocalTreePath(childFolder.path)),
+    );
+  const localTreeVirtualizer = useVirtualizer({
+    count: childFolders.length,
+    estimateSize: () => (dense ? 32 : 38),
+    getScrollElement: () => virtualScrollerRef.current,
+    overscan: 10,
+  });
 
   if (loadState?.status === "loading" || !loadState) {
     return (
@@ -2469,9 +2470,53 @@ function LocalFolderTreeRow({
     );
   }
 
+  const virtualRows = canVirtualizeLocalTreeChildren
+    ? localTreeVirtualizer.getVirtualItems()
+    : null;
+  const renderedChildFolders = virtualRows
+    ? virtualRows
+        .map((virtualRow) => ({
+          childFolder: childFolders[virtualRow.index],
+          virtualRow,
+        }))
+        .filter(
+          (
+            entry,
+          ): entry is {
+            childFolder: ExplorerFileEntry;
+            virtualRow: NonNullable<typeof virtualRows>[number];
+          } => Boolean(entry.childFolder),
+        )
+    : childFolders.map((childFolder) => ({ childFolder, virtualRow: null }));
+
   return (
-    <>
-      {childFolders.map((childFolder) => {
+    <div
+      ref={canVirtualizeLocalTreeChildren ? virtualScrollerRef : undefined}
+      data-overlay-explorer-local-tree-virtualized={
+        canVirtualizeLocalTreeChildren ? "true" : undefined
+      }
+      style={
+        canVirtualizeLocalTreeChildren
+          ? {
+              maxHeight: 420,
+              overflow: "auto",
+              position: "relative",
+              contain: "layout paint",
+            }
+          : undefined
+      }
+    >
+      <div
+        style={
+          canVirtualizeLocalTreeChildren
+            ? {
+                height: localTreeVirtualizer.getTotalSize(),
+                position: "relative",
+              }
+            : undefined
+        }
+      >
+      {renderedChildFolders.map(({ childFolder, virtualRow }) => {
         const childPath = normalizeLocalTreePath(childFolder.path);
         const localTreeSurfaceId = `explorer-rail-local-tree:${childPath}`;
         const childState = folderChildrenByPath[childPath];
@@ -2519,7 +2564,21 @@ function LocalFolderTreeRow({
         const rowMotion = bindRailMotion(rowState !== "idle");
 
         return (
-          <div key={childPath} style={{ marginTop: 4 }}>
+          <div
+            key={childPath}
+            style={{
+              marginTop: virtualRow ? 0 : 4,
+              ...(virtualRow
+                ? {
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }
+                : null),
+            }}
+          >
             <div
               role="treeitem"
               aria-expanded={canExpand ? isExpanded : undefined}
@@ -2695,7 +2754,8 @@ function LocalFolderTreeRow({
           </div>
         );
       })}
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -2762,6 +2822,36 @@ function getPathLeaf(path: string): string {
   }
   const segments = trimmed.split(/[\\/]/).filter(Boolean);
   return segments[segments.length - 1] ?? trimmed;
+}
+
+function getLocalDriveTotalBytes(drive: ExplorerDriveInfo): number {
+  if (drive.kind !== "local") {
+    return 0;
+  }
+  const legacyTotalBytes = (drive as { total_bytes?: unknown }).total_bytes;
+  if (typeof drive.totalBytes === "number") {
+    return drive.totalBytes;
+  }
+  return typeof legacyTotalBytes === "number" ? legacyTotalBytes : 0;
+}
+
+function getLocalDriveFreeBytes(drive: ExplorerDriveInfo): number {
+  if (drive.kind !== "local") {
+    return 0;
+  }
+  const legacyFreeBytes = (drive as { free_bytes?: unknown }).free_bytes;
+  if (typeof drive.freeBytes === "number") {
+    return drive.freeBytes;
+  }
+  return typeof legacyFreeBytes === "number" ? legacyFreeBytes : 0;
+}
+
+function getDriveCompactLabel(drive: ExplorerDriveInfo): string {
+  const legacyLetter = (drive as { letter?: unknown }).letter;
+  if (typeof legacyLetter === "string" && legacyLetter.trim().length > 0) {
+    return legacyLetter;
+  }
+  return getPathLeaf(drive.path) || drive.id;
 }
 
 function isWindowsLocalPath(path: string): boolean {
@@ -2891,11 +2981,30 @@ function getLocalPathAncestors(path: string): string[] {
   return ancestors;
 }
 
-function areNormalizedPathListsEqual(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) {
-    return false;
+function normalizeLocalTreePathList(paths: string[]): string[] {
+  return mergeNormalizedLocalTreePathLists(paths);
+}
+
+function mergeNormalizedLocalTreePathLists(
+  ...pathLists: string[][]
+): string[] {
+  const nextPaths: string[] = [];
+  const seenKeys = new Set<string>();
+  for (const pathList of pathLists) {
+    for (const path of pathList) {
+      const normalizedPath = normalizeLocalTreePath(path);
+      if (!normalizedPath) {
+        continue;
+      }
+      const comparisonKey = getLocalPathComparisonKey(normalizedPath);
+      if (seenKeys.has(comparisonKey)) {
+        continue;
+      }
+      seenKeys.add(comparisonKey);
+      nextPaths.push(normalizedPath);
+    }
   }
-  return left.every((value, index) => value === right[index]);
+  return nextPaths;
 }
 
 function pruneLocalFolderTreeState(

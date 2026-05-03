@@ -72,6 +72,8 @@ export function ProfilesSettingsSection({
     () => new Set(activeProfile?.overrideSlices ?? []),
     [activeProfile?.overrideSlices],
   );
+  const managedContentStacks =
+    usrProfileRuntimeSnapshot?.managedContentDirectoryStacks ?? [];
 
   const runProfileAction = async (
     actionLabel: string,
@@ -387,11 +389,104 @@ export function ProfilesSettingsSection({
               title="Runtime Paths"
               subtitle="The active profile overlay writes into its own lane folders while shared settings stay rooted under the shared usr profile workspace."
               badges={['runtime']}
+              actions={
+                <SettingsActionStrip>
+                  <SettingsActionButton
+                    disabled={pendingActionLabel != null}
+                    onClick={() =>
+                      void runProfileAction('Opening profiles root…', onOpenUsrProfilesRootFolder)
+                    }
+                  >
+                    <FolderOpen size={11} />
+                    <span>Profiles Root</span>
+                  </SettingsActionButton>
+                  {activeProfile ? (
+                    <SettingsActionButton
+                      disabled={pendingActionLabel != null}
+                      onClick={() =>
+                        void runProfileAction('Opening active profile…', () =>
+                          onOpenUsrProfileFolder(activeProfile.id),
+                        )
+                      }
+                    >
+                      <FolderOpen size={11} />
+                      <span>Active Overlay</span>
+                    </SettingsActionButton>
+                  ) : null}
+                </SettingsActionStrip>
+              }
             >
               <div className="space-y-2 text-[11px] opacity-65">
-                <div>{usrProfileRuntimeSnapshot.profilesRoot}</div>
-                <div>{usrProfileRuntimeSnapshot.sharedSettingsPath}</div>
-                <div>{usrProfileRuntimeSnapshot.activeProfileSettingsPath}</div>
+                <div className="min-w-0 break-all">
+                  <span className="font-semibold opacity-80">Profiles root: </span>
+                  {usrProfileRuntimeSnapshot.profilesRoot}
+                </div>
+                <div className="min-w-0 break-all">
+                  <span className="font-semibold opacity-80">Shared settings: </span>
+                  {usrProfileRuntimeSnapshot.sharedSettingsPath}
+                </div>
+                <div className="min-w-0 break-all">
+                  <span className="font-semibold opacity-80">Active overlay: </span>
+                  {usrProfileRuntimeSnapshot.activeProfileSettingsPath}
+                </div>
+              </div>
+            </SettingsInspectorPanel>
+          ) : null}
+
+          {managedContentStacks.length > 0 ? (
+            <SettingsInspectorPanel
+              title="Effective Lane Stack"
+              subtitle="Lane content resolves from profile overlay, shared root, then bundled defaults. Writes go to the declared writable directory."
+              badges={[`${managedContentStacks.length} lanes`, 'stack order']}
+            >
+              <div className="space-y-3">
+                {managedContentStacks.map((stack) => (
+                  <div
+                    key={stack.laneId}
+                    className="min-w-0 rounded border p-3 text-[11px]"
+                    style={{
+                      borderColor: 'var(--overlay-workbench-settings-card-border)',
+                      background: 'var(--overlay-workbench-settings-card-bg)',
+                    }}
+                  >
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="font-semibold">{stack.laneId}</span>
+                      <SettingsStatusPill active={stack.profileMode === 'profile-overlay'}>
+                        {stack.profileMode}
+                      </SettingsStatusPill>
+                    </div>
+                    <div className="mt-2 min-w-0 break-all opacity-65">
+                      <span className="font-semibold opacity-80">Writable: </span>
+                      {stack.writableDirectory}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {stack.directories.map((directory, index) => {
+                        const sourceLabel =
+                          directory === stack.profileDirectory
+                            ? 'profile-overlay'
+                            : directory === stack.sharedRootDirectory
+                              ? 'shared-root'
+                              : directory === stack.bundledDirectory
+                                ? 'bundled-default'
+                                : 'effective-source';
+                        return (
+                          <div
+                            key={`${stack.laneId}:${directory}:${index}`}
+                            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] gap-2"
+                          >
+                            <SettingsStatusPill>{index + 1}</SettingsStatusPill>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] opacity-55">
+                                {sourceLabel}
+                              </div>
+                              <div className="min-w-0 break-all opacity-70">{directory}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </SettingsInspectorPanel>
           ) : null}

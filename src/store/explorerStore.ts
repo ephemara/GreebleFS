@@ -38,6 +38,11 @@ import {
   type ExplorerSearchModeValue,
 } from "../config/semanticSearch";
 import {
+  defaultExplorerActivityLaneId,
+  normalizeExplorerActivityLaneId,
+  type ExplorerActivityLaneId,
+} from "../config/explorerActivityRail";
+import {
   CONSTELLATION_DEFAULT_LENS,
   normalizeConstellationLensId,
   type ConstellationLensId,
@@ -46,7 +51,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = "overlayterm-explorer-state-v3";
 export const EXPLORER_STATE_BACKUP_KEY = "overlayterm-explorer-state-v3.backup";
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = "fs-bookmarks-v2";
-export const EXPLORER_STATE_VERSION = 10;
+export const EXPLORER_STATE_VERSION = 11;
 export const PRIMARY_EXPLORER_INSTANCE_ID = "primary";
 export const PRIMARY_EXPLORER_TAB_ID = "workspace-tab-primary";
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -109,6 +114,8 @@ export interface ExplorerSessionSnapshot {
   documentViewMode: ExplorerDocumentViewMode;
   sourcesVisible: boolean;
   actionsVisible: boolean;
+  activeActivityLane: ExplorerActivityLaneId;
+  activityPaneVisible: boolean;
   constellation: ExplorerConstellationSessionSnapshot;
 }
 
@@ -239,6 +246,8 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   documentViewMode: "edit",
   sourcesVisible: true,
   actionsVisible: false,
+  activeActivityLane: defaultExplorerActivityLaneId,
+  activityPaneVisible: true,
   constellation: {
     activeLens: CONSTELLATION_DEFAULT_LENS,
     routeModeEnabled: false,
@@ -520,6 +529,13 @@ export function normalizeExplorerSessionSnapshot(
       typeof source?.actionsVisible === "boolean"
         ? source.actionsVisible
         : defaultExplorerSession.actionsVisible,
+    activeActivityLane: normalizeExplorerActivityLaneId(
+      source?.activeActivityLane,
+    ),
+    activityPaneVisible:
+      typeof source?.activityPaneVisible === "boolean"
+        ? source.activityPaneVisible
+        : defaultExplorerSession.activityPaneVisible,
     constellation: {
       activeLens: normalizeConstellationLensId(rawConstellation?.activeLens),
       routeModeEnabled:

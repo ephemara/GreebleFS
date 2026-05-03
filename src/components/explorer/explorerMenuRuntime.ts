@@ -275,6 +275,25 @@ function createDisabledResolverNode(
   };
 }
 
+function resolveOpenWithProgramLaunchId(
+  program: ExplorerAssociatedProgram,
+): string {
+  return (program.launchId?.trim() || program.path).trim();
+}
+
+function resolveOpenWithProgramDedupeKey(
+  program: ExplorerAssociatedProgram,
+): string {
+  return [
+    program.launchKind ?? 'path',
+    resolveOpenWithProgramLaunchId(program),
+    program.executablePath ?? '',
+    program.name,
+  ]
+    .join('\u0000')
+    .toLowerCase();
+}
+
 function createOpenWithProgramNode(
   command: ExplorerCommandDefinition,
   entryPath: string,
@@ -284,9 +303,10 @@ function createOpenWithProgramNode(
   labelOverride?: string,
   descriptionOverride?: string,
 ): ExplorerRuntimeMenuCommandNode {
+  const launchId = resolveOpenWithProgramLaunchId(program);
   return {
     kind: 'command',
-    id: `${command.id}.program.${program.path}`,
+    id: `${command.id}.program.${launchId}`,
     commandId: command.id,
     label: labelOverride ?? program.name,
     description: descriptionOverride,
@@ -299,7 +319,7 @@ function createOpenWithProgramNode(
     disabled: false,
     shortcutId: undefined,
     command,
-    onSelect: () => environment.openWithProgram(entryPath, program.path, []),
+    onSelect: () => environment.openWithProgram(entryPath, launchId, []),
   };
 }
 
@@ -310,7 +330,7 @@ function dedupeOpenWithPrograms(
   const deduped: ExplorerAssociatedProgram[] = [];
 
   for (const program of programs) {
-    const programKey = `${program.path}\u0000${program.name}`.toLowerCase();
+    const programKey = resolveOpenWithProgramDedupeKey(program);
     if (seenProgramKeys.has(programKey)) {
       continue;
     }

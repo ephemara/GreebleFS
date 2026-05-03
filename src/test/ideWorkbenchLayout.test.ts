@@ -150,6 +150,86 @@ describe('ideWorkbenchLayout', () => {
     expect(findDockStackById(layoutState.rootDockNode, IDE_WORKBENCH_STACK_IDS.rightSidebar)?.collapsed).toBe(true);
   });
 
+  it('normalizes current IDE layouts so utility surfaces cannot stay in the center stack', () => {
+    const layoutState = normalizeIdeWorkbenchLayoutState({
+      version: 2,
+      focusedSurfaceId: 'storage',
+      rootDockNode: {
+        type: 'split',
+        id: 'ide:root',
+        orientation: 'horizontal',
+        sizes: [1, 0.34],
+        children: [
+          {
+            type: 'split',
+            id: 'ide:center-column',
+            orientation: 'vertical',
+            sizes: [1, 0.32],
+            children: [
+              {
+                type: 'stack',
+                id: 'ide:center',
+                placement: 'center',
+                presentation: 'stack',
+                tabs: ['explorer', 'storage'],
+                activeSurfaceId: 'storage',
+                collapsed: false,
+              },
+              {
+                type: 'stack',
+                id: 'ide:bottom-panel',
+                placement: 'bottom-panel',
+                presentation: 'stack',
+                tabs: [],
+                activeSurfaceId: null,
+                collapsed: true,
+              },
+            ],
+          },
+          {
+            type: 'stack',
+            id: 'ide:right-sidebar',
+            placement: 'right-sidebar',
+            presentation: 'stack',
+            tabs: [],
+            activeSurfaceId: null,
+            collapsed: true,
+          },
+        ],
+      },
+      surfaceStateById: {
+        explorer: {
+          hidden: false,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        storage: {
+          hidden: false,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        terminal: {
+          hidden: true,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+        settings: {
+          hidden: true,
+          collapsed: false,
+          externalizedWindowId: null,
+          externalizedRestorePlacement: null,
+        },
+      },
+    }, testSurfaceSeeds);
+
+    expect(findDockStackById(layoutState.rootDockNode, IDE_WORKBENCH_STACK_IDS.center)?.tabs).toEqual(['explorer']);
+    expect(findDockPlacementForSurface(layoutState, 'storage')).toBe('right-sidebar');
+    expect(resolvePrimaryIdeWorkbenchSurfaceId(layoutState)).toBe('explorer');
+  });
+
   it('falls back to explorer after hiding a focused utility surface', () => {
     const focusedStorageLayoutState = focusDockSurface(
       createDefaultIdeWorkbenchLayoutState(testSurfaceSeeds),

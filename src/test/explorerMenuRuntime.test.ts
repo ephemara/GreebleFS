@@ -235,6 +235,9 @@ describe('explorerMenuRuntime', () => {
               {
                 name: 'TextEdit',
                 path: 'com.apple.TextEdit',
+                launchId: 'assoc-handler:textedit',
+                launchKind: 'shellHandler',
+                executablePath: '/Applications/TextEdit.app',
                 icon: null,
                 isDefault: false,
               },
@@ -287,7 +290,7 @@ describe('explorerMenuRuntime', () => {
 
     expect(environment.openWithProgram).toHaveBeenCalledWith(
       targetEntry.path,
-      'com.apple.TextEdit',
+      'assoc-handler:textedit',
       [],
     );
   });

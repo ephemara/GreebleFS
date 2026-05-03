@@ -544,6 +544,108 @@ describe('ExplorerSideRail', () => {
     expect(screen.queryByText('bob')).not.toBeInTheDocument();
   });
 
+  it('keeps manually expanded tree branches stable while auto-follow tracks the active path', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
+      if (path === 'C:\\') {
+        return createTestExplorerLocationListing({
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
+          entries: [
+            createFolderEntry('Users', 'C:\\Users'),
+            createFolderEntry('Projects', 'C:\\Projects'),
+          ],
+        });
+      }
+      if (path === 'C:\\Users') {
+        return createTestExplorerLocationListing({
+          path,
+          parentPath: 'C:\\',
+          breadcrumbs: [
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Users', path: 'C:\\Users' },
+          ],
+          entries: [createFolderEntry('alice', 'C:\\Users\\alice')],
+        });
+      }
+      if (path === 'C:\\Projects') {
+        return createTestExplorerLocationListing({
+          path,
+          parentPath: 'C:\\',
+          breadcrumbs: [
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Projects', path: 'C:\\Projects' },
+          ],
+          entries: [createFolderEntry('zeta', 'C:\\Projects\\zeta')],
+        });
+      }
+      return createTestExplorerLocationListing({
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      });
+    });
+
+    const baseProps = {
+      accent: '#7c3aed',
+      brandLabel: 'Explorer',
+      chromeLayoutId: 'default' as const,
+      sidebarWidth: 260,
+      drives: [
+        {
+          kind: 'local' as const,
+          id: 'C:',
+          path: 'C:\\',
+          letter: 'C:\\',
+          label: 'System',
+          total_bytes: 1000,
+          free_bytes: 400,
+          drive_type: 'fixed',
+        },
+      ],
+      drivesLoading: false,
+      showHiddenFiles: false,
+      isCompactDock: false,
+      onNavigate: vi.fn(),
+      onGoHome: vi.fn(),
+      onBookmarkCreated: vi.fn(),
+      resolveDroppedSources: () => [],
+    };
+
+    const { rerender } = render(
+      <ExplorerSideRail
+        {...baseProps}
+        currentPath="C:\\Projects"
+      />,
+    );
+
+    enableAutoExpandToOpenFolder();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Expand Users' })).toBeInTheDocument();
+      expect(screen.getByText('zeta')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Users' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    rerender(
+      <ExplorerSideRail
+        {...baseProps}
+        currentPath="C:\\Projects\\zeta"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+      expect(screen.getAllByText('zeta').length).toBeGreaterThan(0);
+    });
+  });
+
   it('reloads the active local tree branch when the explorer bumps the tree refresh revision', async () => {
     let usersChildren = [
       createFolderEntry('alpha', 'C:\\Users\\alpha'),

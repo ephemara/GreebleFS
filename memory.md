@@ -1,3 +1,24 @@
+# 2026-05-03 - Explorer Activity Rail, Search, Semantic, And Stabilization Pass
+
+- Stabilized the Explorer shell and moved the annoying preview/actions/tree toggles behind a dense activity-rail model. `src/config/explorerActivityRail.ts` is now the authored lane catalog, `explorerStore` persists `activeActivityLane` and `activityPaneVisible`, and `FileExplorer.tsx` routes Files/Search/Semantic/Preview/Actions/Tasks/Terminal/Customize through that lane selector.
+- Added the Explorer-only utility dock. `ExplorerDockLayoutAdapter.tsx` wraps `flexlayout-react` so Search, Semantic, and Tasks can dock/tab without surrendering the main file grid/list to a third-party layout engine. New lane UI should use `ExplorerPanePrimitives.tsx` for slate-density headers, sections, toolbars, bounded text, and status strips.
+- Added the Zed-like Explorer Search lane and the semantic indexing lane. Real filesystem search remains Rust-backed through `explorerBackend`; `fuse.js` is only for local filtering within already-loaded UI result groups. Semantic indexing/search/find-similar stays on the existing semantic backend and is surfaced as an Explorer action lane.
+- Fixed several stabilization faults in the same pass:
+  - `ExplorerSideRail` auto mode now derives reveal paths from the current path while preserving manual expansion state, with `@tanstack/react-virtual` used for very large flat tree sections.
+  - Body-portaled Explorer popups now have opaque fallback surfaces through `explorerPopupStyles.ts`.
+  - Native Open With records now carry `launchId`, `launchKind`, and optional `executablePath`; context-menu dispatch uses the launch id while preserving display path.
+  - `WasmPanelHost` now stores `onEvent` in a ref and quarantines per-session runtime failures so Go/TinyGo/Wasm panel errors render inline instead of causing repeated spawn/despawn loops.
+  - Settings rail primitives clamp/wrap descriptions, and Profiles settings now explains `/usr` effective lane stack order plus profile-overlay vs shared-root ownership.
+  - IDE workbench normalization is covered so Explorer remains the only center primary surface.
+- Validation for this pass:
+  - Passed: `bun run bindings:generate`
+  - Passed: focused Vitest suite for activity dock, settings overflow, profile explanations, Wasm host no-remount, IDE normalization, context menus, Open With dispatch, and Explorer side rail auto stability.
+  - Passed: `cargo test --manifest-path src-tauri/Cargo.toml`
+  - Passed: `bun run go:test`
+  - Limitation: raw `go test ./...` from `src-go` still reports the Go workspace prefix issue (`directory prefix . does not contain modules listed in go.work`); use the repo `bun run go:test` wrapper.
+  - Limitation: full `bunx tsc --noEmit` still exits non-zero on unrelated baseline diagnostics, but a filtered sweep showed no diagnostics in the touched Explorer/settings/runtime/generated/Open With files.
+- Durable rule: future Explorer utility surfaces should enter through the activity rail catalog plus dock adapter, not through more independent side toggles or card-heavy panes. Keep Rust/native truth for filesystem search and semantic indexing; UI libraries may own docking/virtualization/filtering only around already-resolved state.
+
 # 2026-05-03 - Go Wasm Host API Structs Marshal Through JSON
 
 - Fixed a suite-wide Go wasm panic where `hostapi.toJSValue(...)` passed typed structs and typed slices, such as `HostSubscriptionRequest{Topics: []string{...}}`, directly to `syscall/js.ValueOf`. Go's js bridge rejects those values with `panic: ValueOf: invalid value`.

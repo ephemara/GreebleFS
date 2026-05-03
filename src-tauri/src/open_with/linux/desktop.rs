@@ -1,5 +1,5 @@
 use super::OPEN_WITH_LINUX_COMMAND_TIMEOUT;
-use crate::open_with::types::AssociatedProgram;
+use crate::open_with::types::{AssociatedProgram, AssociatedProgramLaunchKind};
 use crate::open_with::utils::{get_program_icon, load_png_as_base64, run_command_with_timeout};
 use std::collections::HashSet;
 use std::env;
@@ -418,6 +418,9 @@ pub(super) fn desktop_id_to_program(
     Some(AssociatedProgram {
         name,
         path: desktop_id.to_string(),
+        launch_id: Some(desktop_id.to_string()),
+        launch_kind: Some(AssociatedProgramLaunchKind::DesktopId),
+        executable_path: exec_path,
         icon,
         is_default,
     })

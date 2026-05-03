@@ -4,7 +4,9 @@ use super::utils::{
     expand_environment_strings, get_icon_from_location, get_uwp_app_icon, pwstr_to_string_and_free,
     resolve_indirect_string,
 };
-use crate::open_with::types::{AssociatedProgram, GetAssociatedProgramsResult, OpenWithResult};
+use crate::open_with::types::{
+    AssociatedProgram, AssociatedProgramLaunchKind, GetAssociatedProgramsResult, OpenWithResult,
+};
 use crate::open_with::utils::path_extension_lowercase;
 use crate::open_with::utils::{get_program_icon, load_png_as_base64};
 use std::collections::HashSet;
@@ -154,6 +156,9 @@ fn get_file_explorer_program(seen_paths: &HashSet<String>) -> Option<AssociatedP
     Some(AssociatedProgram {
         name: "File Explorer".to_string(),
         path: explorer_path.clone(),
+        launch_id: Some(explorer_path.clone()),
+        launch_kind: Some(AssociatedProgramLaunchKind::ExecutablePath),
+        executable_path: Some(explorer_path.clone()),
         icon: get_program_icon(&explorer_path),
         is_default: false,
     })
@@ -290,11 +295,18 @@ unsafe fn extract_handler_info(
             .or_else(|| exe_path.as_ref().and_then(|path| get_program_icon(path)))
     };
 
-    let actual_path = exe_path.unwrap_or(handler_path);
+    let handler_launch_id = handler_path.clone();
+    let executable_path = exe_path.clone();
+    let actual_path = executable_path
+        .clone()
+        .unwrap_or_else(|| handler_path.clone());
 
     Some(AssociatedProgram {
         name: final_display_name,
         path: actual_path,
+        launch_id: Some(handler_launch_id),
+        launch_kind: Some(AssociatedProgramLaunchKind::ShellHandler),
+        executable_path,
         icon,
         is_default: false,
     })
@@ -361,7 +373,10 @@ unsafe fn get_default_program(
 
         return Some(AssociatedProgram {
             name: friendly_name,
-            path: exe_path,
+            path: exe_path.clone(),
+            launch_id: Some(exe_path.clone()),
+            launch_kind: Some(AssociatedProgramLaunchKind::ExecutablePath),
+            executable_path: Some(exe_path),
             icon,
             is_default: false,
         });

@@ -31,6 +31,16 @@ import { createExtensionHostClient } from '../runtime/extensionHostApi';
 
 const HOST_BRIDGE_GLOBAL = '__greeblefsRuntimeHostBridge';
 
+interface RuntimeFailureQuarantineEntry {
+  failedAt: number;
+  message: string;
+}
+
+const runtimeFailureQuarantineBySessionKey = new Map<
+  string,
+  RuntimeFailureQuarantineEntry
+>();
+
 export interface WasmPanelHostContext {
   runtimeId: string;
   panelId: string | null;
@@ -310,18 +320,50 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
     const [isReady, setIsReady] = useState(false);
     const [bridgeToken, setBridgeToken] = useState<string | null>(null);
     const bridgeTokenRef = useRef<string | null>(null);
+    const onEventRef = useRef<typeof onEvent>(onEvent);
+    const runtimeFailureSessionKey = useMemo(
+      () =>
+        [
+          runtimeId,
+          buildMode,
+          buildTarget ?? 'default-target',
+        ].join('::'),
+      [runtimeId, buildMode, buildTarget],
+    );
+
+    useEffect(() => {
+      onEventRef.current = onEvent;
+    }, [onEvent]);
 
     const reload = useCallback(() => {
+      runtimeFailureQuarantineBySessionKey.delete(runtimeFailureSessionKey);
       setError(null);
       setIsReady(false);
       setReloadKey((value) => value + 1);
+    }, [runtimeFailureSessionKey]);
+
+    const publishHostEvent = useCallback((event: WasmPanelHostEvent) => {
+      onEventRef.current?.(event);
     }, []);
+
+    const quarantineRuntimeFailure = useCallback(
+      (message: string) => {
+        runtimeFailureQuarantineBySessionKey.set(runtimeFailureSessionKey, {
+          failedAt: Date.now(),
+          message,
+        });
+        setIsReady(false);
+        setError(message);
+        publishHostEvent({ kind: 'error', message });
+      },
+      [publishHostEvent, runtimeFailureSessionKey],
+    );
 
     const pushHostEvent = useCallback(
       (name: string, payload?: unknown) => {
-        onEvent?.({ kind: 'host-event', name, payload });
+        publishHostEvent({ kind: 'host-event', name, payload });
       },
-      [onEvent],
+      [publishHostEvent],
     );
 
     useImperativeHandle(
@@ -386,6 +428,13 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
 
       async function mount() {
         try {
+          const quarantinedFailure =
+            runtimeFailureQuarantineBySessionKey.get(runtimeFailureSessionKey);
+          if (quarantinedFailure) {
+            setError(quarantinedFailure.message);
+            setIsReady(false);
+            return;
+          }
           const runtimePackage = await getRuntimePackage(runtimeId);
           if (cancelled) {
             return;
@@ -417,7 +466,7 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
 
           const storageKey = `greeblefs.runtime.${runtimeId}.storage`;
           const bridge: WasmPanelHostBridge = {
-            emitEvent: (event) => onEvent?.(event),
+            emitEvent: (event) => publishHostEvent(event),
             callRuntimeAction:
               callPeerRuntimeAction as WasmPanelHostBridge['callRuntimeAction'],
             callHostMethod:
@@ -480,8 +529,7 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
                   return;
                 }
                 console.error(`[WasmPanelHost:${runtimeId}]`, message, runtimeError);
-                setError(message);
-                onEvent?.({ kind: 'error', message });
+                quarantineRuntimeFailure(message);
               },
             });
           } else if (compiler === 'cargo-wasm-bindgen') {
@@ -499,15 +547,14 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
             return;
           }
           setIsReady(true);
-          onEvent?.({ kind: 'ready' });
+          publishHostEvent({ kind: 'ready' });
         } catch (err) {
           if (cancelled) {
             return;
           }
           const message = err instanceof Error ? err.message : String(err);
           console.error(`[WasmPanelHost:${runtimeId}]`, message, err);
-          setError(message);
-          onEvent?.({ kind: 'error', message });
+          quarantineRuntimeFailure(message);
         }
       }
 
@@ -541,7 +588,9 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
       callHostMethod,
       callPeerRuntimeAction,
       hostClient.events,
-      onEvent,
+      publishHostEvent,
+      quarantineRuntimeFailure,
+      runtimeFailureSessionKey,
     ]);
 
     useEffect(() => {

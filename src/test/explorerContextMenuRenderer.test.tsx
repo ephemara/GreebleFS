@@ -189,7 +189,7 @@ describe('ExplorerContextMenu', () => {
       expect(rootPanel.style.left).toBe('32px');
       expect(rootPanel.style.top).toBe('8px');
     });
-    expect(rootPanel.style.background).toBe('var(--overlay-explorer-popup-bg)');
+    expect(rootPanel.style.background).toContain('--overlay-explorer-popup-bg');
     expect(rootPanel.style.backdropFilter).toBe('');
   });
 });

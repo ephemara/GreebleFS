@@ -649,6 +649,7 @@ export function SettingsInspectorPanel({
   title,
   subtitle,
   badges,
+  actions,
   children,
   tone = 'muted',
   accent,
@@ -658,6 +659,7 @@ export function SettingsInspectorPanel({
   title: string;
   subtitle?: ReactNode;
   badges?: string[];
+  actions?: ReactNode;
   children: ReactNode;
   tone?: SettingsSurfaceTone;
   accent?: string;
@@ -669,6 +671,7 @@ export function SettingsInspectorPanel({
       title={title}
       subtitle={subtitle ?? ''}
       badges={badges}
+      actions={actions}
       tone={tone}
       accent={accent}
       className={className}
@@ -709,7 +712,7 @@ export function SettingsRailButton({
       type="button"
       onClick={onClick}
       title={subtitle}
-      className="w-full rounded px-2 py-2 text-left transition-colors"
+      className="w-full overflow-hidden rounded px-2 py-2 text-left transition-colors"
       data-settings-rail-button={label}
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
@@ -725,12 +728,35 @@ export function SettingsRailButton({
         ...motionBinding?.motionStyle,
       }}
     >
-      <div className="flex items-start gap-3">
+      <div className="grid grid-cols-[20px_minmax(0,1fr)] items-start gap-3 overflow-hidden">
         <div className="pt-0.5">{icon}</div>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</div>
-          <div className="mt-1 text-[11px] leading-4 opacity-60">{summary}</div>
-          <div className="mt-1 text-[10px] leading-4" style={{ color: active ? accent : muted }}>
+          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</div>
+          <div
+            className="mt-1 text-[11px] leading-4 opacity-60"
+            style={{
+              display: '-webkit-box',
+              overflow: 'hidden',
+              overflowWrap: 'anywhere',
+              whiteSpace: 'normal',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+            }}
+          >
+            {summary}
+          </div>
+          <div
+            className="mt-1 text-[10px] leading-4"
+            style={{
+              color: active ? accent : muted,
+              display: '-webkit-box',
+              overflow: 'hidden',
+              overflowWrap: 'anywhere',
+              whiteSpace: 'normal',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+            }}
+          >
             {subtitle}
           </div>
         </div>
