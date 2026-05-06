@@ -50,8 +50,10 @@ export function ExplorerSlatePane({
       style={{
         display: "flex",
         flexDirection: "column",
+        flex: "1 1 0%",
         minHeight: 0,
         minWidth: 0,
+        width: "100%",
         height: "100%",
         color: tone.text ?? "var(--overlay-text-primary)",
         background: "var(--overlay-explorer-panel-bg)",

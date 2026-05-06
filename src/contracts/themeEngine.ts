@@ -1,3 +1,13 @@
+import { z } from 'zod';
+
+import {
+  sanitizeFiniteNumber,
+  sanitizeObjectArray,
+  sanitizeOptionalTrimmedString,
+  sanitizeRecordValues,
+  sanitizeRequiredTrimmedString,
+} from '../config/schemaSanitizers';
+
 type LooseRecord = Record<string, unknown>;
 
 export type ThemeTokenScale = Record<string, string | number>;
@@ -119,6 +129,50 @@ export interface ThemeEngineCapabilitySummary {
   renderStyles: number;
 }
 
+const themeTokenScaleValueSchema = z.union([z.string(), z.number().finite()]);
+const themePrimitivePropValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+]);
+
+const rawThemeLayoutPrimitiveSchema = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  kind: z.enum(['stack', 'grid', 'split', 'dock', 'freeform']).catch('stack').optional(),
+  props: z.unknown().optional(),
+}).strip();
+
+const rawThemeNavigationPatternSchema = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  kind: z.enum(['xmb', 'tabbed', 'hierarchy', 'palette', 'spatial', 'custom']).catch('custom').optional(),
+  axis: z.enum(['horizontal', 'vertical', 'both']).catch('both').optional(),
+  props: z.unknown().optional(),
+}).strip();
+
+const rawThemeAnimationProfileSchema = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  durationMs: z.unknown().optional(),
+  easing: z.unknown().optional(),
+  intensity: z.unknown().optional(),
+}).strip();
+
+const rawThemeIconPackSchema = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  style: z.enum(['system', 'vector', 'pixel', 'skeuomorphic', 'custom']).catch('custom').optional(),
+}).strip();
+
+const rawThemeRenderStyleSchema = z.object({
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  entryClassName: z.unknown().optional(),
+  className: z.unknown().optional(),
+  description: z.unknown().optional(),
+}).strip();
+
 function asRecord(value: unknown): LooseRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -126,25 +180,8 @@ function asRecord(value: unknown): LooseRecord | null {
   return value as LooseRecord;
 }
 
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
-}
-
 function asTokenScale(value: unknown): ThemeTokenScale {
-  const source = asRecord(value);
-  if (!source) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(source).filter(([, tokenValue]) =>
-      typeof tokenValue === 'string' || typeof tokenValue === 'number'
-    ),
-  ) as ThemeTokenScale;
+  return sanitizeRecordValues(value, themeTokenScaleValueSchema) as ThemeTokenScale;
 }
 
 function normalizeDesignTokens(value: unknown): ThemeDesignTokens {
@@ -166,7 +203,7 @@ function normalizeDesignTokens(value: unknown): ThemeDesignTokens {
 }
 
 function createId(value: unknown, fallbackPrefix: string, index: number): string {
-  const explicit = asString(value)
+  const explicit = sanitizeRequiredTrimmedString(value)
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -174,149 +211,80 @@ function createId(value: unknown, fallbackPrefix: string, index: number): string
 }
 
 function asPrimitiveProps(value: unknown): Record<string, string | number | boolean> {
-  const source = asRecord(value);
-  if (!source) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(source).filter(([, propValue]) =>
-      typeof propValue === 'string' || typeof propValue === 'number' || typeof propValue === 'boolean'
-    ),
-  ) as Record<string, string | number | boolean>;
+  return sanitizeRecordValues(value, themePrimitivePropValueSchema) as Record<string, string | number | boolean>;
 }
 
 function normalizeLayoutPrimitives(value: unknown): ThemeLayoutPrimitive[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    if (!record) {
-      return [];
-    }
-    const kindValue = asString(record.kind);
-    const kind: ThemeLayoutPrimitiveKind = (
-      kindValue === 'stack'
-      || kindValue === 'grid'
-      || kindValue === 'split'
-      || kindValue === 'dock'
-      || kindValue === 'freeform'
-    ) ? kindValue : 'stack';
+  return sanitizeObjectArray(value, rawThemeLayoutPrimitiveSchema).map((record, index) => {
+    const kind = record.kind ?? 'stack';
     const id = createId(record.id ?? record.name, 'layout', index);
-    return [{
+    return {
       id,
-      name: asString(record.name) || id,
+      name: sanitizeRequiredTrimmedString(record.name, id),
       kind,
       props: asPrimitiveProps(record.props),
-    }];
+    };
   });
 }
 
 function normalizeNavigationPatterns(value: unknown): ThemeNavigationPattern[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    if (!record) {
-      return [];
-    }
-    const kindValue = asString(record.kind);
-    const axisValue = asString(record.axis);
-    const kind: ThemeNavigationPatternKind = (
-      kindValue === 'xmb'
-      || kindValue === 'tabbed'
-      || kindValue === 'hierarchy'
-      || kindValue === 'palette'
-      || kindValue === 'spatial'
-      || kindValue === 'custom'
-    ) ? kindValue : 'custom';
-    const axis: ThemeNavigationPattern['axis'] = (
-      axisValue === 'horizontal'
-      || axisValue === 'vertical'
-      || axisValue === 'both'
-    ) ? axisValue : 'both';
+  return sanitizeObjectArray(value, rawThemeNavigationPatternSchema).map((record, index) => {
+    const kind = record.kind ?? 'custom';
+    const axis = record.axis ?? 'both';
     const id = createId(record.id ?? record.name, 'navigation', index);
-    return [{
+    return {
       id,
-      name: asString(record.name) || id,
+      name: sanitizeRequiredTrimmedString(record.name, id),
       kind,
       axis,
       props: asPrimitiveProps(record.props),
-    }];
+    };
   });
 }
 
 function normalizeAnimationProfiles(value: unknown): ThemeAnimationProfile[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    if (!record) {
-      return [];
-    }
+  return sanitizeObjectArray(value, rawThemeAnimationProfileSchema).map((record, index) => {
     const id = createId(record.id ?? record.name, 'animation-profile', index);
-    return [{
+    return {
       id,
-      name: asString(record.name) || id,
-      durationMs: Math.max(0, asNumber(record.durationMs, 240)),
-      easing: asString(record.easing) || 'ease',
-      intensity: Math.max(0, asNumber(record.intensity, 1)),
-    }];
+      name: sanitizeRequiredTrimmedString(record.name, id),
+      durationMs: Math.max(0, sanitizeFiniteNumber(record.durationMs, 240)),
+      easing: sanitizeRequiredTrimmedString(record.easing, 'ease'),
+      intensity: Math.max(0, sanitizeFiniteNumber(record.intensity, 1)),
+    };
   });
 }
 
 function normalizeIconPacks(value: unknown): ThemeIconPack[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    if (!record) {
-      return [];
-    }
-    const styleValue = asString(record.style);
-    const style: ThemeIconPack['style'] = (
-      styleValue === 'system'
-      || styleValue === 'vector'
-      || styleValue === 'pixel'
-      || styleValue === 'skeuomorphic'
-      || styleValue === 'custom'
-    ) ? styleValue : 'custom';
+  return sanitizeObjectArray(value, rawThemeIconPackSchema).map((record, index) => {
+    const style = record.style ?? 'custom';
     const id = createId(record.id ?? record.name, 'icon-pack', index);
-    return [{
+    return {
       id,
-      name: asString(record.name) || id,
+      name: sanitizeRequiredTrimmedString(record.name, id),
       style,
-    }];
+    };
   });
 }
 
 function normalizeRenderStyles(value: unknown): ThemeRenderStyle[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((entry, index) => {
-    const record = asRecord(entry);
-    if (!record) {
-      return [];
-    }
+  return sanitizeObjectArray(value, rawThemeRenderStyleSchema).map((record, index) => {
     const id = createId(record.id ?? record.name, 'render-style', index);
-    const entryClassName = asString(record.entryClassName) || asString(record.className);
-    return [{
+    const entryClassName = sanitizeOptionalTrimmedString(record.entryClassName)
+      ?? sanitizeOptionalTrimmedString(record.className);
+    return {
       id,
-      name: asString(record.name) || id,
+      name: sanitizeRequiredTrimmedString(record.name, id),
       entryClassName: entryClassName || undefined,
-      description: asString(record.description) || undefined,
-    }];
+      description: sanitizeOptionalTrimmedString(record.description) || undefined,
+    };
   });
 }
 
 export function normalizeThemeEngineManifest(input?: ThemeEngineManifestInput): ThemeEngineManifest {
   const defaultsSource = asRecord(input?.defaults);
   return {
-    schemaVersion: Math.max(1, Math.round(asNumber(input?.schemaVersion, 1))),
+    schemaVersion: Math.max(1, Math.round(sanitizeFiniteNumber(input?.schemaVersion, 1))),
     designTokens: normalizeDesignTokens(input?.designTokens),
     layoutPrimitives: normalizeLayoutPrimitives(input?.layoutPrimitives),
     navigationPatterns: normalizeNavigationPatterns(input?.navigationPatterns),
@@ -324,11 +292,11 @@ export function normalizeThemeEngineManifest(input?: ThemeEngineManifestInput): 
     iconPacks: normalizeIconPacks(input?.iconPacks),
     renderStyles: normalizeRenderStyles(input?.renderStyles),
     defaults: {
-      layoutPrimitiveId: asString(defaultsSource?.layoutPrimitiveId ?? input?.defaultLayoutPrimitiveId) || undefined,
-      navigationPatternId: asString(defaultsSource?.navigationPatternId ?? input?.defaultNavigationPatternId) || undefined,
-      animationProfileId: asString(defaultsSource?.animationProfileId ?? input?.defaultAnimationProfileId) || undefined,
-      iconPackId: asString(defaultsSource?.iconPackId ?? input?.defaultIconPackId) || undefined,
-      renderStyleId: asString(defaultsSource?.renderStyleId ?? input?.defaultRenderStyleId) || undefined,
+      layoutPrimitiveId: sanitizeOptionalTrimmedString(defaultsSource?.layoutPrimitiveId ?? input?.defaultLayoutPrimitiveId),
+      navigationPatternId: sanitizeOptionalTrimmedString(defaultsSource?.navigationPatternId ?? input?.defaultNavigationPatternId),
+      animationProfileId: sanitizeOptionalTrimmedString(defaultsSource?.animationProfileId ?? input?.defaultAnimationProfileId),
+      iconPackId: sanitizeOptionalTrimmedString(defaultsSource?.iconPackId ?? input?.defaultIconPackId),
+      renderStyleId: sanitizeOptionalTrimmedString(defaultsSource?.renderStyleId ?? input?.defaultRenderStyleId),
     },
   };
 }

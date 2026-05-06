@@ -13,6 +13,7 @@ import {
   resolveExplorerLayoutZoomState,
   normalizeExplorerViewMode,
   resolveEffectiveExplorerViewMode,
+  resolveThemedExplorerViewModes,
   stepExplorerGridZoom,
   stepExplorerViewMode,
 } from '../config/explorerViewModes';
@@ -84,6 +85,28 @@ describe('explorerViewModes', () => {
     expect(resolveEffectiveExplorerViewMode('icons-m', { isCompactDock: false, isSearchActive: true })).toBe('details');
     expect(resolveEffectiveExplorerViewMode('columns', { isCompactDock: false, isSearchActive: true })).toBe('columns');
     expect(resolveEffectiveExplorerViewMode('details', { isCompactDock: true, isSearchActive: false })).toBe('list');
+  });
+
+  it('keeps explicit default explorer mode selections from being re-overridden by theme experimental defaults', () => {
+    expect(resolveThemedExplorerViewModes({
+      viewMode: 'details',
+      experimentalViewMode: 'off',
+      preferredViewMode: 'icons-xl',
+      preferredExperimentalViewMode: 'adaptive-semantic-grid',
+    })).toEqual({
+      viewMode: 'icons-xl',
+      experimentalViewMode: 'off',
+    });
+
+    expect(resolveThemedExplorerViewModes({
+      viewMode: 'details',
+      experimentalViewMode: 'constellation',
+      preferredViewMode: 'icons-xl',
+      preferredExperimentalViewMode: 'adaptive-semantic-grid',
+    })).toEqual({
+      viewMode: 'icons-xl',
+      experimentalViewMode: 'constellation',
+    });
   });
 
   it('exposes stable labels for menu rendering', () => {

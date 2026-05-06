@@ -1,5 +1,6 @@
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
+import { z } from 'zod';
 
 import {
   createLoadedTopBarDefinition,
@@ -106,6 +107,7 @@ import {
   resolveThemeCatalogPackageMetadata,
   type ThemeCatalogPackageMetadata,
 } from './themeCatalogCuration';
+import { looseRecordSchema } from './schemaSanitizers';
 import {
   loadVsCodeColorThemeContributionsFromEntry,
   type LoadedVsCodeColorThemeContribution,
@@ -121,6 +123,45 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
+
+const themeBundleEmbeddedSchema = z.object({
+  appearancePacks: z.array(looseRecordSchema).optional(),
+  interactionMotionPacks: z.array(looseRecordSchema).optional(),
+  themeRecipes: z.array(looseRecordSchema).optional(),
+  themeEngines: z.array(looseRecordSchema).optional(),
+}).partial();
+
+const themeBundleManifestObjectSchema = z.object({
+  version: z.number().finite().optional(),
+  id: z.unknown().optional(),
+  name: z.unknown().optional(),
+  description: z.unknown().optional(),
+  author: z.unknown().optional(),
+  homepage: z.unknown().optional(),
+  tags: z.unknown().optional(),
+  extends: z.unknown().optional(),
+  preview: z.unknown().optional(),
+  appearancePackId: z.unknown().optional(),
+  topBarId: z.unknown().optional(),
+  explorerLayoutId: z.unknown().optional(),
+  iconThemeId: z.unknown().optional(),
+  wallpaperId: z.unknown().optional(),
+  soundPackId: z.unknown().optional(),
+  shaderId: z.unknown().optional(),
+  openAnimationId: z.unknown().optional(),
+  closeAnimationId: z.unknown().optional(),
+  interactionMotionPackId: z.unknown().optional(),
+  rendererId: z.unknown().optional(),
+  themeRecipeId: z.unknown().optional(),
+  themeEngineId: z.unknown().optional(),
+  homePackId: z.unknown().optional(),
+  menuPackId: z.unknown().optional(),
+  embedded: themeBundleEmbeddedSchema.optional(),
+  appearancePack: looseRecordSchema.optional(),
+  interactionMotionPack: looseRecordSchema.optional(),
+  themeRecipePack: looseRecordSchema.optional(),
+  themeEnginePack: looseRecordSchema.optional(),
+}).passthrough();
 
 export interface OverlayThemeBundleManifest {
   version?: number;
@@ -525,10 +566,11 @@ function parseThemeBundleManifestText(text: string, filePath: string): OverlayTh
   const parsed = filePath.toLowerCase().endsWith('.toml')
     ? parseToml(trimmed)
     : JSON.parse(trimmed);
-  const source = asRecord(parsed);
-  if (!source) {
-    throw new Error(`Theme bundle manifest must be an object: ${filePath}`);
+  const parsedManifestObject = themeBundleManifestObjectSchema.safeParse(parsed);
+  if (!parsedManifestObject.success) {
+    throw new Error(`Theme bundle manifest is invalid: ${filePath}\n${parsedManifestObject.error.message}`);
   }
+  const source = parsedManifestObject.data;
 
   if (hasLegacyThemePackageFields(source)) {
     throw new Error(`Legacy monolithic theme packages are no longer supported: ${filePath}`);

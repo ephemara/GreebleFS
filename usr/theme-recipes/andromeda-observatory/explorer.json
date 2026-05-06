@@ -11,7 +11,6 @@
   "statusBarStyle": "floating",
   "labelMode": "stacked",
   "preferredViewMode": "icons-xl",
-  "preferredExperimentalViewMode": "adaptive-semantic-grid",
   "metrics": {
     "railWidth": 258,
     "previewWidth": 486,

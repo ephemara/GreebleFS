@@ -3,6 +3,9 @@ import type {
   ThemeTokenKind,
   ThemeValue,
 } from '../generated/tauri';
+import { z } from 'zod';
+
+import { sanitizeRecordValues } from './schemaSanitizers';
 
 export const UI_TOKEN_CATEGORIES = [
   'color',
@@ -27,53 +30,42 @@ export type UiTokenCollection = Partial<Record<UiTokenCategory, UiTokenCategoryM
 
 const UI_TOKEN_CATEGORY_SET = new Set<string>(UI_TOKEN_CATEGORIES);
 
+const uiTokenPrimitiveValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
+
+const uiTokenValueSchema: z.ZodType<UiTokenValue> = z.lazy(() => z.union([
+  uiTokenPrimitiveValueSchema,
+  z.array(uiTokenValueSchema),
+  z.record(z.string(), uiTokenValueSchema),
+]));
+
+const uiTokenCollectionShape = Object.fromEntries(
+  UI_TOKEN_CATEGORIES.map((category) => [category, z.unknown().optional()]),
+) as Record<UiTokenCategory, z.ZodOptional<z.ZodUnknown>>;
+
+const uiTokenCollectionSchema = z.object(uiTokenCollectionShape).strip();
+
 export function isUiTokenCategory(value: unknown): value is UiTokenCategory {
   return typeof value === 'string' && UI_TOKEN_CATEGORY_SET.has(value);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isTokenValue(value: unknown): value is UiTokenValue {
-  if (
-    value === null
-    || typeof value === 'string'
-    || typeof value === 'number'
-    || typeof value === 'boolean'
-  ) {
-    return true;
-  }
-
-  if (Array.isArray(value)) {
-    return value.every(isTokenValue);
-  }
-
-  if (isRecord(value)) {
-    return Object.values(value).every(isTokenValue);
-  }
-
-  return false;
-}
-
 export function normalizeUiTokenCategoryMap(value: unknown): UiTokenCategoryMap {
-  if (!isRecord(value)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value).filter(([, tokenValue]) => isTokenValue(tokenValue)),
-  ) as UiTokenCategoryMap;
+  return sanitizeRecordValues(value, uiTokenValueSchema) as UiTokenCategoryMap;
 }
 
 export function normalizeUiTokenCollection(value: unknown): UiTokenCollection {
-  if (!isRecord(value)) {
+  const parsedCollection = uiTokenCollectionSchema.safeParse(value);
+  if (!parsedCollection.success) {
     return {};
   }
 
   const normalized: UiTokenCollection = {};
   for (const category of UI_TOKEN_CATEGORIES) {
-    const categoryTokens = normalizeUiTokenCategoryMap(value[category]);
+    const categoryTokens = normalizeUiTokenCategoryMap(parsedCollection.data[category]);
     if (Object.keys(categoryTokens).length > 0) {
       normalized[category] = categoryTokens;
     }

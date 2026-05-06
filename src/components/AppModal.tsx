@@ -1,11 +1,18 @@
 import {
-  useEffect,
   useId,
   useRef,
   type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
+import {
+  DismissButton,
+  FocusScope,
+  OverlayContainer,
+  useDialog,
+  useModalOverlay,
+} from 'react-aria';
+import { useOverlayTriggerState } from 'react-stately';
 
 type AppDialogTone = 'accent' | 'danger';
 
@@ -56,6 +63,10 @@ interface AppModalSurfaceProps {
   closeOnBackdrop?: boolean;
   closeOnEscape?: boolean;
   dismissDisabled?: boolean;
+  overlayStyle?: CSSProperties;
+  containerStyle?: CSSProperties;
+  portalContainer?: Element;
+  shouldCloseOnInteractOutside?: (element: Element) => boolean;
 }
 
 export function AppModalSurface({
@@ -64,72 +75,56 @@ export function AppModalSurface({
   closeOnBackdrop = true,
   closeOnEscape = true,
   dismissDisabled = false,
+  overlayStyle: overlayStyleOverride,
+  containerStyle,
+  portalContainer,
+  shouldCloseOnInteractOutside,
 }: AppModalSurfaceProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const panelElement = panelRef.current;
-    if (!panelElement) {
-      return;
-    }
-
-    const focusableElements = getFocusableElements(panelElement);
-    const initialFocusTarget =
-      focusableElements[0] ?? panelElement;
-    initialFocusTarget.focus();
-  }, []);
-
-  useEffect(() => {
-    if (!closeOnEscape || dismissDisabled) {
-      return;
-    }
-
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return;
+  const state = useOverlayTriggerState({
+    defaultOpen: true,
+    onOpenChange: (nextOpen) => {
+      if (!nextOpen) {
+        onClose?.();
       }
-      event.preventDefault();
-      onClose?.();
-    };
+    },
+  });
+  const { modalProps, underlayProps } = useModalOverlay({
+    isDismissable: closeOnBackdrop && !dismissDisabled,
+    isKeyboardDismissDisabled: dismissDisabled || !closeOnEscape,
+    shouldCloseOnInteractOutside,
+  }, state, panelRef);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [closeOnEscape, dismissDisabled, onClose]);
+  if (!state.isOpen) {
+    return null;
+  }
 
   return (
-    <div
-      role="presentation"
-      onMouseDown={(event) => {
-        if (
-          !closeOnBackdrop ||
-          dismissDisabled ||
-          event.target !== event.currentTarget
-        ) {
-          return;
-        }
-        onClose?.();
-      }}
-      style={overlayStyle}
-    >
+    <OverlayContainer portalContainer={portalContainer}>
       <div
-        ref={panelRef}
-        onKeyDown={(event) => {
-          if (event.key !== 'Tab') {
-            return;
-          }
-          trapFocusInside(event, panelRef.current);
-        }}
-        tabIndex={-1}
+        {...underlayProps}
         style={{
-          outline: 'none',
-          minWidth: 0,
+          ...overlayStyle,
+          ...overlayStyleOverride,
         }}
       >
-        {children}
+        <FocusScope contain restoreFocus autoFocus>
+          <div
+            {...modalProps}
+            ref={panelRef}
+            style={{
+              outline: 'none',
+              minWidth: 0,
+              ...containerStyle,
+            }}
+          >
+            {!dismissDisabled ? <DismissButton onDismiss={state.close} /> : null}
+            {children}
+            {!dismissDisabled ? <DismissButton onDismiss={state.close} /> : null}
+          </div>
+        </FocusScope>
       </div>
-    </div>
+    </OverlayContainer>
   );
 }
 
@@ -147,6 +142,12 @@ export function AppDialogFrame({
 }: AppDialogFrameProps) {
   const titleId = useId();
   const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { dialogProps, titleProps } = useDialog({
+    role: 'dialog',
+    'aria-labelledby': titleId,
+    'aria-describedby': description ? descriptionId : undefined,
+  }, dialogRef);
   const resolvedWidth = typeof width === 'number' ? `${width}px` : width;
   const resolvedMaxWidth = typeof maxWidth === 'number'
     ? `min(92vw, ${maxWidth}px)`
@@ -158,10 +159,8 @@ export function AppDialogFrame({
   return (
     <AppModalSurface onClose={onClose} closeOnBackdrop={closeOnBackdrop}>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
+        {...dialogProps}
+        ref={dialogRef}
         style={{
           ...panelStyle,
           width: resolvedWidth,
@@ -172,7 +171,7 @@ export function AppDialogFrame({
         <div style={headerStyle}>
           {icon ? <div style={iconWrapStyle}>{icon}</div> : null}
           <div style={{ minWidth: 0 }}>
-            <div id={titleId} style={titleStyle}>{title}</div>
+            <div {...titleProps} id={titleId} style={titleStyle}>{title}</div>
             {description ? (
               <div id={descriptionId} style={descriptionStyle}>{description}</div>
             ) : null}
@@ -318,46 +317,6 @@ function getToneButtonStyle(tone: AppDialogTone): CSSProperties {
     return dangerButtonStyle;
   }
   return primaryButtonStyle;
-}
-
-function getFocusableElements(root: HTMLElement): HTMLElement[] {
-  return Array.from(
-    root.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    ),
-  ).filter((element) => !element.hasAttribute('disabled'));
-}
-
-function trapFocusInside(
-  event: KeyboardEvent<HTMLDivElement>,
-  root: HTMLDivElement | null,
-): void {
-  if (!root) {
-    return;
-  }
-  const focusableElements = getFocusableElements(root);
-  if (focusableElements.length === 0) {
-    event.preventDefault();
-    root.focus();
-    return;
-  }
-
-  const firstElement = focusableElements[0];
-  const lastElement = focusableElements[focusableElements.length - 1];
-  const activeElement = document.activeElement;
-
-  if (event.shiftKey) {
-    if (activeElement === firstElement || activeElement === root) {
-      event.preventDefault();
-      lastElement.focus();
-    }
-    return;
-  }
-
-  if (activeElement === lastElement) {
-    event.preventDefault();
-    firstElement.focus();
-  }
 }
 
 const overlayStyle: CSSProperties = {

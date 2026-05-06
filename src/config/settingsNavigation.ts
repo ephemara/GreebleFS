@@ -310,6 +310,17 @@ export const settingsSectionCatalog = [
     order: 156,
   },
   {
+    key: 'lookdev',
+    label: 'Lookdev',
+    subtitle: 'Global semantic shell authoring, live presets, and mode-aware export flows.',
+    keywords: ['lookdev', 'theme authoring', 'global customize', 'preset', 'shell overlay', 'dock mode', 'app mode'],
+    overviewSummary: 'Open the immersive global lookdev overlay, manage semantic presets, and keep theme-aligned exports in sync.',
+    featuredInOverview: false,
+    archetype: 'hybrid',
+    shell: { preferredContentDensity: 'comfortable' },
+    order: 158,
+  },
+  {
     key: 'theme-json',
     label: 'Theme JSON',
     subtitle: 'Raw theme authoring and import.',
@@ -420,9 +431,9 @@ export const settingsSectionCategoryCatalog = [
   {
     key: 'authoring',
     label: 'Authoring',
-    description: 'Raw theme and package editing surfaces.',
+    description: 'Lookdev, raw theme, and package editing surfaces.',
     order: 70,
-    sectionKeys: ['theme-json'],
+    sectionKeys: ['lookdev', 'theme-json'],
   },
 ] as const satisfies readonly SettingsSectionCategoryEntry[];
 

@@ -20,9 +20,9 @@
       "blendMode": "screen"
     }
   ],
-  "railWidth": 272,
-  "previewWidth": 520,
+  "railWidth": 214,
+  "previewWidth": 500,
   "commandPaletteWidth": 860,
-  "commandPaletteTopInset": 62,
-  "hoverLiftPx": 5
+  "commandPaletteTopInset": 52,
+  "hoverLiftPx": 4
 }

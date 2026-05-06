@@ -1,3 +1,4 @@
+import type { ExplorerExperimentalViewMode } from './explorerExperimentalModes';
 import {
   explorerGridZoomAnchors,
   explorerZoomBehavior,
@@ -65,6 +66,13 @@ export interface ExplorerResolvedLayoutZoomState {
   definition: ExplorerViewModeDefinition;
   gridZoom: number;
   zoomPercent: number | null;
+}
+
+export interface ResolveThemedExplorerViewModesOptions {
+  viewMode: ExplorerViewMode;
+  experimentalViewMode: ExplorerExperimentalViewMode;
+  preferredViewMode?: ExplorerViewMode | null;
+  preferredExperimentalViewMode?: ExplorerExperimentalViewMode | null;
 }
 
 export const EXPLORER_GRID_ZOOM_MIN = explorerZoomBehavior.gridAnchors['icons-s'];
@@ -539,6 +547,27 @@ export function resolveEffectiveExplorerViewMode(
   }
 
   return requestedMode;
+}
+
+export function resolveThemedExplorerViewModes(
+  options: ResolveThemedExplorerViewModesOptions,
+): {
+  viewMode: ExplorerViewMode;
+  experimentalViewMode: ExplorerExperimentalViewMode;
+} {
+  return {
+    viewMode:
+      options.viewMode === 'details' && options.preferredViewMode
+        ? options.preferredViewMode
+        : options.viewMode,
+    // Theme recipes can still author preferred experimental modes, but an
+    // explicit persisted "off" must stay off so the user can actually return
+    // to the standard explorer surface.
+    experimentalViewMode:
+      options.experimentalViewMode === 'off'
+        ? 'off'
+        : options.experimentalViewMode,
+  };
 }
 
 function clamp(value: number, min: number, max: number): number {

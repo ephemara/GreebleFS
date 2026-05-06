@@ -1,10 +1,10 @@
 {
-  "chromeHeight": 50,
-  "shellInset": 18,
-  "pagePadding": 18,
-  "panelGap": 14,
-  "toolbarGap": 10,
-  "toolbarPaddingX": 14,
-  "toolbarPaddingY": 10,
-  "marqueeGap": 14
+  "chromeHeight": 36,
+  "shellInset": 14,
+  "pagePadding": 14,
+  "panelGap": 12,
+  "toolbarGap": 8,
+  "toolbarPaddingX": 12,
+  "toolbarPaddingY": 8,
+  "marqueeGap": 12
 }

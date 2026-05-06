@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { Pane } from "tweakpane";
 import "tweakpane/dist/tweakpane.css";
@@ -54,6 +55,10 @@ import {
 } from "../../config/themePackages";
 import { openExplorerPath } from "../../runtime/explorerBackend";
 import {
+  LOOKDEV_OPEN_OVERLAY_EVENT,
+  LOOKDEV_TOGGLE_OVERLAY_EVENT,
+} from "../../runtime/lookdevEvents";
+import {
   applyLookdevScopedOverridesToSettings,
   captureLookdevScopedOverridesFromSettings,
 } from "../../runtime/lookdevRuntime";
@@ -63,9 +68,6 @@ import {
   type LookdevOverlayLens,
 } from "../../store/lookdevStore";
 import { useSettingsStore } from "../../store/settingsStore";
-
-const LOOKDEV_COMMAND_EVENT_OPEN = "greeblefs:open-lookdev-overlay";
-const LOOKDEV_COMMAND_EVENT_TOGGLE = "greeblefs:toggle-lookdev-overlay";
 
 function slugifyLookdevLabel(value: string): string {
   return value
@@ -331,7 +333,6 @@ export function LookdevOverlay({
       expanded: true,
     });
     paneInstanceRef.current = pane;
-    paneHostRef.current.innerHTML = "";
 
     const shellFolder = pane.addFolder({
       title:
@@ -626,7 +627,7 @@ export function LookdevOverlay({
   const lensButtons: Array<{
     lens: LookdevOverlayLens;
     label: string;
-    icon: JSX.Element;
+    icon: ReactNode;
   }> = [
     { lens: "shell", label: "Shell", icon: <SlidersHorizontal size={13} /> },
     { lens: "explorer", label: "Explorer", icon: <Layers3 size={13} /> },
@@ -716,6 +717,17 @@ export function LookdevOverlay({
     await onRefreshThemes();
   }
 
+  async function handleRefreshInspectorCatalogs() {
+    await Promise.all([
+      onRefreshThemes(),
+      onRefreshTopBars(),
+      onRefreshDockPresentations(),
+      onRefreshMenuPacks(),
+      onRefreshLookdevPresets(),
+    ]);
+    setStatusMessage("Refreshed lookdev catalogs.");
+  }
+
   function handleLoadPresetForPreview(preset: LoadedLookdevPreset) {
     setSelectedPresetId(preset.id);
     setDraftManifest(preset.manifest);
@@ -732,9 +744,16 @@ export function LookdevOverlay({
     if (!selectedPreset) {
       return;
     }
+    const resolvedRuntimeOverrides = resolveLookdevPresetForWindowMode(
+      selectedPreset.manifest,
+      currentWindowMode,
+    );
     setActiveAppliedPresetId(selectedPreset.id);
     applyLookdevScopedOverridesToSettings(
-      resolveLookdevPresetForWindowMode(selectedPreset.manifest, currentWindowMode),
+      {
+        ...resolvedRuntimeOverrides,
+        presentation: undefined,
+      },
       applyCallbacks,
     );
     setStatusMessage(`${selectedPreset.name} is now the active runtime preset.`);
@@ -927,10 +946,10 @@ export function LookdevOverlay({
             <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_420px] gap-4">
               <div className="min-h-0 rounded-[28px] border border-white/10 bg-black/15 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      window.dispatchEvent(new CustomEvent(LOOKDEV_COMMAND_EVENT_OPEN))
+                    <button
+                      type="button"
+                      onClick={() =>
+                      window.dispatchEvent(new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT))
                     }
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
                   >
@@ -965,11 +984,11 @@ export function LookdevOverlay({
                     <Puzzle size={11} />
                     Menu Composer
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
+                    <button
+                      type="button"
+                      onClick={() =>
                       window.dispatchEvent(
-                        new CustomEvent(LOOKDEV_COMMAND_EVENT_TOGGLE),
+                        new CustomEvent(LOOKDEV_TOGGLE_OVERLAY_EVENT),
                       )
                     }
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
@@ -1124,9 +1143,9 @@ export function LookdevOverlay({
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => void onRefreshThemes()}
+                      onClick={() => void handleRefreshInspectorCatalogs()}
                       className="rounded-full border border-white/10 p-2 opacity-70 hover:opacity-100"
-                      title="Refresh themes"
+                      title="Refresh lookdev catalogs"
                     >
                       <RefreshCw size={11} />
                     </button>

@@ -169,7 +169,13 @@ interface WorkbenchTopBarProps {
   onCommitTopBarLayoutSnapshot: (
     snapshot: LayoutDynamicsAuthoringSnapshot,
   ) => void;
+  surfaceMode?: WorkbenchTopBarSurfaceMode;
 }
+
+type WorkbenchTopBarSurfaceMode =
+  | 'full'
+  | 'content-only'
+  | 'window-controls-only';
 
 const WINDOW_CHROME_INTERACTIVE_SELECTOR = [
   'a',
@@ -423,6 +429,7 @@ export function WorkbenchTopBar({
   onToggleTopBarCustomize,
   topBarLayoutSnapshot,
   onCommitTopBarLayoutSnapshot,
+  surfaceMode = 'full',
 }: WorkbenchTopBarProps) {
   const borderColor = appearance.theme.palette.border;
   const muted = appearance.theme.palette.textMuted;
@@ -470,6 +477,9 @@ export function WorkbenchTopBar({
   const isFloatingDockWindow = windowMode === 'overlay' && dockPlacementMode === 'floating';
   const canDragWindow = isWindowedMode || isFloatingDockWindow;
   const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
+  const resolvedWindowedChromeTopInset =
+    surfaceMode === 'content-only' ? 0 : windowedChromeTopInset;
+  const showsWindowControls = surfaceMode !== 'content-only';
   const topBarBackdropFilter = resolveInnerSurfaceBlurFilter({
     enabled: blur && effectiveTopBarStyle === 'glass',
     blurPx: Math.min(blurStrength, 18),
@@ -565,8 +575,10 @@ export function WorkbenchTopBar({
     : (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
       : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`);
-  const shouldShowLeadingWindowControls = isWindowedMode && blurPlatform === 'macos';
-  const shouldShowTrailingWindowControls = isWindowedMode && blurPlatform !== 'macos';
+  const shouldShowLeadingWindowControls =
+    showsWindowControls && isWindowedMode && blurPlatform === 'macos';
+  const shouldShowTrailingWindowControls =
+    showsWindowControls && isWindowedMode && blurPlatform !== 'macos';
   const showsTabStrip = runtimeUsesTabbedNavigation && topBarDefinition.navigationMode !== 'summary';
   const isMobileShareBusy = mobileSharePhase === 'starting' || mobileSharePhase === 'stopping';
   const isMobileShareActive = mobileSharePhase === 'running' && mobileShareSession != null;
@@ -2816,6 +2828,60 @@ export function WorkbenchTopBar({
     </div>
   );
 
+  const standaloneWindowControlsSurface = isWindowedMode ? (
+    <div
+      data-gfs-window-drag-exclusion="true"
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        borderRadius: 999,
+        overflow: 'hidden',
+        border: `1px solid ${borderColor}`,
+        background: 'var(--overlay-workbench-chrome-button-bg)',
+        boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
+        backdropFilter: topBarBackdropFilter,
+        WebkitBackdropFilter: topBarBackdropFilter,
+      }}
+    >
+      {blurPlatform === 'macos' ? (
+        <WindowControls
+          platform={blurPlatform}
+          isMaximized={isWindowMaximized}
+          onMinimize={handleMinimizeWindow}
+          onMaximize={() => {
+            void handleToggleMaximize();
+          }}
+          onClose={onClose}
+          textMuted={muted}
+        />
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 8px',
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+          }}
+        >
+          <WindowControls
+            platform={blurPlatform}
+            isMaximized={isWindowMaximized}
+            onMinimize={handleMinimizeWindow}
+            onMaximize={() => {
+              void handleToggleMaximize();
+            }}
+            onClose={onClose}
+            textMuted={muted}
+          />
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  if (surfaceMode === 'window-controls-only') {
+    return standaloneWindowControlsSurface;
+  }
+
   return (
     <div
       data-gfs-window-drag-region="topbar"
@@ -2832,9 +2898,9 @@ export function WorkbenchTopBar({
         position: 'relative',
         display: 'flex',
         alignItems: 'stretch',
-        height: chromeHeight + windowedChromeTopInset,
+        height: chromeHeight + resolvedWindowedChromeTopInset,
         flexShrink: 0,
-        paddingTop: windowedChromeTopInset,
+        paddingTop: resolvedWindowedChromeTopInset,
         boxSizing: 'border-box',
         margin: usesInsetTopBar ? 'var(--overlay-workbench-shell-inset)' : 0,
         background: effectiveTopBarStyle === 'minimal'
@@ -2892,10 +2958,10 @@ export function WorkbenchTopBar({
             background: 'var(--overlay-workbench-chrome-button-bg)',
             flexShrink: 0,
           }}
-        >
-          <WindowControls
-            platform={blurPlatform}
-            isMaximized={isWindowMaximized}
+          >
+            <WindowControls
+              platform={blurPlatform}
+              isMaximized={isWindowMaximized}
             onMinimize={handleMinimizeWindow}
             onMaximize={() => { void handleToggleMaximize(); }}
             onClose={onClose}

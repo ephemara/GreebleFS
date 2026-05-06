@@ -36,6 +36,12 @@ import {
   type ManagedContentDirectoryId,
 } from './config/appContentDirectories';
 import { buildManagedContentDirectoryStackSignature } from './config/managedContentDirectoryStacks';
+import {
+  createLookdevPresetManifestFromScopeSnapshot,
+  loadLookdevPresets,
+  lookdevPresetSystemConfig,
+  resolveLookdevPresetForWindowMode,
+} from './config/lookdevPresets';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
   groupPanelsForWorkbenchNavigation,
@@ -181,6 +187,10 @@ import {
 } from './config/hotkeys';
 import { createMobileShareThemeSnapshot } from './config/mobileTheme';
 import {
+  getOverlayColorAlpha,
+  withOverlayColorAlpha,
+} from './config/colorUtils';
+import {
   BUILT_IN_LAYOUT_MANIFEST,
   getLayoutProfilesForShellFamily,
   getNextLayoutProfileIdInShellFamily,
@@ -242,6 +252,7 @@ import {
   isExplorerVirtualPath,
 } from './config/explorerVirtualLocations';
 import { OverlayShellScene } from './components/OverlayShellScene';
+import { LookdevOverlay } from './components/lookdev/LookdevOverlay';
 import { shouldExplorerZoomScopeOwnWheelGesture } from './components/explorer/useExplorerZoomGestureRouter';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
@@ -269,6 +280,13 @@ import {
 } from './runtime/pluginPanelRequests';
 import { publishSyncedOverlayAppearanceSnapshot } from './runtime/appearanceSync';
 import { openFileOperationsWindow } from './runtime/fileOperationsWindow';
+import {
+  LOOKDEV_APPLY_PRESET_EVENT,
+  LOOKDEV_OPEN_OVERLAY_EVENT,
+  LOOKDEV_REFRESH_PRESETS_EVENT,
+  LOOKDEV_TOGGLE_OVERLAY_EVENT,
+  type LookdevApplyPresetEventDetail,
+} from './runtime/lookdevEvents';
 import {
   listenToExplorerPickerRequests,
   openExplorerPicker,
@@ -298,6 +316,10 @@ import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { sendNativeNotification } from './runtime/nativeNotifications';
+import {
+  applyLookdevScopedOverridesToSettings,
+  captureLookdevScopedOverridesFromSettings,
+} from './runtime/lookdevRuntime';
 import { configureSoundEffectsRuntime, playSoundEffect } from './runtime/soundEffects';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
@@ -354,6 +376,7 @@ import {
   switchUsrProfile,
 } from './runtime/usrProfiles';
 import { useExplorerStore } from './store/explorerStore';
+import { useLookdevStore } from './store/lookdevStore';
 import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
 import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
 import { useTerminalStore } from './store/terminalStore';
@@ -538,70 +561,6 @@ function applyWheelVisualControlAdjust(args: {
   return true;
 }
 
-function parseHexColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
-  const match = color.trim().match(/^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i);
-  if (!match) {
-    return null;
-  }
-
-  const value = match[1];
-  if (value.length === 3 || value.length === 4) {
-    const [red, green, blue, alpha = 'f'] = value.split('');
-    return {
-      red: parseInt(red + red, 16),
-      green: parseInt(green + green, 16),
-      blue: parseInt(blue + blue, 16),
-      alpha: parseInt(alpha + alpha, 16) / 255,
-    };
-  }
-
-  return {
-    red: parseInt(value.slice(0, 2), 16),
-    green: parseInt(value.slice(2, 4), 16),
-    blue: parseInt(value.slice(4, 6), 16),
-    alpha: value.length === 8 ? parseInt(value.slice(6, 8), 16) / 255 : 1,
-  };
-}
-
-function parseFunctionalColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
-  const match = color.trim().match(/^rgba?\((.+)\)$/i);
-  if (!match) {
-    return null;
-  }
-
-  const parts = match[1].split(',').map(part => part.trim());
-  if (parts.length < 3) {
-    return null;
-  }
-
-  const red = Number(parts[0]);
-  const green = Number(parts[1]);
-  const blue = Number(parts[2]);
-  const alpha = parts[3] === undefined ? 1 : Number(parts[3]);
-  if ([red, green, blue, alpha].some(part => Number.isNaN(part))) {
-    return null;
-  }
-
-  return { red, green, blue, alpha };
-}
-
-function parseColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
-  return parseFunctionalColor(color) ?? parseHexColor(color);
-}
-
-function withColorAlpha(color: string, alpha: number): string {
-  const parsed = parseColor(color);
-  if (!parsed) {
-    return color;
-  }
-
-  return `rgba(${parsed.red}, ${parsed.green}, ${parsed.blue}, ${clampUnit(alpha).toFixed(3)})`;
-}
-
-function getColorAlpha(color: string, fallback: number): number {
-  return parseColor(color)?.alpha ?? fallback;
-}
-
 function resolveShellBackgroundColor(
   translucentColor: string,
   solidColor: string,
@@ -610,11 +569,11 @@ function resolveShellBackgroundColor(
   const normalizedStrength = overlayVisualControls.blurStrength.max > 0
     ? clampOverlayVisualControlValue('blurStrength', blurStrength) / overlayVisualControls.blurStrength.max
     : 0;
-  const solidAlpha = getColorAlpha(solidColor, 0.96);
-  const translucentAlpha = getColorAlpha(translucentColor, Math.min(0.82, solidAlpha));
+  const solidAlpha = getOverlayColorAlpha(solidColor, 0.96);
+  const translucentAlpha = getOverlayColorAlpha(translucentColor, Math.min(0.82, solidAlpha));
   const minimumGlassAlpha = Math.max(0.16, translucentAlpha * 0.45);
   const targetAlpha = solidAlpha - ((solidAlpha - minimumGlassAlpha) * normalizedStrength);
-  return withColorAlpha(translucentColor, targetAlpha);
+  return withOverlayColorAlpha(translucentColor, targetAlpha);
 }
 
 function resolveWindowedModeApplyGeometry(args: {
@@ -832,6 +791,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const homePacksSignatureRef = useRef('');
   const menuPacksSignatureRef = useRef('');
   const actionPacksSignatureRef = useRef('');
+  const lookdevPresetsSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
@@ -856,6 +816,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const menuPacksRefreshQueuedRef = useRef(false);
   const actionPacksRefreshInFlightRef = useRef(false);
   const actionPacksRefreshQueuedRef = useRef(false);
+  const lookdevPresetsRefreshInFlightRef = useRef(false);
+  const lookdevPresetsRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -971,6 +933,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     systemSettings,
     setActiveSection,
     updateAppearance,
+    updateExplorer,
     updatePresentation,
     updateDock,
     updateLayout,
@@ -991,6 +954,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     systemSettings: state.settings.system,
     setActiveSection: state.setActiveSection,
     updateAppearance: state.updateAppearance,
+    updateExplorer: state.updateExplorer,
     updatePresentation: state.updatePresentation,
     updateDock: state.updateDock,
     updateLayout: state.updateLayout,
@@ -1024,6 +988,19 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     () => settingsPersistApi?.hasHydrated?.() ?? true,
   );
   const mobileShareBootEvaluationRef = useRef(false);
+  const {
+    lookdevPresets,
+    lookdevSelectedPresetId,
+    lookdevActiveAppliedPresetId,
+    lookdevDraftSession,
+    lookdevIsOpen,
+  } = useLookdevStore(useShallow((state) => ({
+    lookdevPresets: state.presets,
+    lookdevSelectedPresetId: state.selectedPresetId,
+    lookdevActiveAppliedPresetId: state.activeAppliedPresetId,
+    lookdevDraftSession: state.draftSession,
+    lookdevIsOpen: state.isOpen,
+  })));
 
   useEffect(() => {
     if (settingsPersistApi?.hasHydrated?.()) {
@@ -4336,6 +4313,87 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, []);
 
+  const refreshLookdevPresets = useCallback(async (force = false) => {
+    const lookdevStore = useLookdevStore.getState();
+    if (!isTauri()) {
+      lookdevStore.setCatalogState({
+        presets: [],
+        presetsDirectory: lookdevPresetSystemConfig.presetsDirectory,
+        presetsLoading: false,
+        presetsError: null,
+        presetsWarnings: [],
+      });
+      return;
+    }
+
+    if (force) {
+      lookdevPresetsRefreshQueuedRef.current = true;
+    }
+    if (lookdevPresetsRefreshInFlightRef.current) {
+      lookdevPresetsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    lookdevPresetsRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || lookdevPresetsRefreshQueuedRef.current;
+        lookdevPresetsRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          lookdevPresetsSignatureRef.current = '';
+        }
+
+        lookdevStore.setCatalogState({ presetsLoading: true });
+        try {
+          await ensureDir(getManagedContentPrimaryDirectory('lookdevPresets'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature('lookdevPresets');
+
+          if (!nextForce && nextSignature === lookdevPresetsSignatureRef.current) {
+            lookdevStore.setCatalogState({ presetsLoading: false });
+            continue;
+          }
+
+          lookdevPresetsSignatureRef.current = nextSignature;
+          const result = await loadLookdevPresets();
+          lookdevStore.setCatalogState({
+            presets: result.presets,
+            presetsDirectory: result.directory,
+            presetsError: result.sourceError,
+            presetsWarnings: result.warnings,
+          });
+
+          const refreshedState = useLookdevStore.getState();
+          const nextSelectedPresetId = refreshedState.selectedPresetId
+            && result.presets.some((preset) => preset.id === refreshedState.selectedPresetId)
+            ? refreshedState.selectedPresetId
+            : (result.presets[0]?.id ?? null);
+          if (refreshedState.selectedPresetId !== nextSelectedPresetId) {
+            refreshedState.setSelectedPresetId(nextSelectedPresetId);
+          }
+          if (
+            refreshedState.activeAppliedPresetId
+            && !result.presets.some((preset) => preset.id === refreshedState.activeAppliedPresetId)
+          ) {
+            refreshedState.clearActiveAppliedPresetId();
+          }
+        } catch (error) {
+          lookdevStore.setCatalogState({
+            presets: [],
+            presetsDirectory: lookdevPresetSystemConfig.presetsDirectory,
+            presetsError: String(error),
+            presetsWarnings: [],
+          });
+        } finally {
+          lookdevStore.setCatalogState({ presetsLoading: false });
+        }
+      } while (lookdevPresetsRefreshQueuedRef.current);
+    } finally {
+      lookdevPresetsRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     if (!hasAppliedUsrProfileRefreshRef.current) {
       hasAppliedUsrProfileRefreshRef.current = true;
@@ -4347,6 +4405,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       refreshDockPresentationPackages(true),
       refreshExplorerLayoutPackages(true),
       refreshHomePacks(true),
+      refreshLookdevPresets(true),
       refreshMenuPacks(true),
       refreshFolderPlugins(true),
     ]);
@@ -4356,6 +4415,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     refreshExplorerLayoutPackages,
     refreshFolderPlugins,
     refreshHomePacks,
+    refreshLookdevPresets,
     refreshMenuPacks,
     refreshTopBarPackages,
   ]);
@@ -4944,6 +5004,22 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerLayoutPackages]);
+
+  useEffect(() => {
+    void refreshLookdevPresets(true);
+  }, [refreshLookdevPresets]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !lookdevPresetSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshLookdevPresets();
+    }, lookdevPresetSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshLookdevPresets]);
 
   const panelDefinitions: OverlayPanelDefinition[] = useMemo(
     () => [
@@ -6003,6 +6079,182 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     handleOpenSettingsSection('overview');
   }, [handleOpenSettingsSection]);
 
+  const lookdevApplyCallbacks = useMemo(() => ({
+    updateAppearance,
+    updateExplorer,
+    updateDock,
+    updatePresentation,
+  }), [
+    updateAppearance,
+    updateDock,
+    updateExplorer,
+    updatePresentation,
+  ]);
+
+  const handleRestoreLookdevBaseline = useCallback(() => {
+    const draftSession = useLookdevStore.getState().draftSession;
+    if (!draftSession) {
+      useLookdevStore.getState().closeSession();
+      return;
+    }
+
+    applyLookdevScopedOverridesToSettings(
+      captureLookdevScopedOverridesFromSettings(draftSession.baseline),
+      lookdevApplyCallbacks,
+    );
+    useLookdevStore.getState().closeSession();
+  }, [lookdevApplyCallbacks]);
+
+  const handleApplyLookdevPresetById = useCallback((presetId?: string | null) => {
+    const lookdevState = useLookdevStore.getState();
+    const targetPresetId = presetId?.trim()
+      || lookdevState.selectedPresetId
+      || lookdevState.activeAppliedPresetId;
+    if (!targetPresetId) {
+      return false;
+    }
+
+    const targetPreset = lookdevState.presets.find((preset) => preset.id === targetPresetId) ?? null;
+    if (!targetPreset) {
+      lookdevState.clearActiveAppliedPresetId();
+      return false;
+    }
+
+    const resolvedRuntimeOverrides = resolveLookdevPresetForWindowMode(
+      targetPreset.manifest,
+      presentationSettings.windowMode,
+    );
+    applyLookdevScopedOverridesToSettings(
+      {
+        ...resolvedRuntimeOverrides,
+        presentation: undefined,
+      },
+      lookdevApplyCallbacks,
+    );
+    lookdevState.setSelectedPresetId(targetPreset.id);
+    lookdevState.setActiveAppliedPresetId(targetPreset.id);
+    return true;
+  }, [lookdevApplyCallbacks, presentationSettings.windowMode]);
+
+  const handleOpenLookdevOverlay = useCallback((requestedPresetId?: string | null) => {
+    const lookdevState = useLookdevStore.getState();
+    const targetPresetId = requestedPresetId?.trim()
+      || lookdevState.selectedPresetId
+      || lookdevState.activeAppliedPresetId;
+    const targetPreset = targetPresetId
+      ? lookdevState.presets.find((preset) => preset.id === targetPresetId) ?? null
+      : null;
+    const liveSettingsSnapshot = {
+      appearance,
+      explorer: explorerSettings,
+      dock: dockSettings,
+      presentation: presentationSettings,
+    };
+    const defaultDraftManifest = createLookdevPresetManifestFromScopeSnapshot({
+      id: 'live-lookdev-session',
+      name: 'Live Lookdev Session',
+      description: 'Ephemeral lookdev draft built from the current live shell state.',
+      scope: presentationSettings.windowMode === 'dock' ? 'dock' : 'windowed',
+      scopedOverrides: captureLookdevScopedOverridesFromSettings(liveSettingsSnapshot),
+    });
+
+    setIsCommandPaletteOpen(false);
+    lookdevState.openSession({
+      baseline: liveSettingsSnapshot,
+      initialWindowMode: presentationSettings.windowMode,
+      preset: targetPreset,
+      draftManifest: targetPreset?.manifest ?? defaultDraftManifest,
+    });
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      void showCurrentPresentation();
+    }
+  }, [
+    appearance,
+    dockSettings,
+    explorerSettings,
+    presentationSettings,
+    showCurrentPresentation,
+  ]);
+
+  const handleToggleLookdevOverlay = useCallback(() => {
+    if (useLookdevStore.getState().isOpen) {
+      handleRestoreLookdevBaseline();
+      return;
+    }
+
+    handleOpenLookdevOverlay();
+  }, [handleOpenLookdevOverlay, handleRestoreLookdevBaseline]);
+
+  useEffect(() => {
+    if (lookdevDraftSession || !lookdevActiveAppliedPresetId) {
+      return;
+    }
+
+    const activeRuntimePreset = lookdevPresets.find(
+      (preset) => preset.id === lookdevActiveAppliedPresetId,
+    );
+    if (!activeRuntimePreset) {
+      useLookdevStore.getState().clearActiveAppliedPresetId();
+      return;
+    }
+
+    const resolvedRuntimeOverrides = resolveLookdevPresetForWindowMode(
+      activeRuntimePreset.manifest,
+      presentationSettings.windowMode,
+    );
+    applyLookdevScopedOverridesToSettings(
+      {
+        ...resolvedRuntimeOverrides,
+        presentation: undefined,
+      },
+      lookdevApplyCallbacks,
+    );
+  }, [
+    lookdevActiveAppliedPresetId,
+    lookdevApplyCallbacks,
+    lookdevDraftSession,
+    lookdevPresets,
+    presentationSettings.windowMode,
+  ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || isDedicatedSecondaryWindowHost) {
+      return;
+    }
+
+    const handleOpenEvent = (event: Event) => {
+      const detail = (event as CustomEvent<LookdevApplyPresetEventDetail>).detail;
+      handleOpenLookdevOverlay(detail?.presetId);
+    };
+    const handleToggleEvent = () => {
+      handleToggleLookdevOverlay();
+    };
+    const handleApplyEvent = (event: Event) => {
+      const detail = (event as CustomEvent<LookdevApplyPresetEventDetail>).detail;
+      handleApplyLookdevPresetById(detail?.presetId);
+    };
+    const handleRefreshEvent = () => {
+      void refreshLookdevPresets(true);
+    };
+
+    window.addEventListener(LOOKDEV_OPEN_OVERLAY_EVENT, handleOpenEvent);
+    window.addEventListener(LOOKDEV_TOGGLE_OVERLAY_EVENT, handleToggleEvent);
+    window.addEventListener(LOOKDEV_APPLY_PRESET_EVENT, handleApplyEvent);
+    window.addEventListener(LOOKDEV_REFRESH_PRESETS_EVENT, handleRefreshEvent);
+    return () => {
+      window.removeEventListener(LOOKDEV_OPEN_OVERLAY_EVENT, handleOpenEvent);
+      window.removeEventListener(LOOKDEV_TOGGLE_OVERLAY_EVENT, handleToggleEvent);
+      window.removeEventListener(LOOKDEV_APPLY_PRESET_EVENT, handleApplyEvent);
+      window.removeEventListener(LOOKDEV_REFRESH_PRESETS_EVENT, handleRefreshEvent);
+    };
+  }, [
+    handleApplyLookdevPresetById,
+    handleOpenLookdevOverlay,
+    handleToggleLookdevOverlay,
+    isDedicatedSecondaryWindowHost,
+    refreshLookdevPresets,
+  ]);
+
   const handleActivatePanel = useCallback((panelId: string) => {
     if (!panelLookup.has(panelId)) {
       return;
@@ -6552,6 +6804,56 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         },
       },
       {
+        id: 'lookdev-open-overlay',
+        title: lookdevIsOpen ? 'Focus Lookdev Overlay' : 'Open Lookdev Overlay',
+        subtitle: 'Open the full-screen semantic shell lookdev surface over the live workbench.',
+        group: 'Lookdev',
+        kind: 'command',
+        keywords: ['lookdev', 'theme', 'customize', 'shell', 'overlay', 'dock', 'app'],
+        badge: 'Lookdev',
+        onSelect: () => handleOpenLookdevOverlay(),
+      },
+      {
+        id: 'lookdev-toggle-overlay',
+        title: lookdevIsOpen ? 'Close Lookdev Overlay' : 'Toggle Lookdev Overlay',
+        subtitle: lookdevIsOpen
+          ? 'Close the current lookdev draft and restore the baseline session state.'
+          : 'Toggle the immersive lookdev overlay on top of the current shell.',
+        group: 'Lookdev',
+        kind: 'command',
+        keywords: ['lookdev', 'toggle', 'close', 'open', 'overlay', 'draft'],
+        badge: lookdevIsOpen ? 'Close' : 'Lookdev',
+        onSelect: handleToggleLookdevOverlay,
+      },
+      ...((() => {
+        const activeLookdevCommandPresetId = lookdevSelectedPresetId || lookdevActiveAppliedPresetId;
+        const activeLookdevCommandPreset = activeLookdevCommandPresetId
+          ? lookdevPresets.find((preset) => preset.id === activeLookdevCommandPresetId) ?? null
+          : null;
+        if (!activeLookdevCommandPreset) {
+          return [];
+        }
+
+        return [{
+          id: 'lookdev-apply-selected-preset',
+          title: `Apply Lookdev Preset: ${activeLookdevCommandPreset.name}`,
+          subtitle: 'Reapply the selected lookdev preset against the current dock/app mode resolver.',
+          group: 'Lookdev',
+          kind: 'command',
+          keywords: [
+            'lookdev',
+            'preset',
+            'apply',
+            activeLookdevCommandPreset.id,
+            activeLookdevCommandPreset.name,
+          ],
+          badge: 'Preset',
+          onSelect: () => {
+            handleApplyLookdevPresetById(activeLookdevCommandPreset.id);
+          },
+        } satisfies OverlayCommandPaletteAction];
+      })()),
+      {
         id: 'refresh-plugins',
         title: 'Refresh Plugins',
         subtitle: 'Rescan legacy and package plugins, then reload their contributions.',
@@ -6798,20 +7100,27 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     globalSearchResults,
     globalSearchStatus,
     handleActivatePanel,
+    handleApplyLookdevPresetById,
     handleCycleLayout,
     handleOpenGlobalSearchResult,
+    handleOpenLookdevOverlay,
     handleOpenSettings,
     handleOpenSettingsSection,
     handleStartMobileShare,
     handleStopMobileShare,
     handleSetDockPlacementMode,
     handleToggleZenFocusMode,
+    handleToggleLookdevOverlay,
     handleToggleWindowMode,
     keybindings.mobileShareToggle,
     keybindings.openExplorerLayoutSwitcher,
     keybindings.toggleExplorerCustomize,
     keybindings.windowModeToggle,
     keybindings.zenFocusModeToggle,
+    lookdevActiveAppliedPresetId,
+    lookdevIsOpen,
+    lookdevPresets,
+    lookdevSelectedPresetId,
     dockPlacementMode,
     overlayAnchor,
     openManagedContentDirectory,
@@ -7328,84 +7637,102 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       {!effectiveThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('right')}
     </div>
   );
+  const topBarShaderLayer = shellEffectsPolicy.showTopBarShader
+    ? (
+      <ShaderSurfaceLayer
+        shader={activeShader}
+        shellContext={shellShaderContext}
+        surface="topBar"
+      />
+      )
+    : null;
+  const commonWorkbenchTopBarProps = {
+    appearance: resolvedAppearance,
+    renderRuntime,
+    layoutProfile: activeLayoutProfile,
+    layoutSourcePath: layoutConfigSource,
+    availableLayoutProfiles,
+    panels: panelDefinitions,
+    openPanelIds: activeWorkbenchOpenPanelIds,
+    pinnedPanelIds: activeWorkbenchPinnedPanelIds,
+    activePanelId: activeWorkbenchActivePanelId,
+    onPanelSelect: handleTopBarSelectPanel,
+    onPanelToggle: handleTopBarTogglePanel,
+    onPanelClose: handleTopBarClosePanel,
+    onPanelReorder: handleReorderPanels,
+    onOpenSettings: handleOpenSettings,
+    onToggleShellMode: handleToggleShellMode,
+    onSelectLayoutProfile: handleSelectLayoutProfile,
+    onCycleLayout: handleCycleLayout,
+    onSetWindowMode: (mode: TerminalWindowMode) => {
+      void requestWindowModeChange(mode);
+    },
+    onOpenCommandPalette: handleOpenCommandPalette,
+    onToggleOverlayAnchor: handleToggleOverlayAnchor,
+    dockPlacementMode,
+    dockAllowedPlacements: resolvedDockPresentation.presentation.allowedPlacements,
+    dockEdgeSize: resolvedDockPresentation.edgeSize,
+    dockEdgeWidth: resolvedDockPresentation.edgeWidth,
+    dockDefaultTerminalRows: resolvedDockPresentation.defaultTerminalRows,
+    dockDefaultTerminalColumns: resolvedDockPresentation.defaultTerminalColumns,
+    dockTerminalGrid: activeDockResizeGrid,
+    dockTerminalFontSize: settings.fontSize,
+    dockTopBarHeight,
+    dockPreviewEnabled: resolvedDockPresentation.previewPolicy.enabled,
+    dockPreviewSplitMode: resolvedDockPresentation.previewPolicy.splitMode,
+    onSetDockPlacementMode: handleSetDockPlacementMode,
+    onUpdateDockSettings: updateDock,
+    onOpenDockSettings: () => handleOpenSettingsSection('dock'),
+    onClose: () => {
+      void hideOverlay();
+    },
+    accent,
+    blur: effectiveShellBlurEnabled,
+    blurStrength: effectiveShellBlurStrength,
+    blurPlatform: runtimePlatform,
+    appOpacity: clampedAppOpacity,
+    panelTransparency: clampedPanelTransparency,
+    appZoom: clampedAppZoom,
+    onUpdateAppearanceVisuals: updateAppearance,
+    windowMode,
+    overlayAnchor,
+    surfaceOwnership: effectiveThemeRendererSurfaceOwnership,
+    commandPaletteShortcutLabel: formatHotkeyLabel(keybindings.commandPalette),
+    mobileShareShortcutLabel: formatHotkeyLabel(keybindings.mobileShareToggle),
+    toggleShortcutLabel: formatHotkeyLabel(keybindings.terminalToggle),
+    mobileShareRemoteAccessMode: mobileSettings.remoteAccessMode,
+    mobileSharePhase,
+    mobileShareSession,
+    mobileShareError,
+    mobileShareNotice,
+    onToggleMobileShare: handleToggleMobileShare,
+    onStartMobileShare: handleStartMobileShareQuiet,
+    onStopMobileShare: handleStopMobileShareQuiet,
+    onSetMobileShareRemoteAccessMode: handleSetMobileShareRemoteAccessMode,
+    onOpenMobileSettings: () => handleOpenSettingsSection('mobile'),
+    zenFocusMode,
+    zenFocusShortcutLabel: formatHotkeyLabel(keybindings.zenFocusModeToggle),
+    onToggleZenFocusMode: handleToggleZenFocusMode,
+    topBarShaderLayer,
+    topBarDefinition: resolvedTopBarSelection.topBar,
+    topBarCustomizeActive,
+    onToggleTopBarCustomize: handleToggleTopBarCustomize,
+    topBarLayoutSnapshot: resolvedTopBarLayoutSnapshot,
+    onCommitTopBarLayoutSnapshot: handleCommitTopBarLayoutSnapshot,
+  };
   const chromeBar = (
+    <WorkbenchTopBar {...commonWorkbenchTopBarProps} />
+  );
+  const chromeContentSurface = (
     <WorkbenchTopBar
-      appearance={resolvedAppearance}
-      renderRuntime={renderRuntime}
-      layoutProfile={activeLayoutProfile}
-      layoutSourcePath={layoutConfigSource}
-      availableLayoutProfiles={availableLayoutProfiles}
-      panels={panelDefinitions}
-      openPanelIds={activeWorkbenchOpenPanelIds}
-      pinnedPanelIds={activeWorkbenchPinnedPanelIds}
-      activePanelId={activeWorkbenchActivePanelId}
-      onPanelSelect={handleTopBarSelectPanel}
-      onPanelToggle={handleTopBarTogglePanel}
-      onPanelClose={handleTopBarClosePanel}
-      onPanelReorder={handleReorderPanels}
-      onOpenSettings={handleOpenSettings}
-      onToggleShellMode={handleToggleShellMode}
-      onSelectLayoutProfile={handleSelectLayoutProfile}
-      onCycleLayout={handleCycleLayout}
-      onSetWindowMode={(mode) => { void requestWindowModeChange(mode); }}
-      onOpenCommandPalette={handleOpenCommandPalette}
-      onToggleOverlayAnchor={handleToggleOverlayAnchor}
-      dockPlacementMode={dockPlacementMode}
-      dockAllowedPlacements={resolvedDockPresentation.presentation.allowedPlacements}
-      dockEdgeSize={resolvedDockPresentation.edgeSize}
-      dockEdgeWidth={resolvedDockPresentation.edgeWidth}
-      dockDefaultTerminalRows={resolvedDockPresentation.defaultTerminalRows}
-      dockDefaultTerminalColumns={resolvedDockPresentation.defaultTerminalColumns}
-      dockTerminalGrid={activeDockResizeGrid}
-      dockTerminalFontSize={settings.fontSize}
-      dockTopBarHeight={dockTopBarHeight}
-      dockPreviewEnabled={resolvedDockPresentation.previewPolicy.enabled}
-      dockPreviewSplitMode={resolvedDockPresentation.previewPolicy.splitMode}
-      onSetDockPlacementMode={handleSetDockPlacementMode}
-      onUpdateDockSettings={updateDock}
-      onOpenDockSettings={() => handleOpenSettingsSection('dock')}
-      onClose={() => { void hideOverlay(); }}
-      accent={accent}
-      blur={effectiveShellBlurEnabled}
-      blurStrength={effectiveShellBlurStrength}
-      blurPlatform={runtimePlatform}
-      appOpacity={clampedAppOpacity}
-      panelTransparency={clampedPanelTransparency}
-      appZoom={clampedAppZoom}
-      onUpdateAppearanceVisuals={updateAppearance}
-      windowMode={windowMode}
-      overlayAnchor={overlayAnchor}
-      surfaceOwnership={effectiveThemeRendererSurfaceOwnership}
-      commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
-      mobileShareShortcutLabel={formatHotkeyLabel(keybindings.mobileShareToggle)}
-      toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
-      mobileShareRemoteAccessMode={mobileSettings.remoteAccessMode}
-      mobileSharePhase={mobileSharePhase}
-      mobileShareSession={mobileShareSession}
-      mobileShareError={mobileShareError}
-      mobileShareNotice={mobileShareNotice}
-      onToggleMobileShare={handleToggleMobileShare}
-      onStartMobileShare={handleStartMobileShareQuiet}
-      onStopMobileShare={handleStopMobileShareQuiet}
-      onSetMobileShareRemoteAccessMode={handleSetMobileShareRemoteAccessMode}
-      onOpenMobileSettings={() => handleOpenSettingsSection('mobile')}
-      zenFocusMode={zenFocusMode}
-      zenFocusShortcutLabel={formatHotkeyLabel(keybindings.zenFocusModeToggle)}
-      onToggleZenFocusMode={handleToggleZenFocusMode}
-      topBarShaderLayer={shellEffectsPolicy.showTopBarShader
-        ? (
-          <ShaderSurfaceLayer
-            shader={activeShader}
-            shellContext={shellShaderContext}
-            surface="topBar"
-          />
-          )
-        : null}
-      topBarDefinition={resolvedTopBarSelection.topBar}
-      topBarCustomizeActive={topBarCustomizeActive}
-      onToggleTopBarCustomize={handleToggleTopBarCustomize}
-      topBarLayoutSnapshot={resolvedTopBarLayoutSnapshot}
-      onCommitTopBarLayoutSnapshot={handleCommitTopBarLayoutSnapshot}
+      {...commonWorkbenchTopBarProps}
+      surfaceMode="content-only"
+    />
+  );
+  const windowControlsSurface = (
+    <WorkbenchTopBar
+      {...commonWorkbenchTopBarProps}
+      surfaceMode="window-controls-only"
     />
   );
   const dockResizeTelemetryHud = !isWindowedMode && dockResizeTelemetry ? (
@@ -7769,6 +8096,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     openSettings: handleOpenSettings,
     renderDefaultChromeSurface: () => chromeBar,
     renderChromeBar: () => chromeBar,
+    renderChromeContentSurface: () => chromeContentSurface,
+    renderWindowControlsSurface: () => windowControlsSurface,
     renderUtilityActionsSurface: () => themeRendererUtilityActionSurface,
     renderDefaultNavigationSurface: () => defaultNavigationSurface,
     renderPanelSurface: renderManagedPanelSurface,
@@ -7780,6 +8109,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     activePanelId,
     activeWallpaper,
     chromeBar,
+    chromeContentSurface,
     contentStagePadding,
     defaultNavigationSurface,
     defaultShellBody,
@@ -7813,6 +8143,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     usesNavigationSidebar,
     wallpaperSelection,
     windowMode,
+    windowControlsSurface,
   ]);
   const shellBody = canRenderThemeRenderer
     ? (
@@ -7992,6 +8323,21 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           onQuickFilterChange={setCommandPaletteQuickFilterId}
           onTogglePinnedAction={toggleCommandPalettePinnedActionId}
           onClose={handleCloseCommandPalette}
+        />
+        <LookdevOverlay
+          appearance={resolvedAppearance}
+          themePackages={combinedThemePackages}
+          topBarPackages={topBarPackages}
+          dockPresentationPackages={dockPresentationPackages}
+          menuPacks={combinedMenuPacks}
+          actions={combinedExplorerActions}
+          onRefreshLookdevPresets={() => refreshLookdevPresets(true)}
+          onRefreshThemes={() => refreshThemePackages(true)}
+          onRefreshTopBars={() => refreshTopBarPackages(true)}
+          onRefreshDockPresentations={() => refreshDockPresentationPackages(true)}
+          onRefreshMenuPacks={() => refreshMenuPacks(true)}
+          onOpenSettingsSection={handleOpenSettingsSection}
+          onToggleTopBarCustomize={handleToggleTopBarCustomize}
         />
       </div>
     </IconThemeProvider>

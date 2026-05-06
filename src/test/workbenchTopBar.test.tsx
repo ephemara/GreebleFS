@@ -692,6 +692,30 @@ describe('WorkbenchTopBar', () => {
     expect(onPanelReorder).toHaveBeenCalledWith('notes', 'terminal');
   });
 
+  it('can render chrome content without forcing window controls into theme-owned layouts', () => {
+    renderWorkbenchTopBar({
+      blurPlatform: 'windows',
+      windowMode: 'windowed',
+      surfaceMode: 'content-only',
+    });
+
+    expect(screen.getByTitle(/open command palette/i)).toBeInTheDocument();
+    expect(screen.queryByTitle('Minimize')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Maximize')).not.toBeInTheDocument();
+  });
+
+  it('can render standalone window controls for theme-owned chrome placement', () => {
+    renderWorkbenchTopBar({
+      blurPlatform: 'windows',
+      windowMode: 'windowed',
+      surfaceMode: 'window-controls-only',
+    });
+
+    expect(screen.getByTitle('Minimize')).toBeInTheDocument();
+    expect(screen.getByTitle('Maximize')).toBeInTheDocument();
+    expect(screen.queryByTitle(/open command palette/i)).not.toBeInTheDocument();
+  });
+
   it('treats empty windowed chrome as a native drag region without stealing control clicks', async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     const currentWindow = getCurrentWindow() as unknown as {

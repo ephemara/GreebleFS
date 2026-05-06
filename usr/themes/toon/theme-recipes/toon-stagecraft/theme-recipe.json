@@ -16,7 +16,7 @@
       "panelStyle": "glass",
       "tabStyle": "segment",
       "metrics": {
-        "chromeHeight": 38,
+        "chromeHeight": 34,
         "controlRadius": 16,
         "panelRadius": 22,
         "shellInset": 10,
@@ -29,8 +29,8 @@
       "toolbarStyle": "minimal",
       "statusBarStyle": "floating",
       "metrics": {
-        "railWidth": 214,
-        "previewWidth": 360,
+        "railWidth": 208,
+        "previewWidth": 344,
         "chromeInset": 8,
         "controlRadius": 16,
         "panelRadius": 22,

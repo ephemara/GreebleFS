@@ -25,14 +25,14 @@
   "settingsStyle": "floating",
   "tabStyle": "segment",
   "metrics": {
-    "chromeHeight": 50,
-    "controlRadius": 20,
-    "panelRadius": 30,
-    "shellInset": 18,
+    "chromeHeight": 36,
+    "controlRadius": 18,
+    "panelRadius": 28,
+    "shellInset": 14,
     "commandPaletteWidth": 860,
-    "commandPaletteTopInset": 62,
-    "pagePadding": 18,
-    "panelGap": 14
+    "commandPaletteTopInset": 52,
+    "pagePadding": 14,
+    "panelGap": 12
   },
   "surfaces": {
     "shellBackground": "color-mix(in srgb, var(--overlay-bg-shell) 92%, transparent)",

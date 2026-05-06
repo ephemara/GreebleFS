@@ -5,6 +5,15 @@ import React, {
   type HTMLAttributes,
   type RefObject,
 } from "react";
+import {
+  autoUpdate,
+  computePosition,
+  flip,
+  limitShift,
+  offset as floatingOffset,
+  shift,
+  type Placement,
+} from "@floating-ui/react";
 import { createPortal } from "react-dom";
 
 type ExplorerFloatingSurfaceSide = "top" | "bottom";
@@ -30,13 +39,6 @@ interface ExplorerFloatingSurfacePosition {
   strategy: "absolute" | "fixed";
 }
 
-interface ExplorerFloatingSurfaceConstraintRect {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
-
 function resolveExplorerFloatingSurfacePortalRoot(
   anchorElement: HTMLElement | null,
 ): HTMLElement | null {
@@ -49,61 +51,11 @@ function resolveExplorerFloatingSurfacePortalRoot(
   );
 }
 
-function clampExplorerFloatingSurfacePosition(
-  value: number,
-  minimum: number,
-  maximum: number,
-): number {
-  if (maximum < minimum) {
-    return minimum;
-  }
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function resolveExplorerFloatingSurfacePosition(args: {
-  anchorRect: DOMRect;
-  panelRect: DOMRect;
-  constraintRect?: ExplorerFloatingSurfaceConstraintRect | null;
-  side: ExplorerFloatingSurfaceSide;
-  align: ExplorerFloatingSurfaceAlign;
-  offset: number;
-  viewportPadding: number;
-}): Pick<ExplorerFloatingSurfacePosition, "left" | "top"> {
-  const {
-    anchorRect,
-    panelRect,
-    constraintRect,
-    side,
-    align,
-    offset,
-    viewportPadding,
-  } = args;
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-  const boundaryLeft = constraintRect?.left ?? 0;
-  const boundaryTop = constraintRect?.top ?? 0;
-  const boundaryRight = constraintRect?.right ?? viewportWidth;
-  const boundaryBottom = constraintRect?.bottom ?? viewportHeight;
-  const desiredLeft =
-    align === "start"
-      ? anchorRect.left
-      : anchorRect.right - panelRect.width;
-  const desiredTop =
-    side === "top"
-      ? anchorRect.top - panelRect.height - offset
-      : anchorRect.bottom + offset;
-  return {
-    left: clampExplorerFloatingSurfacePosition(
-      desiredLeft,
-      boundaryLeft + viewportPadding,
-      boundaryRight - panelRect.width - viewportPadding,
-    ),
-    top: clampExplorerFloatingSurfacePosition(
-      desiredTop,
-      boundaryTop + viewportPadding,
-      boundaryBottom - panelRect.height - viewportPadding,
-    ),
-  };
+function resolveExplorerFloatingSurfacePlacement(
+  side: ExplorerFloatingSurfaceSide,
+  align: ExplorerFloatingSurfaceAlign,
+): Placement {
+  return `${side}-${align}`;
 }
 
 function projectExplorerFloatingSurfacePositionToPortalRoot(args: {
@@ -143,69 +95,108 @@ export function ExplorerFloatingSurface({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] =
     useState<ExplorerFloatingSurfacePosition | null>(null);
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(() => (
+    typeof document !== "undefined" ? document.body : null
+  ));
 
   useLayoutEffect(() => {
     if (!open) {
       setPosition(null);
-      setPortalRoot(null);
       return undefined;
     }
 
-    const updatePosition = () => {
-      const anchorElement = anchorRef.current;
-      const nextPortalRoot =
-        resolveExplorerFloatingSurfacePortalRoot(anchorElement);
-      setPortalRoot((currentPortalRoot) =>
-        currentPortalRoot === nextPortalRoot ? currentPortalRoot : nextPortalRoot,
-      );
-      const panelElement = panelRef.current;
-      if (!anchorElement || !panelElement) {
-        setPosition(null);
+    const anchorElement = anchorRef.current;
+    const panelElement = panelRef.current;
+    const nextPortalRoot = resolveExplorerFloatingSurfacePortalRoot(anchorElement);
+    setPortalRoot((currentPortalRoot) => (
+      currentPortalRoot === nextPortalRoot ? currentPortalRoot : nextPortalRoot
+    ));
+
+    if (!anchorElement || !panelElement || !nextPortalRoot) {
+      setPosition(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const placement = resolveExplorerFloatingSurfacePlacement(side, align);
+    const boundaryElement = nextPortalRoot === document.body ? undefined : nextPortalRoot;
+
+    const updatePosition = async () => {
+      const activeAnchorElement = anchorRef.current;
+      const activePanelElement = panelRef.current;
+      const activePortalRoot = resolveExplorerFloatingSurfacePortalRoot(activeAnchorElement);
+      if (!activeAnchorElement || !activePanelElement || !activePortalRoot) {
+        if (!cancelled) {
+          setPosition(null);
+        }
         return;
       }
-      const portalRootRect =
-        nextPortalRoot && nextPortalRoot !== document.body
-          ? nextPortalRoot.getBoundingClientRect()
-          : null;
-      const viewportPosition = resolveExplorerFloatingSurfacePosition({
-        anchorRect: anchorElement.getBoundingClientRect(),
-        panelRect: panelElement.getBoundingClientRect(),
-        constraintRect: portalRootRect,
-        side,
-        align,
-        offset,
-        viewportPadding,
-      });
+
+      if (activePortalRoot !== nextPortalRoot) {
+        setPortalRoot(activePortalRoot);
+        return;
+      }
+
+      const viewportPosition = await computePosition(
+        activeAnchorElement,
+        activePanelElement,
+        {
+          placement,
+          strategy: "fixed",
+          middleware: [
+            floatingOffset(offset),
+            flip({
+              boundary: boundaryElement,
+              padding: viewportPadding,
+            }),
+            shift({
+              boundary: boundaryElement,
+              padding: viewportPadding,
+              limiter: limitShift(),
+            }),
+          ],
+        },
+      );
+
+      if (cancelled) {
+        return;
+      }
+
       setPosition(
-        nextPortalRoot
-          ? projectExplorerFloatingSurfacePositionToPortalRoot({
-              viewportPosition,
-              portalRoot: nextPortalRoot,
-            })
-          : null,
+        activePortalRoot === document.body
+          ? {
+              left: viewportPosition.x,
+              top: viewportPosition.y,
+              strategy: "fixed",
+            }
+          : projectExplorerFloatingSurfacePositionToPortalRoot({
+              viewportPosition: {
+                left: viewportPosition.x,
+                top: viewportPosition.y,
+              },
+              portalRoot: activePortalRoot,
+            }),
       );
     };
 
-    updatePosition();
+    void updatePosition();
+    const cleanupAutoUpdate = autoUpdate(
+      anchorElement,
+      panelElement,
+      () => {
+        void updatePosition();
+      },
+      {
+        ancestorResize: true,
+        ancestorScroll: true,
+        elementResize: true,
+        layoutShift: true,
+      },
+    );
 
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined"
-        ? new ResizeObserver(() => updatePosition())
-        : null;
-    if (anchorRef.current) {
-      resizeObserver?.observe(anchorRef.current);
-    }
-    if (panelRef.current) {
-      resizeObserver?.observe(panelRef.current);
-    }
-
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
     return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      cancelled = true;
+      cleanupAutoUpdate();
     };
   }, [align, anchorRef, offset, open, portalRoot, side, viewportPadding]);
 

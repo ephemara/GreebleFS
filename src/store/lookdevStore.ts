@@ -71,6 +71,7 @@ interface LookdevStoreState extends LookdevCatalogState, LookdevSessionState {
     baseline: LookdevBaselineSnapshot;
     initialWindowMode: PresentationWindowMode;
     preset?: LoadedLookdevPreset | null;
+    draftManifest?: LookdevPresetManifest | null;
   }) => void;
   closeSession: () => void;
   setActiveLens: (lens: LookdevOverlayLens) => void;
@@ -132,7 +133,7 @@ export const useLookdevStore = create<LookdevStoreState>((set) => ({
       ...nextState,
     })),
 
-  openSession: ({ baseline, initialWindowMode, preset }) =>
+  openSession: ({ baseline, initialWindowMode, preset, draftManifest }) =>
     set((state) => ({
       ...state,
       isOpen: true,
@@ -143,7 +144,8 @@ export const useLookdevStore = create<LookdevStoreState>((set) => ({
       draftSession: {
         presetId: preset?.id ?? null,
         manifest: cloneJsonValue(
-          preset?.manifest ??
+          draftManifest ??
+            preset?.manifest ??
             createEmptyLookdevPresetManifest({
               id: "live-lookdev-session",
               name: "Live Lookdev Session",

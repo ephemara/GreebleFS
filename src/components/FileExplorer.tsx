@@ -217,6 +217,7 @@ import {
   resolveExplorerLayoutZoomState,
   resolveExplorerLayoutZoomStateAtValue,
   resolveEffectiveExplorerViewMode,
+  resolveThemedExplorerViewModes,
   stepExplorerViewMode,
   type ExplorerGridMode,
   type ExplorerLayoutZoomState,
@@ -9171,20 +9172,24 @@ export function FileExplorer({
   const preferredExperimentalViewMode =
     effectiveModeProfile.preferredExperimentalViewMode ??
     explorerTheme.preferredExperimentalViewMode;
-  const themedViewMode = useMemo(
+  const themedExplorerViewModes = useMemo(
     () =>
-      viewMode === "details" && preferredViewMode
-        ? preferredViewMode
-        : viewMode,
-    [preferredViewMode, viewMode],
+      resolveThemedExplorerViewModes({
+        viewMode,
+        experimentalViewMode,
+        preferredViewMode,
+        preferredExperimentalViewMode,
+      }),
+    [
+      experimentalViewMode,
+      preferredExperimentalViewMode,
+      preferredViewMode,
+      viewMode,
+    ],
   );
-  const themedExperimentalViewMode = useMemo(
-    () =>
-      experimentalViewMode === "off" && preferredExperimentalViewMode
-        ? preferredExperimentalViewMode
-        : experimentalViewMode,
-    [experimentalViewMode, preferredExperimentalViewMode],
-  );
+  const themedViewMode = themedExplorerViewModes.viewMode;
+  const themedExperimentalViewMode =
+    themedExplorerViewModes.experimentalViewMode;
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
   const initialSession = useMemo(
@@ -29380,16 +29385,15 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
-        if (
-          !isCompactDock &&
-          !isSearchActive &&
-          (experimentalViewMode !== "off" ||
-            explorerTheme.preferredExperimentalViewMode != null)
-        ) {
-          const nextDensity = stepAdaptiveSemanticDensity(
-            experimentalDensity,
-            "larger",
-          );
+      if (
+        !isCompactDock &&
+        !isSearchActive &&
+        effectiveExperimentalViewMode !== "off"
+      ) {
+        const nextDensity = stepAdaptiveSemanticDensity(
+          experimentalDensity,
+          "larger",
+        );
           if (nextDensity !== experimentalDensity) {
             updateExplorerSettings({ experimentalDensity: nextDensity });
             showExperimentalHud();
@@ -29502,9 +29506,7 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation,
     explorerPicker,
     experimentalDensity,
-    experimentalViewMode,
     effectiveExperimentalViewMode,
-    explorerTheme.preferredExperimentalViewMode,
     focusExplorerAddressBar,
     focusExplorerList,
     focusExplorerPreview,

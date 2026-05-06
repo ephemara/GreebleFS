@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { OverlayProvider } from "react-aria";
 import "./App.css";
 import {
     shouldAllowDocumentSelection,
@@ -23,6 +24,10 @@ import {
     installGreeblefsDevMcpBridge,
     markGreeblefsDevMcpBridgeRenderComplete,
 } from "./runtime/devMcpBridge";
+
+if (import.meta.env.DEV || import.meta.env.VITE_GREEBLEFS_MCP_ENABLED === "1") {
+    void import("./runtime/devReactScan").then(({ installDevReactScan }) => installDevReactScan());
+}
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -129,7 +134,9 @@ async function bootstrapApp() {
 
         ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <React.StrictMode>
-            <RootComponent {...rootProps} />
+            <OverlayProvider>
+              <RootComponent {...rootProps} />
+            </OverlayProvider>
           </React.StrictMode>
         );
         markGreeblefsDevMcpBridgeRenderComplete();

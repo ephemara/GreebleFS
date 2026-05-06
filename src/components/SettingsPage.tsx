@@ -216,6 +216,7 @@ import {
   managedContentDirectoryCatalog,
   type ManagedContentDirectoryId,
 } from "../config/appContentDirectories";
+import { getBuiltInShellCustomizeCatalog } from "../config/shellCustomizeCatalog";
 import {
   settingsRailPathCatalog,
   settingsSectionCategoryCatalog,
@@ -238,6 +239,12 @@ import {
   type InteractionMotionBinding,
 } from "../animation/interactionMotion";
 import { MobileShareConnectionCards } from "./MobileShareConnectionCards";
+import {
+  LOOKDEV_APPLY_PRESET_EVENT,
+  LOOKDEV_OPEN_OVERLAY_EVENT,
+  LOOKDEV_REFRESH_PRESETS_EVENT,
+} from "../runtime/lookdevEvents";
+import { useLookdevStore } from "../store/lookdevStore";
 import { MobileShareQrDialog } from "./MobileShareQrDialog";
 import { OverlayActionButton } from "./OverlayActionButton";
 import { SettingsShell } from "./settings/SettingsShell";
@@ -2669,6 +2676,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Sparkles size={14} />;
     case "layout-dynamics":
       return <LayoutGrid size={14} />;
+    case "lookdev":
+      return <Sliders size={14} />;
     case "theme-json":
       return <Type size={14} />;
   }
@@ -2736,6 +2745,9 @@ interface SettingsSectionContentContext {
   layoutDynamicsEnabled: boolean;
   layoutDynamicsProfileLabel: string;
   layoutDynamicsSurfaceCount: number;
+  lookdevPresetCount: number;
+  activeLookdevPresetSummary: string;
+  shellCustomizeControlCount: number;
   topBarSelectionSummary: string;
   availableTopBarsCount: number;
   followThemeTopBarDetail: string;
@@ -2911,6 +2923,12 @@ function getSettingsSectionContent(
         summary: `${context.layoutDynamicsProfileLabel} · ${context.layoutDynamicsEnabled ? "Customize ready" : "Physics disabled"} · ${context.layoutDynamicsSurfaceCount} surfaces`,
         detail:
           "Move explorer buttons directly, save the current layout, or reset all layout UI state back to canonical defaults; advanced solver controls stay collapsed by default.",
+      };
+    case "lookdev":
+      return {
+        summary: `${context.activeLookdevPresetSummary} · ${context.lookdevPresetCount} preset${context.lookdevPresetCount === 1 ? "" : "s"} · ${context.shellCustomizeControlCount} shell controls`,
+        detail:
+          "Launch the immersive global lookdev overlay, tweak dock and app mode semantically, then save presets or export theme-aligned assets without drifting away from the existing theme lanes.",
       };
     case "theme-json":
       return {
@@ -3502,6 +3520,21 @@ export function SettingsPage({
       showAllDescriptionsBySection: state.showAllDescriptionsBySection,
       setShowAllDescriptions: state.setShowAllDescriptions,
     })),
+  );
+  const {
+    lookdevPresets,
+    lookdevPresetsDirectory,
+    lookdevSelectedPresetId,
+    lookdevActiveAppliedPresetId,
+  } = useLookdevStore(useShallow((state) => ({
+    lookdevPresets: state.presets,
+    lookdevPresetsDirectory: state.presetsDirectory,
+    lookdevSelectedPresetId: state.selectedPresetId,
+    lookdevActiveAppliedPresetId: state.activeAppliedPresetId,
+  })));
+  const shellCustomizeCatalog = useMemo(
+    () => getBuiltInShellCustomizeCatalog(),
+    [],
   );
   const showAllDescriptionsForActiveSection =
     activeRailPath === 'settings'
@@ -7847,6 +7880,22 @@ export function SettingsPage({
       null,
     [usrProfileRuntimeSnapshot],
   );
+  const activeLookdevPresetSummary = useMemo(() => {
+    const activeLookdevPresetId =
+      lookdevSelectedPresetId ?? lookdevActiveAppliedPresetId;
+    if (!activeLookdevPresetId) {
+      return "No Active Preset";
+    }
+
+    return (
+      lookdevPresets.find((preset) => preset.id === activeLookdevPresetId)?.name ??
+      activeLookdevPresetId
+    );
+  }, [
+    lookdevActiveAppliedPresetId,
+    lookdevPresets,
+    lookdevSelectedPresetId,
+  ]);
 
   const settingsSectionContext = useMemo<SettingsSectionContentContext>(
     () => ({
@@ -7924,6 +7973,9 @@ export function SettingsPage({
       layoutDynamicsEnabled: settings.appearance.layoutDynamicsEnabled,
       layoutDynamicsProfileLabel: effectiveLayoutDynamicsPresetLabel,
       layoutDynamicsSurfaceCount: layoutDynamicsSurfaceCatalog.length,
+      lookdevPresetCount: lookdevPresets.length,
+      activeLookdevPresetSummary,
+      shellCustomizeControlCount: shellCustomizeCatalog.length,
       topBarSelectionSummary,
       availableTopBarsCount: availableTopBars.length,
       followThemeTopBarDetail,
@@ -7951,6 +8003,7 @@ export function SettingsPage({
       effectiveTheme.name,
       effectiveInteractionMotionProfileLabel,
       effectiveLayoutDynamicsPresetLabel,
+      activeLookdevPresetSummary,
       followThemeTopBarDetail,
       homePackSummary,
       iconThemeSelectionSummary,
@@ -7962,6 +8015,7 @@ export function SettingsPage({
       installedLocalModelCount,
       interactionMotionSurfaceCatalog.length,
       layoutDynamicsSurfaceCatalog.length,
+      lookdevPresets.length,
       layoutManifestState.manifest.profiles.length,
       localModelCacheFootprint,
       menuPacks.length,
@@ -8001,6 +8055,7 @@ export function SettingsPage({
       themeRecipeSelectionSummary,
       themeWallpaperAvailable,
       topBarSelectionSummary,
+      shellCustomizeCatalog.length,
       usrProfileRuntimeSnapshot?.profiles.length,
       usrProfileSharedSettingSliceKeys.length,
       workspaceRoots.length,
@@ -19051,6 +19106,329 @@ export function SettingsPage({
               </div>
             </OverviewCard>
           </div>
+        )}
+
+        {activeSection === "lookdev" && (
+          <section
+            className="rounded border p-4"
+            style={{
+              borderColor: border,
+              background: "rgba(255,255,255,0.03)",
+            }}
+          >
+            <SectionTitle
+              icon={<Sliders size={12} />}
+              title="Global Lookdev"
+              subtitle={activeSectionMeta.detail}
+            />
+
+            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-4">
+                <div
+                  className="rounded border p-4"
+                  style={{
+                    borderColor: `${accent}44`,
+                    background: `${accent}10`,
+                  }}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="max-w-[720px]">
+                      <div
+                        className="text-[10px] font-semibold uppercase tracking-[0.18em]"
+                        style={{ color: muted }}
+                      >
+                        Semantic Authoring Overlay
+                      </div>
+                      <div
+                        className="mt-2 text-[18px] font-semibold"
+                        style={{ color: text }}
+                      >
+                        Shape dock mode and app mode from one live surface.
+                      </div>
+                      <div
+                        className="mt-2 text-[12px] leading-5"
+                        style={{ color: muted }}
+                      >
+                        Lookdev sits on top of the existing theme, dock,
+                        explorer, top-bar, and menu lanes. It previews changes
+                        live, keeps mode-aware scopes explicit, and saves the
+                        result back into reusable semantic presets.
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT),
+                          )
+                        }
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{
+                          border: `1px solid ${accent}66`,
+                          background: `${accent}18`,
+                          color: accent,
+                        }}
+                      >
+                        Open Overlay
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent(LOOKDEV_REFRESH_PRESETS_EVENT),
+                          )
+                        }
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{
+                          border: `1px solid ${border}`,
+                          background: "rgba(255,255,255,0.04)",
+                          color: text,
+                        }}
+                      >
+                        Refresh Presets
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          !(lookdevSelectedPresetId ?? lookdevActiveAppliedPresetId)
+                        }
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent(LOOKDEV_APPLY_PRESET_EVENT, {
+                              detail: {
+                                presetId:
+                                  lookdevSelectedPresetId ??
+                                  lookdevActiveAppliedPresetId,
+                              },
+                            }),
+                          )
+                        }
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-40"
+                        style={{
+                          border: `1px solid ${border}`,
+                          background: "rgba(255,255,255,0.04)",
+                          color: text,
+                        }}
+                      >
+                        Apply Selected
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void openExplorerPath(
+                            lookdevPresetsDirectory ||
+                              getManagedContentDirectory("lookdevPresets"),
+                          )
+                        }
+                        className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                        style={{
+                          border: `1px solid ${border}`,
+                          background: "rgba(255,255,255,0.04)",
+                          color: text,
+                        }}
+                      >
+                        Open Folder
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <OverviewCard
+                  title="Preset Catalog"
+                  subtitle="These semantic presets resolve through shared, windowed, and dock scopes without replacing the existing theme and profile systems."
+                  badges={[
+                    `${lookdevPresets.length} preset${lookdevPresets.length === 1 ? "" : "s"}`,
+                    `${shellCustomizeCatalog.length} shell controls`,
+                  ]}
+                >
+                  <div className="space-y-2">
+                    {lookdevPresets.length === 0 ? (
+                      <div
+                        className="rounded border px-3 py-3 text-[11px]"
+                        style={{
+                          borderColor: border,
+                          background: "rgba(255,255,255,0.03)",
+                          color: muted,
+                        }}
+                      >
+                        No lookdev presets are loaded yet. Open the overlay and
+                        save one to seed the catalog.
+                      </div>
+                    ) : null}
+                    {lookdevPresets.map((preset) => {
+                      const selected = lookdevSelectedPresetId === preset.id;
+                      const runtimeActive =
+                        lookdevActiveAppliedPresetId === preset.id;
+                      return (
+                        <div
+                          key={preset.id}
+                          className="rounded border px-3 py-3"
+                          style={{
+                            borderColor:
+                              selected || runtimeActive
+                                ? `${accent}55`
+                                : border,
+                            background:
+                              selected || runtimeActive
+                                ? `${accent}0f`
+                                : "rgba(255,255,255,0.02)",
+                          }}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className="truncate text-[11px] font-semibold uppercase tracking-[0.12em]"
+                                style={{ color: text }}
+                              >
+                                {preset.name}
+                              </div>
+                              <div
+                                className="mt-1 text-[11px] leading-5"
+                                style={{ color: muted }}
+                              >
+                                {preset.description}
+                              </div>
+                              <div
+                                className="mt-2 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                                style={{ color: muted }}
+                              >
+                                <span>{preset.id}</span>
+                                {runtimeActive ? <span>Runtime</span> : null}
+                                {selected ? <span>Selected</span> : null}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  window.dispatchEvent(
+                                    new CustomEvent(LOOKDEV_APPLY_PRESET_EVENT, {
+                                      detail: { presetId: preset.id },
+                                    }),
+                                  )
+                                }
+                                className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{
+                                  border: `1px solid ${border}`,
+                                  background: "rgba(255,255,255,0.04)",
+                                  color: text,
+                                }}
+                              >
+                                Apply
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  window.dispatchEvent(
+                                    new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT, {
+                                      detail: { presetId: preset.id },
+                                    }),
+                                  )
+                                }
+                                className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                                style={{
+                                  border: `1px solid ${border}`,
+                                  background: "rgba(255,255,255,0.04)",
+                                  color: text,
+                                }}
+                              >
+                                Edit In Overlay
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </OverviewCard>
+              </div>
+
+              <div className="space-y-4">
+                <OverviewCard
+                  title="Live Route"
+                  subtitle="This lane stays aligned with the systems that already own shell truth."
+                  badges={[`Mode ${settings.presentation.windowMode}`]}
+                >
+                  <div className="grid grid-cols-1 gap-2 text-[11px]">
+                    {[
+                      ["Runtime preset", activeLookdevPresetSummary],
+                      ["Theme", settings.appearance.activeThemeId],
+                      ["Top bar", settings.appearance.activeTopBarId ?? "none"],
+                      ["Menu pack", settings.explorer.activeMenuPackId ?? "none"],
+                      ["Dock presentation", settings.dock.activePresentationId ?? "none"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded border px-3 py-2"
+                        style={{
+                          borderColor: "rgba(255,255,255,0.08)",
+                          background: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div style={{ color: muted }}>{label}</div>
+                        <div className="mt-1 font-semibold" style={{ color: text }}>
+                          {value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </OverviewCard>
+
+                <OverviewCard
+                  title="Quick Jumps"
+                  subtitle="Bounce into the existing authoring lanes when you want deeper control than the global overlay needs to expose."
+                  badges={["Theme", "Menus", "Dock"]}
+                >
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      {
+                        id: "appearance",
+                        label: "Open Appearance",
+                        description: "Theme bundles, opacity, blur, wallpapers, and token-backed shell visuals.",
+                      },
+                      {
+                        id: "context-menus",
+                        label: "Open Context Menus",
+                        description: "Menu packs and composer layouts for explorer actions.",
+                      },
+                      {
+                        id: "dock",
+                        label: "Open Dock Mode",
+                        description: "Dock presentations, edge sizing, placement, and preview policy.",
+                      },
+                    ].map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() =>
+                          setActiveSection(entry.id as SettingsSectionKey)
+                        }
+                        className="rounded border px-3 py-3 text-left"
+                        style={{
+                          borderColor: border,
+                          background: "rgba(255,255,255,0.03)",
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {entry.label}
+                        </div>
+                        <div
+                          className="mt-1 text-[11px] leading-5"
+                          style={{ color: muted }}
+                        >
+                          {entry.description}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </OverviewCard>
+              </div>
+            </div>
+          </section>
         )}
 
         {activeSection === "theme-json" && (

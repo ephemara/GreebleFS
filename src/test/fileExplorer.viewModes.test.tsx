@@ -1308,6 +1308,29 @@ function getExplorerActivityDockLaneIds(side: "left" | "right") {
     .filter((laneId): laneId is string => laneId != null);
 }
 
+function getExplorerActivityDockLanePane(
+  side: "left" | "right",
+  laneId: string,
+) {
+  const laneElement = getExplorerActivityDockLaneElements(side).find(
+    (element) =>
+      element.getAttribute("data-overlay-explorer-activity-dock-lane") ===
+      laneId,
+  );
+  if (!laneElement) {
+    throw new Error(`Explorer ${side} activity dock lane ${laneId} not found`);
+  }
+  const pane = laneElement.querySelector(
+    "[data-overlay-explorer-slate-pane]",
+  ) as HTMLElement | null;
+  if (!pane) {
+    throw new Error(
+      `Explorer ${side} activity dock lane ${laneId} slate pane not found`,
+    );
+  }
+  return pane;
+}
+
 function getExplorerActivityDockResizeHandle(side: "left" | "right") {
   const handle = getExplorerActivityDock(side).querySelector(
     "[data-resizable-pane-handle]",
@@ -3075,6 +3098,35 @@ describe("FileExplorer view modes", () => {
       expect(useExplorerStore.getState().session.leftActivityDockWidth).toBeGreaterThan(
         narrowLeftWidth,
       );
+      expect(getExplorerActivityDockLanePane("left", "search")).toHaveStyle({
+        flex: "1 1 0%",
+        width: "100%",
+      });
+    });
+  });
+
+  it("stretches the semantic lane to the full activity dock width", async () => {
+    useExplorerStore.getState().updateSession({
+      sidebarWidth: 220,
+      leftActivityDockWidth: 220,
+    });
+    renderExplorer();
+    await within(getExplorerActivityRail("left")).findByRole("button", {
+      name: "Semantic",
+    });
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Semantic",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual(["semantic"]);
+      expect(getExplorerActivityDockLanePane("left", "semantic")).toHaveStyle({
+        flex: "1 1 0%",
+        width: "100%",
+      });
     });
   });
 
