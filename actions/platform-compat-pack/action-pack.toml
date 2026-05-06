@@ -1,6 +1,0 @@
-version = 1
-id = "platform-compat-actions"
-name = "Platform Compatibility Pack"
-description = "Cross-platform compatibility testing actions for detecting encoding, path separators, line endings, and platform environment."
-author = "Codex"
-tags = ["platform", "compatibility", "encoding", "cross-platform", "line-endings", "paths"]

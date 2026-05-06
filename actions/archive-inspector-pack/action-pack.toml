@@ -1,6 +1,0 @@
-version = 1
-id = "archive-inspector-actions"
-name = "Archive Inspector Pack"
-description = "Read-only actions for inspecting and testing archive files and compression operations without extraction."
-author = "Codex"
-tags = ["archive", "compression", "integrity", "inspection"]
