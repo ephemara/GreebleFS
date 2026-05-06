@@ -3,6 +3,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { assertTauronForkAvailable } from "./tauron-preflight.mjs";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
@@ -25,6 +27,7 @@ function readMergedTauriConfigOverride() {
 }
 
 function run() {
+  assertTauronForkAvailable(projectRoot);
   const tauriConfigOverride = readMergedTauriConfigOverride();
   const child = spawn(
     "cargo",

@@ -28,6 +28,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Frontend: React 19 + TypeScript + Vite
 - State: Zustand
 - Desktop host: Tauri 2 + Rust
+- Rust-side Tauri source: sibling `D:/tauron` fork consumed through root Cargo `[patch.crates-io]`
+- JS Tauri tooling: upstream `@tauri-apps/cli` / `@tauri-apps/api` packages for now
 - Python runtime: managed virtualenv + persistent stdio JSON sidecar + embedded `pyo3` helpers
 - Visual system: CSS variables, theme bundles, appearance packs, icon themes, top bars, shaders, animations
 - Tests: Vitest unit/browser, Rust tests
@@ -48,6 +50,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `scripts/run-platform-tauri.mjs`
   Canonical `bun run tauri ...` wrapper. For `tauri dev` it now also owns the MCP/dev-session contract: it injects `GREEBLEFS_MCP_ENABLED`, `VITE_GREEBLEFS_MCP_ENABLED`, the frontend dev URL, the WebView2 remote-debugging port, and the MCP status/log file paths, then publishes session truth to `MCP/.state/tauri-dev-session.json` and `MCP/.state/tauri-dev.log` so external agents can tell whether the real app is actually running before they start guessing.
+- `Cargo.toml`
+  Root Rust workspace manifest. It now owns the hard sibling-fork routing for core Tauri crates through `[patch.crates-io]`, pointing `tauri`, `tauri-build`, `tauri-codegen`, `tauri-macros`, `tauri-plugin`, `tauri-runtime`, `tauri-runtime-wry`, and `tauri-utils` at `../tauron/crates/*` instead of crates.io. This is the canonical place to swap framework source for GreebleFS; do not add `../tauron` as a workspace member.
+- `scripts/tauron-preflight.mjs`
+  Hard guard for Cargo-backed Node/Bun entrypoints. It asserts that the sibling `../tauron` workspace exists and contains the required core crate manifests before `bindings:generate`, `tauri dev/build`, or the Rust test runner touch Cargo, so failures are explicit and early instead of looking like random resolution or build breakage.
 - `src/App.tsx`
   Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server. The command palette now also hosts indexed global file search plus scan/rebuild controls, using host-owned stores/runtime seams instead of letting the explorer or an imported search package own shell truth. Root overlay animation progress no longer lives here; `App.tsx` now assembles the shell scene and changes only coarse overlay phase/direction, while command-palette global-search queries are deferred before they hit the backend path. It is also the activation-policy layer for native workbench tear-off: plugin panel requests, IDE externalized-surface restore/hide flows, and dedicated native panel-window rendering all route here instead of creating a second panel state model.
 - `src/components/OverlayShellScene.tsx`
@@ -1005,6 +1011,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run tauri dev` uses the generated runtime Tauri config from `scripts/run-platform-tauri.mjs`, which points Tauri at the Vite `devUrl`. TS/React edits hot-reload through Vite during that session, but binding generation and startup prep scripts only rerun when the Tauri dev process starts.
 - `bun run tauri dev` must keep `beforeDevCommand` Cargo-free. `scripts/run-platform-tauri.mjs` now pre-runs `bindings:generate` once, then hands Tauri a frontend-only `beforeDevCommand` (`bun run dev:frontend`) so the native Rust compile and the Vite boot do not fight over Cargo locks. If the old `Waiting for your frontend dev server to start on http://localhost:1420/...` loop comes back, inspect that split before touching preview code, Go policy code, or the dev URL itself.
 - `bun run tauri dev` is now also allowed to reclaim older live GreebleFS frontend/dev siblings before startup. `scripts/cleanup-dev-processes.mjs` recognizes the real running commands (`node .../@tauri-apps/cli/tauri.js dev`, `node .../vite/bin/vite.js`, `node scripts/run-frontend-dev.mjs`, `target/debug/export-bindings`) and skips the current process ancestry so it kills stale siblings without murdering the launch in progress. If the boot fails with `Port 1420 is already in use`, rerun `bun run tauri dev` or manually run `bun run dev:cleanup -- --include-running`.
+- GreebleFS now assumes the sibling `D:/tauron` fork is present for every Cargo-backed workflow. If `cargo`, `bun run tauri ...`, `bun run bindings:generate`, or `bun run test:rust` suddenly fail before compilation starts, inspect `scripts/tauron-preflight.mjs` output and verify the required crate manifests still exist under `../tauron/crates/*` before changing crate versions or npm packages.
+- The fork boundary is intentionally Rust-only in this rollout. Keep `@tauri-apps/cli` and `@tauri-apps/api` on upstream packages until a later migration explicitly changes the JS lane; framework Rust changes should land in `../tauron`, then flow back into GreebleFS through the root Cargo patch block.
 - The dev MCP stack now has two runtimes on purpose:
   - `bun run --cwd MCP/greeblefs-dev-mcp typecheck` stays on Bun.
   - `bun run mcp:dev`, `bun run mcp:http`, `bun run mcp:doctor`, and `bun run mcp:smoke` now execute through Node + `tsx`.

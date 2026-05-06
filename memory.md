@@ -1,3 +1,26 @@
+# 2026-05-06 - Tauron Fork Adoption For Rust-Side Tauri Crates
+
+- GreebleFS now consumes the sibling `D:/tauron` fork as the Rust-side source of truth for core Tauri crates.
+  - Root `Cargo.toml` now patches crates.io for `tauri`, `tauri-build`, `tauri-codegen`, `tauri-macros`, `tauri-plugin`, `tauri-runtime`, `tauri-runtime-wry`, and `tauri-utils`.
+  - The fork integration is intentionally hard and local: GreebleFS expects `../tauron`; there is no upstream fallback path in this rollout.
+- JS/package-manager boundary is intentionally unchanged.
+  - `@tauri-apps/cli` and `@tauri-apps/api` remain upstream npm packages.
+  - `scripts/run-platform-tauri.mjs` still launches the installed upstream CLI; only Cargo resolution moved to the sibling fork.
+- Added `scripts/tauron-preflight.mjs` and wired it into the Cargo-touching Node entrypoints:
+  - `scripts/run-platform-tauri.mjs`
+  - `scripts/run-export-bindings.mjs`
+  - `scripts/run-cargo-tests.mjs`
+  - The preflight fails early with a clear missing-path report if `../tauron` or any required core crate manifest is missing.
+- Dependency-resolution outcome:
+  - `cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1` confirmed the patched Tauri crates resolve from `D:/tauron/crates/*` instead of crates.io.
+  - `cargo check --manifest-path src-tauri/Cargo.toml` succeeded with the tauron crate paths in the compile output.
+  - The existing third-party lock stayed stable where it mattered: `Cargo.lock` still preserves `wry 0.55.1` from crates.io even though tauron’s own lock carried `0.55.0`.
+- Durable operational rule:
+  - Rust framework changes now belong in `../tauron`, not as ad hoc edits inside Cargo.lock gymnastics or upstream-version bumps in GreebleFS.
+  - GreebleFS should consume those framework edits through the root `[patch.crates-io]` block unless a future rollout explicitly migrates the JS CLI/API lane too.
+- Current validation note:
+  - The first fresh `bindings:generate` / wider Rust suite pass after patching can take much longer than earlier quick checks because Cargo rebuilds against the tauron source trees. If those commands appear to “hang,” inspect live compile output before assuming the patch lane is broken.
+
 # 2026-05-06 - Target-Aware Explorer Context Menu Routing
 
 - Added a shared local/themed context-menu model in `src/components/explorer/overlayContextMenuModel.ts`.

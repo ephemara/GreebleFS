@@ -89,3 +89,13 @@ module_inception = "allow"
 option_map_unit_fn = "allow"
 unit_arg = "allow"
 use_self = "warn"
+
+[patch.crates-io]
+tauri = { path = "../tauron/crates/tauri" }
+tauri-build = { path = "../tauron/crates/tauri-build" }
+tauri-codegen = { path = "../tauron/crates/tauri-codegen" }
+tauri-macros = { path = "../tauron/crates/tauri-macros" }
+tauri-plugin = { path = "../tauron/crates/tauri-plugin" }
+tauri-runtime = { path = "../tauron/crates/tauri-runtime" }
+tauri-runtime-wry = { path = "../tauron/crates/tauri-runtime-wry" }
+tauri-utils = { path = "../tauron/crates/tauri-utils" }

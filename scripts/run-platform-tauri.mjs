@@ -7,6 +7,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { cleanupGreeblefsDevProcesses } from "./cleanup-dev-processes.mjs";
+import { assertTauronForkAvailable } from "./tauron-preflight.mjs";
 import { getUsrEntrySourcePath, getUsrManagedContentEntries } from "./usr-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -771,6 +772,7 @@ async function main() {
     );
   }
 
+  assertTauronForkAvailable(projectRoot);
   await ensureNativeBindingAvailable();
   await fs.mkdir(frontendDist, { recursive: true });
   const packageManagerCommand = getPackageManagerCommand();

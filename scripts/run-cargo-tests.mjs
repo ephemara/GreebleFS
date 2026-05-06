@@ -6,6 +6,7 @@ import {
   rustCargoTestPackagePlatformRules,
   rustCargoTestWorkspaceDefinitions,
 } from './rust-cargo-test-suite.config.mjs';
+import { assertTauronForkAvailable } from './tauron-preflight.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -217,6 +218,7 @@ function deduplicatePackages(packages) {
 }
 
 function main() {
+  assertTauronForkAvailable(projectRoot);
   const commandLine = parseCommandLine(process.argv.slice(2));
   const workspaces = selectedWorkspaceDefinitions(commandLine);
   const packages = deduplicatePackages(workspaces.flatMap(loadWorkspacePackages));
