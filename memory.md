@@ -1,3 +1,14 @@
+# 2026-05-05 - Root Windows New-User Flow Wrapper
+
+- Added the root-level `simulate-new-user-flow.bat` convenience wrapper for the Windows clean-install path.
+- The wrapper intentionally stays thin and delegates all destructive cleanup plus build/install logic to `scripts/platform/install-windows-local.ps1`.
+- Modes:
+  - no args: build release, wipe local install/user state, reinstall, and launch
+  - `install-only`: same flow without launching
+  - `uninstall`: cleanup only
+- Durable rule:
+  - If the Windows release/new-user simulation flow changes, update `scripts/platform/install-windows-local.ps1` first and keep the root batch file as a shallow entrypoint.
+
 # 2026-05-05 - Tauri Callback Spam Reload Guard Sweep
 
 - Fixed the remaining frontend-side callback leak paths behind repeated `[TAURI] Couldn't find callback id ...` warnings during dev reloads, especially the ones that could also re-touch window presentation and cause visible flicker.

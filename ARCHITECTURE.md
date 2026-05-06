@@ -780,7 +780,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `queue/`
   Repo-local intake lane for user-owned code folders that may donate systems into GreebleFS. `queue/staging/` is the active review lane, `queue/vault/` is the deferred/rejected lane, and `queue/queue.py` is the first-pass analyzer for repo fit, novelty, dependencies, semantic/path connections, and sanitize/scrub findings before agents start manual assimilation work.
 - `docs/archive/root/`
-  Archived former root markdown docs. Keep the repo root limited to `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md` rather than reintroducing planning or narrative docs at the top level.
+  Archived former root markdown docs. Keep the repo root limited to `AGENTS.md`, `ARCHITECTURE.md`, `memory.md`, and the thin Windows convenience wrapper `simulate-new-user-flow.bat` rather than reintroducing planning or narrative docs at the top level.
 - `docs/research/repomix/`
   Generated repomix bundles and XML exports. These are large research artifacts and should stay out of the repo root.
 - `reference/`
@@ -850,6 +850,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `python3 scripts/reference-tools/reference_scrub_zed.py --apply`
 - `bash ./scripts/platform/install-linux-local.sh`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\platform\install-windows-local.ps1`
+- `.\simulate-new-user-flow.bat`
 - `bun run release:windows:install`
 - `bun run release:linux:install`
 
