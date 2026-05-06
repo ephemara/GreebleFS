@@ -22,6 +22,32 @@ import {
   SettingsStatusPill,
 } from '../SettingsPrimitives';
 
+function buildManagedContentDirectorySourceBadges(
+  stack: UsrProfileRuntimeSnapshot['managedContentDirectoryStacks'][number],
+  directory: string,
+): string[] {
+  const badges: string[] = [];
+  if (directory === stack.activeProfileDirectory) {
+    badges.push('active-profile');
+  }
+  if (directory === stack.defaultProfileDirectory) {
+    badges.push('default-profile-baseline');
+  }
+  if (directory === stack.sharedRootDirectory) {
+    badges.push('shared-root');
+  }
+  if (directory === stack.baselineDirectory) {
+    badges.push('baseline');
+  }
+  if (directory === stack.bundledDirectory) {
+    badges.push('bundled-default');
+  }
+  if (badges.length === 0) {
+    badges.push('effective-source');
+  }
+  return badges;
+}
+
 export function ProfilesSettingsSection({
   detail,
   accent,
@@ -256,7 +282,7 @@ export function ProfilesSettingsSection({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <SettingsSectionBlock
           title="Profile Catalog"
-          subtitle="Each profile overlays workbench-facing usr lanes and settings slices on top of the shared root."
+          subtitle="Each profile can override workbench-facing usr lanes and settings slices while shared lanes remain global."
           accent={accent}
         >
           <SettingsCatalogGrid className="md:grid-cols-2">
@@ -446,7 +472,7 @@ export function ProfilesSettingsSection({
           {usrProfileRuntimeSnapshot ? (
             <SettingsInspectorPanel
               title="Runtime Paths"
-              subtitle="The active profile overlay writes into its own lane folders while shared settings stay rooted under the shared usr profile workspace."
+              subtitle="Shared settings stay under the shared profile workspace, while profile-overlay lanes write into the active profile and fall back to the canonical baseline."
               badges={['runtime']}
               actions={
                 <SettingsActionStrip>
@@ -495,7 +521,7 @@ export function ProfilesSettingsSection({
           {managedContentStacks.length > 0 ? (
             <SettingsInspectorPanel
               title="Effective Lane Stack"
-              subtitle="Lane content resolves from profile overlay, shared root, then bundled defaults. Writes go to the declared writable directory."
+              subtitle="Lane content resolves from the active profile, then the canonical baseline (`usr/<lane>` for shared lanes or `usr/profiles/default/<lane>` for overlay lanes), then bundled defaults."
               badges={[`${managedContentStacks.length} lanes`, 'stack order']}
             >
               <div className="space-y-3">
@@ -515,19 +541,19 @@ export function ProfilesSettingsSection({
                       </SettingsStatusPill>
                     </div>
                     <div className="mt-2 min-w-0 break-all opacity-65">
+                      <span className="font-semibold opacity-80">Baseline: </span>
+                      {stack.baselineDirectory}
+                    </div>
+                    <div className="mt-2 min-w-0 break-all opacity-65">
                       <span className="font-semibold opacity-80">Writable: </span>
                       {stack.writableDirectory}
                     </div>
                     <div className="mt-3 space-y-2">
                       {stack.directories.map((directory, index) => {
-                        const sourceLabel =
-                          directory === stack.profileDirectory
-                            ? 'profile-overlay'
-                            : directory === stack.sharedRootDirectory
-                              ? 'shared-root'
-                              : directory === stack.bundledDirectory
-                                ? 'bundled-default'
-                                : 'effective-source';
+                        const sourceBadges = buildManagedContentDirectorySourceBadges(
+                          stack,
+                          directory,
+                        );
                         return (
                           <div
                             key={`${stack.laneId}:${directory}:${index}`}
@@ -535,8 +561,15 @@ export function ProfilesSettingsSection({
                           >
                             <SettingsStatusPill>{index + 1}</SettingsStatusPill>
                             <div className="min-w-0">
-                              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] opacity-55">
-                                {sourceLabel}
+                              <div className="flex flex-wrap gap-1">
+                                {sourceBadges.map((sourceBadge) => (
+                                  <SettingsStatusPill
+                                    key={`${stack.laneId}:${directory}:${sourceBadge}`}
+                                    active={sourceBadge === 'baseline' || sourceBadge === 'active-profile'}
+                                  >
+                                    {sourceBadge}
+                                  </SettingsStatusPill>
+                                ))}
                               </div>
                               <div className="min-w-0 break-all opacity-70">{directory}</div>
                             </div>

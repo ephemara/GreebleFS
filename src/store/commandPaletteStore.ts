@@ -142,13 +142,21 @@ export const useCommandPaletteStore = create<CommandPaletteStoreState>((set) => 
         .map((entry) => entry.trim()),
     );
     if (availableActionIdSet.size === 0) {
-      return snapshot;
+      return state;
+    }
+
+    const nextPinnedActionIds = snapshot.pinnedActionIds.filter((actionId) => availableActionIdSet.has(actionId));
+    const nextRecentActionIds = snapshot.recentActionIds.filter((actionId) => availableActionIdSet.has(actionId));
+    const pinnedIdsChanged = nextPinnedActionIds.length !== snapshot.pinnedActionIds.length;
+    const recentIdsChanged = nextRecentActionIds.length !== snapshot.recentActionIds.length;
+    if (!pinnedIdsChanged && !recentIdsChanged) {
+      return state;
     }
 
     const nextSnapshot = {
       ...snapshot,
-      pinnedActionIds: snapshot.pinnedActionIds.filter((actionId) => availableActionIdSet.has(actionId)),
-      recentActionIds: snapshot.recentActionIds.filter((actionId) => availableActionIdSet.has(actionId)),
+      pinnedActionIds: nextPinnedActionIds,
+      recentActionIds: nextRecentActionIds,
     };
     persistCommandPaletteSnapshot(nextSnapshot);
     return nextSnapshot;

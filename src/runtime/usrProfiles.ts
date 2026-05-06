@@ -24,9 +24,11 @@ export interface UsrManagedContentDirectoryStack {
   laneId: string;
   profileMode: UsrProfileLaneMode;
   directories: string[];
-  sharedRootDirectory: string;
+  baselineDirectory: string;
+  sharedRootDirectory: string | null;
+  defaultProfileDirectory: string | null;
+  activeProfileDirectory: string | null;
   bundledDirectory: string | null;
-  profileDirectory: string | null;
   writableDirectory: string;
 }
 
@@ -176,6 +178,10 @@ function buildSnapshotFingerprint(snapshot: UsrProfileRuntimeSnapshot | null): s
     })),
     managedContentDirectoryStacks: snapshot.managedContentDirectoryStacks.map((stack) => ({
       laneId: stack.laneId,
+      baselineDirectory: stack.baselineDirectory,
+      sharedRootDirectory: stack.sharedRootDirectory,
+      defaultProfileDirectory: stack.defaultProfileDirectory,
+      activeProfileDirectory: stack.activeProfileDirectory,
       writableDirectory: stack.writableDirectory,
       directories: stack.directories,
     })),

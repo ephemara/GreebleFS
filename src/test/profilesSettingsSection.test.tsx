@@ -32,17 +32,32 @@ describe('ProfilesSettingsSection', () => {
           ],
           managedContentDirectoryStacks: [
             {
-              laneId: 'themes',
+              laneId: 'topBars',
               profileMode: 'profile-overlay',
               directories: [
-                'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\themes',
-                'C:\\Dev\\GreebleFS\\usr\\themes',
-                'C:\\Dev\\GreebleFS\\themes',
+                'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\top-bars',
+                'C:\\Program Files\\GreebleFS\\resources\\usr\\profiles\\default\\top-bars',
               ],
+              baselineDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\top-bars',
+              sharedRootDirectory: null,
+              defaultProfileDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\top-bars',
+              activeProfileDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\top-bars',
+              bundledDirectory: 'C:\\Program Files\\GreebleFS\\resources\\usr\\profiles\\default\\top-bars',
+              writableDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\top-bars',
+            },
+            {
+              laneId: 'themes',
+              profileMode: 'shared-root',
+              directories: [
+                'C:\\Dev\\GreebleFS\\usr\\themes',
+                'C:\\Program Files\\GreebleFS\\resources\\usr\\themes',
+              ],
+              baselineDirectory: 'C:\\Dev\\GreebleFS\\usr\\themes',
               sharedRootDirectory: 'C:\\Dev\\GreebleFS\\usr\\themes',
-              bundledDirectory: 'C:\\Dev\\GreebleFS\\themes',
-              profileDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\themes',
-              writableDirectory: 'C:\\Dev\\GreebleFS\\usr\\profiles\\default\\themes',
+              defaultProfileDirectory: null,
+              activeProfileDirectory: null,
+              bundledDirectory: 'C:\\Program Files\\GreebleFS\\resources\\usr\\themes',
+              writableDirectory: 'C:\\Dev\\GreebleFS\\usr\\themes',
             },
           ],
         }}
@@ -63,7 +78,11 @@ describe('ProfilesSettingsSection', () => {
     expect(screen.getByText('Effective Lane Stack')).toBeInTheDocument();
     expect(screen.getAllByText('profile-overlay').length).toBeGreaterThan(0);
     expect(screen.getAllByText('shared-root').length).toBeGreaterThan(0);
+    expect(screen.getByText('default-profile-baseline')).toBeInTheDocument();
+    expect(screen.getByText('active-profile')).toBeInTheDocument();
+    expect(screen.getAllByText('baseline').length).toBeGreaterThan(0);
     expect(screen.getByText('bundled-default')).toBeInTheDocument();
+    expect(screen.getByText(/Baseline:/)).toBeInTheDocument();
     expect(screen.getByText(/Writable:/)).toBeInTheDocument();
   });
 

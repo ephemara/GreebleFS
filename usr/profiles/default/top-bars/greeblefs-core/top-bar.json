@@ -99,6 +99,30 @@
       ]
     },
     {
+      "id": "dock-ox-strip",
+      "name": "Dock Ox Strip",
+      "description": "A dock-only segmented strip that keeps panel switching compact while leaving the explorer as the dominant surface.",
+      "topBarStyle": "minimal",
+      "tabStyle": "segment",
+      "leadingControls": [
+        "window-mode",
+        "dock-placement",
+        "surface-controls"
+      ],
+      "navigationShortcuts": [],
+      "trailingControls": [
+        "command-palette",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "auto",
+      "tags": [
+        "dock",
+        "compact",
+        "explorer-first"
+      ]
+    },
+    {
       "id": "launcher-rack",
       "name": "Launcher Rack",
       "description": "A launcher-first strip that turns the middle lane into a status surface instead of a tab strip.",

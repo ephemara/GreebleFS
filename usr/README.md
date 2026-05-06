@@ -17,6 +17,15 @@
 - `usr/profiles/variants.json`
   Named seed variations for creating new profiles from a stable baseline instead of from the current live state.
 
+## Why Overlay Lanes Stay Nested
+
+- Top-level `usr/<lane>` is reserved for content that stays global across every profile.
+- `usr/profiles/default/<lane>` is the canonical baseline for lanes that are intentionally profile-specific.
+- Moving profile-overlay lanes back to top-level `usr/` would blur the difference between global catalogs, default-profile baselines, and active-profile overrides.
+- Every managed-content lane resolves as `active profile -> canonical baseline -> bundled fallback`.
+- For `shared-root` lanes, the canonical baseline is top-level `usr/<lane>`.
+- For `profile-overlay` lanes, the canonical baseline is `usr/profiles/default/<lane>`.
+
 ## Ownership Rules
 
 - If a lane is `shared-root`, ship and author it directly under top-level `usr/<lane>`.

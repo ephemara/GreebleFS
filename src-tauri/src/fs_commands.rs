@@ -1,4 +1,4 @@
-// File system commands for the OverlayTerm file explorer
+// File system commands for the greeblinfs file explorer. allows us to greeble much faster than a usual greeble
 // Provides: dir listing with metadata, Windows drive enumeration,
 // open-with-default-app, open-as-admin (runas), delete, rename, copy.
 

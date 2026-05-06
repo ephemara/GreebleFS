@@ -68,9 +68,11 @@ pub struct UsrManagedContentDirectoryStack {
     pub lane_id: String,
     pub profile_mode: UsrProfileLaneMode,
     pub directories: Vec<String>,
-    pub shared_root_directory: String,
+    pub baseline_directory: String,
+    pub shared_root_directory: Option<String>,
+    pub default_profile_directory: Option<String>,
+    pub active_profile_directory: Option<String>,
     pub bundled_directory: Option<String>,
-    pub profile_directory: Option<String>,
     pub writable_directory: String,
 }
 
@@ -704,14 +706,19 @@ fn build_directory_stacks(
         }
 
         let shared_root_directory = match entry.profile_mode {
-            UsrProfileLaneMode::SharedRoot => shared_usr_root.join(&entry.relative_directory),
-            UsrProfileLaneMode::ProfileOverlay => {
-                default_profile_overlay_directory(shared_usr_root, &entry.relative_directory)
-            }
+            UsrProfileLaneMode::SharedRoot => Some(shared_usr_root.join(&entry.relative_directory)),
+            UsrProfileLaneMode::ProfileOverlay => None,
+        };
+        let default_profile_directory = match entry.profile_mode {
+            UsrProfileLaneMode::SharedRoot => None,
+            UsrProfileLaneMode::ProfileOverlay => Some(default_profile_overlay_directory(
+                shared_usr_root,
+                &entry.relative_directory,
+            )),
         };
         let bundled_directory_path =
             bundled_usr_root.join(resolve_shipped_usr_entry_relative_directory(&entry));
-        let profile_directory_path = match entry.profile_mode {
+        let active_profile_directory = match entry.profile_mode {
             UsrProfileLaneMode::SharedRoot => None,
             UsrProfileLaneMode::ProfileOverlay => Some(
                 profile_directory(shared_usr_root, active_profile_id)
@@ -719,14 +726,23 @@ fn build_directory_stacks(
             ),
         };
 
-        let writable_directory = profile_directory_path
+        let baseline_directory = default_profile_directory
             .clone()
-            .unwrap_or_else(|| shared_root_directory.clone());
+            .or_else(|| shared_root_directory.clone())
+            .ok_or_else(|| {
+                format!(
+                    "Usr managed-content lane '{}' is missing a baseline directory",
+                    entry.id
+                )
+            })?;
+        let writable_directory = active_profile_directory
+            .clone()
+            .unwrap_or_else(|| baseline_directory.clone());
         let mut directories = Vec::new();
-        if let Some(profile_directory_path) = profile_directory_path.clone() {
-            append_stack_directory(&mut directories, profile_directory_path);
+        if let Some(active_profile_directory) = active_profile_directory.clone() {
+            append_stack_directory(&mut directories, active_profile_directory);
         }
-        append_stack_directory(&mut directories, shared_root_directory.clone());
+        append_stack_directory(&mut directories, baseline_directory.clone());
         if entry.bundled {
             append_stack_directory(&mut directories, bundled_directory_path.clone());
         }
@@ -735,12 +751,16 @@ fn build_directory_stacks(
             lane_id: entry.id,
             profile_mode: entry.profile_mode,
             directories,
-            shared_root_directory: shared_root_directory.to_string_lossy().into_owned(),
+            baseline_directory: baseline_directory.to_string_lossy().into_owned(),
+            shared_root_directory: shared_root_directory
+                .map(|path| path.to_string_lossy().into_owned()),
+            default_profile_directory: default_profile_directory
+                .map(|path| path.to_string_lossy().into_owned()),
+            active_profile_directory: active_profile_directory
+                .map(|path| path.to_string_lossy().into_owned()),
             bundled_directory: entry
                 .bundled
                 .then(|| bundled_directory_path.to_string_lossy().into_owned()),
-            profile_directory: profile_directory_path
-                .map(|path| path.to_string_lossy().into_owned()),
             writable_directory: writable_directory.to_string_lossy().into_owned(),
         });
     }

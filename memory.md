@@ -1,3 +1,40 @@
+# 2026-05-06 - Usr Profile Lane Baseline Terminology Cleanup
+
+- Clarified the profile-system contract so profile-overlay lanes are no longer described as if they were just another shared root.
+- `src-tauri/src/usr_profiles.rs` and `src/runtime/usrProfiles.ts` now expose lane stack metadata with explicit baseline terminology:
+  - `activeProfileDirectory`
+  - `baselineDirectory`
+  - `defaultProfileDirectory`
+  - optional `sharedRootDirectory`
+  - optional `bundledDirectory`
+- Durable rule:
+  - Every managed-content lane resolves as `active profile -> canonical baseline -> bundled fallback`.
+  - For `shared-root` lanes, the canonical baseline is top-level `usr/<lane>`.
+  - For `profile-overlay` lanes, the canonical baseline is `usr/profiles/default/<lane>`.
+  - Do not move shipped profile-overlay lanes back to top-level `usr/` just to make them feel more visible; that collapses the distinction between global content and profile-specific authored defaults.
+- `ProfilesSettingsSection` now surfaces `Baseline` and source badges such as `active-profile`, `default-profile-baseline`, `shared-root`, and `bundled-default`, so the live lane stack shows where content really comes from.
+- `usr/README.md` and `ARCHITECTURE.md` now spell out why nested profile-overlay lanes are intentional.
+- Validation:
+  - Targeted: `bunx vitest run src/test/profilesSettingsSection.test.tsx --reporter=dot --testTimeout=30000`
+
+# 2026-05-06 - Dock Ox Default Layout Overhaul
+
+- Reworked the shipped default dock presentation to feel dock-native instead of like a compressed windowed workbench.
+  - `usr/profiles/default/dock-presentations/greeblefs-core/dock-presentation.json` keeps `yakuake-workbench` as the default id but now uses a shorter 1560x432 footprint, a denser 176x18 terminal grid, the new `dock-ox-strip` top bar, and inline preview behavior.
+  - `usr/profiles/default/top-bars/greeblefs-core/top-bar.json` adds `dock-ox-strip`, a segmented minimal strip that keeps dock placement/window-mode controls small and leaves the center lane to runtime tabs instead of the verbose summary banner.
+  - `usr/profiles/default/explorer-layouts/greeblefs-core/explorer-layout.json` adds `dock-ox`, a dock-only layout that hides the source rail by default, turns off the explorer tab strip, shortens all explorer bands, and prunes chrome down to navigation, path visibility, preview toggle, actions toggle, and a minimal status edge.
+- Durable rule: dock layout changes should prefer `/usr` authored presentation assets over runtime code edits.
+  - Use dock presentations for size/grid/preview defaults.
+  - Use top bars for the dock shell identity.
+  - Use explorer layouts plus `chromeSnapshot` for dock-only explorer density and visibility changes.
+- Important implementation detail: `dock-ox` uses the `focus` mode profile on purpose.
+  - The default profile currently carries a large `explorer.chromeLayoutOverridesByThemeId.dracula.default` override map in `usr/profiles/default/settings.json`.
+  - Using the `focus` / `focused-search` chrome lane keeps the dock layout from being partially overridden by that `default` theme snapshot unless someone explicitly adds a `dracula.focused-search` override too.
+- Validation also exposed a command-palette store loop that is worth remembering outside dock work.
+  - `src/store/commandPaletteStore.ts` now returns early from `pruneActionIds(...)` when pruning would not actually remove anything.
+  - Without that guard, clearing `localStorage` while the in-memory command palette store still held ids could trigger endless dock/app shell rerenders because Zustand kept publishing fresh array identities with identical contents.
+- Recommended follow-up: if future dock work needs a second visual family, add another dock-only explorer layout and top bar first instead of branching `FileExplorer.tsx`. The dock presentation pipeline is expressive enough to carry most of the shell personality from `/usr`.
+
 # 2026-05-06 - Pilot Dark Context Menu Fallback Repair
 
 - Follow-up to the Explorer context-menu theming repair: Pilot Dark settings were intact (`activeThemeId = "pilot-dark"`) and context-menu override maps were empty, so the broken blue/giant menu was a renderer fallback bug rather than `/usr` corruption.
