@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-shell-customize-controls",
+  "name": "GreebleFS Core Shell Customize Controls",
+  "description": "Canonical shipped shell chrome control catalog for top-bar authoring, lookdev previews, and dock-aware shell customization.",
+  "tags": ["canonical", "shipped", "shell-customize-controls", "lookdev"],
+  "controls": [
+    {
+      "controlId": "layout-cycle",
+      "commandId": "shell-control:layout-cycle",
+      "label": "Layout Cycle",
+      "description": "Switch between layout profiles from shell chrome.",
+      "category": "layout",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["layout", "profile", "shell"]
+    },
+    {
+      "controlId": "shell-mode",
+      "commandId": "shell-control:shell-mode",
+      "label": "Shell Mode",
+      "description": "Show the current shell family and mode state.",
+      "category": "mode",
+      "bands": ["trailing"],
+      "supportsRemoval": true,
+      "tags": ["mode", "state", "shell"]
+    },
+    {
+      "controlId": "window-mode",
+      "commandId": "shell-control:window-mode",
+      "label": "Window Mode",
+      "description": "Toggle between application and dock mode.",
+      "category": "window",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["window", "dock", "presentation"]
+    },
+    {
+      "controlId": "overlay-anchor",
+      "commandId": "shell-control:overlay-anchor",
+      "label": "Dock Edge",
+      "description": "Expose the legacy dock edge anchor control.",
+      "category": "dock",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["dock", "edge", "anchor"]
+    },
+    {
+      "controlId": "dock-placement",
+      "commandId": "shell-control:dock-placement",
+      "label": "Dock Placement",
+      "description": "Choose top, bottom, or floating dock placement.",
+      "category": "dock",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["dock", "placement", "floating"]
+    },
+    {
+      "controlId": "mobile-share",
+      "commandId": "shell-control:mobile-share",
+      "label": "Mobile Share",
+      "description": "Launch or stop the mobile share runtime.",
+      "category": "other",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["mobile", "share", "remote"]
+    },
+    {
+      "controlId": "surface-controls",
+      "commandId": "shell-control:surface-controls",
+      "label": "Surface Controls",
+      "description": "Open the shell surface launcher and panel menu.",
+      "category": "launcher",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["surface", "panel", "launcher"]
+    },
+    {
+      "controlId": "zen-mode",
+      "commandId": "shell-control:zen-mode",
+      "label": "Zen Mode",
+      "description": "Toggle explorer-first focus mode.",
+      "category": "layout",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["zen", "focus", "explorer"]
+    },
+    {
+      "controlId": "command-palette",
+      "commandId": "shell-control:command-palette",
+      "label": "Command Palette",
+      "description": "Open the global command palette.",
+      "category": "navigation",
+      "bands": ["leading", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["command", "palette", "search"]
+    },
+    {
+      "controlId": "settings-shortcut",
+      "commandId": "shell-control:settings-shortcut",
+      "label": "Settings Shortcut",
+      "description": "Jump directly into Settings.",
+      "category": "navigation",
+      "bands": ["navigation", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["settings", "shortcut"]
+    },
+    {
+      "controlId": "explorer-shortcut",
+      "commandId": "shell-control:explorer-shortcut",
+      "label": "Explorer Shortcut",
+      "description": "Jump directly into Explorer.",
+      "category": "navigation",
+      "bands": ["navigation", "trailing"],
+      "supportsRemoval": true,
+      "tags": ["explorer", "shortcut"]
+    },
+    {
+      "controlId": "customize-top-bar",
+      "commandId": "shell-control:customize-top-bar",
+      "label": "Customize Top Bar",
+      "description": "Toggle top-bar layout authoring mode.",
+      "category": "layout",
+      "bands": ["trailing"],
+      "supportsRemoval": false,
+      "tags": ["customize", "top-bar", "layout"]
+    },
+    {
+      "controlId": "shortcut-badge",
+      "commandId": "shell-control:shortcut-badge",
+      "label": "Shortcut Badge",
+      "description": "Show the overlay summon shortcut badge.",
+      "category": "other",
+      "bands": ["trailing"],
+      "supportsRemoval": true,
+      "tags": ["badge", "shortcut"]
+    },
+    {
+      "controlId": "close-overlay",
+      "commandId": "shell-control:close-overlay",
+      "label": "Close Shell",
+      "description": "Close or hide the current shell window.",
+      "category": "window",
+      "bands": ["trailing"],
+      "supportsRemoval": true,
+      "tags": ["close", "window", "shell"]
+    }
+  ]
+}

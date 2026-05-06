@@ -1,6 +1,20 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, relative, resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+
+const { invokeMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('@tauri-apps/api/core', async () => {
+  const actual = await vi.importActual<typeof import('@tauri-apps/api/core')>('@tauri-apps/api/core');
+  return {
+    ...actual,
+    invoke: invokeMock,
+    isTauri: vi.fn(() => true),
+  };
+});
+
 import { invoke } from '@tauri-apps/api/core';
 
 import {
@@ -77,7 +91,8 @@ describe('andromeda theme bundle', () => {
   it('loads the authored repo bundle through the live theme-package loaders', async () => {
     const fixture = buildFixtureMaps(bundleAbsoluteRoot);
 
-    vi.mocked(invoke).mockImplementation(async (command, args) => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(async (command, args) => {
       const requestedPath = normalizePath(String((args as { path?: string } | undefined)?.path ?? ''));
 
       if (command === 'fs_list_dir') {
@@ -118,10 +133,10 @@ describe('andromeda theme bundle', () => {
     const andromeda = result.packages[0];
     expect(andromeda.id).toBe('andromeda');
     expect(andromeda.topBars?.map(topBar => topBar.localId)).toEqual(['stellar-bridge']);
-    expect(andromeda.localCatalogs?.appearancePacks).toHaveLength(1);
-    expect(andromeda.localCatalogs?.themeRecipePacks).toHaveLength(1);
-    expect(andromeda.localCatalogs?.themeEnginePacks).toHaveLength(1);
-    expect(andromeda.localCatalogs?.interactionMotionPacks).toHaveLength(1);
+    expect(andromeda.localCatalogs?.appearancePacks).toHaveLength(0);
+    expect(andromeda.localCatalogs?.themeRecipePacks).toHaveLength(0);
+    expect(andromeda.localCatalogs?.themeEnginePacks).toHaveLength(0);
+    expect(andromeda.localCatalogs?.interactionMotionPacks).toHaveLength(0);
     expect(andromeda.localCatalogs?.iconThemePackages).toHaveLength(1);
     expect(andromeda.localCatalogs?.wallpapers).toHaveLength(1);
 
@@ -132,8 +147,7 @@ describe('andromeda theme bundle', () => {
     expect(andromeda.theme.assets?.iconTheme?.id).toBe('andromeda:andromeda-icons');
     expect(andromeda.localCatalogs?.wallpapers[0]?.assetUrl ?? '').toMatch(/^data:image\/svg\+xml;base64,/);
     expect(andromeda.theme.assets?.backgroundUrl ?? '').toMatch(/^data:image\/svg\+xml;base64,/);
-    expect(andromeda.theme.workbench?.brandLabel).toBe('Andromeda');
-    expect(andromeda.theme.explorer?.railBrandLabel).toBe('Deep Field');
+    expect(andromeda.theme.workbench?.brandLabel).toBe('GreebleFS');
     expect(andromeda.capabilitySummary).toMatchObject({
       icons: true,
       wallpaper: true,

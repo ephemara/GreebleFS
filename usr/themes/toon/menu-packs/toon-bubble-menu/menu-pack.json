@@ -1,27 +1,28 @@
 {
   "version": 1,
-  "id": "greeblefs-default-explorer-menu",
-  "name": "GreebleFS Classic Explorer Menu",
-  "description": "Default submenu-aware classic explorer menu for file, background, multi-select, search, and preview contexts.",
+  "id": "toon-bubble-menu",
+  "name": "Toon Bubble Menu",
+  "description": "Theme-owned hybrid explorer menu with radial launchers, pastel sheets, and a HUD-flavored preview lane for the Toon bundle.",
   "tags": [
-    "classic",
-    "submenu",
+    "toon",
+    "radial",
+    "hybrid",
     "explorer"
   ],
   "presentation": {
-    "renderer": "classic",
+    "renderer": "radial",
     "fallbackRenderer": "classic",
-    "shapeLanguage": "rectangular",
-    "motionStyle": "minimal",
-    "materialStyle": "glass",
+    "shapeLanguage": "rounded",
+    "motionStyle": "playful",
+    "materialStyle": "paper",
     "density": "balanced",
-    "submenuBehavior": "sidecar",
-    "focusStyle": "line",
-    "backdropStyle": "none",
+    "submenuBehavior": "stacked",
+    "focusStyle": "pill",
+    "backdropStyle": "scrim",
     "capabilityRules": [
       {
         "when": "mouse",
-        "renderer": "classic"
+        "renderer": "hybrid"
       },
       {
         "when": "touch",
@@ -29,7 +30,7 @@
       },
       {
         "when": "keyboard",
-        "renderer": "classic"
+        "renderer": "hud"
       },
       {
         "when": "reduced-motion",
@@ -39,7 +40,7 @@
   },
   "contexts": {
     "entry": {
-      "renderer": "classic",
+      "renderer": "hybrid",
       "entries": [
         {
           "id": "entry.open",
@@ -243,7 +244,7 @@
       ]
     },
     "background": {
-      "renderer": "classic",
+      "renderer": "radial",
       "entries": [
         {
           "id": "background.create.slot",
@@ -332,7 +333,7 @@
       ]
     },
     "multi-select": {
-      "renderer": "classic",
+      "renderer": "hud",
       "entries": [
         {
           "id": "multi.copy-path",
@@ -442,7 +443,7 @@
       ]
     },
     "search-result": {
-      "renderer": "classic",
+      "renderer": "hybrid",
       "entries": [
         {
           "id": "search.open",
@@ -564,9 +565,9 @@
       ]
     },
     "preview-pane": {
-      "renderer": "classic",
+      "renderer": "hud",
       "density": "compact",
-      "showDescriptions": false,
+      "showDescriptions": true,
       "entries": [
         {
           "id": "preview.open",

@@ -51,6 +51,8 @@ interface FileEntry {
 
 type LooseRecord = Record<string, unknown>;
 
+const themeBundleRuntimeModuleExtensions = ['ts', 'tsx', 'js', 'jsx'] as const;
+
 export interface ThemeBundlePackMetadata {
   id: string;
   localId: string;
@@ -378,6 +380,120 @@ function getParentDirectoryPath(path: string): string {
     return normalized.startsWith('/') ? '/' : '.';
   }
   return normalized.slice(0, lastSlash);
+}
+
+function normalizeThemeBundleRuntimeModulePath(path: string): string | null {
+  const normalizedPath = path.trim().replace(/\\/g, '/');
+  if (!normalizedPath || normalizedPath.startsWith('/') || /^[A-Za-z]:\//.test(normalizedPath)) {
+    return null;
+  }
+
+  const segments: string[] = [];
+  for (const segment of normalizedPath.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      if (segments.length === 0) {
+        return null;
+      }
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return segments.join('/');
+}
+
+function normalizeThemeBundleComparisonPath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/g, '');
+}
+
+function getThemeBundleRelativePath(directoryPath: string, filePath: string): string | null {
+  const normalizedDirectoryPath = normalizeThemeBundleComparisonPath(directoryPath);
+  const normalizedFilePath = normalizeThemeBundleComparisonPath(filePath);
+  if (!normalizedDirectoryPath || !normalizedFilePath) {
+    return null;
+  }
+
+  if (normalizedFilePath === normalizedDirectoryPath) {
+    return '';
+  }
+
+  if (!normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)) {
+    return null;
+  }
+
+  return normalizedFilePath.slice(normalizedDirectoryPath.length + 1);
+}
+
+function resolveThemeBundleRuntimeModuleImportPath(
+  fromModuleRelativePath: string,
+  specifier: string,
+): string | null {
+  const importerSegments = fromModuleRelativePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  importerSegments.pop();
+  const specifierSegments = specifier.replace(/\\/g, '/').split('/');
+  return normalizeThemeBundleRuntimeModulePath(
+    [...importerSegments, ...specifierSegments].join('/'),
+  );
+}
+
+function buildThemeBundleRuntimeModuleCandidates(relativePath: string): string[] {
+  const normalizedRelativePath = normalizeThemeBundleRuntimeModulePath(relativePath);
+  if (!normalizedRelativePath) {
+    return [];
+  }
+
+  const candidates = new Set<string>();
+  if (/\.[^./]+$/.test(normalizedRelativePath)) {
+    candidates.add(normalizedRelativePath);
+  } else {
+    for (const extension of themeBundleRuntimeModuleExtensions) {
+      candidates.add(`${normalizedRelativePath}.${extension}`);
+      candidates.add(`${normalizedRelativePath}/index.${extension}`);
+    }
+  }
+
+  return [...candidates];
+}
+
+function createThemeBundleRelativeModuleSourceResolver(
+  directoryPath: string,
+): RuntimeRelativeModuleSourceResolver {
+  return async ({ fromModulePath, specifier }) => {
+    const fromModuleRelativePath = getThemeBundleRelativePath(directoryPath, fromModulePath);
+    if (fromModuleRelativePath == null) {
+      return null;
+    }
+
+    const resolvedImportPath = resolveThemeBundleRuntimeModuleImportPath(
+      fromModuleRelativePath,
+      specifier,
+    );
+    if (!resolvedImportPath) {
+      return null;
+    }
+
+    for (const candidateRelativePath of buildThemeBundleRuntimeModuleCandidates(resolvedImportPath)) {
+      const candidateAbsolutePath = joinPlatformPath(directoryPath, candidateRelativePath);
+      try {
+        const source = await commands.fsReadTextFile(candidateAbsolutePath).then(unwrapTauriResult);
+        return {
+          modulePath: candidateAbsolutePath,
+          source,
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  };
 }
 
 async function readManifestEntries(
@@ -834,7 +950,9 @@ async function loadThemeShellRendererPacksFromRecords(
             fallbackRuntime: record.manifest.fallbackRuntime,
             capabilities: record.manifest.capabilities,
           },
-          resolveRelativeModuleSource: options?.resolveRelativeModuleSource,
+          resolveRelativeModuleSource:
+            options?.resolveRelativeModuleSource
+            ?? createThemeBundleRelativeModuleSourceResolver(record.directoryPath),
         });
         if (renderer.error) {
           packWarnings.push(`renderer ${entryModule}: ${renderer.error}`);

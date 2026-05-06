@@ -129,6 +129,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 26.4,
   },
+  shellCustomizeControls: {
+    label: "Shell Customize Controls",
+    description:
+      "Author the shell chrome control catalog, top-bar control capabilities, and lookdev browser metadata here.",
+    keywords: [
+      "shell customize",
+      "top bar controls",
+      "lookdev",
+      "chrome controls",
+      "movable controls",
+    ],
+    order: 26.5,
+  },
   explorerModeProfiles: {
     label: "Explorer Mode Profiles",
     description:
@@ -224,6 +237,19 @@ const shippedManagedDirectoryMetadata = {
       "automation",
     ],
     order: 29.5,
+  },
+  lookdevPresets: {
+    label: "Lookdev Presets",
+    description:
+      "Author semantic shell lookdev presets that can be previewed live and applied back into theme, dock, explorer, and profile lanes.",
+    keywords: [
+      "lookdev",
+      "preset",
+      "theme authoring",
+      "shell tuning",
+      "profile export",
+    ],
+    order: 29.6,
   },
   runtimes: {
     label: "Runtime Packages",

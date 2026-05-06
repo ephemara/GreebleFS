@@ -58,6 +58,10 @@ const rendererFixtureCandidates = [
     filePath: 'themes/vector-monolith/renderers/vector-monolith.tsx',
     sourceAssertionPath: 'themes/vector-monolith/renderers/monolith/modes/app-shell.tsx',
   },
+  {
+    name: 'toon',
+    filePath: 'usr/themes/toon/shell-renderers/toon-studio-shell/toon-studio-shell.tsx',
+  },
 ];
 
 const rendererFixtures = rendererFixtureCandidates
@@ -82,6 +86,7 @@ const expectedSurfaceOwnershipByTheme: Record<
   'gamecube-helix': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'gamecube-orbital': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'gamecube-prism': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  toon: { launcher: true, chrome: true, contentFrame: true, pinnedPanels: true, wallpaper: true },
   'vector-monolith': { launcher: true, chrome: true, contentFrame: true, pinnedPanels: true, wallpaper: true },
   'wii-channel-home': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'xmb-crosswave': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
@@ -96,6 +101,7 @@ const utilitySurfaceContractRendererNames = new Set([
   'gamecube-helix',
   'gamecube-orbital',
   'gamecube-prism',
+  'toon',
   'vector-monolith',
   'wii-channel-home',
   'xmb-crosswave',
@@ -109,6 +115,7 @@ const launcherShellModelRendererNames = new Set([
   'gamecube-helix',
   'gamecube-orbital',
   'gamecube-prism',
+  'toon',
   'vector-monolith',
   'wii-channel-home',
   'xmb-crosswave',

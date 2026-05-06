@@ -101,16 +101,32 @@ FILE_TYPES = {
 FOLDER_TYPES = {
     "folder": (PALETTE["blue"], False, None),
     "folder_open": (PALETTE["blue"], True, None),
+    "folder_ai": (PALETTE["purple"], False, "AI"),
+    "folder_ai_open": (PALETTE["purple"], True, "AI"),
+    "folder_api": (PALETTE["blue"], False, "<>"),
+    "folder_api_open": (PALETTE["blue"], True, "<>"),
     "folder_assets": (PALETTE["pink"], False, "A"),
     "folder_assets_open": (PALETTE["pink"], True, "A"),
     "folder_build": (PALETTE["orange"], False, "B"),
     "folder_build_open": (PALETTE["orange"], True, "B"),
+    "folder_components": (PALETTE["green"], False, "UI"),
+    "folder_components_open": (PALETTE["green"], True, "UI"),
     "folder_config": (PALETTE["gray"], False, "C"),
     "folder_config_open": (PALETTE["gray"], True, "C"),
     "folder_database": (PALETTE["yellow"], False, "DB"),
     "folder_database_open": (PALETTE["yellow"], True, "DB"),
     "folder_docs": (PALETTE["purple"], False, "D"),
     "folder_docs_open": (PALETTE["purple"], True, "D"),
+    "folder_engine": (PALETTE["orange"], False, "FX"),
+    "folder_engine_open": (PALETTE["orange"], True, "FX"),
+    "folder_packages": (PALETTE["yellow"], False, "PK"),
+    "folder_packages_open": (PALETTE["yellow"], True, "PK"),
+    "folder_plugins": (PALETTE["pink"], False, "PL"),
+    "folder_plugins_open": (PALETTE["pink"], True, "PL"),
+    "folder_public": (PALETTE["red"], False, "WWW"),
+    "folder_public_open": (PALETTE["red"], True, "WWW"),
+    "folder_scripts": (PALETTE["gray"], False, "CLI"),
+    "folder_scripts_open": (PALETTE["gray"], True, "CLI"),
     "folder_src": (PALETTE["green"], False, "S"),
     "folder_src_open": (PALETTE["green"], True, "S"),
     "folder_test": (PALETTE["yellow"], False, "T"),
@@ -334,7 +350,7 @@ def draw_folder_icon(background_color: str, is_open: bool = False, symbol: str |
 def draw_panel_icon(background_color: str, inner_path: str) -> draw.Drawing:
     drawing = create_canvas()
     drawing.append(
-        draw.Rect(
+        draw.Rectangle(
             3,
             3,
             18,

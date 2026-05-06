@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-pilot-lookdev",
+  "name": "Pilot Core Lookdev",
+  "description": "Canonical starter lookdev profile for GreebleFS shell tuning across application and dock presentations.",
+  "tags": ["canonical", "starter", "lookdev"],
+  "exports": {
+    "themeBundleId": "pilot-dark",
+    "topBarId": "command-center",
+    "dockPresentationId": "yakuake-workbench",
+    "menuPackId": "greeblefs-default-explorer-menu"
+  },
+  "shared": {
+    "appearance": {
+      "activeThemeId": "pilot-dark",
+      "activeTopBarId": "command-center",
+      "appOpacity": 0.98,
+      "panelTransparency": 0.12,
+      "appZoom": 1,
+      "appBlur": true,
+      "appBlurStrength": 16,
+      "compactMode": false
+    },
+    "explorer": {
+      "activeMenuPackId": "greeblefs-default-explorer-menu",
+      "followThemeExplorerLayout": true
+    }
+  },
+  "windowed": {
+    "appearance": {
+      "activeTopBarId": "command-center",
+      "panelTransparency": 0.08
+    },
+    "presentation": {
+      "windowMode": "windowed"
+    }
+  },
+  "dock": {
+    "appearance": {
+      "activeTopBarId": "dock-control-strip",
+      "panelTransparency": 0.18
+    },
+    "dock": {
+      "activePresentationId": "yakuake-workbench",
+      "topBarId": "dock-control-strip",
+      "placementMode": "bottom-edge",
+      "edgeSize": 420,
+      "edgeWidth": 1280,
+      "previewEnabled": true,
+      "previewSplitMode": "pane"
+    },
+    "presentation": {
+      "windowMode": "dock"
+    }
+  }
+}

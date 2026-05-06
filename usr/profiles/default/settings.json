@@ -7,7 +7,7 @@
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "github-dark",
+    "activeThemeId": "toon",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -1721,7 +1721,7 @@
     "defaultFolderIcon": "folder",
     "defaultPath": "greeblefs://home",
     "doubleClickEmptyToGoBack": false,
-    "experimentalDensity": 0.4,
+    "experimentalDensity": 0,
     "experimentalViewMode": "off",
     "folderClickMode": "double",
     "folderIconRules": [
@@ -2058,17 +2058,22 @@
       "overlay-classic": {
         "activePanelId": "explorer",
         "dismissedPanelIds": [
-          "notes",
-          "go-sample-panel",
-          "storage",
-          "terminal",
-          "git",
-          "plugins",
           "greeblefs-action-forge"
         ],
         "openPanelIds": [
           "settings",
-          "explorer"
+          "explorer",
+          "storage",
+          "git",
+          "greeblefs-workbench-archive",
+          "greeblefs-workbench-audio",
+          "plugins",
+          "terminal",
+          "greeblefs-workbench-model3d",
+          "greeble3d",
+          "greeblefs-index-photo-gallery",
+          "go-sample-panel",
+          "notes"
         ]
       }
     },

@@ -3,6 +3,10 @@ import type {
   OverlayWorkbenchChromeStyle,
   OverlayWorkbenchTabStyle,
 } from "./workbenchTheme";
+import {
+  getShellCustomizeControlIds,
+  getShellCustomizeControlLabel,
+} from "./shellCustomizeCatalog";
 
 export type OverlayTopBarSource =
   | "built-in"
@@ -91,22 +95,12 @@ const shippedBuiltInTopBarManifest =
   shippedBuiltInTopBarManifestJson as ShippedBuiltInTopBarManifest;
 
 const topBarControlCatalog = new Set<OverlayTopBarControlId>([
-  "layout-cycle",
-  "shell-mode",
-  "window-mode",
-  "overlay-anchor",
-  "dock-placement",
-  "mobile-share",
-  "surface-controls",
+  ...getShellCustomizeControlIds().filter(
+    (controlId): controlId is OverlayTopBarControlId =>
+      typeof controlId === "string",
+  ),
   "blur-toggle",
-  "zen-mode",
   "panel-menu",
-  "command-palette",
-  "settings-shortcut",
-  "explorer-shortcut",
-  "customize-top-bar",
-  "shortcut-badge",
-  "close-overlay",
 ]);
 
 const defaultTopBarControls = {
@@ -523,39 +517,22 @@ export function flattenTopBarDefinitionControls(
 export function getTopBarControlLabel(
   controlId: OverlayTopBarControlId,
 ): string {
+  const canonicalControlId =
+    controlId === "blur-toggle"
+      ? "mobile-share"
+      : controlId === "panel-menu"
+        ? "surface-controls"
+        : controlId;
+  const catalogLabel = getShellCustomizeControlLabel(canonicalControlId);
+  if (catalogLabel) {
+    return catalogLabel;
+  }
+
   switch (controlId) {
-    case "layout-cycle":
-      return "Layout";
-    case "shell-mode":
-      return "Shell Mode";
-    case "window-mode":
-      return "Window Mode";
-    case "overlay-anchor":
-      return "Dock Edge";
-    case "dock-placement":
-      return "Dock Placement";
-    case "mobile-share":
-      return "Mobile";
     case "blur-toggle":
       return "Mobile";
-    case "surface-controls":
-      return "Surface";
-    case "zen-mode":
-      return "Zen";
     case "panel-menu":
       return "Surface";
-    case "command-palette":
-      return "Palette";
-    case "settings-shortcut":
-      return "Settings";
-    case "explorer-shortcut":
-      return "Explorer";
-    case "customize-top-bar":
-      return "Customize";
-    case "shortcut-badge":
-      return "Shortcut";
-    case "close-overlay":
-      return "Close";
     default:
       return controlId;
   }
