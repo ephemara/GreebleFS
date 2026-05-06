@@ -32,13 +32,21 @@
 
 - Fixed a dev-loop reload trap where ordinary UI/settings interactions rewrote `usr/profiles/shared/settings.json` and `usr/profiles/default/settings.json`, causing Vite to full-reload the Tauri WebView because those shipped defaults are imported by `src/config/usrDefaultSettings.ts`.
 - `vite.config.ts` now ignores `**/usr/profiles/**/settings.json` in the dev server watcher. This preserves the shipped default imports for first-run baselines while preventing runtime profile persistence from hard-refreshing the live desktop window.
+- `vite.config.ts` also ignores `**/MCP/.state/**`; the dev MCP/browser automation profile writes extension/offscreen documents there, and Vite was treating that state churn as app-owned files and issuing page reloads.
+- `src/components/explorer/explorerResultCacheInvalidation.ts` owns the exported explorer cache invalidator so `FileExplorer.tsx` no longer exports a non-component runtime function. This removes the React Fast Refresh incompatibility warning for `invalidateExplorerResultCaches` and keeps TS edits in the giant explorer module from escalating more often than needed.
 - `scripts/run-platform-tauri.mjs` now gives desktop Vite dev sessions an isolated cache directory at `~/.cache/greeblefs-tauri/vite/desktop` by default via `GREEBLEFS_VITE_CACHE_DIR` / `OVERLAYTERM_VITE_CACHE_DIR`. This avoids Windows `EPERM unlink node_modules/.vite/deps/...` failures when config changes or lockfile changes force dependency re-optimization while another process is holding the shared cache.
 - `scripts/cleanup-dev-processes.mjs` now actually cleans targeted GreebleFS dev process trees on Windows when called with `--include-running` or from the Tauri dev wrapper. Before this, the helper returned immediately on `win32`, leaving stale `tauri.js`, Vite, Cargo, and `greeblefs.exe` children alive across relaunches.
 - Diagnosis rule:
   - If the window appears to "restart" while the `greeblefs.exe` PID stays stable, inspect `MCP/.state/tauri-dev.log` for `[vite] page reload ...` lines before changing tauron or the Rust-side Tauri runtime.
   - Repeated `page reload usr/profiles/.../settings.json` is a Vite watcher/module-graph problem, not a tauron WebView2 process failure.
+  - Repeated `page reload MCP/.state/fallback-browser-profile/...` means the local dev automation/browser profile is inside Vite's watch graph and should stay ignored.
+  - `hmr invalidate /src/components/FileExplorer.tsx Could not Fast Refresh ("invalidateExplorerResultCaches" export is incompatible)` means a non-component value leaked from the React module; move that export to a sidecar `.ts` module instead of teaching agents to tolerate full refreshes.
 - Validation:
   - Passed: Vite config load check confirmed `server.watch.ignored` includes `**/usr/profiles/**/settings.json`.
+  - Passed: Vite config load check confirmed `server.watch.ignored` includes `**/MCP/.state/**` and `GREEBLEFS_VITE_CACHE_DIR` wins for the dev cache.
+  - Passed: `bunx vitest run src/test/runPlatformTauri.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot`
+  - Current blocker: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx --reporter=dot` fails 35 existing view/drag/drop expectations on the current dirty `FileExplorer.tsx` working tree; this is outside the cache export move and should be re-run after the unrelated explorer edits settle.
 
 # 2026-05-06 - Action Forge First-Party Authoring Plugin And Render Fix
 

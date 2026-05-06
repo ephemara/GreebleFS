@@ -14,6 +14,7 @@ const ignoredWatchGlobs = [
   "**/src-tauri/target*/**",
   "**/src/test/**",
   "**/target-tests*/**",
+  "**/MCP/.state/**",
   "**/plugins/**/node_modules/**",
   "**/usr/profiles/**/settings.json",
 ];

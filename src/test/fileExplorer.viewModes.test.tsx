@@ -572,10 +572,8 @@ vi.mock("../components/TerminalOverlay", () => ({
   },
 }));
 
-import {
-  FileExplorer,
-  invalidateExplorerResultCaches,
-} from "../components/FileExplorer";
+import { FileExplorer } from "../components/FileExplorer";
+import { invalidateExplorerResultCaches } from "../components/explorer/explorerResultCacheInvalidation";
 import type { LoadedExplorerAction } from "../config/actionPacks";
 import type { OverlayPluginPreviewLaneContribution } from "../config/pluginContributions";
 import { normalizeExplorerPreviewWorkbenchChromeMetadata } from "../config/previewWorkbenchChrome";

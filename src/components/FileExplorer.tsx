@@ -449,16 +449,18 @@ import TerminalOverlay, {
   type TerminalOverlayCommandRequest,
 } from "./TerminalOverlay";
 import {
-  invalidateExplorerDirectoryResultCaches,
   loadCachedExplorerLocation,
   storeExplorerCachedLocation,
 } from "./explorer/explorerDirectoryCache";
 import {
   estimateStringPreviewCacheBytes,
-  invalidateExplorerPreviewCache,
   readCachedExplorerPreview,
   storeCachedExplorerPreview,
 } from "./explorer/explorerPreviewCache";
+import {
+  invalidateExplorerResultCaches,
+  registerExplorerSearchResultCacheInvalidator,
+} from "./explorer/explorerResultCacheInvalidation";
 import {
   buildExplorerDraftPreservedMessage,
   clearExplorerEditDraft,
@@ -1111,9 +1113,7 @@ async function getOrLoadCachedExplorerSearchResults(
   return pending;
 }
 
-export function invalidateExplorerResultCaches(pathPrefix?: string): void {
-  invalidateExplorerDirectoryResultCaches(pathPrefix);
-  invalidateExplorerPreviewCache(pathPrefix);
+function invalidateExplorerSearchResultCache(pathPrefix?: string): void {
   if (!pathPrefix) {
     explorerSearchResultCache.clear();
     return;
@@ -1128,6 +1128,10 @@ export function invalidateExplorerResultCaches(pathPrefix?: string): void {
     }
   }
 }
+
+registerExplorerSearchResultCacheInvalidator(
+  invalidateExplorerSearchResultCache,
+);
 
 function readViewportMetrics(viewport: HTMLDivElement): ViewportMetrics {
   return {

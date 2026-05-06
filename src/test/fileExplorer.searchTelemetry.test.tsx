@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
+import { FileExplorer } from '../components/FileExplorer';
+import { invalidateExplorerResultCaches } from '../components/explorer/explorerResultCacheInvalidation';
 import { resolveOverlayAppearance } from '../config/appearance';
 import type { FileSearchDiagnostics } from '../config/searchTelemetry';
 import {
