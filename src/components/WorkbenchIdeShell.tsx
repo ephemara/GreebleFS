@@ -39,6 +39,10 @@ import {
   type IdeWorkbenchLayoutState,
   type WorkbenchSurfaceLayoutSeed,
 } from '../config/ideWorkbenchLayout';
+import {
+  ExplorerSlatePane,
+  type ExplorerPaneTone,
+} from './explorer/ExplorerPanePrimitives';
 import type { WorkbenchSurfaceDefinition } from '../panels/panelRegistry';
 
 interface WorkbenchIdeShellProps {
@@ -55,8 +59,8 @@ interface WorkbenchIdeShellProps {
   renderSurfaceBody: (surfaceId: string, isActive: boolean) => ReactNode;
 }
 
-const COLLAPSED_EDGE_SIZE = 40;
-const COLLAPSED_BOTTOM_SIZE = 34;
+const COLLAPSED_EDGE_SIZE = 34;
+const COLLAPSED_BOTTOM_SIZE = 30;
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -222,6 +226,12 @@ export function WorkbenchIdeShell({
 }: WorkbenchIdeShellProps) {
   const theme = appearance.theme;
   const workbench = appearance.workbenchTheme;
+  const dockPaneTone: ExplorerPaneTone = {
+    accent: theme.palette.accent,
+    border: 'var(--overlay-explorer-panel-border)',
+    muted: 'var(--overlay-text-muted)',
+    text: 'var(--overlay-text-primary)',
+  };
   const surfaceById = useMemo(
     () => new Map(surfaces.map(surface => [surface.id, surface] as const)),
     [surfaces],
@@ -369,19 +379,19 @@ export function WorkbenchIdeShell({
   const renderCollapsedStack = useCallback((stack: DockStackNode) => {
     const direction = stack.placement === 'bottom-panel' ? 'row' : 'column';
     return (
-      <div
+      <ExplorerSlatePane
+        tone={dockPaneTone}
         style={{
           display: 'flex',
           flexDirection: direction,
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 6,
+          gap: 4,
           width: '100%',
           height: '100%',
-          padding: 4,
-          background: theme.palette.panelBackground,
-          border: `1px solid ${theme.palette.border}`,
-          borderRadius: workbench.metrics.panelRadius,
+          padding: 3,
+          borderRadius: 0,
+          background: 'var(--overlay-explorer-panel-bg)',
         }}
       >
         <DockActionButton
@@ -431,19 +441,17 @@ export function WorkbenchIdeShell({
             </button>
           );
         })}
-      </div>
+      </ExplorerSlatePane>
     );
   }, [
     commitLayoutState,
+    dockPaneTone,
     handleToggleStackCollapsed,
     layoutState,
     onRequestFocusSurface,
     surfaceById,
     surfaceSeeds,
-    theme.palette.border,
-    theme.palette.panelBackground,
     theme.palette.textMuted,
-    workbench.metrics.panelRadius,
   ]);
 
   const renderDockStack = useCallback((stack: DockStackNode) => {
@@ -472,21 +480,18 @@ export function WorkbenchIdeShell({
             height: '100%',
             minWidth: 0,
             minHeight: 0,
-            background: theme.palette.panelBackground,
-            border: `1px solid ${theme.palette.border}`,
-            borderRadius: workbench.metrics.panelRadius,
             overflow: 'hidden',
+            background: 'transparent',
           }}
         >
-          <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0 }}>
-            {renderSurfaceBody(centerExplorerSurfaceId, explorerIsActive)}
-          </div>
+          {renderSurfaceBody(centerExplorerSurfaceId, explorerIsActive)}
         </div>
       );
     }
 
     return (
-      <div
+      <ExplorerSlatePane
+        tone={dockPaneTone}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -494,21 +499,20 @@ export function WorkbenchIdeShell({
           height: '100%',
           minWidth: 0,
           minHeight: 0,
-          background: theme.palette.panelBackground,
-          border: `1px solid ${theme.palette.border}`,
-          borderRadius: workbench.metrics.panelRadius,
           overflow: 'hidden',
+          borderRadius: 0,
+          background: 'var(--overlay-explorer-panel-bg)',
         }}
       >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            minHeight: 34,
-            padding: '0 8px',
-            borderBottom: `1px solid ${theme.palette.border}`,
-            background: theme.palette.appBackgroundAlt,
+            gap: 6,
+            minHeight: 30,
+            padding: '0 6px',
+            borderBottom: '1px solid var(--overlay-explorer-panel-border)',
+            background: 'var(--overlay-explorer-preview-header-bg)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
@@ -535,13 +539,13 @@ export function WorkbenchIdeShell({
                     alignItems: 'center',
                     gap: 6,
                     minWidth: 0,
-                    padding: '0 10px',
-                    height: 26,
-                    borderRadius: 8,
-                    border: `1px solid ${isActive ? theme.palette.accent : theme.palette.border}`,
+                    padding: '0 8px',
+                    height: 24,
+                    borderRadius: 7,
+                    border: `1px solid ${isActive ? theme.palette.accent : 'var(--overlay-explorer-panel-border)'}`,
                     background: isActive
-                      ? `${theme.palette.accent}22`
-                      : 'var(--overlay-workbench-chrome-button-bg)',
+                      ? 'var(--overlay-explorer-chip-bg)'
+                      : 'transparent',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
                     opacity: draggedSurfaceTabId === surface.id ? 0.5 : 1,
@@ -551,7 +555,7 @@ export function WorkbenchIdeShell({
                   <span style={{ display: 'flex' }}>{surface.icon}</span>
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: 700,
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
@@ -622,9 +626,10 @@ export function WorkbenchIdeShell({
             </div>
           ) : null}
         </div>
-      </div>
+      </ExplorerSlatePane>
     );
   }, [
+    dockPaneTone,
     explorerSurface,
     draggedSurfaceTabId,
     handleFocusSurface,
@@ -639,12 +644,8 @@ export function WorkbenchIdeShell({
     renderSurfaceBody,
     surfaceById,
     theme.palette.accent,
-    theme.palette.appBackgroundAlt,
-    theme.palette.border,
-    theme.palette.panelBackground,
     theme.palette.textMuted,
     theme.palette.textPrimary,
-    workbench.metrics.panelRadius,
   ]);
 
   const renderDockNode = useCallback((node: DockNode): ReactNode => {
@@ -740,7 +741,8 @@ export function WorkbenchIdeShell({
     const activeSurface = activeSurfaceId ? surfaceById.get(activeSurfaceId) ?? null : null;
 
     return (
-      <div
+      <ExplorerSlatePane
+        tone={dockPaneTone}
         key={floatingNode.id}
         style={{
           position: 'absolute',
@@ -753,8 +755,7 @@ export function WorkbenchIdeShell({
           minWidth: 0,
           minHeight: 0,
           borderRadius: workbench.metrics.panelRadius,
-          border: `1px solid ${theme.palette.border}`,
-          background: theme.palette.panelBackground,
+          background: 'var(--overlay-explorer-panel-bg)',
           boxShadow: workbench.surfaces.shellShadow,
           overflow: 'hidden',
           zIndex: 12,
@@ -792,10 +793,10 @@ export function WorkbenchIdeShell({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            minHeight: 34,
+            minHeight: 30,
             padding: '0 8px',
-            borderBottom: `1px solid ${theme.palette.border}`,
-            background: theme.palette.appBackgroundAlt,
+            borderBottom: '1px solid var(--overlay-explorer-panel-border)',
+            background: 'var(--overlay-explorer-preview-header-bg)',
             cursor: 'move',
           }}
         >
@@ -832,10 +833,10 @@ export function WorkbenchIdeShell({
                     padding: '0 8px',
                     height: 24,
                     borderRadius: 7,
-                    border: `1px solid ${isActive ? theme.palette.accent : theme.palette.border}`,
+                    border: `1px solid ${isActive ? theme.palette.accent : 'var(--overlay-explorer-panel-border)'}`,
                     background: isActive
-                      ? `${theme.palette.accent}22`
-                      : 'var(--overlay-workbench-chrome-button-bg)',
+                      ? 'var(--overlay-explorer-chip-bg)'
+                      : 'transparent',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
                     opacity: draggedSurfaceTabId === surfaceId ? 0.5 : 1,
@@ -904,10 +905,11 @@ export function WorkbenchIdeShell({
             background: 'linear-gradient(135deg, transparent 0%, transparent 40%, var(--overlay-workbench-chrome-border) 40%, var(--overlay-workbench-chrome-border) 100%)',
           }}
         />
-      </div>
+      </ExplorerSlatePane>
     );
   }, [
     commitLayoutState,
+    dockPaneTone,
     draggedSurfaceTabId,
     handleFocusSurface,
     handleHideSurface,
@@ -918,9 +920,6 @@ export function WorkbenchIdeShell({
     renderSurfaceBody,
     surfaceById,
     theme.palette.accent,
-    theme.palette.appBackgroundAlt,
-    theme.palette.border,
-    theme.palette.panelBackground,
     theme.palette.textMuted,
     theme.palette.textPrimary,
     workbench.metrics.panelRadius,
@@ -928,8 +927,8 @@ export function WorkbenchIdeShell({
   ]);
 
   const railPlacementStyle = layoutState.activityRailState.placement === 'right'
-    ? { order: 2, borderLeft: `1px solid ${theme.palette.border}` }
-    : { order: 0, borderRight: `1px solid ${theme.palette.border}` };
+    ? { order: 2, borderLeft: '1px solid var(--overlay-explorer-panel-border)' }
+    : { order: 0, borderRight: '1px solid var(--overlay-explorer-panel-border)' };
   const dockPlacementStyle = layoutState.activityRailState.placement === 'right'
     ? { order: 0 }
     : { order: 2 };
@@ -946,9 +945,9 @@ export function WorkbenchIdeShell({
           minWidth: layoutState.activityRailState.width,
           maxWidth: layoutState.activityRailState.width,
           flexShrink: 0,
-          background: theme.palette.shellBackground,
-          padding: '8px 6px',
-          gap: 8,
+          background: 'color-mix(in srgb, var(--overlay-explorer-panel-bg) 94%, transparent)',
+          padding: '8px 5px',
+          gap: 10,
           zIndex: 2,
         }}
       >
@@ -964,7 +963,7 @@ export function WorkbenchIdeShell({
             {layoutState.activityRailState.placement === 'left' ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
           </DockActionButton>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, overflowY: 'auto', paddingRight: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, gap: 8, overflowY: 'auto', paddingRight: 2 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {primaryRailSurfaces.map((surface) => {
               const isActive = railActiveSurfaceId === surface.id;
@@ -976,13 +975,13 @@ export function WorkbenchIdeShell({
                   title={surface.label}
                   style={{
                     width: '100%',
-                    minHeight: 38,
+                    minHeight: 34,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    borderRadius: 10,
-                    border: `1px solid ${isActive ? theme.palette.accent : theme.palette.border}`,
-                    background: isActive ? `${theme.palette.accent}22` : 'transparent',
+                    borderRadius: 9,
+                    border: `1px solid ${isActive ? theme.palette.accent : 'var(--overlay-explorer-panel-border)'}`,
+                    background: isActive ? 'var(--overlay-explorer-chip-bg)' : 'transparent',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
                   }}
@@ -992,13 +991,14 @@ export function WorkbenchIdeShell({
               );
             })}
           </div>
+          <div style={{ flex: 1 }} />
           {secondaryRailSurfaces.length > 0 ? (
             <div
               style={{
                 height: 1,
-                margin: '0 6px',
-                background: theme.palette.border,
-                opacity: 0.7,
+                margin: '0 4px',
+                background: 'var(--overlay-explorer-panel-border)',
+                opacity: 0.9,
               }}
             />
           ) : null}
@@ -1013,16 +1013,16 @@ export function WorkbenchIdeShell({
                   title={surface.label}
                   style={{
                     width: '100%',
-                    minHeight: 34,
+                    minHeight: 30,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    borderRadius: 10,
-                    border: `1px solid ${isActive ? theme.palette.accent : theme.palette.border}`,
-                    background: isActive ? `${theme.palette.accent}16` : 'transparent',
+                    borderRadius: 9,
+                    border: `1px solid ${isActive ? theme.palette.accent : 'var(--overlay-explorer-panel-border)'}`,
+                    background: isActive ? 'var(--overlay-explorer-chip-bg)' : 'transparent',
                     color: isActive ? theme.palette.textPrimary : theme.palette.textMuted,
                     cursor: 'pointer',
-                    opacity: 0.82,
+                    opacity: isActive ? 1 : 0.78,
                   }}
                 >
                   {surface.icon}
@@ -1041,8 +1041,8 @@ export function WorkbenchIdeShell({
           flex: 1,
           minWidth: 0,
           minHeight: 0,
-          padding: workbench.metrics.pagePadding,
-          gap: workbench.metrics.panelGap,
+          padding: 0,
+          gap: 0,
           overflow: 'hidden',
           background: theme.palette.shellBackground,
         }}

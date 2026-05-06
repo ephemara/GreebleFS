@@ -216,7 +216,7 @@
     {
       "id": "inspector",
       "name": "Inspector",
-      "description": "Preview-heavy browsing tuned for inspection and triage.",
+      "description": "Preview and workbench-first browsing tuned for IDE-style inspection, editing, and triage.",
       "sortOrder": 30,
       "tags": [
         "preset",
@@ -227,12 +227,12 @@
       "tabStripVisible": true,
       "tabStripSurfaceId": "explorerTopbar",
       "paneMetrics": {
-        "sidebarWidthPx": 202,
-        "previewWidthPx": 461,
+        "sidebarWidthPx": 236,
+        "previewWidthPx": 584,
         "actionsWidthPx": 344,
         "sourcesVisible": true,
         "previewEnabled": true,
-        "previewSplitMode": "inline"
+        "previewSplitMode": "pane"
       },
       "bandMetrics": {
         "unifiedHeaderHeightPx": 88,

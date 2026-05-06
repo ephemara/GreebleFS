@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "toon-appearance",
+  "name": "Toon Appearance",
+  "description": "Light pastel paper surfaces, inked outlines, and sticker-board depth for the Toon bundle.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "pastel",
+    "light",
+    "paper"
+  ],
+  "extendsThemeId": "aqua-light",
+  "preview": "../../wallpapers/toon-daydream.svg",
+  "scrollbar": {
+    "thumb": "#8DB6FF",
+    "thumbHover": "#6FA3FF",
+    "track": "rgba(109,125,166,0.14)",
+    "fileListSize": 14
+  }
+}

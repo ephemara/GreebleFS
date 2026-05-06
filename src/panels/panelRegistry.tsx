@@ -46,6 +46,7 @@ import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
 import type { UsrProfileRuntimeSnapshot } from '../runtime/usrProfiles';
+import type { UsrProfileSettingsVariantDefinition } from '../config/usrProfileSettingsVariants';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -209,6 +210,7 @@ export function createBuiltInPanelDefinitions({
   explorerLayoutMode,
   explorerDockPreviewPolicy,
   explorerDefaultModeProfileId,
+  explorerShellDefaultLayoutId,
   explorerPicker,
   isOpen,
   hideOverlay,
@@ -238,8 +240,10 @@ export function createBuiltInPanelDefinitions({
   usrProfileRuntimeSnapshot = null,
   usrProfileSettingSliceKeys = [],
   usrProfileSharedSettingSliceKeys = [],
+  usrProfileSettingsVariants = [],
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
+  onCreateUsrProfileFromVariant = async () => {},
   onDuplicateUsrProfile = async () => {},
   onRenameUsrProfile = async () => {},
   onDeleteUsrProfile = async () => {},
@@ -365,6 +369,7 @@ export function createBuiltInPanelDefinitions({
   explorerLayoutMode?: ExplorerLayoutMode;
   explorerDockPreviewPolicy?: ExplorerDockPreviewPolicy;
   explorerDefaultModeProfileId?: ExplorerModeProfileId | null;
+  explorerShellDefaultLayoutId?: string | null;
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
     currentDirectory: string;
@@ -399,8 +404,10 @@ export function createBuiltInPanelDefinitions({
   usrProfileRuntimeSnapshot?: UsrProfileRuntimeSnapshot | null;
   usrProfileSettingSliceKeys?: readonly string[];
   usrProfileSharedSettingSliceKeys?: readonly string[];
+  usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
-  onCreateUsrProfile?: (name: string) => Promise<void>;
+  onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
+  onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
   onDuplicateUsrProfile?: (
     profileId: string,
     name: string,
@@ -567,6 +574,7 @@ export function createBuiltInPanelDefinitions({
           layoutMode={explorerLayoutMode}
           dockPreviewPolicy={explorerDockPreviewPolicy}
           defaultModeProfileId={explorerDefaultModeProfileId}
+          shellDefaultExplorerLayoutId={explorerShellDefaultLayoutId}
           explorerPicker={explorerPicker}
           theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
@@ -773,8 +781,10 @@ export function createBuiltInPanelDefinitions({
             usrProfileRuntimeSnapshot={usrProfileRuntimeSnapshot}
             usrProfileSettingSliceKeys={usrProfileSettingSliceKeys}
             usrProfileSharedSettingSliceKeys={usrProfileSharedSettingSliceKeys}
+            usrProfileSettingsVariants={usrProfileSettingsVariants}
             onSwitchUsrProfile={onSwitchUsrProfile}
             onCreateUsrProfile={onCreateUsrProfile}
+            onCreateUsrProfileFromVariant={onCreateUsrProfileFromVariant}
             onDuplicateUsrProfile={onDuplicateUsrProfile}
             onRenameUsrProfile={onRenameUsrProfile}
             onDeleteUsrProfile={onDeleteUsrProfile}

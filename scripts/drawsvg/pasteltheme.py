@@ -1,168 +1,137 @@
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+from pathlib import Path
+
 import drawsvg as draw
-import os
 
-# ==========================================
-# GREEBLE FS: PASTEL & MINIMAL ICON THEME
-# ==========================================
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_THEME_ROOT = REPO_ROOT / "usr/themes/toon/icon-themes/toon-icons"
+DEFAULT_REFERENCE_MANIFEST = REPO_ROOT / "src/config/canonicalIconTheme.json"
 
-# 1. Setup Directories (The Split System)
-ROOT_DIR = "GreebleFS_Icons"
-UI_DIR = os.path.join(ROOT_DIR, "ui")
-os.makedirs(ROOT_DIR, exist_ok=True)
-os.makedirs(UI_DIR, exist_ok=True)
+PALETTE = {
+    "blue": "#A9D6FF",
+    "pink": "#FFC7D9",
+    "green": "#BCEBCB",
+    "yellow": "#FFE79A",
+    "purple": "#D6C2FF",
+    "orange": "#FFD4A8",
+    "red": "#FFB4B0",
+    "gray": "#E8ECF5",
+    "cream": "#FFF8EE",
+    "stroke": "#44506B",
+}
 
-# 2. Define the Pastel & Minimal Palette
-P_BLUE   = "#AEC6CF"
-P_PINK   = "#F4C2C2"
-P_GREEN  = "#B8E0D2"
-P_YELLOW = "#FDFD96"
-P_PURPLE = "#C3B1E1"
-P_ORANGE = "#FFD1B3"
-P_RED    = "#FFB4B4"
-P_GRAY   = "#E2E8F0"
-P_DARK   = "#334155" # Thick slate for minimal linework
-
-# 3. Canvas Helper
-def create_canvas():
-    return draw.Drawing(24, 24, viewBox="0 0 24 24")
-
-# ==========================================
-# GENERATOR FUNCTIONS
-# ==========================================
-
-def draw_file_icon(bg_color, text_content):
-    """Draws a pastel file document with a folded corner and text."""
-    d = create_canvas()
-    # File Base
-    d.append(draw.Path(
-        d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z", 
-        fill=bg_color, stroke=P_DARK, stroke_width=2, stroke_linejoin="round"
-    ))
-    # Folded Corner
-    d.append(draw.Path(
-        d="M14 2v6h6", 
-        fill="none", stroke=P_DARK, stroke_width=2, stroke_linejoin="round"
-    ))
-    # Language/Type Typography
-    if text_content:
-        d.append(draw.Text(
-            text_content, 7, 12, 16.5, 
-            text_anchor="middle", fill=P_DARK, font_family="monospace", font_weight="900"
-        ))
-    return d
-
-def draw_folder_icon(bg_color, is_open=False, symbol=None):
-    """Draws a thick-lined pastel folder."""
-    d = create_canvas()
-    if is_open:
-        d.append(draw.Path(
-            d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z M2 10h20", 
-            fill=bg_color, stroke=P_DARK, stroke_width=2, stroke_linejoin="round"
-        ))
-    else:
-        d.append(draw.Path(
-            d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z", 
-            fill=bg_color, stroke=P_DARK, stroke_width=2, stroke_linejoin="round"
-        ))
-    
-    if symbol:
-        d.append(draw.Text(
-            symbol, 9, 12, 17, 
-            text_anchor="middle", fill=P_DARK, font_family="sans-serif", font_weight="900"
-        ))
-    return d
-
-def draw_panel_icon(bg_color, inner_path):
-    """Draws a beautiful squircle app icon for GreebleFS panels."""
-    d = create_canvas()
-    d.append(draw.Rect(
-        3, 3, 18, 18, rx=6, ry=6, 
-        fill=bg_color, stroke=P_DARK, stroke_width=2
-    ))
-    d.append(draw.Path(
-        d=inner_path, 
-        fill="none", stroke=P_DARK, stroke_width=2, stroke_linecap="round", stroke_linejoin="round"
-    ))
-    return d
-
-def draw_ui_icon(path_data):
-    """Draws pure minimal linework UI icons."""
-    d = create_canvas()
-    d.append(draw.Path(
-        d=path_data, 
-        fill="none", stroke=P_DARK, stroke_width=2, stroke_linecap="round", stroke_linejoin="round"
-    ))
-    return d
-
-# ==========================================
-# 1. EXPLORER FILE ICONS DEFINITIONS
-# ==========================================
 FILE_TYPES = {
-    "app": (P_PURPLE, "APP"), "archive": (P_ORANGE, "ZIP"), "audio": (P_PINK, "WAV"),
-    "c": (P_BLUE, "C"), "clojure": (P_GREEN, "CLJ"), "cmake": (P_GRAY, "MAK"),
-    "cpp": (P_BLUE, "C++"), "csharp": (P_PURPLE, "C#"), "css": (P_BLUE, "CSS"),
-    "dart": (P_BLUE, "DRT"), "database": (P_YELLOW, "SQL"), "deb": (P_RED, "DEB"),
-    "dll": (P_GRAY, "DLL"), "dmg": (P_GRAY, "DMG"), "dockerfile": (P_BLUE, "DKR"),
-    "editorconfig": (P_GRAY, "CFG"), "elixir": (P_PURPLE, "EX"), "env": (P_YELLOW, "ENV"),
-    "erlang": (P_RED, "ERL"), "exe": (P_BLUE, "EXE"), "font": (P_GRAY, "TTF"),
-    "git": (P_ORANGE, "GIT"), "gitignore": (P_GRAY, "GIT"), "glsl": (P_GREEN, "GL"),
-    "go": (P_BLUE, "GO"), "gradle": (P_GREEN, "GRD"), "haskell": (P_PURPLE, "HS"),
-    "hlsl": (P_GREEN, "HL"), "html": (P_ORANGE, "HTM"), "image": (P_YELLOW, "IMG"),
-    "ini": (P_GRAY, "INI"), "ink": (P_PINK, "INK"), "java": (P_ORANGE, "JAV"),
-    "javascript": (P_YELLOW, "JS"), "json": (P_YELLOW, "{ }"), "kain": (P_RED, "KN"),
-    "kotlin": (P_PURPLE, "KT"), "less": (P_BLUE, "LSS"), "lock": (P_GRAY, "LCK"),
-    "log": (P_GRAY, "LOG"), "lua": (P_BLUE, "LUA"), "makefile": (P_GRAY, "MAK"),
-    "markdown": (P_BLUE, "MD"), "model3d": (P_PINK, "3D"), "npm": (P_RED, "NPM"),
-    "ocaml": (P_ORANGE, "ML"), "pdf": (P_RED, "PDF"), "php": (P_PURPLE, "PHP"),
-    "powershell": (P_BLUE, "PS"), "python": (P_YELLOW, "PY"), "r": (P_BLUE, "R"),
-    "ruby": (P_RED, "RB"), "rust": (P_ORANGE, "RS"), "sass": (P_PINK, "SAS"),
-    "scala": (P_RED, "SCA"), "scss": (P_PINK, "SCS"), "shell": (P_GRAY, "SH"),
-    "spv": (P_GREEN, "SPV"), "sql": (P_ORANGE, "SQL"), "swift": (P_ORANGE, "SWF"),
-    "toml": (P_YELLOW, "TML"), "txt": (P_GRAY, "TXT"), "typescript": (P_BLUE, "TS"),
-    "uasset": (P_BLUE, "UAS"), "uproject": (P_BLUE, "UPR"), "video": (P_PURPLE, "VID"),
-    "wgsl": (P_GREEN, "WG"), "xml": (P_YELLOW, "</>"), "yaml": (P_RED, "YML"),
-    "zig": (P_ORANGE, "ZIG"), "zip": (P_ORANGE, "ZIP")
+    "app": (PALETTE["purple"], "APP"),
+    "archive": (PALETTE["orange"], "ZIP"),
+    "audio": (PALETTE["pink"], "WAV"),
+    "c": (PALETTE["blue"], "C"),
+    "clojure": (PALETTE["green"], "CLJ"),
+    "cmake": (PALETTE["gray"], "MAK"),
+    "cpp": (PALETTE["blue"], "C++"),
+    "csharp": (PALETTE["purple"], "C#"),
+    "css": (PALETTE["blue"], "CSS"),
+    "dart": (PALETTE["blue"], "DRT"),
+    "database": (PALETTE["yellow"], "DB"),
+    "deb": (PALETTE["red"], "DEB"),
+    "dll": (PALETTE["gray"], "DLL"),
+    "dmg": (PALETTE["gray"], "DMG"),
+    "dockerfile": (PALETTE["blue"], "DKR"),
+    "editorconfig": (PALETTE["gray"], "CFG"),
+    "elixir": (PALETTE["purple"], "EX"),
+    "env": (PALETTE["yellow"], "ENV"),
+    "erlang": (PALETTE["red"], "ERL"),
+    "exe": (PALETTE["blue"], "EXE"),
+    "font": (PALETTE["gray"], "TTF"),
+    "git": (PALETTE["orange"], "GIT"),
+    "gitignore": (PALETTE["gray"], "GIT"),
+    "glsl": (PALETTE["green"], "GL"),
+    "go": (PALETTE["blue"], "GO"),
+    "gradle": (PALETTE["green"], "GRD"),
+    "haskell": (PALETTE["purple"], "HS"),
+    "hlsl": (PALETTE["green"], "HL"),
+    "html": (PALETTE["orange"], "HTM"),
+    "image": (PALETTE["yellow"], "IMG"),
+    "ini": (PALETTE["gray"], "INI"),
+    "ink": (PALETTE["pink"], "INK"),
+    "java": (PALETTE["orange"], "JAV"),
+    "javascript": (PALETTE["yellow"], "JS"),
+    "json": (PALETTE["yellow"], "{ }"),
+    "kain": (PALETTE["red"], "KN"),
+    "kotlin": (PALETTE["purple"], "KT"),
+    "less": (PALETTE["blue"], "LSS"),
+    "lock": (PALETTE["gray"], "LCK"),
+    "log": (PALETTE["gray"], "LOG"),
+    "lua": (PALETTE["blue"], "LUA"),
+    "makefile": (PALETTE["gray"], "MAK"),
+    "markdown": (PALETTE["blue"], "MD"),
+    "model3d": (PALETTE["pink"], "3D"),
+    "npm": (PALETTE["red"], "NPM"),
+    "ocaml": (PALETTE["orange"], "ML"),
+    "pdf": (PALETTE["red"], "PDF"),
+    "php": (PALETTE["purple"], "PHP"),
+    "powershell": (PALETTE["blue"], "PS"),
+    "python": (PALETTE["yellow"], "PY"),
+    "r": (PALETTE["blue"], "R"),
+    "ruby": (PALETTE["red"], "RB"),
+    "rust": (PALETTE["orange"], "RS"),
+    "sass": (PALETTE["pink"], "SAS"),
+    "scala": (PALETTE["red"], "SCA"),
+    "scss": (PALETTE["pink"], "SCS"),
+    "shell": (PALETTE["gray"], "SH"),
+    "spv": (PALETTE["green"], "SPV"),
+    "sql": (PALETTE["orange"], "SQL"),
+    "swift": (PALETTE["orange"], "SWT"),
+    "toml": (PALETTE["yellow"], "TML"),
+    "txt": (PALETTE["gray"], "TXT"),
+    "typescript": (PALETTE["blue"], "TS"),
+    "uasset": (PALETTE["blue"], "UAS"),
+    "uproject": (PALETTE["blue"], "UPR"),
+    "video": (PALETTE["purple"], "VID"),
+    "wgsl": (PALETTE["green"], "WG"),
+    "xml": (PALETTE["yellow"], "</>"),
+    "yaml": (PALETTE["red"], "YML"),
+    "zig": (PALETTE["orange"], "ZIG"),
+    "zip": (PALETTE["orange"], "ZIP"),
 }
 
-# ==========================================
-# 2. EXPLORER FOLDER DEFINITIONS
-# ==========================================
 FOLDER_TYPES = {
-    "folder": (P_BLUE, False, None), 
-    "folder_open": (P_BLUE, True, None),
-    "folder_assets": (P_PINK, False, "A"), 
-    "folder_assets_open": (P_PINK, True, "A"),
-    "folder_build": (P_ORANGE, False, "B"), 
-    "folder_build_open": (P_ORANGE, True, "B"),
-    "folder_config": (P_GRAY, False, "C"), 
-    "folder_config_open": (P_GRAY, True, "C"),
-    "folder_docs": (P_PURPLE, False, "D"), 
-    "folder_docs_open": (P_PURPLE, True, "D"),
-    "folder_src": (P_GREEN, False, "S"), 
-    "folder_src_open": (P_GREEN, True, "S"),
-    "folder_test": (P_YELLOW, False, "T"), 
-    "folder_test_open": (P_YELLOW, True, "T"),
+    "folder": (PALETTE["blue"], False, None),
+    "folder_open": (PALETTE["blue"], True, None),
+    "folder_assets": (PALETTE["pink"], False, "A"),
+    "folder_assets_open": (PALETTE["pink"], True, "A"),
+    "folder_build": (PALETTE["orange"], False, "B"),
+    "folder_build_open": (PALETTE["orange"], True, "B"),
+    "folder_config": (PALETTE["gray"], False, "C"),
+    "folder_config_open": (PALETTE["gray"], True, "C"),
+    "folder_database": (PALETTE["yellow"], False, "DB"),
+    "folder_database_open": (PALETTE["yellow"], True, "DB"),
+    "folder_docs": (PALETTE["purple"], False, "D"),
+    "folder_docs_open": (PALETTE["purple"], True, "D"),
+    "folder_src": (PALETTE["green"], False, "S"),
+    "folder_src_open": (PALETTE["green"], True, "S"),
+    "folder_test": (PALETTE["yellow"], False, "T"),
+    "folder_test_open": (PALETTE["yellow"], True, "T"),
 }
 
-# ==========================================
-# 3. GREEBLE FS APP PANELS
-# ==========================================
 PANEL_TYPES = {
-    "panel_chronorift": (P_PURPLE, "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2"), # Clock 
-    "panel_drawable_canvas": (P_YELLOW, "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586"), # Brush/Palette abstraction
-    "panel_filesystem_aquarium": (P_BLUE, "M2 12c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2 M2 17c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2"), # Waves
-    "panel_notes": (P_GRAY, "M12 20h9 M9 4v16 M14 4h-5 M14 8h-5 M14 12h-5 M14 16h-5"), # Note lines
-    "panel_plugins": (P_PINK, "M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M10 9H8 M16 13H8 M16 17H8"), # Blocks
-    "panel_screenshots": (P_GREEN, "M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"), # Camera
-    "panel_settings": (P_GRAY, "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6"), # Sliders
-    "panel_storage": (P_ORANGE, "M22 12H2 M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M6 16h.01 M10 16h.01"), # Drive
-    "panel_vibe_capsule": (P_RED, "M9 18V5l12-2v13 M9 9l12-2 M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M18 13a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"), # Music
-    "ui/panel_sketchfab": (P_BLUE, "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12"), # 3D Hex
+    "panel_chronorift": (PALETTE["purple"], "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 6v6l4 2"),
+    "panel_drawable_canvas": (PALETTE["yellow"], "M12 19l7-7 3 3-7 7-3-3z M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z M2 2l7.586 7.586"),
+    "panel_filesystem_aquarium": (PALETTE["blue"], "M2 12c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2 M2 17c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2"),
+    "panel_notes": (PALETTE["gray"], "M12 20h9 M9 4v16 M14 4h-5 M14 8h-5 M14 12h-5 M14 16h-5"),
+    "panel_plugins": (PALETTE["pink"], "M12 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M10 9H8 M16 13H8 M16 17H8"),
+    "panel_settings": (PALETTE["gray"], "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6"),
+    "panel_storage": (PALETTE["orange"], "M22 12H2 M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z M6 16h.01 M10 16h.01"),
+    "panel_vibe_capsule": (PALETTE["red"], "M9 18V5l12-2v13 M9 9l12-2 M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M18 13a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"),
 }
 
-# ==========================================
-# 4. NESTED UI ICONS (Path Database)
-# ==========================================
+UI_PANEL_TYPES = {
+    "panel_sketchfab": (PALETTE["blue"], "M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12"),
+}
+
 UI_PATHS = {
     "alert_circle": "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M12 8v4 M12 16h.01",
     "alert_triangle": "M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z M12 9v4 M12 17h.01",
@@ -195,6 +164,7 @@ UI_PATHS = {
     "cpu": "M4 4h16v16H4z M9 9h6v6H9z M9 1v3 M15 1v3 M9 20v3 M15 20v3 M20 9h3 M20 14h3 M1 9h3 M1 14h3",
     "crop": "M6.13 1L6 16a2 2 0 0 0 2 2h15 M1 6.13L16 6a2 2 0 0 1 2 2v15",
     "crosshair": "M12 2v20 M2 12h20 M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z",
+    "database": "M12 5c-4.97 0-9 1.79-9 4v6c0 2.21 4.03 4 9 4s9-1.79 9-4V9c0-2.21-4.03-4-9-4z M3 9c0 2.21 4.03 4 9 4s9-1.79 9-4 M3 15c0 2.21 4.03 4 9 4s9-1.79 9-4",
     "download": "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3",
     "droplet": "M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z",
     "edit3": "M12 20h9 M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z",
@@ -259,6 +229,7 @@ UI_PATHS = {
     "skip_forward": "M5 4l10 8-10 8V4z M19 5v14",
     "sliders": "M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6",
     "sliders_horizontal": "M21 4H8 M21 12H16 M21 20H8 M4 4H3 M12 12H3 M4 20H3 M8 1v6 M12 9v6 M8 17v6",
+    "smartphone": "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z M12 18h.01",
     "sparkles": "M12 3L14.5 9 21 11.5 14.5 14 12 21 9.5 14 3 11.5 9.5 9 12 3z",
     "split_square_horizontal": "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z M3 12h18",
     "split_square_vertical": "M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5z M12 3v18",
@@ -284,36 +255,271 @@ UI_PATHS = {
     "waves": "M2 12c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2 M2 17c2.2 0 4-2 6-2s3.8 2 6 2 4-2 6-2 3.8 2 6 2",
     "x": "M18 6L6 18 M6 6l12 12",
     "xcircle": "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M15 9l-6 6 M9 9l6 6",
-    "zap": "M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+    "zap": "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
 }
 
-# ==========================================
-# 5. EXECUTION ENGINE
-# ==========================================
 
-print(f"Generating GreebleFS Icon Theme ({len(FILE_TYPES) + len(FOLDER_TYPES) + len(PANEL_TYPES) + len(UI_PATHS)} total SVGs)...")
+def create_canvas() -> draw.Drawing:
+    return draw.Drawing(24, 24, viewBox="0 0 24 24")
 
-# Generate File Types
-for name, (color, text) in FILE_TYPES.items():
-    svg = draw_file_icon(color, text)
-    svg.save_svg(os.path.join(ROOT_DIR, f"{name}.svg"))
 
-# Generate Folder Types
-for name, (color, is_open, symbol) in FOLDER_TYPES.items():
-    svg = draw_folder_icon(color, is_open, symbol)
-    svg.save_svg(os.path.join(ROOT_DIR, f"{name}.svg"))
+def draw_file_icon(background_color: str, label_text: str) -> draw.Drawing:
+    drawing = create_canvas()
+    drawing.append(
+        draw.Path(
+            d="M6 2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z",
+            fill=background_color,
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+            stroke_linejoin="round",
+        )
+    )
+    drawing.append(
+        draw.Path(
+            d="M14 2v6h6",
+            fill="none",
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+            stroke_linejoin="round",
+        )
+    )
+    if label_text:
+        drawing.append(
+            draw.Text(
+                label_text,
+                6.75 if len(label_text) > 2 else 7.1,
+                12,
+                16.4,
+                text_anchor="middle",
+                fill=PALETTE["stroke"],
+                font_family="monospace",
+                font_weight="900",
+            )
+        )
+    return drawing
 
-# Generate Panels (Special handling: one is in UI dir based on your old JSON)
-for name, (color, path_data) in PANEL_TYPES.items():
-    svg = draw_panel_icon(color, path_data)
-    if name.startswith("ui/"):
-        svg.save_svg(os.path.join(ROOT_DIR, f"{name}.svg"))
-    else:
-        svg.save_svg(os.path.join(ROOT_DIR, f"{name}.svg"))
 
-# Generate UI Icons
-for name, path_data in UI_PATHS.items():
-    svg = draw_ui_icon(path_data)
-    svg.save_svg(os.path.join(UI_DIR, f"{name}.svg"))
+def draw_folder_icon(background_color: str, is_open: bool = False, symbol: str | None = None) -> draw.Drawing:
+    drawing = create_canvas()
+    path_data = (
+        "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z M2 10h20"
+        if is_open
+        else "M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
+    )
+    drawing.append(
+        draw.Path(
+            d=path_data,
+            fill=background_color,
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+            stroke_linejoin="round",
+        )
+    )
+    if symbol:
+        drawing.append(
+            draw.Text(
+                symbol,
+                6.0 if len(symbol) > 1 else 8.8,
+                12,
+                17,
+                text_anchor="middle",
+                fill=PALETTE["stroke"],
+                font_family="sans-serif",
+                font_weight="900",
+            )
+        )
+    return drawing
 
-print("✅ Perfect! All 162 pastel & minimal SVGs generated instantly in /GreebleFS_Icons/")
+
+def draw_panel_icon(background_color: str, inner_path: str) -> draw.Drawing:
+    drawing = create_canvas()
+    drawing.append(
+        draw.Rect(
+            3,
+            3,
+            18,
+            18,
+            rx=6.5,
+            ry=6.5,
+            fill=background_color,
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+        )
+    )
+    drawing.append(
+        draw.Path(
+            d=inner_path,
+            fill="none",
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
+    )
+    return drawing
+
+
+def draw_ui_icon(path_data: str) -> draw.Drawing:
+    drawing = create_canvas()
+    drawing.append(
+        draw.Path(
+            d=path_data,
+            fill="none",
+            stroke=PALETTE["stroke"],
+            stroke_width=2,
+            stroke_linecap="round",
+            stroke_linejoin="round",
+        )
+    )
+    return drawing
+
+
+def load_reference_manifest(reference_manifest_path: Path) -> dict:
+    return json.loads(reference_manifest_path.read_text(encoding="utf-8"))
+
+
+def filter_icon_mapping(source_mapping: dict[str, str], available_icon_ids: set[str]) -> dict[str, str]:
+    return {
+        matcher: icon_id
+        for matcher, icon_id in source_mapping.items()
+        if icon_id in available_icon_ids
+    }
+
+
+def save_svg(drawing: draw.Drawing, target_path: Path) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    drawing.save_svg(str(target_path))
+
+
+def generate_icon_assets(theme_root: Path) -> dict[str, str]:
+    icons_root = theme_root / "icons"
+    ui_root = icons_root / "ui"
+    icons_root.mkdir(parents=True, exist_ok=True)
+    ui_root.mkdir(parents=True, exist_ok=True)
+
+    generated_icon_paths: dict[str, str] = {}
+
+    for icon_id, (background_color, label_text) in FILE_TYPES.items():
+        save_svg(draw_file_icon(background_color, label_text), icons_root / f"{icon_id}.svg")
+        generated_icon_paths[icon_id] = f"./icons/{icon_id}.svg"
+
+    for icon_id, (background_color, is_open, symbol) in FOLDER_TYPES.items():
+        save_svg(draw_folder_icon(background_color, is_open, symbol), icons_root / f"{icon_id}.svg")
+        generated_icon_paths[icon_id] = f"./icons/{icon_id}.svg"
+
+    for icon_id, (background_color, inner_path) in PANEL_TYPES.items():
+        save_svg(draw_panel_icon(background_color, inner_path), icons_root / f"{icon_id}.svg")
+        generated_icon_paths[icon_id] = f"./icons/{icon_id}.svg"
+
+    for icon_id, (background_color, inner_path) in UI_PANEL_TYPES.items():
+        save_svg(draw_panel_icon(background_color, inner_path), ui_root / f"{icon_id}.svg")
+        generated_icon_paths[icon_id] = f"./icons/ui/{icon_id}.svg"
+
+    for icon_id, path_data in UI_PATHS.items():
+        save_svg(draw_ui_icon(path_data), ui_root / f"{icon_id}.svg")
+        generated_icon_paths[icon_id] = f"./icons/ui/{icon_id}.svg"
+
+    return generated_icon_paths
+
+
+def write_icon_theme_manifest(
+    theme_root: Path,
+    generated_icon_paths: dict[str, str],
+    reference_manifest: dict,
+    theme_id: str,
+    theme_name: str,
+    description: str,
+) -> None:
+    available_icon_ids = set(generated_icon_paths)
+    file_extensions = filter_icon_mapping(reference_manifest.get("fileExtensions", {}), available_icon_ids)
+    file_names = filter_icon_mapping(reference_manifest.get("fileNames", {}), available_icon_ids)
+    folder_names = filter_icon_mapping(reference_manifest.get("folderNames", {}), available_icon_ids)
+    folder_names_expanded = filter_icon_mapping(reference_manifest.get("folderNamesExpanded", {}), available_icon_ids)
+    ui_icons = filter_icon_mapping(reference_manifest.get("uiIcons", {}), available_icon_ids)
+
+    manifest = {
+        "version": 1,
+        "id": theme_id,
+        "name": theme_name,
+        "description": description,
+        "file": "txt",
+        "folder": "folder",
+        "folderExpanded": "folder_open",
+        "iconDefinitions": generated_icon_paths,
+        "fileExtensions": file_extensions,
+        "fileNames": file_names,
+        "folderNames": folder_names,
+        "folderNamesExpanded": folder_names_expanded,
+        "uiIcons": ui_icons,
+    }
+
+    (theme_root / "icon-theme.json").write_text(
+        json.dumps(manifest, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate the Toon pastel icon theme assets and icon-theme manifest.",
+    )
+    parser.add_argument(
+        "--theme-root",
+        type=Path,
+        default=DEFAULT_THEME_ROOT,
+        help="Theme-local icon package root that will receive icon-theme.json and icons/.",
+    )
+    parser.add_argument(
+        "--reference-manifest",
+        type=Path,
+        default=DEFAULT_REFERENCE_MANIFEST,
+        help="Reference icon theme manifest used for matcher maps and uiIcons aliases.",
+    )
+    parser.add_argument(
+        "--theme-id",
+        default="toon-icons",
+        help="Icon theme manifest id.",
+    )
+    parser.add_argument(
+        "--theme-name",
+        default="Toon Icons",
+        help="Icon theme display name.",
+    )
+    parser.add_argument(
+        "--description",
+        default="Pastel cartoon icon theme generated from the drawsvg pipeline for the Toon bundle.",
+        help="Icon theme description.",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete the existing icons directory before writing new assets.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    theme_root = args.theme_root.resolve()
+    reference_manifest = load_reference_manifest(args.reference_manifest.resolve())
+
+    if args.clean:
+        shutil.rmtree(theme_root / "icons", ignore_errors=True)
+
+    generated_icon_paths = generate_icon_assets(theme_root)
+    write_icon_theme_manifest(
+        theme_root=theme_root,
+        generated_icon_paths=generated_icon_paths,
+        reference_manifest=reference_manifest,
+        theme_id=args.theme_id,
+        theme_name=args.theme_name,
+        description=args.description,
+    )
+
+    print(
+        f"Generated {len(generated_icon_paths)} pastel SVG icons and icon-theme.json in {theme_root}"
+    )
+
+
+if __name__ == "__main__":
+    main()

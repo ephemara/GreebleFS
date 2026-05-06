@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "toon-stagecraft",
+  "name": "Toon Stagecraft",
+  "description": "Split-file workbench, explorer, and mobile recipe for the Toon bundle.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "launcher",
+    "stress-test"
+  ],
+  "dock": {
+    "workbench": {
+      "preset": "channel-grid",
+      "topBarStyle": "minimal",
+      "panelStyle": "glass",
+      "tabStyle": "segment",
+      "metrics": {
+        "chromeHeight": 38,
+        "controlRadius": 16,
+        "panelRadius": 22,
+        "shellInset": 10,
+        "pagePadding": 12,
+        "panelGap": 10
+      }
+    },
+    "explorer": {
+      "preset": "workbench",
+      "toolbarStyle": "minimal",
+      "statusBarStyle": "floating",
+      "metrics": {
+        "railWidth": 214,
+        "previewWidth": 360,
+        "chromeInset": 8,
+        "controlRadius": 16,
+        "panelRadius": 22,
+        "iconScale": 1.06,
+        "hoverLiftPx": 3
+      }
+    }
+  }
+}

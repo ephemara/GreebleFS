@@ -4,8 +4,8 @@ vi.mock('../components/TerminalOverlay', () => ({
   default: () => null,
 }));
 
-vi.mock('../components/FileExplorer', () => ({
-  FileExplorer: () => null,
+vi.mock('../components/explorer/ExplorerWorkspace', () => ({
+  ExplorerWorkspace: () => null,
 }));
 
 vi.mock('../components/GitManager', () => ({
@@ -239,6 +239,31 @@ describe('createBuiltInPanelDefinitions', () => {
     expect(gitElement.props.pendingRepositoryImports).toEqual(pendingRepositoryImports);
     expect(gitElement.props.onPendingRepositoryImportsHandled).toBe(onPendingRepositoryImportsHandled);
     expect(gitElement.props.onRequestRepositoryImport).toBe(onRequestRepositoryImport);
+  });
+
+  it('forwards usr profile variant actions into the settings panel host', () => {
+    const usrProfileSettingsVariants = [
+      {
+        id: 'inspector-lab',
+        label: 'Inspector Lab',
+      },
+    ] as never;
+    const onCreateUsrProfileFromVariant = vi.fn();
+
+    const panels = createPanelsForTest({
+      usrProfileSettingsVariants,
+      onCreateUsrProfileFromVariant,
+    });
+
+    const settings = panels.find(panel => panel.id === 'settings');
+    const settingsPanelElement = settings?.render() as React.ReactElement<{ children: React.ReactNode }>;
+    const settingsElement = settingsPanelElement.props.children as React.ReactElement<{
+      usrProfileSettingsVariants: typeof usrProfileSettingsVariants;
+      onCreateUsrProfileFromVariant: typeof onCreateUsrProfileFromVariant;
+    }>;
+
+    expect(settingsElement.props.usrProfileSettingsVariants).toBe(usrProfileSettingsVariants);
+    expect(settingsElement.props.onCreateUsrProfileFromVariant).toBe(onCreateUsrProfileFromVariant);
   });
 
   it('biases IDE workbench surface defaults around explorer core and secondary utilities', () => {

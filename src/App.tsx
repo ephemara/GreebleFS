@@ -1871,6 +1871,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const explorerDefaultModeProfileId = activeLayoutProfile.shellBlueprint === 'ide-workbench'
     ? 'inspector'
     : null;
+  const explorerShellDefaultLayoutId = activeLayoutProfile.shellBlueprint === 'ide-workbench'
+    ? 'inspector'
+    : null;
   const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
   const renderRuntime = useMemo(
     () => resolveWorkbenchRenderRuntime(
@@ -4950,6 +4953,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         explorerLayoutMode: explorerPanelLayoutMode,
         explorerDockPreviewPolicy: resolvedDockPresentation.previewPolicy,
         explorerDefaultModeProfileId,
+        explorerShellDefaultLayoutId,
         explorerPicker: activeExplorerPickerRequest,
         isOpen: isOverlayVisible,
         hideOverlay,
@@ -5222,6 +5226,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       iconThemePackages,
       importWallpaperFiles,
       explorerDefaultModeProfileId,
+      explorerShellDefaultLayoutId,
       explorerLayoutPackagesError,
       explorerLayoutPackagesLoading,
       explorerLayoutPackagesWarnings,

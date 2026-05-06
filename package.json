@@ -108,6 +108,7 @@
     "tailwindcss": "^4.2.1",
     "tauri-plugin-screenshots-api": "^2.2.0",
     "three": "^0.183.2",
+    "tweakpane": "^4.0.5",
     "use-sync-external-store": "^1.6.0",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.11"

@@ -81,9 +81,9 @@ describe('ProfilesSettingsSection', () => {
     expect(screen.getByText('default-profile-baseline')).toBeInTheDocument();
     expect(screen.getByText('active-profile')).toBeInTheDocument();
     expect(screen.getAllByText('baseline').length).toBeGreaterThan(0);
-    expect(screen.getByText('bundled-default')).toBeInTheDocument();
-    expect(screen.getByText(/Baseline:/)).toBeInTheDocument();
-    expect(screen.getByText(/Writable:/)).toBeInTheDocument();
+    expect(screen.getAllByText('bundled-default').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Baseline:/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Writable:/).length).toBeGreaterThan(0);
   });
 
   it('creates a profile from a named canonical variation', async () => {

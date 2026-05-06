@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "toon-engine",
+  "name": "Toon Engine",
+  "description": "Local composition manifest for the Toon stress-test bundle.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "stress-test",
+    "launcher"
+  ],
+  "appearancePackId": "toon-appearance",
+  "interactionMotionPackId": "toon-motion",
+  "themeRecipeId": "toon-stagecraft",
+  "compatibility": {
+    "shellBlueprints": [
+      "classic-dock",
+      "ide-workbench",
+      "tile-start",
+      "retro-desktop"
+    ],
+    "tags": [
+      "toon",
+      "pastel",
+      "launcher",
+      "light",
+      "stress-test"
+    ]
+  },
+  "designTokens": [
+    {
+      "id": "toon-accent",
+      "name": "Toon Accent",
+      "kind": "color",
+      "value": "#73B9FF"
+    },
+    {
+      "id": "toon-panel-radius",
+      "name": "Panel Radius",
+      "kind": "radius",
+      "value": 30
+    },
+    {
+      "id": "toon-panel-gap",
+      "name": "Panel Gap",
+      "kind": "spacing",
+      "value": 14
+    },
+    {
+      "id": "toon-hover-lift",
+      "name": "Hover Lift",
+      "kind": "interaction",
+      "value": 5
+    }
+  ]
+}

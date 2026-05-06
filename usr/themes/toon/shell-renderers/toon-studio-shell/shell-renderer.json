@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "id": "toon-studio-shell",
+  "name": "Toon Studio Shell",
+  "description": "A theme-owned launcher shell that keeps host panels and navigation but remaps the shell into a pastel studio board.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "renderer",
+    "launcher"
+  ],
+  "entryModule": "toon-studio-shell.tsx",
+  "apiVersion": 1,
+  "supportsLiveSwap": true,
+  "fallbackRuntime": "channel-launcher",
+  "capabilities": {
+    "customScreens": true,
+    "wallpaperScene": true,
+    "surfaceAdapters": true
+  }
+}

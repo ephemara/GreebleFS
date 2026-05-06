@@ -67,7 +67,7 @@ describe('ideWorkbenchLayout', () => {
   it('prefers the center explorer surface as the default focus target', () => {
     const layoutState = createDefaultIdeWorkbenchLayoutState(testSurfaceSeeds);
 
-    expect(layoutState.version).toBe(2);
+    expect(layoutState.version).toBe(3);
     expect(layoutState.focusedSurfaceId).toBe('explorer');
     expect(resolvePrimaryIdeWorkbenchSurfaceId(layoutState)).toBe('explorer');
     expect(layoutState.sourcesRailState).toMatchObject({
@@ -141,7 +141,7 @@ describe('ideWorkbenchLayout', () => {
       },
     }, testSurfaceSeeds);
 
-    expect(layoutState.version).toBe(2);
+    expect(layoutState.version).toBe(3);
     expect(layoutState.focusedSurfaceId).toBe('explorer');
     expect(resolvePrimaryIdeWorkbenchSurfaceId(layoutState)).toBe('explorer');
     expect(findDockPlacementForSurface(layoutState, 'explorer')).toBe('center');
@@ -152,7 +152,7 @@ describe('ideWorkbenchLayout', () => {
 
   it('normalizes current IDE layouts so utility surfaces cannot stay in the center stack', () => {
     const layoutState = normalizeIdeWorkbenchLayoutState({
-      version: 2,
+      version: 3,
       focusedSurfaceId: 'storage',
       rootDockNode: {
         type: 'split',
@@ -322,7 +322,7 @@ describe('ideWorkbenchLayout', () => {
 
   it('keeps externalized surfaces out of normalized dock stacks and can clear them back to hidden', () => {
     const normalizedLayoutState = normalizeIdeWorkbenchLayoutState({
-      version: 2,
+      version: 3,
       focusedSurfaceId: 'settings',
       rootDockNode: {
         type: 'split',

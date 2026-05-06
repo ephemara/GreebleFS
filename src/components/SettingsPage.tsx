@@ -15839,6 +15839,84 @@ export function SettingsPage({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
+                      Activity Rail
+                    </div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Choose whether each explorer navigation rail behaves like a
+                      single-slot sidebar or allows multiple stacked utility panes.
+                    </p>
+                  </div>
+                  <span
+                    className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                    style={{
+                      borderColor: border,
+                      background: "rgba(255,255,255,0.04)",
+                      color: text,
+                    }}
+                  >
+                    {settings.explorer.activityRailOpenMode === "multiple"
+                      ? "Multiple Per Rail"
+                      : "Single Per Rail"}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {(
+                    [
+                      {
+                        value: "single",
+                        label: "Single Per Rail",
+                        description:
+                          "VS Code style. Opening a lane replaces the current pane on that rail side.",
+                      },
+                      {
+                        value: "multiple",
+                        label: "Multiple Per Rail",
+                        description:
+                          "Keep the current split-capable utility flow and allow multiple open panes on one rail.",
+                      },
+                    ] as const
+                  ).map((option) => {
+                    const active =
+                      settings.explorer.activityRailOpenMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          updateExplorer({ activityRailOpenMode: option.value })
+                        }
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active
+                            ? `${accent}14`
+                            : "rgba(255,255,255,0.03)",
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[11px] font-semibold">
+                          {option.label}
+                        </div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          {option.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div
+                className="rounded border p-3"
+                style={{
+                  borderColor: border,
+                  background: "rgba(255,255,255,0.025)",
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
                       Content Layout
                     </div>
                     <p className="mt-1 text-[11px] opacity-40">

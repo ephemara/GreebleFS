@@ -1118,6 +1118,29 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(false);
   });
 
+  it('switches the explorer activity rail between single and multi-pane modes', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Explorer'));
+
+    expect(useSettingsStore.getState().settings.explorer.activityRailOpenMode).toBe(
+      'single',
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: /^Multiple Per Rail/i }),
+    );
+    expect(useSettingsStore.getState().settings.explorer.activityRailOpenMode).toBe(
+      'multiple',
+    );
+
+    await user.click(screen.getByRole('button', { name: /^Single Per Rail/i }));
+    expect(useSettingsStore.getState().settings.explorer.activityRailOpenMode).toBe(
+      'single',
+    );
+  }, 30000);
+
   it('organizes the settings rail into compact preference groups', () => {
     renderSettingsPage();
 
@@ -2633,6 +2656,7 @@ describe('SettingsPage behavior', () => {
     expect(settings.explorer.experimentalViewMode).toBe('off');
     expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.explorer.activityRailOpenMode).toBe('single');
     expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
 
     const { session } = useExplorerStore.getState();

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "toon-motion",
+  "name": "Toon Motion",
+  "description": "Squash, lift, and bounce tuned for the Toon stress-test bundle.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "motion",
+    "snappy"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "palette": {
+    "appBackground": "#FFF7EF",
+    "appBackgroundAlt": "#FFEEDA",
+    "shellBackground": "rgba(255, 250, 245, 0.96)",
+    "topBarBackground": "rgba(255, 253, 249, 0.92)",
+    "panelBackground": "rgba(255, 254, 251, 0.92)",
+    "inputBackground": "rgba(255, 255, 255, 0.9)",
+    "textPrimary": "#2D3348",
+    "textMuted": "rgba(69, 80, 107, 0.72)",
+    "border": "rgba(109, 125, 166, 0.18)",
+    "borderStrong": "rgba(115, 185, 255, 0.34)",
+    "accent": "#73B9FF",
+    "accentStrong": "#8F9DFF",
+    "accentSoft": "rgba(115, 185, 255, 0.16)"
+  },
+  "metrics": {
+    "controlRadius": 20,
+    "panelRadius": 30,
+    "pagePadding": 18,
+    "panelGap": 14,
+    "touchTarget": 56,
+    "bottomNavHeight": 88,
+    "actionStripHeight": 74,
+    "entryIconSize": 58,
+    "gridMinWidth": 132
+  },
+  "shadow": "0 24px 60px rgba(95, 104, 154, 0.22)",
+  "cssVars": {
+    "--mobile-danger": "#FF8FB2",
+    "--mobile-warning": "#FFBF7A",
+    "--mobile-backdrop-blur": "blur(20px)"
+  }
+}

@@ -3,13 +3,13 @@
     "accentColor": "#f5f5f5",
     "activeAppearancePackId": null,
     "activeDockThemeId": null,
-    "activeIconThemeId": null,
+    "activeIconThemeId": "greeblefs_canonical_icons",
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "dracula",
+    "activeThemeId": "github-dark",
     "activeThemeRecipeId": null,
-    "activeTopBarId": "greeblefs-core-top-bars:focus-strip",
+    "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
     "activityBarPosition": "side",
     "animations": false,
@@ -20,9 +20,447 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.75,
+    "appZoom": 1,
     "compactMode": false,
-    "customThemeBundles": [],
+    "customThemeBundles": [
+      {
+        "appearancePackId": "appearance-base",
+        "closeAnimationId": "dissolve",
+        "description": "Cool arctic steel with restrained cyan accents.",
+        "embedded": {
+          "appearancePacks": [
+            {
+              "cssVars": {},
+              "effects": {
+                "backgroundImage": "radial-gradient(circle at 18% 15%, rgba(136,192,208,0.22), transparent 28%), radial-gradient(circle at 78% 18%, rgba(129,161,193,0.14), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0))",
+                "backgroundPosition": "center",
+                "backgroundSize": "cover",
+                "overlayShadow": "0 -4px 0 0 #88c0d0, 0 -32px 80px rgba(8,13,20,0.94)",
+                "shadow": "0 16px 48px rgba(0,0,0,0.48)"
+              },
+              "extendsThemeId": "pilot-dark",
+              "fonts": {
+                "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace",
+                "ui": "system-ui, sans-serif"
+              },
+              "id": "appearance-base",
+              "name": "Nord Custom Appearance",
+              "palette": {
+                "accent": "#dfe3de",
+                "accentContrast": "#09141a",
+                "accentSoft": "#dfe3de22",
+                "appBackground": "#0c48c0",
+                "appBackgroundAlt": "#1a1f28",
+                "border": "rgba(136,192,208,0.16)",
+                "borderStrong": "rgba(136,192,208,0.28)",
+                "bug": "#bf616a",
+                "cardBackground": "#2d3441",
+                "cardHoverBackground": "#343b49",
+                "contextMenuBackground": "#2b3440",
+                "danger": "#bf616a",
+                "info": "#81a1c1",
+                "inputBackground": "#303947",
+                "note": "#81a1c1",
+                "panelAltBackground": "#28303c",
+                "panelBackground": "#6d788d",
+                "prompt": "#b48ead",
+                "scrimBackground": "rgba(0,0,0,0.68)",
+                "selectionBackground": "rgba(136,192,208,0.22)",
+                "shellBackground": "rgba(22, 26, 34, 0.8)",
+                "shellBackgroundSolid": "#0c48c0",
+                "sidebarBackground": "#6d788d",
+                "success": "#a3be8c",
+                "terminalBackground": "#181c24",
+                "textDim": "rgba(236,239,244,0.22)",
+                "textInverse": "#05050e",
+                "textMuted": "rgba(236,239,244,0.58)",
+                "textPrimary": "#ec91ed",
+                "textSecondary": "#d8dee9",
+                "todo": "#a3be8c",
+                "topBarBackground": "#1b2029",
+                "topBarMenuBackground": "#202632",
+                "warning": "#ebcb8b"
+              },
+              "visuals": [],
+              "xterm": {
+                "background": "#181c24",
+                "black": "#3b4252",
+                "blue": "#81a1c1",
+                "brightBlack": "#4c566a",
+                "brightBlue": "#81a1c1",
+                "brightCyan": "#8fbcbb",
+                "brightGreen": "#a3be8c",
+                "brightMagenta": "#b48ead",
+                "brightRed": "#bf616a",
+                "brightWhite": "#eceff4",
+                "brightYellow": "#ebcb8b",
+                "cursor": "#88c0d0",
+                "cyan": "#88c0d0",
+                "foreground": "#d8dee9",
+                "green": "#a3be8c",
+                "magenta": "#b48ead",
+                "red": "#bf616a",
+                "white": "#e5e9f0",
+                "yellow": "#ebcb8b"
+              }
+            }
+          ],
+          "interactionMotionPacks": [
+            {
+              "id": "interaction-motion-base",
+              "interactionMotion": {
+                "defaultPresetId": "subtle",
+                "intensityMultiplier": 1,
+                "surfaceOverrides": {}
+              },
+              "name": "Nord Custom Motion"
+            }
+          ],
+          "themeEngines": [
+            {
+              "animationProfiles": [],
+              "compatibility": {
+                "shellBlueprints": [],
+                "tags": []
+              },
+              "designTokens": [],
+              "iconPacks": [],
+              "id": "theme-engine-base",
+              "layoutPrimitives": [],
+              "name": "Nord Custom Engine",
+              "navigationPatterns": [],
+              "presentation": {
+                "chromeStyle": "minimal",
+                "cornerRadius": 12,
+                "density": "comfortable",
+                "iconStyle": "vector",
+                "motionStyle": "snappy",
+                "panelSpacing": 8
+              },
+              "renderStyles": []
+            }
+          ],
+          "themeRecipes": [
+            {
+              "dock": {
+                "explorer": {
+                  "breadcrumbStyle": "segmented",
+                  "chromeLayoutId": "default",
+                  "cssVars": {},
+                  "defaultModeProfileId": "balanced",
+                  "hoverStyle": "fill",
+                  "labelMode": "inline",
+                  "menuPresentation": {
+                    "capabilityRules": []
+                  },
+                  "metrics": {
+                    "chromeInset": 8,
+                    "controlRadius": 8,
+                    "gridScale": 1,
+                    "hoverLiftPx": 0,
+                    "iconScale": 1,
+                    "panelRadius": 12,
+                    "previewWidth": 320,
+                    "railWidth": 228,
+                    "rowHeightScale": 1.02,
+                    "spacingScale": 1,
+                    "toolbarGap": 5,
+                    "toolbarPaddingX": 8,
+                    "toolbarPaddingY": 5
+                  },
+                  "preferredExperimentalViewMode": "off",
+                  "preferredViewMode": "details",
+                  "preset": "workbench",
+                  "previewStyle": "attached",
+                  "railPosition": "left",
+                  "selectionStyle": "fill",
+                  "statusBarStyle": "solid",
+                  "surfaces": {
+                    "chipActiveBackground": "var(--overlay-bg-selection)",
+                    "chipActiveBorder": "color-mix(in srgb, var(--overlay-accent) 24%, var(--overlay-border-strong))",
+                    "chipActiveText": "var(--overlay-text-primary)",
+                    "chipBackground": "transparent",
+                    "chipBorder": "var(--overlay-border)",
+                    "contentBackground": "transparent",
+                    "inputBackground": "var(--overlay-bg-input)",
+                    "inputBorder": "var(--overlay-border-strong)",
+                    "itemDropBackground": "color-mix(in srgb, var(--overlay-accent) 10%, transparent)",
+                    "itemDropBorder": "var(--overlay-border-strong)",
+                    "itemFocusShadow": "none",
+                    "itemHoverBackground": "color-mix(in srgb, var(--overlay-text-primary) 4%, transparent)",
+                    "itemHoverBorder": "color-mix(in srgb, var(--overlay-border-strong) 80%, transparent)",
+                    "itemSelectedBackground": "var(--overlay-bg-selection)",
+                    "itemSelectedBorder": "color-mix(in srgb, var(--overlay-accent) 28%, var(--overlay-border-strong))",
+                    "omniboxBackground": "var(--overlay-bg-input)",
+                    "omniboxBorder": "var(--overlay-border-strong)",
+                    "previewBackground": "color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent)",
+                    "previewBorder": "var(--overlay-border)",
+                    "previewHeaderBackground": "var(--overlay-bg-sidebar)",
+                    "rootBackground": "var(--overlay-bg-shell)",
+                    "sidebarBackground": "color-mix(in srgb, var(--overlay-bg-sidebar) 98%, transparent)",
+                    "sidebarBorder": "var(--overlay-border)",
+                    "statusBarBackground": "var(--overlay-bg-sidebar)",
+                    "statusBarBorder": "var(--overlay-border)",
+                    "toolbarBackground": "color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent)",
+                    "toolbarBorder": "var(--overlay-border)",
+                    "toolbarShadow": "none"
+                  },
+                  "toolbarStyle": "solid",
+                  "typography": {
+                    "breadcrumbFontSize": 11,
+                    "entryMetaSize": 10,
+                    "entryTitleSize": 11,
+                    "entryTitleWeight": 500,
+                    "labelLetterSpacing": "0.04em",
+                    "railEyebrowSize": 10,
+                    "railTitleSize": 14,
+                    "statusFontSize": 10,
+                    "toolbarFontSize": 11
+                  }
+                },
+                "workbench": {
+                  "brandLabel": "Dock",
+                  "commandPaletteStyle": "solid",
+                  "cssVars": {},
+                  "metrics": {
+                    "chromeHeight": 34,
+                    "commandPaletteTopInset": 44,
+                    "commandPaletteWidth": 720,
+                    "controlRadius": 10,
+                    "pagePadding": 10,
+                    "panelGap": 8,
+                    "panelRadius": 12,
+                    "shellInset": 8
+                  },
+                  "panelStyle": "solid",
+                  "preset": "workbench",
+                  "settingsStyle": "solid",
+                  "surfaces": {
+                    "chromeBackground": "color-mix(in srgb, var(--overlay-bg-topbar) 96%, transparent)",
+                    "chromeBorder": "var(--overlay-border)",
+                    "chromeButtonActiveBackground": "var(--overlay-bg-selection)",
+                    "chromeButtonActiveBorder": "var(--overlay-border-strong)",
+                    "chromeButtonBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                    "chromeButtonHoverBackground": "color-mix(in srgb, var(--overlay-text-primary) 6%, transparent)",
+                    "chromeMenuBackground": "var(--overlay-bg-topbar-menu)",
+                    "chromeTabActiveBackground": "var(--overlay-bg-panel)",
+                    "chromeTabBackground": "var(--overlay-bg-panel-alt)",
+                    "chromeTabBorder": "var(--overlay-border)",
+                    "commandPaletteBackground": "var(--overlay-bg-panel)",
+                    "commandPaletteBorder": "var(--overlay-border)",
+                    "commandPaletteInputBackground": "var(--overlay-bg-input)",
+                    "commandPaletteItemActiveBackground": "var(--overlay-bg-selection)",
+                    "commandPaletteItemBackground": "color-mix(in srgb, var(--overlay-text-primary) 2%, transparent)",
+                    "commandPaletteScrimBackground": "rgba(0, 0, 0, 0.36)",
+                    "settingsBackground": "linear-gradient(180deg, var(--overlay-bg-app-alt) 0%, var(--overlay-bg-panel) 100%)",
+                    "settingsBadgeBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                    "settingsBadgeBorder": "var(--overlay-border)",
+                    "settingsCardBackground": "var(--overlay-bg-panel)",
+                    "settingsCardBorder": "var(--overlay-border)",
+                    "settingsRailBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                    "shellBackground": "color-mix(in srgb, var(--overlay-bg-shell-solid) 96%, transparent)",
+                    "shellShadow": "0 18px 42px rgba(0, 0, 0, 0.32)",
+                    "terminalBackground": "var(--overlay-bg-shell-solid)",
+                    "terminalBorder": "var(--overlay-border)",
+                    "terminalPaneBackground": "var(--overlay-bg-terminal)",
+                    "terminalPanelBackground": "var(--overlay-bg-panel)",
+                    "terminalStatusBackground": "var(--overlay-bg-selection)"
+                  },
+                  "tabStyle": "segment",
+                  "terminalFx": {
+                    "contrast": 0.14,
+                    "curvature": 0.1,
+                    "glowOpacity": 0.12,
+                    "noiseOpacity": 0.032,
+                    "opacity": 1,
+                    "preset": "subtle",
+                    "saturation": 0.08,
+                    "scanlineOpacity": 0.08,
+                    "tintColor": "var(--overlay-accent)",
+                    "tintOpacity": 0.05,
+                    "vignetteOpacity": 0.16
+                  },
+                  "terminalRenderer": "auto",
+                  "terminalStyle": "solid",
+                  "topBarStyle": "solid",
+                  "typography": {
+                    "badgeSize": 9,
+                    "chromeLabelSize": 11,
+                    "chromeMetaSize": 8,
+                    "labelLetterSpacing": "0.06em",
+                    "pageBodySize": 11,
+                    "pageTitleSize": 16,
+                    "tabLabelSize": 11
+                  }
+                }
+              },
+              "explorer": {
+                "breadcrumbStyle": "segmented",
+                "chromeLayoutId": "default",
+                "cssVars": {},
+                "defaultModeProfileId": "balanced",
+                "hoverStyle": "fill",
+                "labelMode": "inline",
+                "menuPresentation": {
+                  "capabilityRules": []
+                },
+                "metrics": {
+                  "chromeInset": 0,
+                  "controlRadius": 8,
+                  "gridScale": 1,
+                  "hoverLiftPx": 0,
+                  "iconScale": 1,
+                  "panelRadius": 10,
+                  "previewWidth": 360,
+                  "railWidth": 264,
+                  "rowHeightScale": 1.02,
+                  "spacingScale": 1,
+                  "toolbarGap": 6,
+                  "toolbarPaddingX": 10,
+                  "toolbarPaddingY": 6
+                },
+                "preferredExperimentalViewMode": "off",
+                "preferredViewMode": "details",
+                "preset": "workbench",
+                "previewStyle": "attached",
+                "railPosition": "left",
+                "selectionStyle": "fill",
+                "statusBarStyle": "solid",
+                "surfaces": {
+                  "chipActiveBackground": "var(--overlay-bg-selection)",
+                  "chipActiveBorder": "color-mix(in srgb, var(--overlay-accent) 24%, var(--overlay-border-strong))",
+                  "chipActiveText": "var(--overlay-text-primary)",
+                  "chipBackground": "transparent",
+                  "chipBorder": "var(--overlay-border)",
+                  "contentBackground": "transparent",
+                  "inputBackground": "var(--overlay-bg-input)",
+                  "inputBorder": "var(--overlay-border-strong)",
+                  "itemDropBackground": "color-mix(in srgb, var(--overlay-accent) 10%, transparent)",
+                  "itemDropBorder": "var(--overlay-border-strong)",
+                  "itemFocusShadow": "none",
+                  "itemHoverBackground": "color-mix(in srgb, var(--overlay-text-primary) 4%, transparent)",
+                  "itemHoverBorder": "color-mix(in srgb, var(--overlay-border-strong) 80%, transparent)",
+                  "itemSelectedBackground": "var(--overlay-bg-selection)",
+                  "itemSelectedBorder": "color-mix(in srgb, var(--overlay-accent) 28%, var(--overlay-border-strong))",
+                  "omniboxBackground": "var(--overlay-bg-input)",
+                  "omniboxBorder": "var(--overlay-border-strong)",
+                  "previewBackground": "var(--overlay-bg-panel)",
+                  "previewBorder": "var(--overlay-border)",
+                  "previewHeaderBackground": "var(--overlay-bg-sidebar)",
+                  "rootBackground": "var(--overlay-bg-shell)",
+                  "sidebarBackground": "var(--overlay-bg-sidebar)",
+                  "sidebarBorder": "var(--overlay-border)",
+                  "statusBarBackground": "var(--overlay-bg-sidebar)",
+                  "statusBarBorder": "var(--overlay-border)",
+                  "toolbarBackground": "var(--overlay-bg-panel)",
+                  "toolbarBorder": "var(--overlay-border)",
+                  "toolbarShadow": "none"
+                },
+                "toolbarStyle": "solid",
+                "typography": {
+                  "breadcrumbFontSize": 11,
+                  "entryMetaSize": 10,
+                  "entryTitleSize": 11,
+                  "entryTitleWeight": 500,
+                  "labelLetterSpacing": "0.04em",
+                  "railEyebrowSize": 10,
+                  "railTitleSize": 14,
+                  "statusFontSize": 10,
+                  "toolbarFontSize": 11
+                }
+              },
+              "id": "theme-recipe-base",
+              "name": "Nord Custom Recipe",
+              "workbench": {
+                "brandLabel": "GreebleFS",
+                "commandPaletteStyle": "solid",
+                "cssVars": {},
+                "metrics": {
+                  "chromeHeight": 38,
+                  "commandPaletteTopInset": 52,
+                  "commandPaletteWidth": 720,
+                  "controlRadius": 8,
+                  "pagePadding": 12,
+                  "panelGap": 10,
+                  "panelRadius": 12,
+                  "shellInset": 0
+                },
+                "panelStyle": "solid",
+                "preset": "workbench",
+                "settingsStyle": "solid",
+                "surfaces": {
+                  "chromeBackground": "var(--overlay-bg-topbar)",
+                  "chromeBorder": "var(--overlay-border)",
+                  "chromeButtonActiveBackground": "var(--overlay-bg-selection)",
+                  "chromeButtonActiveBorder": "var(--overlay-border-strong)",
+                  "chromeButtonBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                  "chromeButtonHoverBackground": "color-mix(in srgb, var(--overlay-text-primary) 6%, transparent)",
+                  "chromeMenuBackground": "var(--overlay-bg-topbar-menu)",
+                  "chromeTabActiveBackground": "var(--overlay-bg-panel)",
+                  "chromeTabBackground": "var(--overlay-bg-panel-alt)",
+                  "chromeTabBorder": "var(--overlay-border)",
+                  "commandPaletteBackground": "var(--overlay-bg-panel)",
+                  "commandPaletteBorder": "var(--overlay-border)",
+                  "commandPaletteInputBackground": "var(--overlay-bg-input)",
+                  "commandPaletteItemActiveBackground": "var(--overlay-bg-selection)",
+                  "commandPaletteItemBackground": "color-mix(in srgb, var(--overlay-text-primary) 2%, transparent)",
+                  "commandPaletteScrimBackground": "rgba(0, 0, 0, 0.36)",
+                  "settingsBackground": "linear-gradient(180deg, var(--overlay-bg-app-alt) 0%, var(--overlay-bg-panel) 100%)",
+                  "settingsBadgeBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                  "settingsBadgeBorder": "var(--overlay-border)",
+                  "settingsCardBackground": "var(--overlay-bg-panel)",
+                  "settingsCardBorder": "var(--overlay-border)",
+                  "settingsRailBackground": "color-mix(in srgb, var(--overlay-text-primary) 3%, transparent)",
+                  "shellBackground": "var(--overlay-bg-shell-solid)",
+                  "shellShadow": "0 18px 48px rgba(0, 0, 0, 0.28)",
+                  "terminalBackground": "var(--overlay-bg-shell-solid)",
+                  "terminalBorder": "var(--overlay-border)",
+                  "terminalPaneBackground": "var(--overlay-bg-terminal)",
+                  "terminalPanelBackground": "var(--overlay-bg-panel)",
+                  "terminalStatusBackground": "var(--overlay-bg-selection)"
+                },
+                "tabStyle": "segment",
+                "terminalFx": {
+                  "contrast": 0.14,
+                  "curvature": 0.1,
+                  "glowOpacity": 0.12,
+                  "noiseOpacity": 0.032,
+                  "opacity": 1,
+                  "preset": "subtle",
+                  "saturation": 0.08,
+                  "scanlineOpacity": 0.08,
+                  "tintColor": "var(--overlay-accent)",
+                  "tintOpacity": 0.05,
+                  "vignetteOpacity": 0.16
+                },
+                "terminalRenderer": "auto",
+                "terminalStyle": "solid",
+                "topBarStyle": "solid",
+                "typography": {
+                  "badgeSize": 9,
+                  "chromeLabelSize": 11,
+                  "chromeMetaSize": 8,
+                  "labelLetterSpacing": "0.06em",
+                  "pageBodySize": 11,
+                  "pageTitleSize": 16,
+                  "tabLabelSize": 11
+                }
+              }
+            }
+          ]
+        },
+        "iconThemeId": "greeblefs_canonical_icons",
+        "id": "nord-custom",
+        "interactionMotionPackId": "interaction-motion-base",
+        "name": "Nord Custom",
+        "openAnimationId": "lift",
+        "shaderId": "hologram-grid",
+        "soundPackId": "greeblefs-default-shell-sounds",
+        "themeEngineId": "theme-engine-base",
+        "themeRecipeId": "theme-recipe-base",
+        "version": 1
+      }
+    ],
     "customThemes": [],
     "dockThemeMode": "follow-app",
     "interactionMotionEnabled": true,
@@ -61,10 +499,10 @@
   },
   "dock": {
     "activePresentationId": "yakuake-workbench",
-    "defaultTerminalColumns": 176,
-    "defaultTerminalRows": 18,
-    "edgeSize": 432,
-    "edgeWidth": 1560,
+    "defaultTerminalColumns": 200,
+    "defaultTerminalRows": 17,
+    "edgeSize": 418,
+    "edgeWidth": 1683,
     "floatingBounds": {
       "height": 824,
       "width": 2524,
@@ -73,8 +511,8 @@
     },
     "placementMode": "bottom-edge",
     "previewEnabled": true,
-    "previewSplitMode": "inline",
-    "topBarId": "dock-ox-strip"
+    "previewSplitMode": "pane",
+    "topBarId": "dock-control-strip"
   },
   "editor": {
     "autoSave": "afterDelay",
@@ -93,6 +531,7 @@
   "explorer": {
     "activeExplorerLayoutId": null,
     "activeMenuPackId": "greeblefs-default-explorer-menu",
+    "activityRailOpenMode": "single",
     "chromeLayoutOverridesByThemeId": {
       "dracula": {
         "default": {
@@ -429,6 +868,318 @@
           ]
         }
       },
+      "github-dark": {
+        "default": {
+          "entries": [
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "toggleSources",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateBack",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 38,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateForward",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 76,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateUp",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 116,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "addressBar",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": false,
+              "showLabel": true,
+              "surfaceId": "explorerToolbar",
+              "widthPx": 720,
+              "zone": "primaryCenter"
+            },
+            {
+              "anchorX": 840,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "focusAddressBar",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "togglePreview",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "actionsPaneToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "selectionModeToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "toggleHiddenFiles",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 50,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "refresh",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 60,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "secondary",
+              "controlId": "recentLocations",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "controlId": "selectionSizeSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "controlId": "pinLocation",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "toggleSearchContent",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "semanticIndexBuild",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "batchRename",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "tagSelection",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 50,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "duplicateScan",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 60,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "undoTrash",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 70,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "newFolder",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 80,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "newFile",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 90,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "railIdentity",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "railHeader",
+              "zone": "start"
+            },
+            {
+              "controlId": "railBookmarkSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "railHeader",
+              "zone": "center"
+            },
+            {
+              "controlId": "railClose",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "railHeader",
+              "zone": "end"
+            },
+            {
+              "controlId": "railManageToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "railHeader",
+              "zone": "end"
+            },
+            {
+              "controlId": "statusItemCount",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusModeProfile",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusViewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusPreviewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "center"
+            },
+            {
+              "controlId": "saveSearch",
+              "hidden": false,
+              "offsetPx": 250,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "center"
+            },
+            {
+              "controlId": "statusTaskBadge",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            },
+            {
+              "controlId": "terminalDrawerToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            },
+            {
+              "controlId": "statusViewToggles",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            }
+          ]
+        }
+      },
       "pilot-dark": {
         "default": {
           "entries": [
@@ -761,7 +1512,212 @@
     "collectionPreviewMode": "list",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
-    "contextMenuLayoutOverridesByContext": {},
+    "contextMenuLayoutOverridesByContext": {
+      "entry": {
+        "entries": [
+          {
+            "commandId": "built-in.open",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.open",
+            "kind": "command",
+            "order": 10,
+            "parentEntryId": null,
+            "quickSlot": "primary"
+          },
+          {
+            "commandId": "built-in.windows-shell-actions",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.windows-shell-actions",
+            "kind": "command",
+            "order": 20,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "commandId": "built-in.open-with",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.open-with",
+            "kind": "command",
+            "order": 30,
+            "parentEntryId": null,
+            "quickSlot": "secondary"
+          },
+          {
+            "commandId": "built-in.send-to-mobile-download",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.send-to-mobile",
+            "kind": "command",
+            "order": 40,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "commandId": "built-in.reveal",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.reveal",
+            "kind": "command",
+            "order": 50,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "commandId": "built-in.properties",
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.properties",
+            "kind": "command",
+            "order": 60,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.separator.primary",
+            "kind": "separator",
+            "order": 70,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "iconName": "Clipboard",
+            "id": "entry.clipboard",
+            "kind": "submenu",
+            "order": 80,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "title": "Clipboard"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "iconName": "Edit3",
+            "id": "entry.organize",
+            "kind": "submenu",
+            "order": 90,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "title": "Organize"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "iconName": "Star",
+            "id": "entry.library",
+            "kind": "submenu",
+            "order": 100,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "title": "Library"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "iconName": "Sparkles",
+            "id": "entry.actions",
+            "kind": "submenu",
+            "order": 110,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "title": "Actions"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "iconName": "Puzzle",
+            "id": "entry.plugins",
+            "kind": "submenu",
+            "order": 120,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "title": "Plugins"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "id": "entry.separator.danger",
+            "kind": "separator",
+            "order": 130,
+            "parentEntryId": null,
+            "quickSlot": "none"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "danger",
+            "id": "entry.danger.slot",
+            "kind": "group-slot",
+            "order": 140,
+            "parentEntryId": null,
+            "quickSlot": "none",
+            "sourceFilter": "any"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "action",
+            "id": "entry.actions.slot",
+            "kind": "group-slot",
+            "order": 10,
+            "parentEntryId": "entry.actions",
+            "quickSlot": "none",
+            "sourceFilter": "action"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "clipboard",
+            "id": "entry.clipboard.slot",
+            "kind": "group-slot",
+            "order": 10,
+            "parentEntryId": "entry.clipboard",
+            "quickSlot": "none",
+            "sourceFilter": "any"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "library",
+            "id": "entry.library.slot",
+            "kind": "group-slot",
+            "order": 10,
+            "parentEntryId": "entry.library",
+            "quickSlot": "none",
+            "sourceFilter": "any"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "organize",
+            "id": "entry.organize.slot",
+            "kind": "group-slot",
+            "order": 10,
+            "parentEntryId": "entry.organize",
+            "quickSlot": "none",
+            "sourceFilter": "any"
+          },
+          {
+            "enabled": true,
+            "fallbackBucket": "default",
+            "group": "plugin",
+            "id": "entry.plugins.slot",
+            "kind": "group-slot",
+            "order": 10,
+            "parentEntryId": "entry.plugins",
+            "quickSlot": "none",
+            "sourceFilter": "plugin"
+          }
+        ],
+        "renderer": "hud"
+      }
+    },
     "defaultFolderIcon": "folder",
     "defaultPath": "greeblefs://home",
     "doubleClickEmptyToGoBack": false,
@@ -963,11 +1919,11 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.34,
+    "gridZoom": 0.40999999809808535,
     "layoutSelectionByPresentationMode": {
       "dock": {
-        "activeExplorerLayoutId": "dock-ox",
-        "followThemeExplorerLayout": false
+        "activeExplorerLayoutId": null,
+        "followThemeExplorerLayout": true
       },
       "windowed": {
         "activeExplorerLayoutId": null,
@@ -1091,7 +2047,7 @@
     "zoomAdjust": "Ctrl+Scroll"
   },
   "layout": {
-    "activeProfileId": "workbench-ide",
+    "activeProfileId": "overlay-classic",
     "configPath": "",
     "followThemeDefaults": false,
     "lastProfileIdByShellFamily": {
@@ -1107,7 +2063,8 @@
           "storage",
           "terminal",
           "git",
-          "plugins"
+          "plugins",
+          "greeblefs-action-forge"
         ],
         "openPanelIds": [
           "settings",
@@ -1128,13 +2085,13 @@
         },
         "explorerInspectorLinkMode": "live-linked",
         "floatingNodes": [],
-        "focusedSurfaceId": "storage",
+        "focusedSurfaceId": "explorer",
         "inspectorRailState": {
           "mode": "preview-inspector",
           "preferredWidth": 420,
           "visible": true
         },
-        "maximizedNodeId": null,
+        "maximizedNodeId": "ide:right-sidebar",
         "rootDockNode": {
           "children": [
             {
@@ -1151,14 +2108,15 @@
                   "type": "stack"
                 },
                 {
-                  "activeSurfaceId": "terminal",
+                  "activeSurfaceId": "settings",
                   "collapsed": false,
                   "id": "ide:bottom-panel",
                   "placement": "bottom-panel",
                   "presentation": "stack",
                   "tabs": [
                     "terminal",
-                    "git"
+                    "git",
+                    "settings"
                   ],
                   "type": "stack"
                 }
@@ -1167,29 +2125,25 @@
               "orientation": "vertical",
               "sizes": [
                 1,
-                0.32
+                0.22
               ],
               "type": "split"
             },
             {
-              "activeSurfaceId": "storage",
-              "collapsed": false,
+              "activeSurfaceId": null,
+              "collapsed": true,
               "id": "ide:right-sidebar",
               "placement": "right-sidebar",
               "presentation": "stack",
-              "tabs": [
-                "greeblefs-workbench-audio",
-                "greeblefs-action-forge",
-                "storage"
-              ],
+              "tabs": [],
               "type": "stack"
             }
           ],
           "id": "ide:root",
           "orientation": "horizontal",
           "sizes": [
-            0.9766072029696656,
-            0.3633927970303342
+            0.35827107597799973,
+            0.8817289240220003
           ],
           "type": "split"
         },
@@ -1228,7 +2182,7 @@
             "collapsed": false,
             "externalizedRestorePlacement": null,
             "externalizedWindowId": null,
-            "hidden": false
+            "hidden": true
           },
           "greeblefs-index-photo-gallery": {
             "collapsed": false,
@@ -1246,7 +2200,7 @@
             "collapsed": false,
             "externalizedRestorePlacement": null,
             "externalizedWindowId": null,
-            "hidden": false
+            "hidden": true
           },
           "greeblefs-workbench-docx": {
             "collapsed": false,
@@ -1330,13 +2284,13 @@
             "collapsed": false,
             "externalizedRestorePlacement": null,
             "externalizedWindowId": null,
-            "hidden": true
+            "hidden": false
           },
           "storage": {
             "collapsed": false,
             "externalizedRestorePlacement": null,
             "externalizedWindowId": null,
-            "hidden": false
+            "hidden": true
           },
           "terminal": {
             "collapsed": true,
@@ -1345,7 +2299,7 @@
             "hidden": false
           }
         },
-        "version": 2
+        "version": 3
       }
     },
     "zenFocusMode": false
@@ -1367,8 +2321,8 @@
     "fontSize": 13,
     "integratedHost": "xterm",
     "overlayAnchor": "bottom",
-    "overlayHeight": 432,
-    "overlayWidth": 1560,
+    "overlayHeight": 418,
+    "overlayWidth": 1683,
     "preferredOpenMode": "integrated",
     "scrollback": 10000,
     "shell": "pwsh.exe -NoLogo",

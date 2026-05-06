@@ -1,0 +1,8 @@
+{
+  "chromeStyle": "ornate",
+  "density": "immersive",
+  "iconStyle": "vector",
+  "motionStyle": "snappy",
+  "cornerRadius": 24,
+  "panelSpacing": 14
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "toon-clubhouse",
+  "name": "Toon Clubhouse",
+  "description": "An editorial home surface with big cards, saved-search stickers, and a bright folder runway for the Toon bundle.",
+  "author": "Codex",
+  "tags": [
+    "toon",
+    "home",
+    "editorial"
+  ],
+  "homePack": {
+    "entryModule": "index.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true
+  }
+}

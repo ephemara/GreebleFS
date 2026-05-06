@@ -3028,8 +3028,14 @@ describe("FileExplorer view modes", () => {
   });
 
   it("opens the side-dock terminal from the activity rail", async () => {
+    useExplorerStore.getState().updateSession({
+      sidebarWidth: 220,
+      leftActivityDockWidth: 220,
+    });
     renderExplorer();
     await screen.findByText("notes.txt");
+    const narrowLeftWidth =
+      useExplorerStore.getState().session.leftActivityDockWidth ?? 0;
 
     fireEvent.click(
       within(getExplorerActivityRail("left")).getByRole("button", {
@@ -3038,13 +3044,61 @@ describe("FileExplorer view modes", () => {
     );
 
     await waitFor(() => {
-      expect(getExplorerActivityDockLaneIds("left")).toEqual([
-        "files",
-        "terminal",
-      ]);
+      expect(getExplorerActivityDockLaneIds("left")).toEqual(["terminal"]);
+      expect(useExplorerStore.getState().session.leftActivityDockWidth).toBeGreaterThan(
+        narrowLeftWidth,
+      );
       expect(
         getMockTerminalByNamespace("explorer-side-terminal-primary"),
       ).toHaveAttribute("data-working-directory", REPO_ROOT);
+    });
+  });
+
+  it("grows a narrow side dock when opening the search lane", async () => {
+    useExplorerStore.getState().updateSession({
+      sidebarWidth: 220,
+      leftActivityDockWidth: 220,
+    });
+    renderExplorer();
+    await screen.findByText("notes.txt");
+    const narrowLeftWidth =
+      useExplorerStore.getState().session.leftActivityDockWidth ?? 0;
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Search",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual(["search"]);
+      expect(useExplorerStore.getState().session.leftActivityDockWidth).toBeGreaterThan(
+        narrowLeftWidth,
+      );
+    });
+  });
+
+  it("replaces the current pane on a rail side by default", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Terminal",
+      }),
+    );
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual(["terminal"]);
+    });
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Search",
+      }),
+    );
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual(["search"]);
+      expect(getExplorerActivityDockLaneIds("right")).toEqual(["preview"]);
     });
   });
 
@@ -3126,10 +3180,7 @@ describe("FileExplorer view modes", () => {
       expect(useExplorerStore.getState().session.rightActivityDockWidth).toBe(
         resizedRightWidth,
       );
-      expect(getExplorerActivityDockLaneIds("right")).toEqual([
-        "preview",
-        "terminal",
-      ]);
+      expect(getExplorerActivityDockLaneIds("right")).toEqual(["terminal"]);
     });
   });
 
@@ -3210,7 +3261,10 @@ describe("FileExplorer view modes", () => {
     });
   });
 
-  it("renders multiple lanes on one side in rail order with equal inner splits", async () => {
+  it("renders multiple lanes on one side in rail order with equal inner splits when enabled", async () => {
+    useSettingsStore.getState().updateExplorer({
+      activityRailOpenMode: "multiple",
+    });
     renderExplorer();
     await screen.findByText("notes.txt");
 

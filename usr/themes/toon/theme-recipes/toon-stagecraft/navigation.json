@@ -1,0 +1,40 @@
+{
+  "navigationPatterns": [
+    {
+      "id": "toon-broadcast",
+      "name": "Toon Broadcast",
+      "kind": "spatial",
+      "axis": "both",
+      "props": {
+        "breadcrumb": true,
+        "wrap": true,
+        "snapping": "soft",
+        "focusRing": "accent"
+      }
+    },
+    {
+      "id": "toon-tabs",
+      "name": "Toon Tabs",
+      "kind": "tabbed",
+      "axis": "horizontal",
+      "props": {
+        "directionalNavigation": true,
+        "wrap": true,
+        "breadcrumb": true,
+        "focusRing": "accent"
+      }
+    },
+    {
+      "id": "toon-palette",
+      "name": "Toon Palette",
+      "kind": "palette",
+      "axis": "horizontal",
+      "props": {
+        "searchFirst": true,
+        "previewBias": "right",
+        "chipStyle": "pill"
+      }
+    }
+  ],
+  "defaultNavigationPatternId": "toon-broadcast"
+}

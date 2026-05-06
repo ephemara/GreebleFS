@@ -1,3 +1,54 @@
+# 2026-05-06 - Explorer Utility Dock Width Recovery And Terminal Transport ACL
+
+- Fixed two coupled Explorer rail regressions that showed up as narrow utility panes plus a broken side terminal open flow.
+  - `src/components/FileExplorer.tsx` now treats utility-lane opens as a width-recovery event. When Search, Semantic, Tasks, or the side Terminal opens on a rail side, the side-owned dock width is grown to at least the proposed side default for the resulting lane set instead of inheriting an old narrow Files width.
+  - This keeps the existing architecture rule intact: dock width is still side-owned, not lane-owned. The fix only auto-grows on open; it does not reintroduce per-lane width persistence or surprise shrinking.
+  - The helper works against the proposed normalized open-lane set, so it also behaves correctly when the rail policy is `multiple` and same-side splits need the combined preferred width.
+- Fixed the terminal-side `transport.subscribe not allowed. Plugin not found` failure by explicitly granting transport permissions in `src-tauri/capabilities/default.json`.
+  - Durable rule: GreebleFS already uses tauron's core transport plugin for terminal output streams and other stream-backed IPC lanes, but app capabilities should still name `core:transport:default` explicitly instead of relying on `core:default` transitively.
+  - If a stream-backed surface fails on `plugin:transport|subscribe`, inspect the capability file before blaming the Rust terminal manager or the frontend stream wrapper.
+- Validation:
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens the side-dock terminal from the activity rail|grows a narrow side dock when opening the search lane|replaces the current pane on a rail side by default|reuses the destination side width when the terminal lane moves to that rail|renders multiple lanes on one side in rail order with equal inner splits when enabled" --reporter=verbose --testTimeout=30000`
+  - Repo baseline remains noisy: `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on unrelated existing issues in `src-mobile/App.tsx`, `src/App.tsx`, image-cutout typings, storage-panel drive shapes, and vendored tiptap packages.
+
+# 2026-05-06 - Explorer Activity Rail Single-Pane Default
+
+- Explorer navigation rails now ship with a VS Code-style default instead of always preserving same-side splits.
+  - `src/store/settingsStore.ts` adds `settings.explorer.activityRailOpenMode` with a durable default of `single`.
+  - `src/components/SettingsPage.tsx` exposes the policy under Explorer settings as `Single Per Rail` vs `Multiple Per Rail`.
+  - `src/components/FileExplorer.tsx` now normalizes `openActivityLaneIds` against the current rail-open policy before initial session restore, live lane toggles, preview compatibility sync, and lane-move handling.
+- Durable rules:
+  - `single` is the shipped default and means one visible utility lane per rail side.
+  - `multiple` is an explicit opt-in that restores same-side sibling panes and equal split rendering.
+  - When rail policy changes, normalize persisted open-lane state instead of letting stale sibling ids survive in the live session shape.
+  - Preview/actions compatibility state must follow the normalized lane set so the preview pane does not appear logically open after it has been displaced by single-pane mode.
+- Validation:
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens the side-dock terminal from the activity rail|replaces the current pane on a rail side by default|reuses the destination side width when the terminal lane moves to that rail|renders multiple lanes on one side in rail order with equal inner splits when enabled" --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "switches the explorer activity rail between single and multi-pane modes" --reporter=verbose --testTimeout=30000`
+  - Blocked: `bunx vitest run src/test/settingsStore.test.ts -t "has the correct default explorer settings" --reporter=dot --testTimeout=30000` still fails on this worktree at the pre-existing `contextMenuLayoutOverridesByContext` expectation drift, so the new `activityRailOpenMode = "single"` assertion is present but not independently proven through that broader default-settings test yet.
+
+# 2026-05-06 - IDE Workbench Explorer-First Unification
+
+- Re-centered the built-in IDE shell around the Explorer instead of treating it like a generic multi-panel dock.
+  - `src/App.tsx`, `src/panels/panelRegistry.tsx`, `src/components/explorer/ExplorerWorkspace.tsx`, and `src/components/FileExplorer.tsx` now let the `ide-workbench` shell family bias Explorer toward the shipped `inspector` explorer layout preset through a shell-only default prop.
+  - Durable rule: this shell default must not override a stronger explicit explorer layout choice. It is an IDE-shell bias, not a user-setting replacement.
+- `src/components/WorkbenchIdeShell.tsx` now visually reuses Explorer pane grammar instead of card-style workbench chrome.
+  - Side stacks, collapsed stacks, and floating windows now use `ExplorerSlatePane` tokens.
+  - The center Explorer surface now renders edge-to-edge with no padded shell wrapper so the file tree and preview/workbench stay dominant.
+  - The IDE activity rail is denser and now reads like Explorer navigation chrome instead of a separate dashboard strip.
+- `src/config/ideWorkbenchLayout.ts` bumped the persisted IDE layout state to version `3` and widened the center workspace by default.
+  - The activity rail default width is smaller.
+  - Root and center-column split ratios now reserve materially more room for the Explorer/preview/workbench center lane.
+  - Durable rule: when IDE topology meaningfully changes, reset through `IdeWorkbenchLayoutState.version` rather than trying to preserve incompatible dock trees.
+- `usr/profiles/default/explorer-layouts/greeblefs-core/explorer-layout.json` now treats `inspector` as the preview/workbench-first IDE preset.
+  - `previewSplitMode` is now `pane`.
+  - Sidebar and preview widths are wider so Monaco/workbench-style content can be the primary viewport.
+- Follow-up shell-contract repair: `src/panels/panelRegistry.tsx` now forwards `usrProfileSettingsVariants` and `onCreateUsrProfileFromVariant` into `SettingsPage`, keeping the built-in panel registry aligned with the current profile-settings surface used by `App.tsx`.
+- Validation:
+  - Passed: `bunx vitest run src/test/ideWorkbenchLayout.test.ts --reporter=dot --testTimeout=30000`
+  - Blocked: `bunx vitest run src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000` still fails in this environment before tests run because Vite cannot resolve the sibling `@tauri-apps/api/core` package path referenced by config/runtime modules.
+  - Blocked: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports the existing missing `@tauri-apps/api/*` modules plus pre-existing `src/components/FileExplorer.tsx` `layoutZoom` diagnostics outside this IDE-shell pass.
+
 # 2026-05-06 - Usr Profile Lane Baseline Terminology Cleanup
 
 - Clarified the profile-system contract so profile-overlay lanes are no longer described as if they were just another shared root.
@@ -16,6 +67,8 @@
 - `usr/README.md` and `ARCHITECTURE.md` now spell out why nested profile-overlay lanes are intentional.
 - Validation:
   - Targeted: `bunx vitest run src/test/profilesSettingsSection.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Blocked: `bun run bindings:generate` currently fails in sibling `D:/tauron` on Windows with `EPERM: operation not permitted, unlink 'D:\\tauron\\packages\\api\\dist\\external\\tslib\\tslib.es6.cjs'`, so `src/generated/tauri.ts` still reflects the older lane-stack type until that external lock is cleared.
 
 # 2026-05-06 - Dock Ox Default Layout Overhaul
 
@@ -1006,7 +1059,7 @@
   - `src/runtime/usrProfiles.ts` is the TS host bridge for initialize/list/switch/create/duplicate/rename/delete/persist flows. It applies host snapshots by overriding managed-content directory stacks, refreshing profile-overlay static manifests, rewriting the effective settings blob in local storage, and rehydrating `useSettingsStore`.
   - `src/runtime/usrProfileStaticConfigRuntime.ts` is the static-manifest overlay bridge for profile-scoped JSON/TOML lanes that used to behave like frozen shipped imports. It currently rehydrates `explorerChromeLayouts`, `explorerCustomizeControls`, `explorerModeProfiles`, `explorerShellLayouts`, `explorerWorkspaceLayouts`, `explorerExperimentalModes`, `explorerZoomBehaviors`, `explorerPerformance`, and `hotkeys`.
 - Durable resolution rules:
-  - Managed content now resolves in `active profile overlay -> default profile -> bundled default profile` order for lanes marked `profile-overlay` in `usr/manifest.json` / `src/config/usrManifest.ts`.
+  - Managed content now resolves in `active profile -> canonical baseline -> bundled fallback` order for lanes marked `profile-overlay` in `usr/manifest.json` / `src/config/usrManifest.ts`.
   - The repo `usr/` tree is now profile-first for workbench-config lanes: the canonical shipped copies live under `usr/profiles/default/<lane>`, not top-level `usr/<lane>`.
   - Lanes marked `shared-root` must ignore profile directories completely and keep using the shared writable root plus bundled fallback under top-level `usr/<lane>`.
   - Profile-owned settings slices are `editor`, `presentation`, `dock`, `terminal`, `explorer`, `home`, `appearance`, `keybindings`, `layout`, `audio`, and `plugins`.

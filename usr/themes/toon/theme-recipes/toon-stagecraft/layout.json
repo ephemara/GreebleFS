@@ -1,0 +1,36 @@
+{
+  "layoutPrimitives": [
+    {
+      "id": "toon-stage-grid",
+      "name": "Toon Stage Grid",
+      "kind": "grid",
+      "props": {
+        "cellSize": 164,
+        "gap": 18,
+        "padding": 18
+      }
+    },
+    {
+      "id": "toon-story-dock",
+      "name": "Toon Story Dock",
+      "kind": "dock",
+      "props": {
+        "gap": 14,
+        "padding": 18,
+        "cornerRadius": 30,
+        "pinned": true,
+        "sidebarBias": 0.28
+      }
+    },
+    {
+      "id": "toon-split-view",
+      "name": "Toon Split View",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.66,
+        "gap": 14
+      }
+    }
+  ],
+  "defaultLayoutPrimitiveId": "toon-stage-grid"
+}

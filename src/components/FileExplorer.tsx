@@ -8445,6 +8445,7 @@ interface FileExplorerProps {
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
+  shellDefaultExplorerLayoutId?: string | null;
   instanceId?: ExplorerInstanceId;
   workspaceTabId?: string | null;
   workspacePaneCount?: 1 | 2 | 3 | 4;
@@ -8655,6 +8656,13 @@ interface ExplorerActivityDockWidthBounds {
   default: number;
 }
 
+function clampExplorerActivityDockWidthToBounds(
+  bounds: ExplorerActivityDockWidthBounds,
+  width: number,
+): number {
+  return Math.max(bounds.min, Math.min(bounds.max, width));
+}
+
 function uniqueExplorerActivityLaneIds(
   laneIds: readonly ExplorerActivityLaneId[],
 ): ExplorerActivityLaneId[] {
@@ -8679,6 +8687,30 @@ function setExplorerActivityLaneOpen(
     return uniqueExplorerActivityLaneIds([...laneIds, laneId]);
   }
   return laneIds.filter((candidateLaneId) => candidateLaneId !== laneId);
+}
+
+function normalizeExplorerActivityLaneIdsForRailOpenMode(args: {
+  laneIds: readonly ExplorerActivityLaneId[];
+  openMode: 'single' | 'multiple';
+  placementById: ExplorerActivityLanePlacementById;
+}): ExplorerActivityLaneId[] {
+  const normalizedLaneIds = uniqueExplorerActivityLaneIds(args.laneIds);
+  if (args.openMode === 'multiple') {
+    return normalizedLaneIds;
+  }
+
+  const latestLaneIdBySide = new Map<
+    ExplorerActivityRailSide,
+    ExplorerActivityLaneId
+  >();
+  for (const laneId of normalizedLaneIds) {
+    const railSide =
+      args.placementById[laneId] ?? defaultExplorerActivityLanePlacementById[laneId];
+    latestLaneIdBySide.set(railSide, laneId);
+  }
+
+  const retainedLaneIds = new Set(latestLaneIdBySide.values());
+  return normalizedLaneIds.filter((laneId) => retainedLaneIds.has(laneId));
 }
 
 function replaceExplorerActionsHostLane(
@@ -8744,6 +8776,7 @@ export function FileExplorer({
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
+  shellDefaultExplorerLayoutId = null,
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   workspaceTabId = null,
   workspacePaneCount = 1,
@@ -8876,6 +8909,9 @@ export function FileExplorer({
     () => createPythonRuntimeConfig(pythonSettings),
     [pythonSettings],
   );
+  const explorerActivityRailOpenMode = explorerSettings.activityRailOpenMode;
+  const allowMultipleActivityLanesPerRailSide =
+    explorerActivityRailOpenMode === 'multiple';
   const {
     chromeEditSession,
     chromeHotkeyCaptureControlId,
@@ -8930,9 +8966,20 @@ export function FileExplorer({
     })),
   );
   const storedPreviewEnabled = useExplorerStore(
-    (state) =>
-      state.sessions[instanceId]?.previewEnabled ??
-      defaultExplorerSession.previewEnabled,
+    (state) => {
+      const storedSession = normalizeExplorerSessionSnapshot(
+        state.sessions[instanceId] ?? defaultExplorerSession,
+      );
+      const normalizedOpenLaneIds =
+        normalizeExplorerActivityLaneIdsForRailOpenMode({
+          laneIds: storedSession.openActivityLaneIds,
+          openMode: explorerActivityRailOpenMode,
+          placementById: storedSession.activityLanePlacementById,
+        });
+      return (
+        storedSession.previewEnabled && normalizedOpenLaneIds.includes('preview')
+      );
+    },
   );
   const storedPreviewLocked = useExplorerStore(
     (state) =>
@@ -9048,11 +9095,15 @@ export function FileExplorer({
     followThemeExplorerLayout: explorerSettings.followThemeExplorerLayout,
     activeExplorerLayoutId: explorerSettings.activeExplorerLayoutId,
   };
+  const resolvedShellDefaultExplorerLayoutId = typeof shellDefaultExplorerLayoutId === "string"
+    && shellDefaultExplorerLayoutId.trim().length > 0
+    ? shellDefaultExplorerLayoutId.trim()
+    : null;
   const followsThemeExplorerLayout =
     activeExplorerLayoutSelection.followThemeExplorerLayout;
   const activeExplorerLayoutSelectionId = followsThemeExplorerLayout
-    ? themeExplorerLayoutId
-    : activeExplorerLayoutSelection.activeExplorerLayoutId;
+    ? resolvedShellDefaultExplorerLayoutId ?? themeExplorerLayoutId
+    : activeExplorerLayoutSelection.activeExplorerLayoutId ?? resolvedShellDefaultExplorerLayoutId;
   const resolvedExplorerLayout = useMemo(
     () =>
       findExplorerLayoutById(
@@ -9137,11 +9188,36 @@ export function FileExplorer({
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
   const initialSession = useMemo(
-    () =>
-      normalizeExplorerSessionSnapshot(
+    () => {
+      const normalizedSession = normalizeExplorerSessionSnapshot(
         useExplorerStore.getState().getSession(instanceId),
-      ),
-    [instanceId],
+      );
+      const openActivityLaneIds = normalizeExplorerActivityLaneIdsForRailOpenMode(
+        {
+          laneIds: normalizedSession.openActivityLaneIds,
+          openMode: explorerActivityRailOpenMode,
+          placementById: normalizedSession.activityLanePlacementById,
+        },
+      );
+      const compatibilityOpenLaneIds = openActivityLaneIds.filter((laneId) =>
+        explorerCompatibilityActivityLaneIdSet.has(laneId),
+      );
+      const fallbackActiveActivityLane =
+        compatibilityOpenLaneIds.at(-1) ??
+        compatibilityOpenLaneIds[0] ??
+        normalizedSession.activeActivityLane;
+      return {
+        ...normalizedSession,
+        openActivityLaneIds,
+        previewEnabled:
+          normalizedSession.previewEnabled && openActivityLaneIds.includes('preview'),
+        activeActivityLane:
+          compatibilityOpenLaneIds.includes(normalizedSession.activeActivityLane)
+            ? normalizedSession.activeActivityLane
+            : fallbackActiveActivityLane,
+      };
+    },
+    [explorerActivityRailOpenMode, instanceId],
   );
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
   const restoredSessionBootConsumedRef = useRef(false);
@@ -9300,6 +9376,13 @@ export function FileExplorer({
       left: [...initialSession.activityLaneOrderBySide.left],
       right: [...initialSession.activityLaneOrderBySide.right],
     }));
+  const openActivityLaneIdsRef = useRef<ExplorerActivityLaneId[]>([
+    ...initialSession.openActivityLaneIds,
+  ]);
+  const activityLanePlacementByIdRef =
+    useRef<ExplorerActivityLanePlacementById>({
+      ...initialSession.activityLanePlacementById,
+    });
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [entrySizes, setEntrySizes] = useState<
     Record<string, EntryStorageInfo>
@@ -10064,9 +10147,15 @@ export function FileExplorer({
       sidebarBounds.minWidth,
     ],
   );
-  const getExplorerActivityDockWidthBoundsForSide = useCallback(
-    (side: ExplorerActivityRailSide): ExplorerActivityDockWidthBounds => {
-      const orderedOpenLaneIds = orderedOpenActivityLaneIdsBySide[side];
+  const getExplorerActivityDockWidthBoundsForLaneIds = useCallback(
+    (
+      side: ExplorerActivityRailSide,
+      laneIds: readonly ExplorerActivityLaneId[],
+    ): ExplorerActivityDockWidthBounds => {
+      const openLaneIdSet = new Set(laneIds);
+      const orderedOpenLaneIds = activityLaneOrderBySide[side].filter((laneId) =>
+        openLaneIdSet.has(laneId),
+      );
       const fallbackLaneIds =
         activityLaneOrderBySide[side].length > 0
           ? activityLaneOrderBySide[side].slice(0, 1)
@@ -10091,13 +10180,21 @@ export function FileExplorer({
       activityLaneOrderBySide.left,
       activityLaneOrderBySide.right,
       getExplorerActivityDockWidthBounds,
-      orderedOpenActivityLaneIdsBySide,
+    ],
+  );
+  const getExplorerActivityDockWidthBoundsForSide = useCallback(
+    (side: ExplorerActivityRailSide): ExplorerActivityDockWidthBounds => {
+      return getExplorerActivityDockWidthBoundsForLaneIds(side, openActivityLaneIds);
+    },
+    [
+      getExplorerActivityDockWidthBoundsForLaneIds,
+      openActivityLaneIds,
     ],
   );
   const clampExplorerActivityDockWidthForSide = useCallback(
     (side: ExplorerActivityRailSide, width: number): number => {
       const bounds = getExplorerActivityDockWidthBoundsForSide(side);
-      return Math.max(bounds.min, Math.min(bounds.max, width));
+      return clampExplorerActivityDockWidthToBounds(bounds, width);
     },
     [getExplorerActivityDockWidthBoundsForSide],
   );
@@ -10125,6 +10222,32 @@ export function FileExplorer({
       });
     },
     [clampExplorerActivityDockWidthForSide],
+  );
+  const ensureExplorerActivityDockPreferredWidthForLaneIds = useCallback(
+    (
+      side: ExplorerActivityRailSide,
+      laneIds: readonly ExplorerActivityLaneId[],
+    ) => {
+      const bounds = getExplorerActivityDockWidthBoundsForLaneIds(side, laneIds);
+      const preferredWidth = clampExplorerActivityDockWidthToBounds(
+        bounds,
+        bounds.default,
+      );
+      const applyWidthUpdate =
+        side === "left"
+          ? setLeftActivityDockWidthState
+          : setRightActivityDockWidthState;
+      applyWidthUpdate((currentWidth) => {
+        const resolvedCurrentWidth = Number.isFinite(currentWidth)
+          ? currentWidth
+          : preferredWidth;
+        return clampExplorerActivityDockWidthToBounds(
+          bounds,
+          Math.max(resolvedCurrentWidth, preferredWidth),
+        );
+      });
+    },
+    [getExplorerActivityDockWidthBoundsForLaneIds],
   );
   const resolveExplorerActivityDockWidthForLane = useCallback(
     (laneId: ExplorerActivityLaneId): number =>
@@ -10177,6 +10300,18 @@ export function FileExplorer({
     },
     [activeActionsHostLaneId, setExplorerActivityDockWidthForLane],
   );
+  useEffect(() => {
+    setLeftActivityDockWidthState((currentWidth) =>
+      clampExplorerActivityDockWidthForSide("left", currentWidth),
+    );
+    setRightActivityDockWidthState((currentWidth) =>
+      clampExplorerActivityDockWidthForSide("right", currentWidth),
+    );
+  }, [
+    clampExplorerActivityDockWidthForSide,
+    orderedOpenActivityLaneIdsBySide.left,
+    orderedOpenActivityLaneIdsBySide.right,
+  ]);
   const setOpenActivityLaneIdsSafely = useCallback(
     (
       updater:
@@ -10185,15 +10320,47 @@ export function FileExplorer({
             currentLaneIds: ExplorerActivityLaneId[],
           ) => ExplorerActivityLaneId[]),
     ) => {
-      setOpenActivityLaneIds((currentLaneIds) => {
-        const nextLaneIds =
-          typeof updater === "function" ? updater(currentLaneIds) : updater;
-        return areExplorerActivityLaneIdListsEqual(currentLaneIds, nextLaneIds)
-          ? currentLaneIds
-          : nextLaneIds;
+      const currentLaneIds = openActivityLaneIdsRef.current;
+      const requestedLaneIds =
+        typeof updater === "function" ? updater(currentLaneIds) : updater;
+      const normalizedLaneIds = normalizeExplorerActivityLaneIdsForRailOpenMode({
+        laneIds: requestedLaneIds,
+        openMode: explorerActivityRailOpenMode,
+        placementById: activityLanePlacementByIdRef.current,
       });
+      if (areExplorerActivityLaneIdListsEqual(currentLaneIds, normalizedLaneIds)) {
+        return;
+      }
+      openActivityLaneIdsRef.current = normalizedLaneIds;
+      setOpenActivityLaneIds(normalizedLaneIds);
     },
-    [],
+    [explorerActivityRailOpenMode],
+  );
+  const openExplorerActivityLaneWithPreferredWidth = useCallback(
+    (laneId: ExplorerActivityLaneId) => {
+      const targetRailSide = resolveExplorerActivityRailSideForLane(laneId);
+      const nextOpenLaneIds = normalizeExplorerActivityLaneIdsForRailOpenMode({
+        laneIds: setExplorerActivityLaneOpen(
+          openActivityLaneIdsRef.current,
+          laneId,
+          true,
+        ),
+        openMode: explorerActivityRailOpenMode,
+        placementById: activityLanePlacementByIdRef.current,
+      });
+      setOpenActivityLaneIdsSafely(nextOpenLaneIds);
+      ensureExplorerActivityDockPreferredWidthForLaneIds(
+        targetRailSide,
+        nextOpenLaneIds,
+      );
+      setActiveActivityLane(laneId);
+    },
+    [
+      ensureExplorerActivityDockPreferredWidthForLaneIds,
+      explorerActivityRailOpenMode,
+      resolveExplorerActivityRailSideForLane,
+      setOpenActivityLaneIdsSafely,
+    ],
   );
   const setHiddenActivityLaneIdsSafely = useCallback(
     (
@@ -10213,6 +10380,19 @@ export function FileExplorer({
     },
     [],
   );
+  useEffect(() => {
+    openActivityLaneIdsRef.current = openActivityLaneIds;
+  }, [openActivityLaneIds]);
+  useEffect(() => {
+    activityLanePlacementByIdRef.current = activityLanePlacementById;
+  }, [activityLanePlacementById]);
+  useEffect(() => {
+    setOpenActivityLaneIdsSafely((currentLaneIds) => currentLaneIds);
+  }, [
+    activityLanePlacementById,
+    explorerActivityRailOpenMode,
+    setOpenActivityLaneIdsSafely,
+  ]);
   const setSourcesVisible = useCallback(
     (visible: boolean) => {
       setOpenActivityLaneIdsSafely((currentLaneIds) =>
@@ -14765,15 +14945,12 @@ export function FileExplorer({
     }
 
     setSideExplorerTerminalMounted(true);
-    setOpenActivityLaneIdsSafely((currentLaneIds) =>
-      setExplorerActivityLaneOpen(currentLaneIds, "terminal", true),
-    );
-    setActiveActivityLane("terminal");
+    openExplorerActivityLaneWithPreferredWidth("terminal");
     bumpSideExplorerTerminalFocusRequest();
   }, [
     bumpSideExplorerTerminalFocusRequest,
     explorerTerminalWorkingDirectory,
-    setOpenActivityLaneIdsSafely,
+    openExplorerActivityLaneWithPreferredWidth,
   ]);
   const closeSideExplorerTerminal = useCallback(() => {
     setOpenActivityLaneIdsSafely((currentLaneIds) =>
@@ -21870,12 +22047,9 @@ export function FileExplorer({
   }, [setSourcesVisible]);
   const openExplorerUtilityPane = useCallback(
     (laneId: ExplorerActivityLaneId) => {
-      setOpenActivityLaneIdsSafely((currentLaneIds) =>
-        setExplorerActivityLaneOpen(currentLaneIds, laneId, true),
-      );
-      setActiveActivityLane(laneId);
+      openExplorerActivityLaneWithPreferredWidth(laneId);
     },
-    [setOpenActivityLaneIdsSafely],
+    [openExplorerActivityLaneWithPreferredWidth],
   );
   const toggleSourcesPanel = useCallback(() => {
     if (shouldRenderRail) {
@@ -21913,6 +22087,18 @@ export function FileExplorer({
   }, [actionsPaneVisible, closeActionsPanel, openActionsPanel]);
   const selectExplorerActivityLane = useCallback(
     (laneId: ExplorerActivityLaneId) => {
+      const targetRailSide = resolveExplorerActivityRailSideForLane(laneId);
+      if (
+        !allowMultipleActivityLanesPerRailSide &&
+        activeChromeEditSession &&
+        activeActionsHostLaneId &&
+        laneId !== activeActionsHostLaneId &&
+        targetRailSide ===
+          resolveExplorerActivityRailSideForLane(activeActionsHostLaneId)
+      ) {
+        closeActionsPanel();
+      }
+
       if (laneId === "files") {
         if (shouldRenderRail) {
           closeSourcesPanel();
@@ -21997,8 +22183,10 @@ export function FileExplorer({
       );
     },
     [
+      activeActionsHostLaneId,
       actionsPaneVisible,
       activeChromeEditSession,
+      allowMultipleActivityLanesPerRailSide,
       beginExplorerChromeCustomization,
       closeActionsPanel,
       closeSourcesPanel,
@@ -22007,6 +22195,7 @@ export function FileExplorer({
       openActionsPanel,
       openSourcesPanel,
       previewPanelVisible,
+      resolveExplorerActivityRailSideForLane,
       saveExplorerChromeCustomization,
       setOpenActivityLaneIdsSafely,
       setPreviewEnabled,
@@ -31782,8 +31971,20 @@ export function FileExplorer({
         placementById: activityLanePlacementById,
         orderBySide: activityLaneOrderBySide,
       });
+      activityLanePlacementByIdRef.current = nextPlacement.placementById;
       setActivityLanePlacementById(nextPlacement.placementById);
       setActivityLaneOrderBySide(nextPlacement.orderBySide);
+
+      if (
+        !allowMultipleActivityLanesPerRailSide &&
+        activeChromeEditSession &&
+        activeActionsHostLaneId &&
+        activeActionsHostLaneId !== laneId &&
+        targetSide ===
+          resolveExplorerActivityRailSideForLane(activeActionsHostLaneId)
+      ) {
+        closeActionsPanel();
+      }
 
       if (laneId === "preview") {
         setPreviewSplitMode("pane");
@@ -31821,12 +32022,16 @@ export function FileExplorer({
       }
     },
     [
+      activeActionsHostLaneId,
       activityLaneOrderBySide,
       activityLanePlacementById,
       activeChromeEditSession,
+      allowMultipleActivityLanesPerRailSide,
       beginExplorerChromeCustomization,
+      closeActionsPanel,
       openActionsPanel,
       revealSideExplorerTerminal,
+      resolveExplorerActivityRailSideForLane,
       setOpenActivityLaneIdsSafely,
       setPreviewEnabled,
       setPreviewSplitMode,

@@ -74,6 +74,14 @@
       "profileMode": "profile-overlay"
     },
     {
+      "id": "shellCustomizeControls",
+      "relativeDirectory": "shell-customize-controls",
+      "envVarSuffix": "SHELL_CUSTOMIZE_CONTROLS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
+    },
+    {
       "id": "explorerModeProfiles",
       "relativeDirectory": "explorer-mode-profiles",
       "envVarSuffix": "EXPLORER_MODE_PROFILES",
@@ -141,6 +149,14 @@
       "id": "actions",
       "relativeDirectory": "actions",
       "envVarSuffix": "ACTIONS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
+    },
+    {
+      "id": "lookdevPresets",
+      "relativeDirectory": "lookdev-presets",
+      "envVarSuffix": "LOOKDEV_PRESETS",
       "bundled": true,
       "bootstrapToManagedRoot": true,
       "profileMode": "shared-root"

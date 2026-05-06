@@ -279,6 +279,7 @@ export interface ModelsSettings {
 }
 
 export type ExplorerFolderClickMode = 'single' | 'double';
+export type ExplorerActivityRailOpenMode = 'single' | 'multiple';
 
 export interface ExplorerSettings {
   defaultPath: string;
@@ -290,6 +291,7 @@ export interface ExplorerSettings {
   experimentalViewMode: ExplorerExperimentalViewMode;
   experimentalDensity: number;
   folderClickMode: ExplorerFolderClickMode;
+  activityRailOpenMode: ExplorerActivityRailOpenMode;
   doubleClickEmptyToGoBack: boolean;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
@@ -588,6 +590,12 @@ export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolder
   return value === 'single' ? 'single' : 'double';
 }
 
+export function normalizeExplorerActivityRailOpenMode(
+  value: unknown,
+): ExplorerActivityRailOpenMode {
+  return value === 'multiple' ? 'multiple' : 'single';
+}
+
 const explorerLayoutPresentationModes = ['windowed', 'dock'] as const satisfies readonly PresentationWindowMode[];
 
 function createExplorerLayoutSelectionState(
@@ -819,6 +827,9 @@ function normalizeExplorerSettings(
       ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
       : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+    activityRailOpenMode: normalizeExplorerActivityRailOpenMode(
+      updates?.activityRailOpenMode ?? base.activityRailOpenMode,
+    ),
     doubleClickEmptyToGoBack: updates?.doubleClickEmptyToGoBack ?? base.doubleClickEmptyToGoBack,
     thumbnails: hasExplicitThumbnailSettings
       ? normalizeExplorerThumbnailSettings(updates?.thumbnails)
@@ -1691,6 +1702,7 @@ const runtimeFallbackDefaultSettings: Settings = {
     experimentalViewMode: 'off',
     experimentalDensity: DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: 'double',
+    activityRailOpenMode: 'single',
     doubleClickEmptyToGoBack: false,
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
@@ -2090,6 +2102,9 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ),
       folderClickMode: normalizeExplorerFolderClickMode(
         importedExplorer?.folderClickMode ?? base.explorer.folderClickMode,
+      ),
+      activityRailOpenMode: normalizeExplorerActivityRailOpenMode(
+        importedExplorer?.activityRailOpenMode ?? base.explorer.activityRailOpenMode,
       ),
       doubleClickEmptyToGoBack:
         importedExplorer?.doubleClickEmptyToGoBack ?? base.explorer.doubleClickEmptyToGoBack,

@@ -131,6 +131,7 @@ interface ExplorerWorkspaceProps {
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
+  shellDefaultExplorerLayoutId?: string | null;
   chromeControlSurface?: "toolbar" | "topbar";
   explorerPicker?: ExplorerPickerRequest | null;
   onExplorerPickerConfirm?: (result: {
@@ -332,6 +333,7 @@ export function ExplorerWorkspace({
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
+  shellDefaultExplorerLayoutId = null,
   chromeControlSurface = "toolbar",
   explorerPicker = null,
   onExplorerPickerConfirm = () => undefined,
@@ -2396,6 +2398,7 @@ export function ExplorerWorkspace({
             layoutMode={layoutMode}
             dockPreviewPolicy={dockPreviewPolicy}
             defaultModeProfileId={defaultModeProfileId}
+            shellDefaultExplorerLayoutId={shellDefaultExplorerLayoutId}
             renderDragOverlayHost={false}
             workspacePaneCount={workspacePaneCount}
             isActiveWorkspacePane={isActivePane}

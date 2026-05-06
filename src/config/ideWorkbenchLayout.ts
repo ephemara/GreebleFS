@@ -77,7 +77,7 @@ export interface IdeWorkbenchSurfaceState {
 }
 
 export interface IdeWorkbenchLayoutState {
-  version: 2;
+  version: 3;
   rootDockNode: DockNode;
   floatingNodes: FloatingDockNode[];
   focusedSurfaceId: string | null;
@@ -103,12 +103,12 @@ export const IDE_WORKBENCH_SPLIT_IDS = {
 } as const satisfies Record<string, string>;
 
 const EXPLORER_CORE_SURFACE_ID = 'explorer';
-const CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION = 2;
+const CURRENT_IDE_WORKBENCH_LAYOUT_STATE_VERSION = 3;
 
 const DEFAULT_ACTIVITY_RAIL_STATE: IdeWorkbenchRailState = {
   placement: 'left',
   collapsed: false,
-  width: 64,
+  width: 54,
 };
 
 const DEFAULT_SOURCES_RAIL_STATE: IdeWorkbenchSourcesRailState = {
@@ -285,13 +285,13 @@ function createDefaultRootDockNode(
     type: 'split',
     id: IDE_WORKBENCH_SPLIT_IDS.root,
     orientation: 'horizontal',
-    sizes: [1, 0.34],
+    sizes: [1, 0.24],
     children: [
       {
         type: 'split',
         id: IDE_WORKBENCH_SPLIT_IDS.centerColumn,
         orientation: 'vertical',
-        sizes: [1, 0.32],
+        sizes: [1, 0.22],
         children: [
           withStackActiveSurface(
             createDockStackNode(

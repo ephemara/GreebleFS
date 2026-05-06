@@ -1,0 +1,21 @@
+{
+  "animationProfiles": [
+    {
+      "id": "toon-pop-fast",
+      "name": "Toon Pop Fast",
+      "durationMs": 280,
+      "easing": "cubic-bezier(0.2, 0.9, 0.2, 1.12)",
+      "intensity": 58
+    }
+  ],
+  "iconPacks": [
+    {
+      "id": "toon-icons",
+      "name": "Toon Icons",
+      "style": "custom"
+    }
+  ],
+  "renderStyles": [],
+  "defaultAnimationProfileId": "toon-pop-fast",
+  "defaultIconPackId": "toon-icons"
+}
