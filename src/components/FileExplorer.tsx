@@ -9195,6 +9195,11 @@ export function FileExplorer({
   const [openActivityLaneIds, setOpenActivityLaneIds] = useState<
     ExplorerActivityLaneId[]
   >(() => [...initialSession.openActivityLaneIds]);
+  const [hiddenActivityLaneIds, setHiddenActivityLaneIds] = useState<
+    ExplorerActivityLaneId[]
+  >(() =>
+    normalizeExplorerHiddenActivityLaneIds(initialSession.hiddenActivityLaneIds),
+  );
   const [activityLanePlacementById, setActivityLanePlacementById] = useState<
     ExplorerActivityLanePlacementById
   >(() => ({ ...initialSession.activityLanePlacementById }));
@@ -9879,6 +9884,10 @@ export function FileExplorer({
     () => new Set(openActivityLaneIds),
     [openActivityLaneIds],
   );
+  const hiddenActivityLaneIdSet = useMemo(
+    () => new Set(hiddenActivityLaneIds),
+    [hiddenActivityLaneIds],
+  );
   const orderedOpenActivityLaneIdsBySide = useMemo(
     () => ({
       left: activityLaneOrderBySide.left.filter((laneId) =>
@@ -10086,6 +10095,27 @@ export function FileExplorer({
           ) => ExplorerActivityLaneId[]),
     ) => {
       setOpenActivityLaneIds((currentLaneIds) => {
+        const nextLaneIds =
+          typeof updater === "function" ? updater(currentLaneIds) : updater;
+        return areExplorerActivityLaneIdListsEqual(
+          currentLaneIds,
+          nextLaneIds,
+        )
+          ? currentLaneIds
+          : nextLaneIds;
+      });
+    },
+    [],
+  );
+  const setHiddenActivityLaneIdsSafely = useCallback(
+    (
+      updater:
+        | ExplorerActivityLaneId[]
+        | ((
+            currentLaneIds: ExplorerActivityLaneId[],
+          ) => ExplorerActivityLaneId[]),
+    ) => {
+      setHiddenActivityLaneIds((currentLaneIds) => {
         const nextLaneIds =
           typeof updater === "function" ? updater(currentLaneIds) : updater;
         return areExplorerActivityLaneIdListsEqual(
@@ -10882,6 +10912,7 @@ export function FileExplorer({
       activityPaneVisible,
       actionsVisible,
       openActivityLaneIds,
+      hiddenActivityLaneIds,
       activityLanePlacementById,
       activityLaneOrderBySide,
       constellation: {
@@ -10899,6 +10930,7 @@ export function FileExplorer({
     currentPath,
     history,
     historyIdx,
+    hiddenActivityLaneIds,
     documentViewMode,
     actionsVisible,
     actionsWidth,
@@ -18785,7 +18817,24 @@ export function FileExplorer({
   ]);
 
   const resolvedContextMenu = useMemo(() => {
-    if (!ctxMenu.visible || !ctxMenu.invocation) {
+    if (!ctxMenu.visible) {
+      return null;
+    }
+
+    if (ctxMenu.localMenu) {
+      return {
+        nodes: ctxMenu.localMenu.nodes,
+        presentation: {
+          renderer: "classic" as const,
+          fallbackRenderer: "classic" as const,
+          density: ctxMenu.localMenu.presentation?.density ?? "balanced",
+          showDescriptions:
+            ctxMenu.localMenu.presentation?.showDescriptions ?? true,
+        },
+      };
+    }
+
+    if (!ctxMenu.invocation) {
       return null;
     }
 
@@ -18805,6 +18854,7 @@ export function FileExplorer({
   }, [
     actions,
     ctxMenu.invocation,
+    ctxMenu.localMenu,
     ctxMenu.visible,
     explorerSettings.activeMenuPackId,
     explorerSettings.contextMenuLayoutOverridesByContext,
@@ -31604,8 +31654,9 @@ export function FileExplorer({
         "left",
         activityLanePlacementById,
         activityLaneOrderBySide,
+        hiddenActivityLaneIds,
       ),
-    [activityLaneOrderBySide, activityLanePlacementById],
+    [activityLaneOrderBySide, activityLanePlacementById, hiddenActivityLaneIds],
   );
   const rightExplorerActivityRailDefinitions = useMemo(
     () =>
@@ -31613,8 +31664,9 @@ export function FileExplorer({
         "right",
         activityLanePlacementById,
         activityLaneOrderBySide,
+        hiddenActivityLaneIds,
       ),
-    [activityLaneOrderBySide, activityLanePlacementById],
+    [activityLaneOrderBySide, activityLanePlacementById, hiddenActivityLaneIds],
   );
   const activeExplorerActivityLaneIds = useMemo(() => {
     const laneIds = new Set<ExplorerActivityLaneId>();

@@ -1,0 +1,87 @@
+# GreebleFS Shader Workbench Pipeline
+
+## Overview
+The shader workbench is the inline WGSL/HLSL/SPIR-V preview and editor surface inside the GreebleFS explorer. It provides real-time WebGPU rendering with interactive camera controls, multiple mesh preview scenes, and a full diagnostics panel.
+
+## Key Files
+
+### Component
+- `src/components/ExplorerShaderWorkbench.tsx` — Main workbench component (~930 lines). Contains:
+  - `ShaderPreviewCanvas` — WebGPU canvas component with render loop, MSAA, depth, orbit camera, FPS counter
+  - `ShaderDiagnosticsList` — Compile diagnostics panel
+  - `ExplorerShaderWorkbench` — Parent shell with toolbar, editor, scene/stage/entry-point pickers
+
+### Rendering Utilities
+- `src/components/shaderWorkbenchUpgrades.ts` — Extracted rendering module (~268 lines). Contains:
+  - **Uniform buffer**: 48 floats (192 bytes), std140-aligned. Layout: time, deltaTime, sceneMode, frameCount, resolution, mouse, aspect, cameraPosition, padding, MVP mat4, model mat4
+  - **Mesh generators**: `createSphereMesh`, `createTorusMesh`, `createCubeMesh`, `createPlaneMesh`, `meshForScene`
+  - **Camera math**: `orbitCameraEye`, `buildPerspectiveMatrix`, lookAt view matrix
+  - **Host shaders**: Blinn-Phong N·L lighting + Fresnel rim in fragment, world-position passthrough in vertex, texture display for compute shader output
+
+### Configuration
+- `src/config/shaders.ts` — Performance profiles (`ShaderPerformanceMode`): controls pixel ratio cap, frame rate, sphere segments/rings, default scene
+
+### Backend
+- `src/runtime/shaderPreviewBackend.ts` — Tauri command bridge for shader inspect/compile
+
+### Example Shader
+- `usr/plugins/greeblefs-workbench-shader/examples/surface-glow.wgsl` — Crystalline energy field fragment shader using the expanded uniform struct
+
+## Rendering Architecture
+
+### Pipeline Selection
+- `compute` stage → storage-texture write + texture display blit
+- `vertex`/`fragment` stage → render pipeline with mesh vertex/index buffers
+
+### Render Features
+- **4x MSAA** via `GPUTexture` with `sampleCount: 4`, resolved to swap chain
+- **Depth buffer** (`depth24plus`) for correct 3D mesh z-ordering
+- **ResizeObserver** for responsive canvas sizing without stretching
+- **Orbit camera** — pointer drag rotates, scroll wheel zooms, auto-rotate toggles off on interaction
+- **FPS counter** — displayed as overlay pill, sampled every 0.5s
+
+### Uniform Struct (WGSL)
+```wgsl
+struct PreviewUniforms {
+  timeSeconds: f32, deltaTime: f32, sceneMode: f32, frameCount: f32,
+  resolution: vec2<f32>, mouse: vec2<f32>,
+  aspect: f32, cameraPosition: vec3<f32>,
+  _pad0: vec4<f32>,
+  modelViewProjection: mat4x4<f32>,
+  modelMatrix: mat4x4<f32>,
+};
+```
+Any changes to this struct must maintain 16-byte alignment and update BOTH `shaderWorkbenchUpgrades.ts` and any example shaders.
+
+### Scene Modes
+| Scene      | sceneMode float | Mesh         | Depth | Cull  |
+|------------|----------------|--------------|-------|-------|
+| sphere     | 1              | UV sphere    | ✅    | back  |
+| torus      | 2              | Torus        | ✅    | back  |
+| cube       | 3              | Box          | ✅    | back  |
+| fullscreen | 0              | Fullscreen quad | ❌ | none  |
+
+## Integration Points
+- `src/components/pluginWorkbenchAdapters.tsx` — Wires `onSceneChange` from standalone state into the workbench
+- `src/config/shaders.ts` — `getShaderPerformanceProfile()` provides performance caps
+- Props flow: `selectedScene`, `selectedStage`, `selectedEntryPoint`, `normalizedWgsl`, `shaderPerformanceMode`
+
+## Common Tasks
+
+### Adding a new mesh type
+1. Add generator to `shaderWorkbenchUpgrades.ts` (vertex format: pos3 + normal3 + uv2 = 32 bytes stride)
+2. Add case to `meshForScene()`
+3. Add `<option>` to scene picker in `ExplorerShaderWorkbench`
+4. Add sceneMode float mapping in `sceneModeFloat()`
+5. Extend `ShaderWorkbenchScene` type in both files
+
+### Extending the uniform buffer
+1. Update `PREVIEW_UNIFORM_FLOATS` constant
+2. Update `PreviewUniformState` type
+3. Update `writePreviewUniformBuffer` packing
+4. Update WGSL `PreviewUniforms` struct in `buildHostVertexModule` and `buildHostFragmentModule`
+5. Update example shaders
+
+### Performance tuning
+- Adjust `src/config/shaders.ts` profile values (pixel ratio cap, frame rate, mesh detail)
+- The render loop respects `targetFrameMs` throttling from the performance profile
