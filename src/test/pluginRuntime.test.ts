@@ -236,6 +236,37 @@ describe('pluginRuntime helpers', () => {
     expect(typeof loaded.component).toBe('function');
   });
 
+  it('lets plugins render themed lucide exports that flow through AppIcons', async () => {
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { WandSparkles } from 'lucide-react';
+        import { definePlugin } from 'overlayterm-plugin';
+
+        export default definePlugin({
+          name: 'Icon Bridge Plugin',
+          component: function IconBridgePlugin() {
+            return React.createElement('div', null, React.createElement(WandSparkles, { size: 16 }));
+          },
+        });
+      `,
+      {
+        name: 'icon-bridge-plugin.tsx',
+        path: 'plugins/icon-bridge-plugin.tsx',
+        is_dir: false,
+        modified: 8,
+        extension: 'tsx',
+      },
+      () => createMockOverlayPluginApi(),
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(typeof loaded.component).toBe('function');
+    expect(() =>
+      renderToStaticMarkup(React.createElement(loaded.component as React.ComponentType)),
+    ).not.toThrow();
+  });
+
   it('loads the drawable canvas plugin from disk through the runtime transpiler', async () => {
     const tempDirectory = await mkdtemp(join(tmpdir(), 'overlayterm-plugin-runtime-'));
     const drawableCanvasPath = join(tempDirectory, 'drawable-canvas.tsx');

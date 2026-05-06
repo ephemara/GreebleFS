@@ -1,3 +1,25 @@
+# 2026-05-06 - Action Forge First-Party Authoring Plugin And Render Fix
+
+- Added the first-party `Action Forge` package plugin under `usr/plugins/greeblefs-action-forge/`.
+  - `index.tsx` is the full authoring surface for creating or extending `usr/actions/<pack>/actions/<action>` without hand-writing manifests.
+  - `templates.ts` is the blueprint engine. It resolves the target `usr/actions` root from the plugin directory, normalizes paths, derives default entry paths and starter bodies, and emits the full file plan for each action mode.
+  - Supported authored action families now include PowerShell, Python, JavaScript, TypeScript, Bash, inline shell, Cargo/Rust, binary launchers, and workflow launchers.
+  - The panel is intentionally compact and theme-aware: it uses the packaged plugin workflow primitives plus the normal shell token system instead of a tutorial-style card layout.
+- Durable render bug fix:
+  - The plugin originally crashed in the live shell with `Action Forge threw while rendering` and React's `Element type is invalid` error.
+  - Root cause: package-plugin `lucide-react` imports do not resolve to raw upstream icons in this runtime; they resolve through `src/components/AppIcons.tsx`. `Action Forge` used `WandSparkles`, but `AppIcons.tsx` did not export that icon yet, so the plugin received `undefined` at render time.
+  - `src/components/AppIcons.tsx` now exports `WandSparkles`.
+  - `src/test/pluginRuntime.test.ts` now includes a focused regression proving a package plugin can import and render `WandSparkles` through the sandboxed `lucide-react` bridge.
+- Durable authoring/runtime rules:
+  - When a packaged frontend plugin imports from `lucide-react`, verify every icon comes from `src/components/AppIcons.tsx`; add the export there first if needed.
+  - Keep `Action Forge` file generation data-driven inside `templates.ts`. New action families should be added to the mode catalog and blueprint helpers, not as JSX-only special cases in `index.tsx`.
+  - Prefer host-authored writes through `api.host.files.writeText(...)` into `usr/actions` so generated packs stay first-class managed content instead of plugin-local scratch files.
+  - If the shell shows `transport.subscribe not allowed. Plugin not found` while debugging Action Forge, treat it as a separate transport/host-events lane until proven otherwise; the Action Forge render failure described above was caused by the icon bridge, not by `api.host.events.subscribe(...)`.
+- Validation:
+  - Passed: `bunx vitest run src/test/pluginRuntime.test.ts src/test/actionForgeTemplates.test.ts --reporter=dot`
+  - Passed: `bunx esbuild usr/plugins/greeblefs-action-forge/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --external:lucide-react --outfile=.tmp-action-forge-check.js`
+  - Passed earlier in the same rollout: `cargo run --manifest-path src-tauri/Cargo.toml --bin greeble -- ext inspect usr/plugins/greeblefs-action-forge --json`
+
 # 2026-05-06 - Tauron WebView2 Native Attach Truth And MCP Startup Phases
 
 - Extended the tauron fork so the desktop runtime itself now publishes MCP-usable WebView2 truth instead of leaving agents to infer startup from logs or localhost probes.

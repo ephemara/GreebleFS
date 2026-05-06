@@ -1,0 +1,14 @@
+id = "greeblefs-action-forge"
+version = "1"
+name = "Action Forge"
+description = "First-party panel for authoring GreebleFS explorer action packs directly into usr/actions."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = true
+category = "First-party Automation"
+tags = ["first-party", "actions", "automation", "authoring"]
+
+[permissions]
+fsRead = true
+fsWrite = true
+launchIntents = ["open-explorer"]

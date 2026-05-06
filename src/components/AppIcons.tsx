@@ -274,6 +274,7 @@ export const Undo2 = createThemedIcon('undo2', LucideIcons.Undo2);
 export const Upload = createThemedIcon('upload', LucideIcons.Upload);
 export const Volume2 = createThemedIcon('volume2', LucideIcons.Volume2);
 export const VolumeX = createThemedIcon('volume_x', LucideIcons.VolumeX);
+export const WandSparkles = createThemedIcon('wand_sparkles', LucideIcons.WandSparkles);
 export const Waves = createThemedIcon('waves', LucideIcons.Waves);
 export const X = createThemedIcon('x', LucideIcons.X);
 export const XCircle = createThemedIcon('xcircle', LucideIcons.XCircle);
