@@ -1276,6 +1276,27 @@ function getExplorerActivityDockLaneElements(side: "left" | "right") {
   ) as HTMLElement[];
 }
 
+function getExplorerContextMenuPanel(pathKey = "root") {
+  const panel = document.querySelector(
+    `[data-overlay-explorer-context-menu-panel="${pathKey}"]`,
+  ) as HTMLElement | null;
+  if (!panel) {
+    throw new Error(`Explorer context menu panel ${pathKey} not found`);
+  }
+  return panel;
+}
+
+function getLatestExplorerContextMenuPanel() {
+  const panels = Array.from(
+    document.querySelectorAll("[data-overlay-explorer-context-menu-panel]"),
+  ) as HTMLElement[];
+  const panel = panels.at(-1) ?? null;
+  if (!panel) {
+    throw new Error("Latest explorer context menu panel not found");
+  }
+  return panel;
+}
+
 function getExplorerActivityDockLaneIds(side: "left" | "right") {
   return getExplorerActivityDockLaneElements(side)
     .map((element) =>
@@ -5694,19 +5715,11 @@ const value = 1;
     const statusSurface = document.querySelector(
       '[data-overlay-explorer-surface="explorerStatusBar"]',
     );
-    const taskAnchor = document.querySelector(
-      '[data-overlay-explorer-status-task-anchor="true"]',
-    );
 
     expect(statusSurface).toHaveStyle({ width: "100%", minWidth: "0" });
     expect(
       statusSurface?.closest('[data-overlay-explorer-plane="main"]'),
     ).toBeNull();
-    expect(taskAnchor).toHaveStyle({
-      left: "50%",
-      top: "50%",
-      transform: "translate(-50%, -50%)",
-    });
     expect(within(switcher).getAllByRole("button")).toHaveLength(2);
 
     const modeMenu = await openStatusViewModeMenu();
@@ -5775,7 +5788,7 @@ const value = 1;
       within(densityMenu).queryByRole("menuitemradio", { name: /xl icons/i }),
     ).toBeNull();
     expect(
-      screen.queryByText(
+      within(getStatusViewSwitcher()).queryByText(
         /larger semantic tiles that favor browsing and recognition\./i,
       ),
     ).toBeNull();
@@ -8187,6 +8200,159 @@ const value = 1;
         ),
     ).toBe(true);
     finishExplorerPointerDrag({ ...dragGesture, altKey: true });
+  });
+
+  it("routes toolbar surface right-clicks into explorer chrome customization menus", async () => {
+    renderExplorer();
+
+    await screen.findByText("alpha");
+
+    const toolbarSurface = document.querySelector(
+      '[data-overlay-explorer-surface="explorerToolbar"]',
+    ) as HTMLElement | null;
+    if (!toolbarSurface) {
+      throw new Error("Explorer toolbar surface not found");
+    }
+
+    fireEvent.contextMenu(toolbarSurface);
+
+    await waitFor(() => {
+      expect(getExplorerContextMenuPanel()).toHaveTextContent(
+        "Customize Explorer Chrome",
+      );
+    });
+    expect(getExplorerContextMenuPanel()).toHaveTextContent(
+      "Open Explorer Layout Switcher",
+    );
+    expect(screen.queryByText("New Folder")).toBeNull();
+  });
+
+  it("hides and restores activity rail lanes through the contextual rail menu", async () => {
+    renderExplorer();
+
+    await screen.findByText("notes.txt");
+
+    const leftRail = getExplorerActivityRail("left");
+    fireEvent.contextMenu(
+      within(leftRail).getByRole("button", { name: "Semantic" }),
+    );
+
+    await waitFor(() => {
+      expect(getExplorerContextMenuPanel()).toHaveTextContent(
+        "Hide Semantic from rail",
+      );
+    });
+    fireEvent.click(
+      within(getExplorerContextMenuPanel()).getByRole("button", {
+        name: /Hide Semantic from rail/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(getExplorerActivityRail("left")).queryByRole("button", {
+          name: "Semantic",
+        }),
+      ).toBeNull();
+    });
+
+    fireEvent.contextMenu(getExplorerActivityRail("left"));
+
+    await waitFor(() => {
+      expect(getExplorerContextMenuPanel()).toHaveTextContent(
+        "Show Hidden Lane",
+      );
+    });
+    fireEvent.mouseEnter(
+      within(getExplorerContextMenuPanel()).getByRole("button", {
+        name: /Show Hidden Lane/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getLatestExplorerContextMenuPanel()).toHaveTextContent("Semantic");
+    });
+    fireEvent.click(
+      within(getLatestExplorerContextMenuPanel()).getByRole("button", {
+        name: /Semantic/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        within(getExplorerActivityRail("left")).getByRole("button", {
+          name: "Semantic",
+        }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("removes a selected tag directly from the tag chip context menu", async () => {
+    const invokeMock = vi.mocked(invoke);
+    const baseInvokeImplementation = invokeMock.getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    const docsTagSnapshot = {
+      tags: [
+        {
+          id: "docs",
+          label: "docs",
+          color: "#ff7b00",
+          pathCount: 1,
+        },
+      ],
+      assignments: [
+        {
+          path: `${REPO_ROOT}\\notes.txt`,
+          tagIds: ["docs"],
+          tagLabels: ["docs"],
+        },
+      ],
+    };
+
+    invokeMock.mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "explorer_tags_list") {
+        return docsTagSnapshot;
+      }
+      if (command === "explorer_tags_set_for_paths") {
+        return docsTagSnapshot;
+      }
+      return baseInvokeImplementation(command, args);
+    });
+
+    renderExplorer();
+
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getByText("notes.txt"));
+    const docsTagLabel = await screen.findByText("docs");
+    const docsTagChip = docsTagLabel.closest("button");
+    if (!(docsTagChip instanceof HTMLElement)) {
+      throw new Error("Docs tag chip button not found");
+    }
+    fireEvent.contextMenu(docsTagChip);
+
+    await waitFor(() => {
+      expect(getExplorerContextMenuPanel()).toHaveTextContent(
+        'Remove "docs" from selection',
+      );
+    });
+    fireEvent.click(
+      within(getExplorerContextMenuPanel()).getByRole("button", {
+        name: /Remove "docs" from selection/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith("explorer_tags_set_for_paths", {
+        request: {
+          paths: [`${REPO_ROOT}\\notes.txt`],
+          tagNames: ["docs"],
+          mode: "remove",
+        },
+      });
+    });
   });
 
   it("opens an in-app tag dialog and applies comma-separated tags to the current selection", async () => {

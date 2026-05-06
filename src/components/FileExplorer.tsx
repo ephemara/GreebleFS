@@ -49,8 +49,11 @@ import {
   Eye,
   Info,
   Eraser,
+  Database,
   FolderTree,
   Loader,
+  ListTodo,
+  Palette,
   Pin,
   PinOff,
   Pencil,
@@ -117,6 +120,7 @@ import {
 } from "../config/explorerLayouts";
 import { getExplorerRailWidthBounds } from "../config/explorerRail";
 import {
+  adaptiveSemanticDensityStops,
   explorerExperimentalModes,
   getAdaptiveSemanticDensityPercent,
   getAdaptiveSemanticDensityStopId,
@@ -3325,10 +3329,18 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <Eye size={13} />;
     case "FilePlus":
       return <FilePlus size={13} />;
+    case "FolderTree":
+      return <FolderTree size={13} />;
     case "FolderPlus":
       return <FolderPlus size={13} />;
     case "Info":
       return <Info size={13} />;
+    case "ListTodo":
+      return <ListTodo size={13} />;
+    case "Database":
+      return <Database size={13} />;
+    case "Palette":
+      return <Palette size={13} />;
     case "Pencil":
       return <Pencil size={13} />;
     case "Puzzle":
@@ -3339,6 +3351,8 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <RotateCcw size={13} />;
     case "Scissors":
       return <Scissors size={13} />;
+    case "Search":
+      return <Search size={13} />;
     case "Shield":
       return <Shield size={13} />;
     case "Sparkles":
@@ -3353,6 +3367,8 @@ function resolveContextMenuIcon(iconName?: string): React.ReactNode {
       return <Tags size={13} />;
     case "Terminal":
       return <Terminal size={13} />;
+    case "TerminalSquare":
+      return <TerminalSquare size={13} />;
     case "Trash2":
       return <Trash2 size={13} />;
     case "Undo2":
@@ -4319,6 +4335,7 @@ function PreviewPanel({
   onPreviewWorkflowContextChange,
   onExtractArchive,
   onContextMenu,
+  onChromeContextMenuRequest,
   canNavigatePreviewBack,
   externalChromeControls = [],
 }: {
@@ -4434,6 +4451,9 @@ function PreviewPanel({
   ) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
+  onChromeContextMenuRequest?: (
+    request: ExplorerChromeContextMenuRequest,
+  ) => void;
   canNavigatePreviewBack: boolean;
   externalChromeControls?: ExplorerRenderedChromeControlDefinition[];
 }) {
@@ -6259,6 +6279,7 @@ function PreviewPanel({
           getZoneStyle={getPreviewHeaderZoneStyle}
           overflowMode="wrap"
           renderControl={renderPreviewChromeControl}
+          onContextMenuRequest={onChromeContextMenuRequest}
           layoutDynamics={previewHeaderLayoutDynamics}
           editMode={chromeEditMode}
         />
@@ -8638,6 +8659,27 @@ function areExplorerActivityLaneIdListsEqual(
   );
 }
 
+function getExplorerChromeSurfaceContextLabel(
+  surfaceId: ExplorerChromeSurfaceId,
+): string {
+  switch (surfaceId) {
+    case "explorerTopbar":
+      return "Explorer Top Bar";
+    case "explorerToolbar":
+      return "Explorer Toolbar";
+    case "workspaceHeader":
+      return "Workspace Header";
+    case "railHeader":
+      return "Rail Header";
+    case "previewHeader":
+      return "Preview Header";
+    case "explorerStatusBar":
+      return "Explorer Status Bar";
+    default:
+      return "Explorer Chrome";
+  }
+}
+
 export function FileExplorer({
   theme,
   appearance,
@@ -9883,10 +9925,6 @@ export function FileExplorer({
   const openActivityLaneIdSet = useMemo(
     () => new Set(openActivityLaneIds),
     [openActivityLaneIds],
-  );
-  const hiddenActivityLaneIdSet = useMemo(
-    () => new Set(hiddenActivityLaneIds),
-    [hiddenActivityLaneIds],
   );
   const orderedOpenActivityLaneIdsBySide = useMemo(
     () => ({
@@ -31756,6 +31794,464 @@ export function FileExplorer({
       setSearchMode,
     ],
   );
+  const persistExplorerChromeControlOverrideEntry = useCallback(
+    (
+      controlId: ExplorerChromeControlId,
+      resolveNextEntry: (
+        entry: ExplorerChromeOverrideEntry,
+      ) => ExplorerChromeOverrideEntry | null,
+    ) => {
+      const normalizedOverride = normalizeExplorerChromeOverrideSnapshot(
+        persistedExplorerChromeOverride,
+      );
+      const existingEntry =
+        normalizedOverride.entries.find((entry) => entry.controlId === controlId) ??
+        null;
+      const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
+      const fallbackSurfaceId =
+        existingEntry?.surfaceId ?? visiblePlacement?.surfaceId ?? "explorerToolbar";
+      const fallbackZone =
+        existingEntry?.zone ??
+        visiblePlacement?.zone ??
+        getExplorerChromeSurfaceDefinition(fallbackSurfaceId).rows[0]?.zones[0] ??
+        "primaryStart";
+      const nextEntry = resolveNextEntry({
+        controlId,
+        surfaceId: fallbackSurfaceId,
+        zone: fallbackZone,
+        order: existingEntry?.order ?? visiblePlacement?.order ?? 9990,
+        offsetPx: existingEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
+        hidden: existingEntry?.hidden ?? false,
+        sizeVariant: existingEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+        widthPx: existingEntry?.widthPx ?? visiblePlacement?.widthPx,
+        showLabel: existingEntry?.showLabel ?? visiblePlacement?.showLabel,
+        showIcon: existingEntry?.showIcon ?? visiblePlacement?.showIcon,
+      });
+      const nextSnapshot = normalizeExplorerChromeOverrideSnapshot({
+        entries:
+          nextEntry == null
+            ? normalizedOverride.entries.filter(
+                (entry) => entry.controlId !== controlId,
+              )
+            : [
+                ...normalizedOverride.entries.filter(
+                  (entry) => entry.controlId !== controlId,
+                ),
+                nextEntry,
+              ],
+      });
+      if (nextSnapshot.entries.length > 0) {
+        setExplorerChromeLayoutOverride(
+          explorerChromeThemeId,
+          effectiveChromeLayoutId,
+          nextSnapshot,
+        );
+        return;
+      }
+      clearExplorerChromeLayoutOverride(
+        explorerChromeThemeId,
+        effectiveChromeLayoutId,
+      );
+    },
+    [
+      clearExplorerChromeLayoutOverride,
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      findRegisteredExplorerChromePlacement,
+      persistedExplorerChromeOverride,
+      setExplorerChromeLayoutOverride,
+    ],
+  );
+  const focusExplorerChromeControlInCustomizeMode = useCallback(
+    (controlId: ExplorerChromeControlId) => {
+      prepareActionsPaneForCustomizeMode();
+      if (!getLiveExplorerChromeEditSession()) {
+        openChromeEditSession({
+          themeId: explorerChromeThemeId,
+          layoutId: effectiveChromeLayoutId,
+          initialOverride: persistedExplorerChromeOverride,
+        });
+      }
+      setShowExplorerLayoutCommandMenu(false);
+      setShowModeProfileMenu(false);
+      setChromeEditSelectedControl(controlId);
+    },
+    [
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      getLiveExplorerChromeEditSession,
+      openChromeEditSession,
+      persistedExplorerChromeOverride,
+      prepareActionsPaneForCustomizeMode,
+      setChromeEditSelectedControl,
+    ],
+  );
+  const hideExplorerChromeControl = useCallback(
+    (controlId: ExplorerChromeControlId) => {
+      if (activeChromeEditSession) {
+        removeExplorerChromeControlFromDraft(controlId);
+        return;
+      }
+      persistExplorerChromeControlOverrideEntry(controlId, (entry) => ({
+        ...entry,
+        hidden: true,
+      }));
+    },
+    [
+      activeChromeEditSession,
+      persistExplorerChromeControlOverrideEntry,
+      removeExplorerChromeControlFromDraft,
+    ],
+  );
+  const hideExplorerActivityLane = useCallback(
+    (laneId: ExplorerActivityLaneId) => {
+      setHiddenActivityLaneIdsSafely((currentLaneIds) =>
+        normalizeExplorerHiddenActivityLaneIds([...currentLaneIds, laneId]),
+      );
+    },
+    [setHiddenActivityLaneIdsSafely],
+  );
+  const showExplorerActivityLane = useCallback(
+    (laneId: ExplorerActivityLaneId) => {
+      setHiddenActivityLaneIdsSafely((currentLaneIds) =>
+        currentLaneIds.filter((candidateLaneId) => candidateLaneId !== laneId),
+      );
+    },
+    [setHiddenActivityLaneIdsSafely],
+  );
+  const showAllExplorerActivityLanes = useCallback(() => {
+    setHiddenActivityLaneIdsSafely([]);
+  }, [setHiddenActivityLaneIdsSafely]);
+  const openExplorerLayoutSwitcherFromContextMenu = useCallback(() => {
+    setShowModeProfileMenu(false);
+    setShowExplorerLayoutCommandMenu(true);
+  }, []);
+  const handleExplorerChromeContextMenuRequest = useCallback(
+    (request: ExplorerChromeContextMenuRequest) => {
+      const nodes: OverlayContextMenuNode[] = [];
+      const surfaceLabel = getExplorerChromeSurfaceContextLabel(
+        request.surfaceId,
+      );
+      const controlLabel = request.controlId
+        ? explorerChromeControlRegistryById.get(request.controlId)?.label ??
+          request.controlId
+        : null;
+
+      if (request.controlId && controlLabel) {
+        nodes.push(
+          createOverlayContextMenuCommandNode({
+            id: `chrome.customize-control.${request.controlId}`,
+            label: `Customize ${controlLabel}`,
+            description: `Open explorer customize mode and focus ${controlLabel} on ${surfaceLabel}.`,
+            iconName: "Sliders",
+            onSelect: () =>
+              focusExplorerChromeControlInCustomizeMode(request.controlId!),
+          }),
+        );
+        nodes.push(
+          createOverlayContextMenuCommandNode({
+            id: `chrome.hide-control.${request.controlId}`,
+            label: `Hide ${controlLabel}`,
+            description: `Hide ${controlLabel} from the current explorer chrome layout.`,
+            iconName: "Eraser",
+            onSelect: () => hideExplorerChromeControl(request.controlId!),
+          }),
+        );
+        nodes.push(
+          createOverlayContextMenuSeparatorNode(
+            `chrome.separator.control.${request.controlId}`,
+          ),
+        );
+      }
+
+      nodes.push(
+        createOverlayContextMenuCommandNode({
+          id: `chrome.customize-surface.${request.surfaceId}`,
+          label: activeChromeEditSession
+            ? "Save Explorer Chrome Changes"
+            : "Customize Explorer Chrome",
+          description: activeChromeEditSession
+            ? `Commit the current explorer chrome draft for ${surfaceLabel}.`
+            : `Enter explorer customize mode for ${surfaceLabel}.`,
+          iconName: activeChromeEditSession ? "Save" : "Sliders",
+          onSelect: () =>
+            activeChromeEditSession
+              ? saveExplorerChromeCustomization()
+              : beginExplorerChromeCustomization(),
+        }),
+      );
+      nodes.push(
+        createOverlayContextMenuCommandNode({
+          id: `chrome.open-layout-switcher.${request.surfaceId}`,
+          label: "Open Explorer Layout Switcher",
+          description:
+            "Open the explorer layout switcher so this pane can swap between saved layout presets.",
+          iconName: "Sparkles",
+          onSelect: openExplorerLayoutSwitcherFromContextMenu,
+        }),
+      );
+      nodes.push(
+        createOverlayContextMenuCommandNode({
+          id: `chrome.save-layout.${request.surfaceId}`,
+          label: "Save Current Explorer Layout",
+          description:
+            "Persist the live explorer chrome and pane arrangement as a reusable user layout.",
+          iconName: "Save",
+          onSelect: saveCurrentExplorerLayoutAsUser,
+        }),
+      );
+      nodes.push(
+        createOverlayContextMenuCommandNode({
+          id: `chrome.reset-layout.${request.surfaceId}`,
+          label: "Reset Layout UI to Canonical",
+          description:
+            "Reset explorer chrome overrides and live pane sizing back to the canonical shipped layout.",
+          iconName: "RotateCcw",
+          tone: "warning",
+          onSelect: resetExplorerLayoutUiToCanonical,
+        }),
+      );
+
+      openLocalContextMenu({
+        event: request.event,
+        nodes,
+        presentation: {
+          density: "balanced",
+          showDescriptions: true,
+        },
+      });
+    },
+    [
+      activeChromeEditSession,
+      beginExplorerChromeCustomization,
+      explorerChromeControlRegistryById,
+      focusExplorerChromeControlInCustomizeMode,
+      hideExplorerChromeControl,
+      openExplorerLayoutSwitcherFromContextMenu,
+      openLocalContextMenu,
+      resetExplorerLayoutUiToCanonical,
+      saveCurrentExplorerLayoutAsUser,
+      saveExplorerChromeCustomization,
+    ],
+  );
+  const handleExplorerActivityRailContextMenuRequest = useCallback(
+    (request: ExplorerActivityRailContextMenuRequest) => {
+      if (request.laneId && request.laneDefinition) {
+        const laneId = request.laneId;
+        const laneDefinition = request.laneDefinition;
+        const destinationSide: ExplorerActivityRailSide =
+          request.railSide === "left" ? "right" : "left";
+        const laneIsOpen = openActivityLaneIdSet.has(laneId);
+        openLocalContextMenu({
+          event: request.event,
+          nodes: [
+            createOverlayContextMenuCommandNode({
+              id: `activity-lane.toggle.${laneId}`,
+              label: `${laneIsOpen ? "Close" : "Open"} ${laneDefinition.label}`,
+              description: laneIsOpen
+                ? `Close the ${laneDefinition.label} lane without changing its rail placement.`
+                : `Open the ${laneDefinition.label} lane from the ${request.railSide} rail.`,
+              iconName: laneDefinition.iconName,
+              onSelect: () => selectExplorerActivityLane(laneId),
+            }),
+            createOverlayContextMenuCommandNode({
+              id: `activity-lane.move.${laneId}.${destinationSide}`,
+              label: `Move to ${destinationSide === "left" ? "left" : "right"} rail`,
+              description: `Rehome ${laneDefinition.label} on the ${destinationSide} navigation rail.`,
+              iconName: "Sliders",
+              onSelect: () =>
+                handleMoveExplorerActivityLane(
+                  laneId,
+                  destinationSide,
+                  activityLaneOrderBySide[destinationSide].length,
+                ),
+            }),
+            createOverlayContextMenuSeparatorNode(
+              `activity-lane.separator.${laneId}`,
+            ),
+            createOverlayContextMenuCommandNode({
+              id: `activity-lane.hide.${laneId}`,
+              label: `Hide ${laneDefinition.label} from rail`,
+              description:
+                "Hide this lane button from the navigation rail while keeping the feature available elsewhere in Explorer.",
+              iconName: "Eraser",
+              onSelect: () => hideExplorerActivityLane(laneId),
+            }),
+          ],
+          presentation: {
+            density: "balanced",
+            showDescriptions: true,
+          },
+        });
+        return;
+      }
+
+      const hiddenLaneDefinitions = hiddenActivityLaneIds.map(
+        getExplorerActivityLaneDefinition,
+      );
+      const showHiddenLaneChildren =
+        hiddenLaneDefinitions.length > 0
+          ? hiddenLaneDefinitions.map((laneDefinition) =>
+              createOverlayContextMenuCommandNode({
+                id: `activity-lane.show.${laneDefinition.id}`,
+                label: laneDefinition.label,
+                description: `Show ${laneDefinition.label} on the navigation rail again.`,
+                iconName: laneDefinition.iconName,
+                onSelect: () => showExplorerActivityLane(laneDefinition.id),
+              }),
+            )
+          : [
+              createOverlayContextMenuCommandNode({
+                id: `activity-lane.show.none.${request.railSide}`,
+                label: "No hidden rail items",
+                description:
+                  "Hide rail items by right-clicking a visible lane button, then restore them from this menu.",
+                iconName: "Eye",
+                disabled: true,
+                onSelect: () => undefined,
+              }),
+            ];
+
+      openLocalContextMenu({
+        event: request.event,
+        nodes: [
+          createOverlayContextMenuSubmenuNode({
+            id: `activity-lane.show-hidden.${request.railSide}`,
+            label: "Show Hidden Lane",
+            iconName: "Eye",
+            children: showHiddenLaneChildren,
+          }),
+          createOverlayContextMenuCommandNode({
+            id: `activity-lane.show-all.${request.railSide}`,
+            label: "Show All Hidden Lanes",
+            description:
+              "Restore every lane button that has been hidden from the navigation rails.",
+            iconName: "Eye",
+            disabled: hiddenLaneDefinitions.length === 0,
+            onSelect: showAllExplorerActivityLanes,
+          }),
+        ],
+        presentation: {
+          density: "balanced",
+          showDescriptions: true,
+        },
+      });
+    },
+    [
+      activityLaneOrderBySide,
+      hiddenActivityLaneIds,
+      hideExplorerActivityLane,
+      openActivityLaneIdSet,
+      openLocalContextMenu,
+      selectExplorerActivityLane,
+      showAllExplorerActivityLanes,
+      showExplorerActivityLane,
+      handleMoveExplorerActivityLane,
+    ],
+  );
+  const handleExplorerSideRailContextMenuRequest = useCallback(
+    (request: ExplorerSideRailContextMenuRequest) => {
+      if (request.kind !== "tag-filter") {
+        return;
+      }
+
+      if (request.tag == null) {
+        openLocalContextMenu({
+          event: request.event,
+          nodes: [
+            createOverlayContextMenuCommandNode({
+              id: "rail-tags.clear-filters",
+              label: "Clear Tag Filters",
+              description:
+                "Return the side rail and file list to the full unfiltered tag view.",
+              iconName: "Tags",
+              disabled: activeTagFilterIds.length === 0,
+              onSelect: () => setActiveTagFilterIds([]),
+            }),
+          ],
+          presentation: {
+            density: "balanced",
+            showDescriptions: true,
+          },
+        });
+        return;
+      }
+
+      const tag = request.tag;
+      const tagIsActive = activeTagFilterIds.includes(tag.id);
+      const selectedTaggedPaths = selectedEntries
+        .filter((entry) =>
+          pathTagIdsByPath.get(entry.path)?.includes(tag.id),
+        )
+        .map((entry) => entry.path);
+
+      openLocalContextMenu({
+        event: request.event,
+        nodes: [
+          createOverlayContextMenuCommandNode({
+            id: `rail-tags.toggle.${tag.id}`,
+            label: tagIsActive
+              ? `Remove ${tag.label} filter`
+              : `Filter by ${tag.label}`,
+            description: tagIsActive
+              ? `Stop filtering the explorer by ${tag.label}.`
+              : `Filter the explorer to entries tagged with ${tag.label}.`,
+            iconName: "Tags",
+            onSelect: () =>
+              setActiveTagFilterIds((currentTagIds) =>
+                currentTagIds.includes(tag.id)
+                  ? currentTagIds.filter((candidateId) => candidateId !== tag.id)
+                  : [...currentTagIds, tag.id],
+              ),
+          }),
+          createOverlayContextMenuCommandNode({
+            id: `rail-tags.only.${tag.id}`,
+            label: `Filter only ${tag.label}`,
+            description:
+              "Replace the current tag filter stack with this single tag.",
+            iconName: "Tags",
+            onSelect: () => setActiveTagFilterIds([tag.id]),
+          }),
+          createOverlayContextMenuSeparatorNode(`rail-tags.separator.${tag.id}`),
+          createOverlayContextMenuCommandNode({
+            id: `rail-tags.remove-from-selection.${tag.id}`,
+            label: `Remove "${tag.label}" from selection`,
+            description:
+              selectedTaggedPaths.length > 0
+                ? `Remove ${tag.label} from every selected item that already carries this tag.`
+                : `Select one or more ${tag.label}-tagged entries first, then remove the tag directly from this menu.`,
+            iconName: "Eraser",
+            disabled:
+              !currentLocationSupportsMutation || selectedTaggedPaths.length === 0,
+            onSelect: () =>
+              applyTagsToPaths(selectedTaggedPaths, tag.label, "remove"),
+          }),
+          createOverlayContextMenuCommandNode({
+            id: `rail-tags.clear-all.${tag.id}`,
+            label: "Clear Tag Filters",
+            description:
+              "Return the side rail and file list to the full unfiltered tag view.",
+            iconName: "Tags",
+            disabled: activeTagFilterIds.length === 0,
+            onSelect: () => setActiveTagFilterIds([]),
+          }),
+        ],
+        presentation: {
+          density: "balanced",
+          showDescriptions: true,
+        },
+      });
+    },
+    [
+      activeTagFilterIds,
+      applyTagsToPaths,
+      currentLocationSupportsMutation,
+      openLocalContextMenu,
+      pathTagIdsByPath,
+      selectedEntries,
+      setActiveTagFilterIds,
+    ],
+  );
   const explorerFilesLanePane = useMemo(
     () => (
       <div
@@ -31810,6 +32306,8 @@ export function FileExplorer({
           onBookmarkCreated={handleBookmarkCreated}
           resolveDroppedSources={resolveDroppedBookmarkSources}
           onCloseSources={closeSourcesPanel}
+          onChromeContextMenuRequest={handleExplorerChromeContextMenuRequest}
+          onContextMenuRequest={handleExplorerSideRailContextMenuRequest}
           chromeLayoutId={effectiveChromeLayoutId}
           chromeOverride={explorerChromeOverride}
           chromeEditMode={explorerChromeEditMode}
@@ -31828,10 +32326,12 @@ export function FileExplorer({
     drives,
     drivesLoading,
     explorerDropScopeId,
-    effectiveChromeLayoutId,
-    explorerChromeEditMode,
     explorerChromeOverride,
+    explorerChromeEditMode,
     explorerRailHeaderLayoutDynamics,
+    handleExplorerChromeContextMenuRequest,
+    handleExplorerSideRailContextMenuRequest,
+    effectiveChromeLayoutId,
     explorerTheme.railBrandLabel,
     goHome,
     handleBookmarkCreated,
@@ -31981,6 +32481,7 @@ export function FileExplorer({
                   getZoneStyle={getExplorerChromeZoneStyle}
                   dynamicCanvasMinHeightPx={resolvedUnifiedHeaderHeightPx}
                   renderControl={renderExplorerChromeControl}
+                  onContextMenuRequest={handleExplorerChromeContextMenuRequest}
                   layoutDynamics={explorerTopbarLayoutDynamics}
                   editMode={explorerChromeEditMode}
                 />
@@ -32010,6 +32511,7 @@ export function FileExplorer({
                   : resolvedUnifiedHeaderHeightPx * 2
               }
               renderControl={renderExplorerChromeControl}
+              onContextMenuRequest={handleExplorerChromeContextMenuRequest}
               layoutDynamics={explorerToolbarLayoutDynamics}
               editMode={explorerChromeEditMode}
             />
@@ -32039,6 +32541,7 @@ export function FileExplorer({
       getExplorerToolbarRowStyle,
       getExplorerTopbarRowStyle,
       getExplorerChromeZoneStyle,
+      handleExplorerChromeContextMenuRequest,
       renderExplorerChromeControl,
       resolvedExplorerToolbarHeightPx,
       resolvedUnifiedHeaderHeightPx,
@@ -32422,6 +32925,7 @@ export function FileExplorer({
         onRegisterContextMenuRegistration={setPreviewContextMenuRegistration}
         onPreviewWorkflowContextChange={setPreviewWorkflowContext}
         onContextMenu={onPreviewContextMenu}
+        onChromeContextMenuRequest={handleExplorerChromeContextMenuRequest}
         canNavigatePreviewBack={canNavigatePreviewBack}
         externalChromeControls={previewExternalChromeControls}
         onExtractArchive={(mode) => {
@@ -32468,6 +32972,7 @@ export function FileExplorer({
     explorerPreviewHeaderLayoutDynamics,
     explorerTheme,
     handleArchiveAction,
+    handleExplorerChromeContextMenuRequest,
     handlePdfPreviewChromeStateChange,
     openFolderPreviewEntry,
     onPreviewContextMenu,
@@ -33058,17 +33563,6 @@ export function FileExplorer({
         setSelected(new Set());
         closeContextMenu();
       }}
-      onContextMenu={(e) => {
-        const target = e.target instanceof HTMLElement ? e.target : null;
-        if (
-          target?.closest(
-            'input, textarea, button, a, [contenteditable="true"], [role="button"]',
-          )
-        ) {
-          return;
-        }
-        onBackgroundContextMenu(e);
-      }}
     >
       <div
         style={{
@@ -33260,6 +33754,7 @@ export function FileExplorer({
             appearance={appearance}
             laneDefinitions={leftExplorerActivityRailDefinitions}
             laneBadges={activityLaneBadges}
+            onContextMenuRequest={handleExplorerActivityRailContextMenuRequest}
             onMoveLane={handleMoveExplorerActivityLane}
             onSelectLane={selectExplorerActivityLane}
             railSide="left"
@@ -33891,6 +34386,7 @@ export function FileExplorer({
             appearance={appearance}
             laneDefinitions={rightExplorerActivityRailDefinitions}
             laneBadges={activityLaneBadges}
+            onContextMenuRequest={handleExplorerActivityRailContextMenuRequest}
             onMoveLane={handleMoveExplorerActivityLane}
             onSelectLane={selectExplorerActivityLane}
             railSide="right"
@@ -33950,6 +34446,7 @@ export function FileExplorer({
             getRowStyle={getExplorerStatusBarRowStyle}
             getZoneStyle={getExplorerStatusBarZoneStyle}
             renderControl={renderExplorerChromeControl}
+            onContextMenuRequest={handleExplorerChromeContextMenuRequest}
             layoutDynamics={explorerStatusBarLayoutDynamics}
             editMode={explorerChromeEditMode}
           />

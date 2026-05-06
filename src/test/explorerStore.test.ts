@@ -77,6 +77,7 @@ describe("explorerStore persistence", () => {
       shellLayoutId: "inspector",
       documentViewMode: "preview",
       actionsVisible: true,
+      hiddenActivityLaneIds: ["actions", "actions", "preview"],
     });
     store.replaceRail(folderResult.snapshot);
 
@@ -92,6 +93,13 @@ describe("explorerStore persistence", () => {
     expect(hydrated.session.previewJumpToFolderEnabled).toBe(false);
     expect(hydrated.session.shellLayoutId).toBe("inspector");
     expect(hydrated.session.documentViewMode).toBe("preview");
+    expect(hydrated.session.hiddenActivityLaneIds).toEqual([
+      "actions",
+      "preview",
+    ]);
+    expect(
+      hydrated.sessions[PRIMARY_EXPLORER_INSTANCE_ID]?.hiddenActivityLaneIds,
+    ).toEqual(["actions", "preview"]);
     expect(hydrated.workspace.tabs[0]?.id).toBe(PRIMARY_EXPLORER_TAB_ID);
     expect(hydrated.rail.nodes).toHaveLength(1);
     expect(hydrated.rail.nodes[0].kind).toBe("folder");
@@ -310,6 +318,7 @@ describe("explorerStore persistence", () => {
             "customize",
             "bogus",
           ],
+          hiddenActivityLaneIds: ["preview", "preview", "bogus", "actions"],
           previewEnabled: true,
           actionsVisible: false,
           sourcesVisible: false,
@@ -328,6 +337,7 @@ describe("explorerStore persistence", () => {
               "customize",
               "bogus",
             ],
+            hiddenActivityLaneIds: ["preview", "preview", "bogus", "actions"],
             previewEnabled: true,
             actionsVisible: false,
             sourcesVisible: false,
@@ -357,6 +367,10 @@ describe("explorerStore persistence", () => {
       "preview",
       "terminal",
       "customize",
+    ]);
+    expect(hydrated.session.hiddenActivityLaneIds).toEqual([
+      "preview",
+      "actions",
     ]);
     expect(hydrated.session.sourcesVisible).toBe(false);
     expect(hydrated.session.actionsVisible).toBe(true);

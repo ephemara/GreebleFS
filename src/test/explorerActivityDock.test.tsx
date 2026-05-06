@@ -131,6 +131,45 @@ describe('Explorer activity dock surfaces', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
   });
 
+  it('emits target-aware context menu requests for lane buttons and the rail background', () => {
+    const onContextMenuRequest = vi.fn();
+    render(
+      <ExplorerActivityRail
+        activeLaneId="files"
+        onContextMenuRequest={onContextMenuRequest}
+        onSelectLane={vi.fn()}
+        tone={tone}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Search' }));
+
+    expect(onContextMenuRequest).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        railSide: 'left',
+        laneId: 'search',
+        laneDefinition: expect.objectContaining({
+          id: 'search',
+          label: 'Search',
+        }),
+      }),
+    );
+
+    fireEvent.contextMenu(
+      screen.getByRole('navigation', { name: 'Explorer left activity rail' }),
+    );
+
+    expect(onContextMenuRequest).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        railSide: 'left',
+        laneId: null,
+        laneDefinition: null,
+      }),
+    );
+  });
+
   it('splits left and right rail definitions while tracking multiple open lanes', () => {
     expect(
       getExplorerActivityLaneDefinitionsForRailSide('left').map(

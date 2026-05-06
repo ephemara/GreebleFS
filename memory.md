@@ -1,3 +1,53 @@
+# 2026-05-06 - Target-Aware Explorer Context Menu Routing
+
+- Added a shared local/themed context-menu model in `src/components/explorer/overlayContextMenuModel.ts`.
+  - `OverlayContextMenuNode` is the reusable menu tree for non-native explorer menus.
+  - `ExplorerChromeContextMenuRequest`, `ExplorerActivityRailContextMenuRequest`, and `ExplorerSideRailContextMenuRequest` are the typed ownership seams for UI-originated right clicks.
+- Explorer context menus are no longer allowed to rely on one broad explorer-root fallback that guesses what the user meant.
+  - `ExplorerChromeSurface.tsx` now resolves the clicked chrome surface/control and emits a chrome request.
+  - `ExplorerActivityRail.tsx` now emits target-aware requests for both rail background and lane buttons.
+  - `ExplorerSideRail.tsx` now emits side-rail tag requests so chip-specific actions such as direct tag removal can stay local to the clicked target.
+  - `FileExplorer.tsx` now opens themed local menus through `openLocalContextMenu(...)` and routes each request type to its own menu builder.
+- Product behavior changed in a few important ways:
+  - Right-clicking customizable topbar/toolbar/status/rail-header surfaces now opens chrome-specific customize/layout actions instead of accidentally inheriting the generic explorer background menu.
+  - Right-clicking an activity-rail lane now exposes lane-scoped actions such as open/close, move-to-other-rail, and hide-from-rail.
+  - Right-clicking empty rail space now exposes restore actions for hidden lanes.
+  - Right-clicking a tag chip now makes filter and tag-removal actions directly available from the clicked chip.
+- Hidden activity-rail visibility is now durable explorer session state.
+  - `src/store/explorerStore.ts` persists `hiddenActivityLaneIds`.
+  - `src/config/explorerActivityRail.ts` owns normalization/defaults and filters hidden lanes from the rendered rail definitions.
+- Durable rules:
+  - Do not reintroduce a broad `onContextMenu` explorer-root catch-all for normal browsing. It will steal right-click intent from chrome, rails, and other surface-owned targets.
+  - When a new explorer UI target needs its own right-click behavior, add an explicit typed request emitter at the surface owner first, then resolve the menu in `FileExplorer.tsx`.
+  - Reuse `ExplorerContextMenu.tsx` as the themed renderer and `overlayContextMenuModel.ts` as the local menu model instead of inventing another ad hoc menu shape.
+- Validation:
+  - Passed: `bun run vitest run src/test/explorerStore.test.ts src/test/explorerActivityDock.test.tsx`
+  - Passed: `bun run vitest run src/test/fileExplorer.viewModes.test.tsx -t "routes toolbar surface right-clicks into explorer chrome customization menus|hides and restores activity rail lanes through the contextual rail menu|removes a selected tag directly from the tag chip context menu" --testTimeout=15000`
+
+# 2026-05-06 - Explorer Shared View Switcher Control
+
+- Consolidated the explorer view-mode chrome around the shared anchored `ExplorerViewSwitcherControl` instead of relying on separate fixed strips or detached mode-specific UI.
+- The bottom-right `statusViewToggles` cluster is now the primary view-switcher surface.
+  - Button 1 is the active mode selector.
+  - Button 2 is the dynamic density/granularity selector.
+  - Standard layouts keep the familiar zoom/density semantics.
+  - Experimental layouts reuse the same control slot but swap in mode-specific density descriptors from `src/config/explorerExperimentalModes.ts`.
+- `viewLayout` remains an optional chrome control, but default chrome should route users through the status-bar cluster instead of placing a second primary switcher in the toolbar.
+- The shared control is intentionally registry-driven:
+  - standard modes come from `src/config/explorerViewModes.ts`
+  - experimental modes and density stops/descriptors come from `src/config/explorerExperimentalModes.ts`
+  - future built-in or manifest-driven modes should extend those registries and feed the same control model rather than introducing another bespoke switcher
+- `src/components/FileExplorer.tsx` now treats the status switcher as the shared command target via `statusViewSwitcherModeMenuRequestKey`, so command-driven open requests can reuse the tethered menu behavior.
+- Durable rules:
+  - Do not reintroduce fixed middle-of-screen view-mode switchers for normal explorer layout changes.
+  - Keep mode and density menus tethered through `ExplorerPopupSurface` / `ExplorerFloatingSurface`.
+  - Keep descriptive copy inside menu items, not as persistent boilerplate beside the status-bar buttons.
+  - When experimental runtimes add new density semantics, map them into the second button instead of adding a third layout-specific control.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shared status-bar view menu|footer view switcher|adaptive semantic grid|constellation view|timeline surface|standard-view proxy|scales the explorer grid" --reporter=verbose`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "command entry points|command switcher|resets layout customization to canonical|fixed utility strip" --reporter=verbose`
+
 # 2026-05-06 - Dev MCP And Tauri Automation Pipeline
 
 - Added a first-class dev automation subsystem under `MCP/greeblefs-dev-mcp/` for agent-driven app inspection and control during `bun run tauri dev`.
