@@ -1,15 +1,16 @@
 # FFmpeg Suite Rust Wrappers
 
-Safe, idiomatic, and performant Rust wrappers for FFmpeg, FFprobe, and FFplay.
+Safe, idiomatic, and performant Rust wrappers for FFmpeg and FFprobe.
 
 ## Overview
 
-This workspace provides three separate crates that wrap the FFmpeg suite of tools:
+This workspace provides the FFmpeg wrappers that are still wired into GreebleFS:
 
 - **`rust_ffmpeg`** - Video/audio transcoding, filtering, and manipulation
 - **`rust_ffprobe`** - Media file inspection and metadata extraction
-- **`rust_ffplay`** - Media playback with various display options
 - **`ffmpeg-common`** - Shared types and utilities
+
+The dormant `rust_ffplay` wrapper was archived to `reference/crates/ffmpeg-suite-rs/rust_ffplay/` during the 2026-05-05 crates cleanup because the desktop app does not depend on it.
 
 ## Features
 
@@ -29,7 +30,6 @@ Add the crates you need to your `Cargo.toml`:
 [dependencies]
 rust_ffmpeg = "0.1"
 rust_ffprobe = "0.1"
-rust_ffplay = "0.1"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -101,35 +101,6 @@ async fn main() -> Result<()> {
         }
     }
     
-    Ok(())
-}
-```
-
-### FFplay - Media Playback
-
-```rust
-use rust_ffplay::prelude::*;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Simple playback
-    let mut player = FFplayBuilder::play("video.mp4").spawn().await?;
-    player.wait().await?;
-
-    // Advanced playback with options
-    let mut player = FFplayBuilder::new()?
-        .input("video.mp4")
-        .size(1280, 720)
-        .window_title("My Player")
-        .seek(Duration::from_secs(30))
-        .volume(75)
-        .spawn()
-        .await?;
-
-    // Stop after 10 seconds
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-    player.kill().await?;
-
     Ok(())
 }
 ```
@@ -227,7 +198,7 @@ async fn transcode_with_gpu() -> Result<()> {
 The crates follow a builder pattern for constructing commands:
 
 ```
-FFmpegBuilder/FFprobeBuilder/FFplayBuilder
+FFmpegBuilder/FFprobeBuilder
     ├── Input specifications
     ├── Output specifications  
     ├── Filters and processing

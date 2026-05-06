@@ -3,12 +3,10 @@ members = [
   "src-tauri",
   "crates/greeble-ipc-contracts",
   "crates/file-opening",
-  "crates/file-opening-linux",
   "crates/file-opening-macos",
   "crates/file-opening-windows",
   "crates/macos",
   "crates/overlay-contracts",
-  "crates/overlay-theme",
   "crates/yazi-specta",
   "crates/vst-host",
 ]

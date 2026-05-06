@@ -1,3 +1,31 @@
+# 2026-05-05 - Crates Folder Audit And Archive Cleanup
+
+- Audited `crates/` against `cargo metadata` from `src-tauri` instead of guessing from folder names.
+- Added `scripts/devtools/audit-crates.mjs` so future agents can recompute the same classification across Windows, macOS, and Linux with one command:
+  - `node scripts/devtools/audit-crates.mjs`
+- Added `crates/README.md` as the durable high-signal map for what belongs in the live `crates/` tree:
+  - active app-wired crates
+  - target-specific but still manifest-wired crates
+  - the vendored Yazi and FFmpeg suite roots that stay live
+  - the dedicated `crates/tauri-plugins/` staging lane
+- Added `reference/crates/README.md` and moved dormant code there:
+  - `reference/crates/explorer/`
+  - `reference/crates/greeblefs/`
+  - `reference/crates/overlay-theme/`
+  - `reference/crates/ffmpeg-suite-rs/rust_ffplay/`
+  - `reference/crates/file-opening-linux/`
+- Live workspace cleanup:
+  - removed `crates/overlay-theme` from the root Cargo workspace because nothing in `src-tauri` or the current supported-target app graph depends on it
+  - removed `crates/file-opening-linux` from the root Cargo workspace and Rust test-suite platform rules because the app no longer depends on it on any supported target
+  - removed `rust_ffplay` from `crates/ffmpeg-suite-rs/Cargo.toml` because the app only uses `rust_ffmpeg`, `rust_ffprobe`, and `ffmpeg-common`
+  - updated `crates/ffmpeg-suite-rs/README.md` so the live suite docs no longer claim `rust_ffplay` is still part of the active local workspace
+- Remaining known mixed area:
+  - `crates/fileexplorer/crates/` still contains a dormant upstream Yazi subset (`yazi-actor`, `yazi-build`, `yazi-cli`, `yazi-core`, `yazi-fm`, `yazi-packing`, `yazi-watcher`) according to the new audit. That cleanup was not carried through in this pass because the generated Yazi binding manifest currently still enumerates those crate names and `src/generated/tauri.ts` already had unrelated worktree edits.
+- Durable rule:
+  - treat `crates/` as a live dependency surface, not a parking lot
+  - if a Rust crate or code bundle is not reachable from `src-tauri` on any supported desktop target and is only being retained for study, move it under `reference/crates/` and document it there
+  - rerun `node scripts/devtools/audit-crates.mjs` before adding new vendored crates so dormant source does not quietly pile back up
+
 # 2026-05-05 - Root Windows New-User Flow Wrapper
 
 - Added the root-level `simulate-new-user-flow.bat` convenience wrapper for the Windows clean-install path.

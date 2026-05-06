@@ -13,11 +13,6 @@ export const rustCargoTestWorkspaceDefinitions = [
 
 export const rustCargoTestPackagePlatformRules = [
   {
-    manifestPathPrefix: 'crates/file-opening-linux/',
-    supportedPlatforms: ['linux'],
-    skipReason: 'Linux-only package',
-  },
-  {
     manifestPathPrefix: 'crates/file-opening-macos/',
     supportedPlatforms: ['darwin'],
     skipReason: 'macOS-only package',

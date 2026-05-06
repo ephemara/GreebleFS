@@ -1,5 +1,5 @@
 [workspace]
-members = ["ffmpeg-common", "rust_ffmpeg", "rust_ffprobe", "rust_ffplay"]
+members = ["ffmpeg-common", "rust_ffmpeg", "rust_ffprobe"]
 resolver = "2"
 
 [workspace.package]
