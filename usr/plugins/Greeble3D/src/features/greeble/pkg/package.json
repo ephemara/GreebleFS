@@ -1,0 +1,16 @@
+{
+  "name": "k-greeble-wasm",
+  "type": "module",
+  "description": "K-Greeble WASM module for web preview - compiled binary protects implementation",
+  "version": "0.1.0",
+  "files": [
+    "k_greeble_wasm_bg.wasm",
+    "k_greeble_wasm.js",
+    "k_greeble_wasm.d.ts"
+  ],
+  "main": "k_greeble_wasm.js",
+  "types": "k_greeble_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

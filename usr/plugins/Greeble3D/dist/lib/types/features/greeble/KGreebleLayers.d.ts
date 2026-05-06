@@ -1,0 +1,1 @@
+export default function KGreebleLayers({ layers, activeLayerId, setActiveLayerId, addLayer, duplicateLayer, deleteLayer, toggleVisibility, selectLayerObject }: any): import("react/jsx-runtime").JSX.Element;

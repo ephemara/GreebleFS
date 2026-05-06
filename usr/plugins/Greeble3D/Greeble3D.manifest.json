@@ -1,0 +1,35 @@
+{
+  "id": "Greeble3D",
+  "displayName": "Greeble3D",
+  "version": "0.1.0",
+  "storage": {
+    "layoutAutoSaveId": "greeble3d-main-layout",
+    "sketchfabTokenKey": "greeble3d:sketchfab-token"
+  },
+  "runtime": {
+    "defaultTitle": "Greeble3D",
+    "showExitButton": false,
+    "exitHref": null
+  },
+  "integrations": {
+    "sketchfab": {
+      "apiBaseUrl": "https://api.sketchfab.com/v3",
+      "searchCount": 24,
+      "downloadableOnly": true,
+      "sortOptions": [
+        "-relevance",
+        "-likeCount",
+        "-viewCount",
+        "-publishedAt",
+        "-createdAt"
+      ]
+    },
+    "wasm": {
+      "globalKey": "__greeble3dWasm",
+      "readyEventName": "greeble3d-wasm-ready",
+      "packageEntry": "./src/features/greeble/pkg/k_greeble_wasm",
+      "sourceDir": "./wasm",
+      "outputDir": "./src/features/greeble/pkg"
+    }
+  }
+}

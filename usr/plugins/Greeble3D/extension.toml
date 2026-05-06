@@ -1,0 +1,9 @@
+id = "greeble3d"
+version = "1"
+name = "Greeble3D"
+description = "Portable Greeble3D modeler mounted as a full workbench panel inside GreebleFS."
+entry = "index.tsx"
+defaultOpen = true
+keepMounted = true
+category = "Custom Workbenches"
+tags = ["3d", "modeler", "workbench", "portable", "sketchfab", "wasm"]

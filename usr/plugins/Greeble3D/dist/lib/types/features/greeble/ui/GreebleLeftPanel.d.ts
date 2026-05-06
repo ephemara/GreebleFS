@@ -1,0 +1,31 @@
+interface LeftPanelProps {
+    mode: string;
+    setMode: (mode: any) => void;
+    buildTab: string;
+    setBuildTab: (tab: any) => void;
+    activeShape: string;
+    setActiveShape: (shape: string) => void;
+    gizmoMode: string;
+    setGizmoMode: (mode: any) => void;
+    gizmoVisible?: boolean;
+    setGizmoVisible?: (visible: boolean) => void;
+    transformSpace: string;
+    setTransformSpace: (space: any) => void;
+    snapEnabled: boolean;
+    setSnapEnabled: (enabled: boolean) => void;
+    selectedObjectUUID: string | null;
+    transformData: any;
+    updateTransformFromUI: (key: string, value: number) => void;
+    greebleParams: any;
+    setGreebleParams: (params: any) => void;
+    primitiveParams: any;
+    setPrimitiveParams: (params: any) => void;
+    titanParams: any;
+    setTitanParams: (params: any) => void;
+    userImports: any[];
+    loadFromStorage: (item: any) => void;
+    handleGlbImport?: (e: any) => void;
+    sharedState: any;
+}
+export declare function GreebleLeftPanel(props: LeftPanelProps): import("react/jsx-runtime").JSX.Element;
+export {};

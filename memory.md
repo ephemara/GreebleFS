@@ -1,3 +1,29 @@
+# 2026-05-05 - Greeble3D Portable Workbench Panel
+
+- Turned `usr/plugins/Greeble3D` from a copied standalone bundle into a host-mountable GreebleFS folder plugin by adding:
+  - `usr/plugins/Greeble3D/extension.toml`
+  - `usr/plugins/Greeble3D/index.tsx`
+- The package entry intentionally iframe-mounts `dist/app/index.html` instead of importing the modeler into the host DOM.
+  - Greeble3D owns global CSS, window listeners, fullscreen behavior, `document.title`, local-storage state, and a standalone Rust/WASM boot path.
+  - Keeping it isolated avoids turning the first workbench experiment into a large app-internals rewrite.
+- `usr/plugins/Greeble3D/vite.config.ts` now builds with a relative asset base outside dev so `dist/app/index.html` can load correctly from `asset://.../usr/plugins/Greeble3D/dist/app/index.html`.
+- `usr/plugins/Greeble3D/README.md` now documents the GreebleFS mounting strategy so future edits do not accidentally revert it.
+- Validation:
+  - Passed: `npm run check`
+  - Passed: `npm run build`
+  - Passed: `npm run build:lib`
+  - Confirmed: rebuilt `dist/app/index.html` now references `./assets/...` instead of `/assets/...`
+- Known non-blocking warnings:
+  - Vite/esbuild still warns about the duplicate `SHAPES.ICOSA` switch case in `usr/plugins/Greeble3D/src/features/greeble/KGreebleEngine.tsx`
+  - The app and library bundles are still large and trigger chunk-size warnings
+- Windows gotcha:
+  - `npm run build:lib` briefly failed once on a transient `rustup target add wasm32-unknown-unknown` rename error under `C:\Users\Admin\.rustup\downloads\...partial`; rerunning the exact same command succeeded without code changes
+- Durable rule:
+  - Treat `usr/plugins/Greeble3D` as a standalone app bundle surfaced through a panel iframe.
+  - Do not "simplify" it into a normal preview adapter or host-DOM component unless the modeler first stops depending on global CSS, fullscreen on `document.documentElement`, window-level input hooks, and standalone bundle assumptions.
+- Next recommended step:
+  - If Explorer or context-menu flows should open specific assets in Greeble3D, add an explicit panel-request / payload / bridge seam on top of the iframe panel instead of replacing the portable mounting strategy.
+
 # 2026-05-05 - Crates Folder Audit And Archive Cleanup
 
 - Audited `crates/` against `cargo metadata` from `src-tauri` instead of guessing from folder names.

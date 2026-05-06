@@ -1,0 +1,1 @@
+export default function KGreebleMats({ materialLibrary, commitMaterial, handleTextureUploadClick, handleTextureUpload, textureInputRef, matParams, setMatParams, layers, activeLayerId }: any): import("react/jsx-runtime").JSX.Element;

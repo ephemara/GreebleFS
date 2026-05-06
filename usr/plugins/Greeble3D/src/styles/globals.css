@@ -1,0 +1,344 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  /* Custom Scrollbar Class */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(155, 155, 155, 0.5);
+    border-radius: 20px;
+    border: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.5);
+  }
+
+  /* Ensure overflow works */
+  .custom-scrollbar {
+    overflow-y: auto;
+  }
+}
+
+/* Remove forced lowercase */
+/* html {
+  text-transform: lowercase;
+} */
+
+/* preserve case for code blocks and inputs */
+code,
+pre,
+input,
+textarea,
+.preserve-case {
+  text-transform: none;
+}
+
+/* selection */
+::selection {
+  background-color: rgba(0, 240, 255, 0.2);
+  color: #ffffff;
+}
+
+/* scrollbar - minimal */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* focus states */
+:focus-visible {
+  outline: 1px solid #00f0ff;
+  outline-offset: 2px;
+}
+
+/* base resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* DISABLE TEXT SELECTION IN UI PANELS - Professional 3D app behavior */
+body, button, div, span, label, p, h1, h2, h3, h4, h5, h6 {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* ALLOW text selection ONLY in inputs, textareas, and editable content */
+input, textarea, [contenteditable="true"], code, pre {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+}
+
+/* Ensure default cursor everywhere else */
+html,
+body {
+  cursor: auto;
+}
+
+body {
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-color: #0a0a0a;
+  color: #e5e5e5;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a:hover {
+  color: #00f0ff;
+}
+
+/* code blocks */
+pre {
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+}
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* inline code */
+:not(pre)>code {
+  background: #1a1a1a;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+}
+
+/* HIDE TOP BAR IN FULLSCREEN MODE */
+:fullscreen .website-topbar { display: none !important; }
+:-webkit-full-screen .website-topbar { display: none !important; }
+:-moz-full-screen .website-topbar { display: none !important; }
+:-ms-fullscreen .website-topbar { display: none !important; }
+
+/* Subtle floating animations for hand-drawn logos */
+@keyframes subtle-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-3px) rotate(0.5deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(-0.3deg);
+  }
+  75% {
+    transform: translateY(-2px) rotate(0.4deg);
+  }
+}
+
+@keyframes subtle-float-delayed {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) rotate(-0.4deg);
+  }
+  50% {
+    transform: translateY(-4px) rotate(0.3deg);
+  }
+  75% {
+    transform: translateY(-3px) rotate(-0.5deg);
+  }
+}
+
+.animate-subtle-float {
+  animation: subtle-float 8s ease-in-out infinite;
+}
+
+.animate-subtle-float-delayed {
+  animation: subtle-float-delayed 9s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* Markdown content styling for KORE page */
+.markdown-content {
+    color: #e5e5e5;
+    line-height: 1.7;
+}
+
+.markdown-content h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #06b6d4;
+    margin-top: 2rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    letter-spacing: -0.02em;
+}
+
+.markdown-content h2 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #06b6d4;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    letter-spacing: -0.01em;
+}
+
+.markdown-content h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #22d3ee;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #67e8f9;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.markdown-content p {
+    color: #d1d5db;
+    margin: 1rem 0;
+}
+
+.markdown-content a {
+    color: #06b6d4;
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.markdown-content a:hover {
+    text-decoration: underline;
+    color: #22d3ee;
+}
+
+.markdown-content code {
+    background: rgba(0, 0, 0, 0.5);
+    color: #67e8f9;
+    padding: 0.2rem 0.4rem;
+    border-radius: 0.25rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9em;
+}
+
+.markdown-content pre {
+    background: #0d1117;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.markdown-content pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font-size: 0.875rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    color: #d1d5db;
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+.markdown-content li {
+    margin: 0.5rem 0;
+}
+
+.markdown-content strong {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+.markdown-content em {
+    color: #9ca3af;
+    font-style: italic;
+}
+
+.markdown-content blockquote {
+    border-left: 4px solid #06b6d4;
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+    color: #9ca3af;
+    font-style: italic;
+}
+
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+}
+
+.markdown-content th {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 700;
+    color: #06b6d4;
+}
+
+.markdown-content td {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.75rem;
+    color: #d1d5db;
+}
+
+.markdown-content img {
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    margin: 1.5rem 0;
+    max-width: 100%;
+    height: auto;
+}
+
+.markdown-content hr {
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin: 2rem 0;
+}
+
+/* Syntax highlighting adjustments for dark theme */
+.markdown-content .hljs {
+    background: transparent !important;
+    padding: 0 !important;
+}
