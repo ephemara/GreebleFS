@@ -1,3 +1,14 @@
+# 2026-05-06 - Explorer Context Menus Rejoined Theme Presentation
+
+- Explorer context-menu rendering now has a dedicated theme-token contract under `--overlay-explorer-context-menu-*`, with defaults emitted from `src/config/explorerTheme.ts` and fallbacks to the older popup tokens. Future theme recipes can tune context-menu background, border, shadow, density metrics, item hover/active colors, icon opacity, disabled opacity, and typography without patching JSX.
+- Runtime explorer menus now accept the active explorer theme menu presentation, not only a renderer preference. Theme `menuPresentation` can drive renderer, fallback renderer, density, material, focus, backdrop, icon, submenu, shape, and motion hints unless a context-specific menu layout explicitly overrides density/show-description behavior.
+- Local explorer menus such as activity-rail hidden-lane menus and chrome customization menus now merge their local intent with the active explorer theme menu presentation instead of hardcoding a balanced classic presentation. This fixes the class of bugs where small local context menus drift away from the active theme while normal file-entry menus still look correct.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerContextMenuRenderer.test.tsx src/test/explorerMenuRuntime.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "hides and restores activity rail lanes through the contextual rail menu" --reporter=dot --testTimeout=30000`
+  - `bun run test:ui-literals` remains red on the existing global baseline and did not report touched files.
+  - `bunx tsc --noEmit --pretty false -p tsconfig.json` remains red in the current dirty `FileExplorer.tsx` working tree at the pre-existing layout-zoom diagnostic around line 22173; no new context-menu-specific diagnostics were observed.
+
 # 2026-05-06 - First-Party Image Workbench Package
 
 - Added `usr/plugins/greeblefs-workbench-image` so image previews participate in the extension-owned first-party workbench chooser alongside folder, archive, audio, video, text, shader, and document workbenches.

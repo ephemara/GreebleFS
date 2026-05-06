@@ -34,6 +34,7 @@ import type {
   ExplorerShellContextMenuItem,
   ExplorerShellContextMenuRequest,
 } from '../../runtime/explorerBackend';
+import type { OverlayContextMenuPresentationOptions } from './overlayContextMenuModel';
 import {
   resolveExplorerPreviewContextMenuActions,
   type ExplorerPreviewContextMenuRegistration,
@@ -60,7 +61,8 @@ export type ExplorerRuntimeMenuNode =
   | ExplorerRuntimeMenuSubmenuNode
   | ExplorerRuntimeMenuSeparatorNode;
 
-export interface ExplorerRuntimeMenuPresentation {
+export interface ExplorerRuntimeMenuPresentation
+  extends OverlayContextMenuPresentationOptions {
   renderer: ExplorerMenuRendererKind;
   fallbackRenderer: ExplorerMenuRendererKind;
   density: 'compact' | 'balanced' | 'touch';
@@ -193,6 +195,7 @@ export interface BuildExplorerRuntimeMenuOptions {
   activeMenuPackId: string | null;
   layoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   themeRendererPreference?: ExplorerMenuRendererKind;
+  themePresentationPreference?: OverlayContextMenuPresentationOptions;
   actions: LoadedExplorerAction[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   previewContextMenuRegistration?: ExplorerPreviewContextMenuRegistration | null;
@@ -541,8 +544,10 @@ function resolvePresentationRenderer(
   invocation: ExplorerMenuInvocationContext,
   layout: ExplorerMenuContextLayout,
   themeRendererPreference?: ExplorerMenuRendererKind,
+  themePresentationPreference?: OverlayContextMenuPresentationOptions,
 ): ExplorerRuntimeMenuPresentation {
   const presentation = menuPack.presentation;
+  const themePresentation = themePresentationPreference ?? {};
   const capabilityRules = presentation.capabilityRules ?? [];
   const matchingRule = capabilityRules.find((rule) => {
     if (rule.when === 'reduced-motion') {
@@ -554,13 +559,25 @@ function resolvePresentationRenderer(
   return {
     renderer:
       matchingRule?.renderer ??
+      themePresentation.renderer ??
       themeRendererPreference ??
       layout.renderer ??
       presentation.renderer ??
       'classic',
-    fallbackRenderer: presentation.fallbackRenderer ?? 'classic',
-    density: layout.density ?? presentation.density ?? 'balanced',
+    fallbackRenderer:
+      themePresentation.fallbackRenderer ??
+      presentation.fallbackRenderer ??
+      'classic',
+    density: layout.density ?? themePresentation.density ?? presentation.density ?? 'balanced',
     showDescriptions: layout.showDescriptions ?? true,
+    shapeLanguage: themePresentation.shapeLanguage ?? presentation.shapeLanguage,
+    motionStyle: themePresentation.motionStyle ?? presentation.motionStyle,
+    materialStyle: themePresentation.materialStyle ?? presentation.materialStyle,
+    iconTreatment: themePresentation.iconTreatment ?? presentation.iconTreatment,
+    submenuBehavior:
+      themePresentation.submenuBehavior ?? presentation.submenuBehavior,
+    focusStyle: themePresentation.focusStyle ?? presentation.focusStyle,
+    backdropStyle: themePresentation.backdropStyle ?? presentation.backdropStyle,
   };
 }
 
@@ -1909,6 +1926,7 @@ export function buildExplorerRuntimeMenu(
       options.invocation,
       layout,
       options.themeRendererPreference,
+      options.themePresentationPreference,
     ),
     nodes: finalizedNodes,
     targetEntries,

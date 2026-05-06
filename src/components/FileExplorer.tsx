@@ -346,6 +346,7 @@ import {
   type ExplorerSideRailContextMenuRequest,
   type OverlayContextMenuNode,
   type OverlayContextMenuOpenRequest,
+  type OverlayContextMenuPresentationOptions,
 } from "./explorer/overlayContextMenuModel";
 import {
   ExplorerSearchLane,
@@ -373,6 +374,7 @@ import {
   resolveExplorerWindowsShellContextMenuRequestForInvocation,
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
+  type ExplorerRuntimeMenuPresentation,
   type ExplorerRuntimeMenuNode,
   type ExplorerRuntimeMenuSubmenuNode,
   type ExplorerWindowsShellContextMenuState,
@@ -1184,11 +1186,36 @@ interface ContextMenuState {
   invocation: ExplorerMenuInvocationContext | null;
   localMenu: {
     nodes: OverlayContextMenuNode[];
-    presentation?: {
-      density?: "compact" | "balanced" | "touch";
-      showDescriptions?: boolean;
-    };
+    presentation?: OverlayContextMenuPresentationOptions;
   } | null;
+}
+
+function resolveThemedLocalContextMenuPresentation(
+  localPresentation: OverlayContextMenuPresentationOptions | undefined,
+  themePresentation: OverlayContextMenuPresentationOptions,
+): ExplorerRuntimeMenuPresentation {
+  return {
+    renderer: localPresentation?.renderer ?? themePresentation.renderer ?? "classic",
+    fallbackRenderer:
+      localPresentation?.fallbackRenderer ??
+      themePresentation.fallbackRenderer ??
+      "classic",
+    density:
+      localPresentation?.density ?? themePresentation.density ?? "balanced",
+    showDescriptions: localPresentation?.showDescriptions ?? true,
+    shapeLanguage:
+      localPresentation?.shapeLanguage ?? themePresentation.shapeLanguage,
+    motionStyle: localPresentation?.motionStyle ?? themePresentation.motionStyle,
+    materialStyle:
+      localPresentation?.materialStyle ?? themePresentation.materialStyle,
+    iconTreatment:
+      localPresentation?.iconTreatment ?? themePresentation.iconTreatment,
+    submenuBehavior:
+      localPresentation?.submenuBehavior ?? themePresentation.submenuBehavior,
+    focusStyle: localPresentation?.focusStyle ?? themePresentation.focusStyle,
+    backdropStyle:
+      localPresentation?.backdropStyle ?? themePresentation.backdropStyle,
+  };
 }
 interface RenameState {
   active: boolean;
@@ -18864,13 +18891,10 @@ export function FileExplorer({
     if (ctxMenu.localMenu) {
       return {
         nodes: ctxMenu.localMenu.nodes,
-        presentation: {
-          renderer: "classic" as const,
-          fallbackRenderer: "classic" as const,
-          density: ctxMenu.localMenu.presentation?.density ?? "balanced",
-          showDescriptions:
-            ctxMenu.localMenu.presentation?.showDescriptions ?? true,
-        },
+        presentation: resolveThemedLocalContextMenuPresentation(
+          ctxMenu.localMenu.presentation,
+          explorerTheme.menuPresentation,
+        ),
       };
     }
 
@@ -18885,6 +18909,7 @@ export function FileExplorer({
       layoutOverridesByContext:
         explorerSettings.contextMenuLayoutOverridesByContext,
       themeRendererPreference: explorerTheme.menuPresentation.renderer,
+      themePresentationPreference: explorerTheme.menuPresentation,
       actions,
       pluginContextMenuItems: combinedPluginContextMenuItems,
       previewContextMenuRegistration: effectivePreviewContextMenuRegistration,
@@ -18898,7 +18923,7 @@ export function FileExplorer({
     ctxMenu.visible,
     explorerSettings.activeMenuPackId,
     explorerSettings.contextMenuLayoutOverridesByContext,
-    explorerTheme.menuPresentation.renderer,
+    explorerTheme.menuPresentation,
     effectivePreviewContextMenuRegistration,
     combinedPluginContextMenuItems,
     explorerMenuRuntimeEnvironment,
@@ -33036,6 +33061,7 @@ export function FileExplorer({
       layoutOverridesByContext:
         explorerSettings.contextMenuLayoutOverridesByContext,
       themeRendererPreference: explorerTheme.menuPresentation.renderer,
+      themePresentationPreference: explorerTheme.menuPresentation,
       actions,
       pluginContextMenuItems: combinedPluginContextMenuItems,
       previewContextMenuRegistration: effectivePreviewContextMenuRegistration,
@@ -33154,7 +33180,7 @@ export function FileExplorer({
     explorerMenuRuntimeEnvironment,
     explorerSettings.activeMenuPackId,
     explorerSettings.contextMenuLayoutOverridesByContext,
-    explorerTheme.menuPresentation.renderer,
+    explorerTheme.menuPresentation,
     isSearchActive,
     menuPacks,
     previewMenuContext,
@@ -34477,6 +34503,7 @@ export function FileExplorer({
         x={ctxMenu.x}
         y={ctxMenu.y}
         nodes={resolvedContextMenu?.nodes ?? []}
+        presentation={resolvedContextMenu?.presentation}
         density={resolvedContextMenu?.presentation.density}
         showDescriptions={resolvedContextMenu?.presentation.showDescriptions}
         onClose={closeContextMenu}

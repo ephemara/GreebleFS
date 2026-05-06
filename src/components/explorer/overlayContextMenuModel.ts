@@ -5,7 +5,10 @@ import type {
   ExplorerActivityLaneId,
   ExplorerActivityRailSide,
 } from "../../config/explorerActivityRail";
-import type { ExplorerMenuTone } from "../../config/explorerContextMenu";
+import type {
+  ExplorerMenuRendererKind,
+  ExplorerMenuTone,
+} from "../../config/explorerContextMenu";
 import type {
   ExplorerChromeControlId,
   ExplorerChromeSurfaceId,
@@ -47,8 +50,17 @@ export type OverlayContextMenuNode =
   | OverlayContextMenuSeparatorNode;
 
 export interface OverlayContextMenuPresentationOptions {
+  renderer?: ExplorerMenuRendererKind;
+  fallbackRenderer?: ExplorerMenuRendererKind;
   density?: OverlayContextMenuDensity;
   showDescriptions?: boolean;
+  shapeLanguage?: string;
+  motionStyle?: string;
+  materialStyle?: string;
+  iconTreatment?: "standard" | "duotone" | "outlined";
+  submenuBehavior?: "sidecar" | "sheet" | "stacked";
+  focusStyle?: "line" | "glow" | "pill";
+  backdropStyle?: "none" | "blur" | "scrim";
 }
 
 export interface OverlayContextMenuOpenRequest {

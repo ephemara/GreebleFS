@@ -7,7 +7,10 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { OverlayContextMenuNode } from './overlayContextMenuModel';
+import type {
+  OverlayContextMenuNode,
+  OverlayContextMenuPresentationOptions,
+} from './overlayContextMenuModel';
 import { resolveExplorerPopupSurfaceStyle } from './explorerPopupStyles';
 
 interface ExplorerContextMenuProps {
@@ -16,6 +19,7 @@ interface ExplorerContextMenuProps {
   y: number;
   nodes: OverlayContextMenuNode[];
   portalRoot?: HTMLElement | null;
+  presentation?: OverlayContextMenuPresentationOptions | null;
   density?: 'compact' | 'balanced' | 'touch';
   showDescriptions?: boolean;
   onClose: () => void;
@@ -32,6 +36,7 @@ interface MenuPanelProps {
     top: number;
     anchorRect?: DOMRect | null;
   };
+  presentation: OverlayContextMenuPresentationOptions;
   openSubmenuPath: string[];
   activeIndexByPath: Record<string, number>;
   iconRenderer: ExplorerContextMenuProps['renderIcon'];
@@ -40,6 +45,42 @@ interface MenuPanelProps {
   onClose: () => void;
   anchorRectsByNodeId: Record<string, DOMRect>;
 }
+
+const contextMenuPanelMetricVariablesByDensity = {
+  compact: {
+    minWidth: 'var(--overlay-explorer-context-menu-compact-min-width)',
+    maxWidth: 'var(--overlay-explorer-context-menu-compact-max-width)',
+    padding: 'var(--overlay-explorer-context-menu-compact-padding)',
+  },
+  balanced: {
+    minWidth: 'var(--overlay-explorer-context-menu-balanced-min-width)',
+    maxWidth: 'var(--overlay-explorer-context-menu-balanced-max-width)',
+    padding: 'var(--overlay-explorer-context-menu-balanced-padding)',
+  },
+  touch: {
+    minWidth: 'var(--overlay-explorer-context-menu-touch-min-width)',
+    maxWidth: 'var(--overlay-explorer-context-menu-touch-max-width)',
+    padding: 'var(--overlay-explorer-context-menu-touch-padding)',
+  },
+} as const;
+
+const contextMenuItemMetricVariablesByDensity = {
+  compact: {
+    gap: 'var(--overlay-explorer-context-menu-compact-item-gap)',
+    padding: 'var(--overlay-explorer-context-menu-compact-item-padding)',
+    fontSize: 'var(--overlay-explorer-context-menu-compact-font-size)',
+  },
+  balanced: {
+    gap: 'var(--overlay-explorer-context-menu-balanced-item-gap)',
+    padding: 'var(--overlay-explorer-context-menu-balanced-item-padding)',
+    fontSize: 'var(--overlay-explorer-context-menu-balanced-font-size)',
+  },
+  touch: {
+    gap: 'var(--overlay-explorer-context-menu-touch-item-gap)',
+    padding: 'var(--overlay-explorer-context-menu-touch-item-padding)',
+    fontSize: 'var(--overlay-explorer-context-menu-touch-font-size)',
+  },
+} as const;
 
 function getPathKey(path: string[]): string {
   return path.length > 0 ? path.join('/') : 'root';
@@ -109,6 +150,7 @@ function MenuPanel({
   density,
   showDescriptions,
   desiredPosition,
+  presentation,
   openSubmenuPath,
   activeIndexByPath,
   iconRenderer,
@@ -117,11 +159,11 @@ function MenuPanel({
   onClose,
   anchorRectsByNodeId,
 }: MenuPanelProps) {
-  const isCompactDensity = density === 'compact';
-  const isTouchDensity = density === 'touch';
   const panelRef = useRef<HTMLDivElement | null>(null);
   const pathKey = getPathKey(path);
   const activeIndex = activeIndexByPath[pathKey] ?? findFirstSelectableIndex(nodes);
+  const panelMetrics = contextMenuPanelMetricVariablesByDensity[density];
+  const itemMetrics = contextMenuItemMetricVariablesByDensity[density];
   const [position, setPosition] = useState(() => ({
     left: desiredPosition.left,
     top: desiredPosition.top,
@@ -153,18 +195,22 @@ function MenuPanel({
       <div
         ref={panelRef}
         data-overlay-explorer-context-menu-panel={pathKey}
+        data-overlay-explorer-context-menu-density={density}
+        data-overlay-explorer-context-menu-material={presentation.materialStyle ?? 'default'}
+        data-overlay-explorer-context-menu-focus-style={presentation.focusStyle ?? 'line'}
         style={{
           ...resolveExplorerPopupSurfaceStyle({
-            minWidth: isCompactDensity ? 208 : isTouchDensity ? 248 : 228,
-            maxWidth: isCompactDensity ? 272 : isTouchDensity ? 336 : 300,
-            maxHeight: 'min(70vh, 640px)',
-            padding: isCompactDensity ? '2px 0' : isTouchDensity ? '6px 0' : '4px 0',
+            materialStyle: presentation.materialStyle,
+            minWidth: panelMetrics.minWidth,
+            maxWidth: panelMetrics.maxWidth,
+            maxHeight: 'var(--overlay-explorer-context-menu-max-height)',
+            padding: panelMetrics.padding,
           }),
           position: 'fixed',
           left: position.left,
           top: position.top,
           zIndex: 10000 + path.length,
-          boxShadow: 'var(--overlay-explorer-ctx-menu-shadow)',
+          boxShadow: 'var(--overlay-explorer-context-menu-shadow)',
         }}
       >
         {nodes.map((node, index) => {
@@ -174,8 +220,8 @@ function MenuPanel({
                 key={node.id}
                 style={{
                   height: 1,
-                  margin: '4px 0',
-                  background: 'var(--overlay-explorer-preview-border)',
+                  margin: 'var(--overlay-explorer-context-menu-separator-margin)',
+                  background: 'var(--overlay-explorer-context-menu-separator)',
                 }}
               />
             );
@@ -217,30 +263,34 @@ function MenuPanel({
                 display: 'grid',
                 gridTemplateColumns: '16px minmax(0, 1fr) auto',
                 alignItems: 'center',
-                gap: isCompactDensity ? 8 : isTouchDensity ? 12 : 10,
+                gap: itemMetrics.gap,
                 width: '100%',
-                padding: isCompactDensity
-                  ? '6px 10px'
-                  : isTouchDensity
-                    ? '10px 14px'
-                    : '7px 12px',
+                padding: itemMetrics.padding,
                 border: 'none',
                 background: active
                   ? node.tone === 'danger'
-                    ? 'var(--overlay-explorer-danger-soft-bg)'
-                    : 'var(--overlay-explorer-chip-active-bg)'
+                    ? 'var(--overlay-explorer-context-menu-item-danger-bg)'
+                    : 'var(--overlay-explorer-context-menu-item-active-bg)'
                   : 'transparent',
                 color:
                   node.tone === 'danger'
-                    ? 'var(--overlay-explorer-danger-text)'
-                    : 'var(--overlay-text-primary)',
+                    ? 'var(--overlay-explorer-context-menu-danger-text)'
+                    : 'var(--overlay-explorer-context-menu-item-text)',
                 cursor: disabled ? 'default' : 'pointer',
-                fontSize: isCompactDensity ? 11 : 12,
+                fontSize: itemMetrics.fontSize,
                 textAlign: 'left',
-                opacity: disabled ? 0.55 : 1,
+                opacity: disabled
+                  ? 'var(--overlay-explorer-context-menu-disabled-opacity)'
+                  : 1,
               }}
             >
-              <span style={{ display: 'flex', alignItems: 'center', opacity: 0.78 }}>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  opacity: 'var(--overlay-explorer-context-menu-icon-opacity)',
+                }}
+              >
                 {iconRenderer(node.iconName)}
               </span>
               <span
@@ -255,9 +305,9 @@ function MenuPanel({
                 {showDescriptions && node.kind === 'command' && node.description ? (
                   <span
                     style={{
-                      color: 'var(--overlay-text-muted)',
-                      fontSize: 10,
-                      lineHeight: 1.2,
+                      color: 'var(--overlay-explorer-context-menu-item-muted)',
+                      fontSize: 'var(--overlay-explorer-context-menu-description-font-size)',
+                      lineHeight: 'var(--overlay-explorer-context-menu-description-line-height)',
                     }}
                   >
                     {node.description}
@@ -269,8 +319,8 @@ function MenuPanel({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  color: 'var(--overlay-text-muted)',
-                  fontSize: 10,
+                  color: 'var(--overlay-explorer-context-menu-item-muted)',
+                  fontSize: 'var(--overlay-explorer-context-menu-shortcut-font-size)',
                 }}
               >
                 {node.kind === 'command' && node.shortcutId ? (
@@ -296,6 +346,7 @@ function MenuPanel({
           }}
           density={density}
           showDescriptions={showDescriptions}
+          presentation={presentation}
           openSubmenuPath={openSubmenuPath}
           activeIndexByPath={activeIndexByPath}
           iconRenderer={iconRenderer}
@@ -315,6 +366,7 @@ export function ExplorerContextMenu({
   y,
   nodes,
   portalRoot,
+  presentation,
   density = 'balanced',
   showDescriptions = true,
   onClose,
@@ -328,6 +380,17 @@ export function ExplorerContextMenu({
   });
 
   const rootNodes = useMemo(() => nodes, [nodes]);
+  const resolvedDensity = presentation?.density ?? density;
+  const resolvedShowDescriptions =
+    presentation?.showDescriptions ?? showDescriptions;
+  const resolvedPresentation = useMemo<OverlayContextMenuPresentationOptions>(
+    () => ({
+      ...(presentation ?? {}),
+      density: resolvedDensity,
+      showDescriptions: resolvedShowDescriptions,
+    }),
+    [presentation, resolvedDensity, resolvedShowDescriptions],
+  );
 
   useEffect(() => {
     if (!visible) {
@@ -461,6 +524,19 @@ export function ExplorerContextMenu({
       tabIndex={-1}
       data-overlay-explorer-floating-surface="true"
       data-overlay-explorer-floating-surface-group="explorer-context-menu"
+      data-overlay-explorer-context-menu-renderer={
+        resolvedPresentation.renderer ?? 'classic'
+      }
+      data-overlay-explorer-context-menu-density={resolvedDensity}
+      data-overlay-explorer-context-menu-shape={
+        resolvedPresentation.shapeLanguage ?? 'classic'
+      }
+      data-overlay-explorer-context-menu-material={
+        resolvedPresentation.materialStyle ?? 'default'
+      }
+      data-overlay-explorer-context-menu-backdrop={
+        resolvedPresentation.backdropStyle ?? 'none'
+      }
       onKeyDown={handleKeyDown}
       style={{
         position: 'fixed',
@@ -472,9 +548,10 @@ export function ExplorerContextMenu({
       <MenuPanel
         nodes={rootNodes}
         path={[]}
-        density={density}
-        showDescriptions={showDescriptions}
+        density={resolvedDensity}
+        showDescriptions={resolvedShowDescriptions}
         desiredPosition={{ left: x, top: y }}
+        presentation={resolvedPresentation}
         openSubmenuPath={openSubmenuPath}
         activeIndexByPath={activeIndexByPath}
         iconRenderer={renderIcon}

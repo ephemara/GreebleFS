@@ -192,4 +192,47 @@ describe('ExplorerContextMenu', () => {
     expect(rootPanel.style.background).toContain('--overlay-explorer-popup-bg');
     expect(rootPanel.style.backdropFilter).toBe('');
   });
+
+  it('exposes theme presentation and dedicated context-menu token hooks', () => {
+    const portalRoot = document.createElement('div');
+    document.body.appendChild(portalRoot);
+
+    render(
+      <ExplorerContextMenu
+        visible
+        x={24}
+        y={24}
+        nodes={[createCommandNode()]}
+        portalRoot={portalRoot}
+        presentation={{
+          renderer: 'hud',
+          fallbackRenderer: 'classic',
+          density: 'compact',
+          showDescriptions: false,
+          materialStyle: 'glass',
+          focusStyle: 'glow',
+          shapeLanguage: 'faceted',
+          backdropStyle: 'blur',
+        }}
+        onClose={() => {}}
+        renderIcon={() => null}
+      />,
+    );
+
+    const overlayRoot = portalRoot.querySelector<HTMLElement>(
+      '[data-overlay-explorer-floating-surface-group="explorer-context-menu"]',
+    );
+    const rootPanel = portalRoot.querySelector<HTMLElement>(
+      '[data-overlay-explorer-context-menu-panel="root"]',
+    );
+
+    expect(overlayRoot?.dataset.overlayExplorerContextMenuRenderer).toBe('hud');
+    expect(overlayRoot?.dataset.overlayExplorerContextMenuDensity).toBe('compact');
+    expect(overlayRoot?.dataset.overlayExplorerContextMenuMaterial).toBe('glass');
+    expect(overlayRoot?.dataset.overlayExplorerContextMenuBackdrop).toBe('blur');
+    expect(rootPanel?.style.background).toContain('--overlay-explorer-context-menu-bg');
+    expect(rootPanel?.style.minWidth).toBe(
+      'var(--overlay-explorer-context-menu-compact-min-width)',
+    );
+  });
 });

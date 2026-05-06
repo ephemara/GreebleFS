@@ -432,6 +432,40 @@ describe('explorerMenuRuntime', () => {
     expect(environment.sendToMobileDownload).toHaveBeenCalledWith(targetEntry);
   });
 
+  it('threads theme menu presentation into runtime menus', () => {
+    const targetEntry = createEntry();
+    const menu = buildExplorerRuntimeMenu({
+      invocation: createInvocation({
+        inputModality: 'pen',
+        primaryEntry: targetEntry,
+        selectedEntries: [targetEntry],
+      }),
+      menuPacks: [createBuiltInExplorerMenuPack()],
+      activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
+      layoutOverridesByContext: {},
+      themePresentationPreference: {
+        renderer: 'hud',
+        fallbackRenderer: 'sheet',
+        density: 'compact',
+        materialStyle: 'glass',
+        focusStyle: 'glow',
+        backdropStyle: 'blur',
+      },
+      actions: [],
+      pluginContextMenuItems: [],
+      environment: createEnvironment(),
+    });
+
+    expect(menu.presentation).toMatchObject({
+      renderer: 'hud',
+      fallbackRenderer: 'sheet',
+      density: 'compact',
+      materialStyle: 'glass',
+      focusStyle: 'glow',
+      backdropStyle: 'blur',
+    });
+  });
+
   it('dispatches multi-select menus without falling back to the entry layout', () => {
     const firstEntry = createEntry();
     const secondEntry = createEntry({
