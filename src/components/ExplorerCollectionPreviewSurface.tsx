@@ -321,9 +321,9 @@ export function ExplorerCollectionPreviewSurface({
     >
       <div
         style={{
-          padding: "10px 14px",
+          padding: "8px 10px",
           borderBottom: "1px solid var(--overlay-explorer-preview-border)",
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 700,
           color: "var(--overlay-text-muted)",
           textTransform: "uppercase",
@@ -331,9 +331,9 @@ export function ExplorerCollectionPreviewSurface({
           background:
             "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 92%, var(--overlay-accent) 8%), var(--overlay-bg-panel))",
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(0, 1fr) auto auto",
           alignItems: "center",
-          gap: 10,
+          gap: 8,
         }}
       >
         <div
@@ -341,11 +341,11 @@ export function ExplorerCollectionPreviewSurface({
             minWidth: 0,
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 6,
             flexWrap: "wrap",
           }}
         >
-          <span>{sectionLabel}</span>
+          <span style={{ whiteSpace: "nowrap", lineHeight: 1.1 }}>{sectionLabel}</span>
           {typeof jumpToFolderEnabled === "boolean" && onToggleJumpToFolder ? (
             <button
               type="button"
@@ -356,8 +356,8 @@ export function ExplorerCollectionPreviewSurface({
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
-                padding: "4px 8px",
+                gap: 5,
+                padding: "3px 7px",
                 borderRadius: 999,
                 border: jumpToFolderEnabled
                   ? "1px solid var(--overlay-explorer-chip-active-border)"
@@ -369,13 +369,13 @@ export function ExplorerCollectionPreviewSurface({
                   ? "var(--overlay-explorer-chip-active-text)"
                   : "var(--overlay-text-dim)",
                 cursor: "pointer",
-                fontSize: 10,
+                fontSize: 9.5,
                 fontWeight: 700,
                 letterSpacing: "0.04em",
                 textTransform: "uppercase",
               }}
             >
-              <FolderTree size={11} strokeWidth={1.8} />
+              <FolderTree size={10} strokeWidth={1.8} />
               {jumpToFolderEnabled ? "Jump On" : "Jump Off"}
             </button>
           ) : null}
@@ -386,12 +386,12 @@ export function ExplorerCollectionPreviewSurface({
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 6,
-            padding: 4,
+            gap: 4,
+            padding: 3,
             borderRadius: 999,
             border: "1px solid var(--overlay-explorer-chip-border)",
             background: "var(--overlay-explorer-chip-bg)",
-            justifySelf: "center",
+            justifySelf: "end",
           }}
         >
           {explorerCollectionPreviewModes.map((modeDefinition) => {
@@ -411,8 +411,8 @@ export function ExplorerCollectionPreviewSurface({
                   })
                 }
                 style={{
-                  width: 28,
-                  height: 28,
+                  width: 26,
+                  height: 26,
                   borderRadius: 999,
                   border: isActive
                     ? "1px solid var(--overlay-explorer-chip-active-border)"
@@ -430,7 +430,7 @@ export function ExplorerCollectionPreviewSurface({
                     "transform 140ms ease, background 140ms ease, border-color 140ms ease",
                 }}
               >
-                <Icon size={14} strokeWidth={1.8} />
+                <Icon size={13} strokeWidth={1.8} />
               </button>
             );
           })}
@@ -438,11 +438,12 @@ export function ExplorerCollectionPreviewSurface({
         <div
           style={{
             justifySelf: "end",
-            padding: "3px 8px",
+            padding: "2px 7px",
             borderRadius: 999,
             border: "1px solid var(--overlay-explorer-chip-border)",
             background: "var(--overlay-explorer-chip-bg)",
             color: "var(--overlay-text-muted)",
+            lineHeight: 1.2,
           }}
         >
           {visibleCountLabel}

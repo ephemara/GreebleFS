@@ -140,10 +140,10 @@ export function ExplorerFolderPreview({
     >
       <div
         style={{
-          padding: "24px",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
+          padding: "14px 16px 12px",
+          display: "grid",
+          gridTemplateColumns: "auto minmax(0, 1fr)",
+          alignItems: "start",
           gap: 12,
           borderBottom: "1px solid var(--overlay-explorer-preview-border)",
           background:
@@ -152,24 +152,23 @@ export function ExplorerFolderPreview({
       >
         <div
           style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
+            width: 38,
+            height: 38,
+            borderRadius: 10,
             background: "var(--overlay-explorer-chip-bg)",
             display: "grid",
             placeItems: "center",
             color: "var(--overlay-accent)",
-            boxShadow: "0 14px 30px color-mix(in srgb, black 24%, transparent)",
+            boxShadow: "0 10px 22px color-mix(in srgb, black 22%, transparent)",
           }}
         >
-          <ExplorerPreviewEntryIconImage src={folderHeaderIconSrc} size={28} />
+          <ExplorerPreviewEntryIconImage src={folderHeaderIconSrc} size={22} />
         </div>
-        <div style={{ textAlign: "center", display: "grid", gap: 4 }}>
+        <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
           <div
             style={{
               fontSize: 14,
               fontWeight: 600,
-              maxWidth: 320,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -180,12 +179,11 @@ export function ExplorerFolderPreview({
           </div>
           <div
             style={{
-              fontSize: 11,
+              fontSize: 10.5,
               color: "var(--overlay-text-dim)",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
+              gap: 6,
               flexWrap: "wrap",
             }}
           >
@@ -202,11 +200,11 @@ export function ExplorerFolderPreview({
             style={{
               fontSize: 10,
               color: "var(--overlay-text-muted)",
-              maxWidth: 360,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               fontFamily: "monospace",
+              lineHeight: 1.2,
             }}
           >
             {folderPath}
