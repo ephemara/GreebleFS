@@ -46,6 +46,7 @@ export type ExplorerContextMenuItemGroup =
 export type ExplorerBuiltInContextMenuActionId =
   | 'open'
   | 'open-with'
+  | 'windows-shell-actions'
   | 'open-admin'
   | 'open-terminal'
   | 'open-aquarium'
@@ -1292,6 +1293,27 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
       execution: { kind: 'built-in', actionId: 'open-with' },
       tone: 'safe',
       supportsQuickSlot: true,
+      behavior: 'resolver',
+    },
+    {
+      id: 'built-in.windows-shell-actions',
+      title: 'Windows Actions',
+      contexts: [
+        'entry',
+        'background',
+        'multi-select',
+        'search-result',
+        'preview-pane',
+      ],
+      appliesTo: 'any',
+      group: 'system',
+      defaultOrder: 25,
+      priority: 25,
+      source: 'built-in',
+      iconName: 'Puzzle',
+      execution: { kind: 'built-in', actionId: 'windows-shell-actions' },
+      tone: 'safe',
+      supportsQuickSlot: false,
       behavior: 'resolver',
     },
     {

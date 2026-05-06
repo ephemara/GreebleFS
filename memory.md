@@ -1,3 +1,33 @@
+# 2026-05-05 - Explorer Windows Actions Native Shell Import
+
+- Added a first-class Explorer `Windows Actions` resolver submenu so GreebleFS can import and execute the user's current Windows context-menu actions instead of hand-authoring a partial duplicate list.
+- Native shell-menu truth now lives in `src-tauri/src/open_with/windows/shell_menu.rs`.
+  - The Windows host resolves real Explorer context menus through the COM `IContextMenu` path for three target shapes: single entry, multi-select, and folder background.
+  - Imported items preserve submenu hierarchy, icon payloads, ids, and verbs, so the OS submenu tree itself becomes the applicable category structure shown in GreebleFS.
+  - Invocation re-queries the menu and dispatches through the native command id/verb path, with a single-entry fallback to `ShellExecuteExW` when a shell verb needs it.
+- Added a typed request/invoke bridge across the stack:
+  - `src-tauri/src/open_with/types.rs`
+  - `src-tauri/src/open_with/mod.rs`
+  - `src-tauri/src/specta_bindings.rs`
+  - `src/generated/tauri.ts`
+  - `src/runtime/explorerBackend.ts`
+- Explorer UI/runtime wiring now treats Windows shell actions like the existing `Open With` resolver instead of a bespoke menu branch:
+  - `src/components/explorer/explorerMenuRuntime.ts` exposes the built-in `windows-shell-actions` resolver and recursively maps imported shell items into runtime submenu/command nodes
+  - `src/components/FileExplorer.tsx` prefetches shell menus for entry, preview/search-result selection, multi-select, and folder-background contexts and caches them by deterministic request key
+  - `src/components/SettingsPage.tsx` previews the same imported tree in the context-menu composer
+  - `src/components/explorer/explorerCommandLibrary.tsx` plus the live menu/icon helpers now render native shell icon data URLs
+  - `usr/profiles/default/menu-packs/greeblefs-classic/menu-pack.json` and the built-in fallback pack now place `built-in.windows-shell-actions` across entry, background, multi-select, search-result, and preview-pane contexts
+- Durable rules:
+  - Prefer the native shell `IContextMenu` path over registry scraping whenever Explorer parity matters. Registry-only imports lose dynamic verbs, extended verbs, submenu grouping, and correct multi-select/background behavior.
+  - Treat the imported submenu tree as the category model for Windows actions. Do not flatten it unless the product intentionally wants to diverge from Explorer.
+  - If `src/generated/tauri.ts` already has unrelated dirt, patch only the touched command/type surface or regenerate bindings only when it is safe to overwrite the file.
+- Validation:
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts --reporter=dot`
+  - Passed: filtered touched-file TypeScript sweep for the Explorer Windows-actions files returned `NO_TOUCHED_FILE_TYPE_ERRORS`
+- Next recommended step:
+  - Add user-level pin/hide/relabel controls for imported Windows verbs per menu context if product wants curation on top of the raw Explorer shell tree.
+
 # 2026-05-06 - Greeble3D Windows Asset URL Fix
 
 - Fixed the first live regression in the new `usr/plugins/Greeble3D` workbench wrapper: the iframe no longer points at the raw `api.assets.resolveUrl('dist/app/index.html')` output on Windows.

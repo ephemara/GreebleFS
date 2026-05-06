@@ -332,7 +332,6 @@ import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerActivityRail } from "./explorer/ExplorerActivityRail";
-import { ExplorerDockLayoutAdapter } from "./explorer/ExplorerDockLayoutAdapter";
 import {
   ExplorerSearchLane,
   type ExplorerUtilitySearchResult,
@@ -350,8 +349,11 @@ import { ExplorerTaskCenterContent } from "./explorer/ExplorerTaskCenterContent"
 import { ExplorerWorkflowModal } from "./explorer/ExplorerWorkflowModal";
 import {
   buildExplorerRuntimeMenu,
+  resolveExplorerWindowsShellContextMenuRequest,
+  resolveExplorerWindowsShellContextMenuRequestForInvocation,
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
+  type ExplorerWindowsShellContextMenuState,
   type ExplorerRuntimeMenuNode,
 } from "./explorer/explorerMenuRuntime";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
@@ -501,8 +503,13 @@ import {
 } from "../store/settingsStore";
 import type { SettingsSectionKey } from "../config/settingsNavigation";
 import {
-  explorerActivityRailDefinitionsBySide,
+  defaultExplorerActivityLanePlacementById,
+  getExplorerActivityLaneDefinitionsForRailSide,
+  moveExplorerActivityLane,
   type ExplorerActivityLaneId,
+  type ExplorerActivityLaneOrderBySide,
+  type ExplorerActivityLanePlacementById,
+  type ExplorerActivityRailSide,
 } from "../config/explorerActivityRail";
 import type { LoadedExplorerHomePack } from "../config/homePackages";
 import {
@@ -579,6 +586,7 @@ import {
   type ExplorerItemProperties,
   type ExplorerSavedSearch,
   type ExplorerSearchModeValue,
+  type ExplorerShellContextMenuInvokeRequest,
   type ExplorerSemanticIndexSummaryValue,
   type ExplorerSemanticSearchDiagnosticsValue,
   type ExplorerSemanticSearchResultValue,
@@ -739,6 +747,7 @@ const EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENABLED =
   EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE === "1" ||
   EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE === "true";
 const EXPLORER_OPEN_WITH_REQUEST_TIMEOUT_MS = 4000;
+const EXPLORER_WINDOWS_SHELL_ACTIONS_REQUEST_TIMEOUT_MS = 4000;
 const EXPLORER_TEXT_DRAFT_SCOPE = "text";
 const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
 const explorerStringDraftSerializer = createStringExplorerDraftSerializer();
@@ -3297,6 +3306,18 @@ function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
 // ─── Context menu ─────────────────────────────────────────────────────────────
 
 function resolveContextMenuIcon(iconName?: string): React.ReactNode {
+  if (iconName?.startsWith("data:image/")) {
+    return (
+      <img
+        src={iconName}
+        alt=""
+        width={13}
+        height={13}
+        style={{ width: 13, height: 13, objectFit: "contain" }}
+      />
+    );
+  }
+
   switch (iconName) {
     case "Clipboard":
       return <Clipboard size={13} />;
@@ -4229,6 +4250,7 @@ function PreviewPanel({
   appearance,
   preview,
   width,
+  fillAvailableWidth = false,
   placement,
   presentationMode,
   previewLocked,
@@ -4252,6 +4274,7 @@ function PreviewPanel({
   previewWorkbenchResolutionSource,
   onClose,
   onWidthChange,
+  showResizeHandle = true,
   onOpenPreviewWorkbench,
   onSetPreviewWorkbenchDefault,
   onTextChange,
@@ -4312,6 +4335,7 @@ function PreviewPanel({
   appearance?: ResolvedOverlayAppearance;
   preview: PreviewState;
   width: number;
+  fillAvailableWidth?: boolean;
   placement: ExplorerPreviewPlacement;
   presentationMode: ExplorerPreviewSplitMode;
   previewLocked: boolean;
@@ -4337,6 +4361,7 @@ function PreviewPanel({
     | null;
   onClose: () => void;
   onWidthChange: (width: number) => void;
+  showResizeHandle?: boolean;
   onOpenPreviewWorkbench: (workbenchId: string) => void | Promise<void>;
   onSetPreviewWorkbenchDefault: (workbenchId: string) => void | Promise<void>;
   onTextChange: (path: string, content: string) => void;
@@ -6105,11 +6130,12 @@ function PreviewPanel({
     }),
   };
   const previewShellBaseStyle: CSSProperties = {
-    width,
+    width: fillAvailableWidth ? "100%" : width,
     background: "var(--overlay-explorer-preview-bg)",
     display: "flex",
     flexDirection: "column",
-    flexShrink: 0,
+    flex: fillAvailableWidth ? "1 1 0" : undefined,
+    flexShrink: fillAvailableWidth ? 1 : 0,
     overflow: "hidden",
     position: "relative",
   };
@@ -6203,25 +6229,28 @@ function PreviewPanel({
           : previewShellStyle.boxShadow,
       }}
     >
-      {/* Drag handle */}
-      <div
-        onMouseDown={onMouseDown}
-        data-overlay-explorer-preview-resize-handle="true"
-        style={{
-          position: "absolute",
-          [dragHandleSide]: 0,
-          top: 0,
-          bottom: 0,
-          width: 4,
-          cursor: "col-resize",
-          zIndex: 10,
-          background: "transparent",
-        }}
-        onMouseEnter={(e) =>
-          (e.currentTarget.style.background = `${EXP.accent}55`)
-        }
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-      />
+      {showResizeHandle ? (
+        <div
+          onMouseDown={onMouseDown}
+          data-overlay-explorer-preview-resize-handle="true"
+          style={{
+            position: "absolute",
+            [dragHandleSide]: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            cursor: "col-resize",
+            zIndex: 10,
+            background: "transparent",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = `${EXP.accent}55`)
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
+        />
+      ) : null}
       {/* Header */}
       <div
         style={{
@@ -8548,6 +8577,77 @@ const StandardExplorerVirtualSurface = React.memo(
   },
 );
 
+const EXPLORER_SIDE_TERMINAL_WIDTH_BOUNDS = {
+  min: 320,
+  max: 840,
+  default: 380,
+} as const;
+
+const explorerActionsHostLaneIdSet = new Set<ExplorerActivityLaneId>([
+  "actions",
+  "customize",
+]);
+
+const explorerCompatibilityActivityLaneIdSet = new Set<ExplorerActivityLaneId>([
+  "files",
+  "search",
+  "semantic",
+  "tasks",
+  "terminal",
+]);
+
+interface ExplorerActivityDockWidthBounds {
+  min: number;
+  max: number;
+  default: number;
+}
+
+function uniqueExplorerActivityLaneIds(
+  laneIds: readonly ExplorerActivityLaneId[],
+): ExplorerActivityLaneId[] {
+  const seen = new Set<ExplorerActivityLaneId>();
+  const normalized: ExplorerActivityLaneId[] = [];
+  for (const laneId of laneIds) {
+    if (seen.has(laneId)) {
+      continue;
+    }
+    seen.add(laneId);
+    normalized.push(laneId);
+  }
+  return normalized;
+}
+
+function setExplorerActivityLaneOpen(
+  laneIds: readonly ExplorerActivityLaneId[],
+  laneId: ExplorerActivityLaneId,
+  open: boolean,
+): ExplorerActivityLaneId[] {
+  if (open) {
+    return uniqueExplorerActivityLaneIds([...laneIds, laneId]);
+  }
+  return laneIds.filter((candidateLaneId) => candidateLaneId !== laneId);
+}
+
+function replaceExplorerActionsHostLane(
+  laneIds: readonly ExplorerActivityLaneId[],
+  nextLaneId: "actions" | "customize" | null,
+): ExplorerActivityLaneId[] {
+  const filteredLaneIds = laneIds.filter(
+    (laneId) => !explorerActionsHostLaneIdSet.has(laneId),
+  );
+  return nextLaneId == null ? filteredLaneIds : [...filteredLaneIds, nextLaneId];
+}
+
+function areExplorerActivityLaneIdListsEqual(
+  left: readonly ExplorerActivityLaneId[],
+  right: readonly ExplorerActivityLaneId[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((laneId, index) => laneId === right[index])
+  );
+}
+
 export function FileExplorer({
   theme,
   appearance,
@@ -8602,6 +8702,7 @@ export function FileExplorer({
     getHomeDir: getExplorerHomeDir,
     getItemProperties: getExplorerItemProperties,
     getAssociatedPrograms: getExplorerAssociatedPrograms,
+    getShellContextMenu: getExplorerShellContextMenu,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
     isCloudPath: isCloudExplorerPath,
     listLocation: listExplorerLocation,
@@ -8613,6 +8714,7 @@ export function FileExplorer({
     openPath: openExplorerPath,
     openWithDialog: openExplorerPathWithDialog,
     openPathWithProgram: openExplorerPathWithProgram,
+    invokeShellContextMenuItem: invokeExplorerShellContextMenuItem,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
     readTextFile: readExplorerTextFile,
@@ -8750,16 +8852,6 @@ export function FileExplorer({
       unregisterChromeEditSurface: state.unregisterChromeEditSurface,
       updateChromeEditDraft: state.updateChromeEditDraft,
     })),
-  );
-  const storedSourcesVisible = useExplorerStore(
-    (state) =>
-      state.sessions[instanceId]?.sourcesVisible ??
-      defaultExplorerSession.sourcesVisible,
-  );
-  const storedActionsVisible = useExplorerStore(
-    (state) =>
-      state.sessions[instanceId]?.actionsVisible ??
-      defaultExplorerSession.actionsVisible,
   );
   const storedPreviewEnabled = useExplorerStore(
     (state) =>
@@ -8984,7 +9076,93 @@ export function FileExplorer({
     history: [...initialSession.history],
     historyIdx: initialSession.historyIdx,
   });
-  const actionsPaneAutoOpenedForCustomizeRef = useRef(false);
+  const actionsPaneRestoreModeAfterCustomizeRef = useRef<
+    "close" | "actions" | null
+  >(null);
+  const resolvedInitialSidebarWidth = (() => {
+    const width =
+      typeof initialSession.sidebarWidth === "number"
+        ? initialSession.sidebarWidth
+        : sidebarBounds.defaultWidth;
+    return Math.max(
+      sidebarBounds.minWidth,
+      Math.min(sidebarBounds.maxWidth, width),
+    );
+  })();
+  const resolvedInitialPreviewWidth = (() => {
+    if (typeof initialSession.previewWidth === "number") {
+      return Math.max(
+        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+        Math.min(
+          EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+          initialSession.previewWidth,
+        ),
+      );
+    }
+    return Math.max(
+      EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      Math.min(
+        EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+        Math.round(explorerTheme.metrics.previewWidth),
+      ),
+    );
+  })();
+  const resolvedInitialActionsWidth = (() => {
+    if (typeof initialSession.actionsWidth === "number") {
+      return Math.max(
+        EXPLORER_ACTIONS_WIDTH_BOUNDS.min,
+        Math.min(
+          EXPLORER_ACTIONS_WIDTH_BOUNDS.max,
+          initialSession.actionsWidth,
+        ),
+      );
+    }
+    return EXPLORER_ACTIONS_WIDTH_BOUNDS.default;
+  })();
+  const resolveInitialActivitySideWidth = (
+    side: ExplorerActivityRailSide,
+  ): number => {
+    const explicitWidth =
+      side === "left"
+        ? initialSession.leftActivityDockWidth
+        : initialSession.rightActivityDockWidth;
+    if (typeof explicitWidth === "number" && Number.isFinite(explicitWidth)) {
+      return explicitWidth;
+    }
+    const openLaneIdSet = new Set(initialSession.openActivityLaneIds);
+    const orderedOpenLaneIds = initialSession.activityLaneOrderBySide[side].filter(
+      (laneId) => openLaneIdSet.has(laneId),
+    );
+    const fallbackLaneIds =
+      orderedOpenLaneIds.length > 0
+        ? orderedOpenLaneIds
+        : initialSession.activityLaneOrderBySide[side].slice(0, 1);
+    return fallbackLaneIds.reduce((sum, laneId) => {
+      switch (laneId) {
+        case "files":
+          return sum + resolvedInitialSidebarWidth;
+        case "search":
+        case "semantic":
+        case "tasks":
+          return (
+            sum +
+            Math.max(
+              Math.max(300, sidebarBounds.minWidth),
+              Math.min(Math.max(sidebarBounds.maxWidth, 560), resolvedInitialSidebarWidth),
+            )
+          );
+        case "preview":
+          return sum + resolvedInitialPreviewWidth;
+        case "actions":
+        case "customize":
+          return sum + resolvedInitialActionsWidth;
+        case "terminal":
+          return sum + EXPLORER_SIDE_TERMINAL_WIDTH_BOUNDS.default;
+        default:
+          return sum;
+      }
+    }, 0);
+  };
   const [currentPath, setCurrentPath] = useState(
     () => initialSession.currentPath,
   );
@@ -9018,46 +9196,24 @@ export function FileExplorer({
   const [historyIdx, setHistoryIdx] = useState(() => initialSession.historyIdx);
   const historyRef = useRef(history);
   const historyIdxRef = useRef(historyIdx);
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const width =
-      typeof initialSession.sidebarWidth === "number"
-        ? initialSession.sidebarWidth
-        : sidebarBounds.defaultWidth;
-    return Math.max(
-      sidebarBounds.minWidth,
-      Math.min(sidebarBounds.maxWidth, width),
-    );
-  });
-  const [previewWidth, setPreviewWidth] = useState(() => {
-    if (typeof initialSession.previewWidth === "number") {
-      return Math.max(
-        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-        Math.min(
-          EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
-          initialSession.previewWidth,
-        ),
-      );
-    }
-    return Math.max(
-      EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-      Math.min(
-        EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
-        Math.round(explorerTheme.metrics.previewWidth),
-      ),
-    );
-  });
-  const [actionsWidth, setActionsWidth] = useState(() => {
-    if (typeof initialSession.actionsWidth === "number") {
-      return Math.max(
-        EXPLORER_ACTIONS_WIDTH_BOUNDS.min,
-        Math.min(
-          EXPLORER_ACTIONS_WIDTH_BOUNDS.max,
-          initialSession.actionsWidth,
-        ),
-      );
-    }
-    return EXPLORER_ACTIONS_WIDTH_BOUNDS.default;
-  });
+  const [leftActivityDockWidth, setLeftActivityDockWidthState] = useState(
+    () => resolveInitialActivitySideWidth("left"),
+  );
+  const [rightActivityDockWidth, setRightActivityDockWidthState] = useState(
+    () => resolveInitialActivitySideWidth("right"),
+  );
+  const [openActivityLaneIds, setOpenActivityLaneIds] = useState<
+    ExplorerActivityLaneId[]
+  >(() => [...initialSession.openActivityLaneIds]);
+  const [activityLanePlacementById, setActivityLanePlacementById] = useState<
+    ExplorerActivityLanePlacementById
+  >(() => ({ ...initialSession.activityLanePlacementById }));
+  const [activityLaneOrderBySide, setActivityLaneOrderBySide] = useState<
+    ExplorerActivityLaneOrderBySide
+  >(() => ({
+    left: [...initialSession.activityLaneOrderBySide.left],
+    right: [...initialSession.activityLaneOrderBySide.right],
+  }));
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [entrySizes, setEntrySizes] = useState<
     Record<string, EntryStorageInfo>
@@ -9130,14 +9286,8 @@ export function FileExplorer({
   );
   const [previewSplitMode, setPreviewSplitMode] =
     useState<ExplorerPreviewSplitMode>(() => initialSession.previewSplitMode);
-  const [sourcesVisible, setSourcesVisible] = useState(
-    () => initialSession.sourcesVisible,
-  );
   const [activeActivityLane, setActiveActivityLane] =
     useState<ExplorerActivityLaneId>(() => initialSession.activeActivityLane);
-  const [activityPaneVisible, setActivityPaneVisible] = useState(
-    () => initialSession.activityPaneVisible,
-  );
   const [layoutBandMetricsDraft, setLayoutBandMetricsDraft] =
     useState<ExplorerLayoutBandMetrics>(
       () => resolvedExplorerLayout?.bandMetrics ?? {},
@@ -9158,9 +9308,6 @@ export function FileExplorer({
     activeExplorerBandResizeMetric,
     setActiveExplorerBandResizeMetric,
   ] = useState<keyof ExplorerLayoutBandMetrics | null>(null);
-  const [actionsVisible, setActionsVisible] = useState(
-    () => initialSession.actionsVisible,
-  );
   const [actionsPaneScopeId, setActionsPaneScopeId] = useState<
     "selection" | "current-folder" | "preview"
   >("selection");
@@ -9228,6 +9375,11 @@ export function FileExplorer({
     Record<string, ExplorerOpenWithProgramsState | undefined>
   >({});
   const openWithProgramsRequestIdRef = useRef(0);
+  const [windowsShellContextMenusByRequestKey, setWindowsShellContextMenusByRequestKey] =
+    useState<Record<string, ExplorerWindowsShellContextMenuState | undefined>>(
+      {},
+    );
+  const windowsShellContextMenuRequestIdRef = useRef(0);
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showExplorerLayoutCommandMenu, setShowExplorerLayoutCommandMenu] =
     useState(false);
@@ -9276,6 +9428,12 @@ export function FileExplorer({
     setExplorerTerminalReportedWorkingDirectory,
   ] = useState<string | null>(null);
   const [explorerTerminalFocusRequestKey, setExplorerTerminalFocusRequestKey] =
+    useState(0);
+  const [sideExplorerTerminalMounted, setSideExplorerTerminalMounted] =
+    useState(false);
+  const [sideExplorerTerminalCommandRequest, setSideExplorerTerminalCommandRequest] =
+    useState<TerminalOverlayCommandRequest | null>(null);
+  const [sideExplorerTerminalFocusRequestKey, setSideExplorerTerminalFocusRequestKey] =
     useState(0);
   const [pdfPreviewChromeState, setPdfPreviewChromeState] =
     useState<ExplorerPdfWorkbenchChromeState | null>(null);
@@ -9529,6 +9687,9 @@ export function FileExplorer({
   const previewTerminalCommandSequenceRef = useRef(0);
   const lastExplorerTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastExplorerTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
+  const lastSideExplorerTerminalShellReportedCwdRef = useRef<string | null>(null);
+  const lastSideExplorerTerminalExplorerAppliedCwdRef =
+    useRef<string | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const lastWorkspaceRevealSequenceRef = useRef(0);
@@ -9700,10 +9861,11 @@ export function FileExplorer({
     !currentPathIsVirtual;
   const explorerSupportsAnyDropTarget =
     currentLocationSupportsMutation || activePreviewDropTarget != null;
-  const previewTerminalNamespace = useMemo(
-    () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+  const sanitizedExplorerInstanceId = useMemo(
+    () => String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-"),
     [instanceId],
   );
+  const previewTerminalNamespace = `preview-${sanitizedExplorerInstanceId}`;
   const previewTerminalWorkingDirectory =
     currentPathIsCloud || currentPathIsVirtual
       ? null
@@ -9711,19 +9873,288 @@ export function FileExplorer({
           (preview.scriptPreview != null || preview.pythonPreview != null)
         ? (getPathParent(preview.path) ?? currentPath)
         : currentPath;
-  const explorerTerminalNamespace = useMemo(
-    () =>
-      `explorer-terminal-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
-    [instanceId],
-  );
+  const explorerTerminalNamespace =
+    `explorer-terminal-${sanitizedExplorerInstanceId}`;
+  const sideExplorerTerminalNamespace =
+    `explorer-side-terminal-${sanitizedExplorerInstanceId}`;
   const explorerTerminalWorkingDirectory =
     currentPathIsCloud || currentPathIsVirtual ? null : currentPath;
+  const resolveExplorerActivityRailSideForLane = useCallback(
+    (laneId: ExplorerActivityLaneId): ExplorerActivityRailSide =>
+      activityLanePlacementById[laneId] ??
+      defaultExplorerActivityLanePlacementById[laneId],
+    [activityLanePlacementById],
+  );
+  const openActivityLaneIdSet = useMemo(
+    () => new Set(openActivityLaneIds),
+    [openActivityLaneIds],
+  );
+  const orderedOpenActivityLaneIdsBySide = useMemo(
+    () => ({
+      left: activityLaneOrderBySide.left.filter((laneId) =>
+        openActivityLaneIdSet.has(laneId),
+      ),
+      right: activityLaneOrderBySide.right.filter((laneId) =>
+        openActivityLaneIdSet.has(laneId),
+      ),
+    }),
+    [activityLaneOrderBySide.left, activityLaneOrderBySide.right, openActivityLaneIdSet],
+  );
+  const previewOpen = openActivityLaneIdSet.has("preview");
+  const sourcesVisible = openActivityLaneIdSet.has("files");
+  const actionsVisible = openActivityLaneIds.some((laneId) =>
+    explorerActionsHostLaneIdSet.has(laneId),
+  );
+  const activityPaneVisible = openActivityLaneIds.some((laneId) =>
+    explorerCompatibilityActivityLaneIdSet.has(laneId),
+  );
+  const activeActionsHostLaneId = useMemo<"actions" | "customize" | null>(() => {
+    const resolvedLaneId = openActivityLaneIds.find((laneId) =>
+      explorerActionsHostLaneIdSet.has(laneId),
+    );
+    return resolvedLaneId === "customize"
+      ? "customize"
+      : resolvedLaneId === "actions"
+        ? "actions"
+        : null;
+  }, [openActivityLaneIds]);
+  const getExplorerActivityDockWidthBounds = useCallback(
+    (laneId: ExplorerActivityLaneId): ExplorerActivityDockWidthBounds => {
+      switch (laneId) {
+        case "files":
+          return {
+            min: sidebarBounds.minWidth,
+            max: sidebarBounds.maxWidth,
+            default: resolvedInitialSidebarWidth,
+          };
+        case "search":
+        case "semantic":
+        case "tasks":
+          return {
+            min: Math.max(300, sidebarBounds.minWidth),
+            max: Math.max(sidebarBounds.maxWidth, 560),
+            default: Math.max(
+              Math.max(300, sidebarBounds.minWidth),
+              Math.min(
+                Math.max(sidebarBounds.maxWidth, 560),
+                resolvedInitialSidebarWidth,
+              ),
+            ),
+          };
+        case "preview":
+          return {
+            min: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+            max: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+            default: resolvedInitialPreviewWidth,
+          };
+        case "actions":
+        case "customize":
+          return {
+            min: EXPLORER_ACTIONS_WIDTH_BOUNDS.min,
+            max: EXPLORER_ACTIONS_WIDTH_BOUNDS.max,
+            default: resolvedInitialActionsWidth,
+          };
+        case "terminal":
+          return EXPLORER_SIDE_TERMINAL_WIDTH_BOUNDS;
+        default:
+          return EXPLORER_SIDE_TERMINAL_WIDTH_BOUNDS;
+      }
+    },
+    [
+      resolvedInitialActionsWidth,
+      resolvedInitialPreviewWidth,
+      resolvedInitialSidebarWidth,
+      sidebarBounds.maxWidth,
+      sidebarBounds.minWidth,
+    ],
+  );
+  const getExplorerActivityDockWidthBoundsForSide = useCallback(
+    (side: ExplorerActivityRailSide): ExplorerActivityDockWidthBounds => {
+      const orderedOpenLaneIds = orderedOpenActivityLaneIdsBySide[side];
+      const fallbackLaneIds =
+        activityLaneOrderBySide[side].length > 0
+          ? activityLaneOrderBySide[side].slice(0, 1)
+          : side === "left"
+            ? (["files"] satisfies ExplorerActivityLaneId[])
+            : (["preview"] satisfies ExplorerActivityLaneId[]);
+      const resolvedLaneIds =
+        orderedOpenLaneIds.length > 0 ? orderedOpenLaneIds : fallbackLaneIds;
+      return resolvedLaneIds.reduce<ExplorerActivityDockWidthBounds>(
+        (accumulator, laneId) => {
+          const bounds = getExplorerActivityDockWidthBounds(laneId);
+          return {
+            min: accumulator.min + bounds.min,
+            max: accumulator.max + bounds.max,
+            default: accumulator.default + bounds.default,
+          };
+        },
+        { min: 0, max: 0, default: 0 },
+      );
+    },
+    [
+      activityLaneOrderBySide.left,
+      activityLaneOrderBySide.right,
+      getExplorerActivityDockWidthBounds,
+      orderedOpenActivityLaneIdsBySide,
+    ],
+  );
+  const clampExplorerActivityDockWidthForSide = useCallback(
+    (side: ExplorerActivityRailSide, width: number): number => {
+      const bounds = getExplorerActivityDockWidthBoundsForSide(side);
+      return Math.max(bounds.min, Math.min(bounds.max, width));
+    },
+    [getExplorerActivityDockWidthBoundsForSide],
+  );
+  const getExplorerActivityDockWidthForSide = useCallback(
+    (side: ExplorerActivityRailSide): number =>
+      side === "left" ? leftActivityDockWidth : rightActivityDockWidth,
+    [leftActivityDockWidth, rightActivityDockWidth],
+  );
+  const setExplorerActivityDockWidthForSide = useCallback(
+    (
+      side: ExplorerActivityRailSide,
+      nextWidth:
+        | number
+        | ((currentWidth: number) => number),
+    ) => {
+      const applyWidthUpdate =
+        side === "left"
+          ? setLeftActivityDockWidthState
+          : setRightActivityDockWidthState;
+      applyWidthUpdate((currentWidth) => {
+        const resolvedWidth =
+          typeof nextWidth === "function"
+            ? nextWidth(currentWidth)
+            : nextWidth;
+        if (!Number.isFinite(resolvedWidth)) {
+          return currentWidth;
+        }
+        return clampExplorerActivityDockWidthForSide(side, resolvedWidth);
+      });
+    },
+    [clampExplorerActivityDockWidthForSide],
+  );
+  const resolveExplorerActivityDockWidthForLane = useCallback(
+    (laneId: ExplorerActivityLaneId): number =>
+      getExplorerActivityDockWidthForSide(
+        resolveExplorerActivityRailSideForLane(laneId),
+      ),
+    [
+      getExplorerActivityDockWidthForSide,
+      resolveExplorerActivityRailSideForLane,
+    ],
+  );
+  const setExplorerActivityDockWidthForLane = useCallback(
+    (
+      laneId: ExplorerActivityLaneId,
+      nextWidth:
+        | number
+        | ((currentWidth: number) => number),
+    ) => {
+      setExplorerActivityDockWidthForSide(
+        resolveExplorerActivityRailSideForLane(laneId),
+        nextWidth,
+      );
+    },
+    [
+      resolveExplorerActivityRailSideForLane,
+      setExplorerActivityDockWidthForSide,
+    ],
+  );
+  const sidebarWidth = resolveExplorerActivityDockWidthForLane("files");
+  const previewWidth = resolveExplorerActivityDockWidthForLane("preview");
+  const actionsWidth = resolveExplorerActivityDockWidthForLane(
+    activeActionsHostLaneId ?? "actions",
+  );
+  const setSidebarWidth = useCallback(
+    (nextWidth: number | ((currentWidth: number) => number)) => {
+      setExplorerActivityDockWidthForLane("files", nextWidth);
+    },
+    [setExplorerActivityDockWidthForLane],
+  );
+  const setPreviewWidth = useCallback(
+    (nextWidth: number | ((currentWidth: number) => number)) => {
+      setExplorerActivityDockWidthForLane("preview", nextWidth);
+    },
+    [setExplorerActivityDockWidthForLane],
+  );
+  const setActionsWidth = useCallback(
+    (nextWidth: number | ((currentWidth: number) => number)) => {
+      setExplorerActivityDockWidthForLane(
+        activeActionsHostLaneId ?? "actions",
+        nextWidth,
+      );
+    },
+    [activeActionsHostLaneId, setExplorerActivityDockWidthForLane],
+  );
+  const setOpenActivityLaneIdsSafely = useCallback(
+    (
+      updater:
+        | ExplorerActivityLaneId[]
+        | ((
+            currentLaneIds: ExplorerActivityLaneId[],
+          ) => ExplorerActivityLaneId[]),
+    ) => {
+      setOpenActivityLaneIds((currentLaneIds) => {
+        const nextLaneIds =
+          typeof updater === "function" ? updater(currentLaneIds) : updater;
+        return areExplorerActivityLaneIdListsEqual(
+          currentLaneIds,
+          nextLaneIds,
+        )
+          ? currentLaneIds
+          : nextLaneIds;
+      });
+    },
+    [],
+  );
+  const setSourcesVisible = useCallback(
+    (visible: boolean) => {
+      setOpenActivityLaneIdsSafely((currentLaneIds) =>
+        setExplorerActivityLaneOpen(currentLaneIds, "files", visible),
+      );
+      if (visible) {
+        setActiveActivityLane("files");
+      }
+    },
+    [setOpenActivityLaneIdsSafely],
+  );
+  const setActionsVisible = useCallback(
+    (visible: boolean) => {
+      setOpenActivityLaneIdsSafely((currentLaneIds) =>
+        replaceExplorerActionsHostLane(
+          currentLaneIds,
+          visible ? (chromeEditSession ? "customize" : "actions") : null,
+        ),
+      );
+      if (!visible) {
+        setActionsPaneSelectedControlId(null);
+      }
+    },
+    [chromeEditSession, setOpenActivityLaneIdsSafely],
+  );
+  const prepareActionsPaneForCustomizeMode = useCallback(() => {
+    if (actionsPaneRestoreModeAfterCustomizeRef.current == null) {
+      actionsPaneRestoreModeAfterCustomizeRef.current = actionsVisible
+        ? "actions"
+        : "close";
+    }
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      replaceExplorerActionsHostLane(currentLaneIds, "customize"),
+    );
+  }, [actionsVisible, setOpenActivityLaneIdsSafely]);
   const bottomTerminalVisible = explorerTerminalVisible;
   const previewPanelVisible =
     dockPreviewAllowed && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
   const canNavigatePreviewBack =
     previewNavigationHistory.length > 0 && preview.type !== "none";
+  const sideExplorerTerminalVisible = openActivityLaneIdSet.has("terminal");
+  useEffect(() => {
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      setExplorerActivityLaneOpen(currentLaneIds, "preview", previewEnabled),
+    );
+  }, [previewEnabled, setOpenActivityLaneIdsSafely]);
   useEffect(() => {
     setJumpFilter(null);
   }, [currentPath, setJumpFilter]);
@@ -10118,14 +10549,6 @@ export function FileExplorer({
   ]);
 
   useEffect(() => {
-    setSourcesVisible(storedSourcesVisible);
-  }, [storedSourcesVisible]);
-
-  useEffect(() => {
-    setActionsVisible(storedActionsVisible);
-  }, [storedActionsVisible]);
-
-  useEffect(() => {
     setPreviewEnabled(storedPreviewEnabled);
   }, [storedPreviewEnabled]);
 
@@ -10461,6 +10884,8 @@ export function FileExplorer({
       sidebarWidth,
       previewWidth,
       actionsWidth,
+      leftActivityDockWidth,
+      rightActivityDockWidth,
       previewEnabled,
       previewLocked,
       previewJumpToFolderEnabled,
@@ -10472,6 +10897,9 @@ export function FileExplorer({
       activeActivityLane,
       activityPaneVisible,
       actionsVisible,
+      openActivityLaneIds,
+      activityLanePlacementById,
+      activityLaneOrderBySide,
       constellation: {
         activeLens: constellationActiveLens,
         routeModeEnabled: constellationRouteModeEnabled,
@@ -10490,11 +10918,16 @@ export function FileExplorer({
     documentViewMode,
     actionsVisible,
     actionsWidth,
+    activityLaneOrderBySide,
+    activityLanePlacementById,
     previewEnabled,
     previewLocked,
     previewJumpToFolderEnabled,
     previewSplitMode,
     previewWidth,
+    leftActivityDockWidth,
+    openActivityLaneIds,
+    rightActivityDockWidth,
     search,
     searchMode,
     sidebarWidth,
@@ -13268,6 +13701,111 @@ export function FileExplorer({
       supportsNativeOpenWith,
     ],
   );
+  const invokeWindowsShellContextMenu = useCallback(
+    async (request: ExplorerShellContextMenuInvokeRequest) => {
+      try {
+        await invokeExplorerShellContextMenuItem(request);
+        await refresh();
+      } catch (error) {
+        setError(String(error));
+      }
+    },
+    [invokeExplorerShellContextMenuItem, refresh],
+  );
+  const requestWindowsShellContextMenu = useCallback(
+    async (
+      resolvedRequest:
+        | ReturnType<typeof resolveExplorerWindowsShellContextMenuRequest>
+        | null,
+    ) => {
+      if (!resolvedRequest) {
+        return;
+      }
+
+      const { request, requestKey } = resolvedRequest;
+      const requestId = ++windowsShellContextMenuRequestIdRef.current;
+      const requestedAtEpochMs = Date.now();
+      let shouldLoad = false;
+
+      setWindowsShellContextMenusByRequestKey((current) => {
+        const existing = current[requestKey];
+        if (existing?.status === "ready") {
+          return current;
+        }
+
+        const shouldReuseInFlightRequest =
+          existing?.status === "loading" &&
+          existing.requestId !== null &&
+          existing.requestedAtEpochMs !== null &&
+          requestedAtEpochMs - existing.requestedAtEpochMs <
+            EXPLORER_WINDOWS_SHELL_ACTIONS_REQUEST_TIMEOUT_MS;
+
+        if (shouldReuseInFlightRequest) {
+          return current;
+        }
+
+        shouldLoad = true;
+        return {
+          ...current,
+          [requestKey]: {
+            status: "loading",
+            items: existing?.items ?? null,
+            error: null,
+            requestId,
+            requestedAtEpochMs,
+          },
+        };
+      });
+
+      if (!shouldLoad) {
+        return;
+      }
+
+      try {
+        const items = await awaitPromiseWithTimeout(
+          getExplorerShellContextMenu(request),
+          EXPLORER_WINDOWS_SHELL_ACTIONS_REQUEST_TIMEOUT_MS,
+          "Timed out while resolving Windows shell actions.",
+        );
+        setWindowsShellContextMenusByRequestKey((current) => {
+          const existing = current[requestKey];
+          if (!existing || existing.requestId !== requestId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [requestKey]: {
+              status: "ready",
+              items,
+              error: null,
+              requestId: null,
+              requestedAtEpochMs: null,
+            },
+          };
+        });
+      } catch (error) {
+        setWindowsShellContextMenusByRequestKey((current) => {
+          const existing = current[requestKey];
+          if (!existing || existing.requestId !== requestId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [requestKey]: {
+              status: "error",
+              items: null,
+              error: String(error),
+              requestId: null,
+              requestedAtEpochMs: null,
+            },
+          };
+        });
+      }
+    },
+    [getExplorerShellContextMenu],
+  );
 
   const openNativeProperties = useCallback(
     async (path: string) => {
@@ -14071,9 +14609,20 @@ export function FileExplorer({
   const bumpExplorerTerminalFocusRequest = useCallback(() => {
     setExplorerTerminalFocusRequestKey((current) => current + 1);
   }, []);
+  const bumpSideExplorerTerminalFocusRequest = useCallback(() => {
+    setSideExplorerTerminalFocusRequestKey((current) => current + 1);
+  }, []);
   const handleExplorerTerminalCommandHandled = useCallback(
     (requestId: string) => {
       setExplorerTerminalCommandRequest((current) =>
+        current?.id === requestId ? null : current,
+      );
+    },
+    [],
+  );
+  const handleSideExplorerTerminalCommandHandled = useCallback(
+    (requestId: string) => {
+      setSideExplorerTerminalCommandRequest((current) =>
         current?.id === requestId ? null : current,
       );
     },
@@ -14088,6 +14637,45 @@ export function FileExplorer({
     setExplorerTerminalVisible(true);
     bumpExplorerTerminalFocusRequest();
   }, [bumpExplorerTerminalFocusRequest, explorerTerminalWorkingDirectory]);
+  const resetSideExplorerTerminalState = useCallback(() => {
+    setSideExplorerTerminalMounted(false);
+    setSideExplorerTerminalCommandRequest(null);
+    lastSideExplorerTerminalShellReportedCwdRef.current = null;
+    lastSideExplorerTerminalExplorerAppliedCwdRef.current = null;
+  }, []);
+  const revealSideExplorerTerminal = useCallback(() => {
+    if (!explorerTerminalWorkingDirectory) {
+      return;
+    }
+
+    setSideExplorerTerminalMounted(true);
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      setExplorerActivityLaneOpen(currentLaneIds, "terminal", true),
+    );
+    setActiveActivityLane("terminal");
+    bumpSideExplorerTerminalFocusRequest();
+  }, [
+    bumpSideExplorerTerminalFocusRequest,
+    explorerTerminalWorkingDirectory,
+    setOpenActivityLaneIdsSafely,
+  ]);
+  const closeSideExplorerTerminal = useCallback(() => {
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      setExplorerActivityLaneOpen(currentLaneIds, "terminal", false),
+    );
+    resetSideExplorerTerminalState();
+  }, [resetSideExplorerTerminalState, setOpenActivityLaneIdsSafely]);
+  const toggleSideExplorerTerminal = useCallback(() => {
+    if (sideExplorerTerminalVisible) {
+      closeSideExplorerTerminal();
+      return;
+    }
+    revealSideExplorerTerminal();
+  }, [
+    closeSideExplorerTerminal,
+    revealSideExplorerTerminal,
+    sideExplorerTerminalVisible,
+  ]);
   const toggleBottomExplorerTerminal = useCallback(() => {
     if (!explorerTerminalWorkingDirectory) {
       return;
@@ -14373,6 +14961,39 @@ export function FileExplorer({
       }
 
       lastExplorerTerminalExplorerAppliedCwdRef.current = normalizedReportedCwd;
+      void navigate(normalizedReportedCwd, true).catch(() => {});
+    },
+    [currentPath, navigate],
+  );
+  const handleSideExplorerTerminalReportedWorkingDirectoryChange = useCallback(
+    (cwd: string) => {
+      const trimmedCwd = cwd.trim();
+      if (!trimmedCwd) {
+        return;
+      }
+
+      const normalizedReportedCwd = normalizeExplorerPath(trimmedCwd);
+      if (
+        !normalizedReportedCwd ||
+        isCloudExplorerPath(normalizedReportedCwd)
+      ) {
+        return;
+      }
+
+      if (
+        lastSideExplorerTerminalShellReportedCwdRef.current ===
+        normalizedReportedCwd
+      ) {
+        return;
+      }
+      lastSideExplorerTerminalShellReportedCwdRef.current = normalizedReportedCwd;
+
+      if (normalizeExplorerPath(currentPath) === normalizedReportedCwd) {
+        return;
+      }
+
+      lastSideExplorerTerminalExplorerAppliedCwdRef.current =
+        normalizedReportedCwd;
       void navigate(normalizedReportedCwd, true).catch(() => {});
     },
     [currentPath, navigate],
@@ -18000,6 +18621,7 @@ export function FileExplorer({
       supportsOpenWithSystemPicker,
       supportsNativeProperties,
       openWithProgramsByPath,
+      windowsShellContextMenusByRequestKey,
       supportsNativeIntegration,
       isCloudExplorerPath,
       isExplorerArchiveVirtualPath,
@@ -18015,6 +18637,7 @@ export function FileExplorer({
         openEntry(resolveContextMenuFileEntry(entry)),
       openWithSystemPicker,
       openWithProgram,
+      invokeWindowsShellContextMenuItem: invokeWindowsShellContextMenu,
       openAsAdmin,
       openInTerminal: onOpenInTerminal,
       openInFilesystemAquarium: onOpenInFilesystemAquarium,
@@ -18105,6 +18728,7 @@ export function FileExplorer({
       openExplorerPropertiesPanel,
       openTagDialog,
       openTrashDialog,
+      invokeWindowsShellContextMenu,
       openWithProgram,
       openWithProgramsByPath,
       openWithSystemPicker,
@@ -18123,11 +18747,33 @@ export function FileExplorer({
       supportsNativeOpenWith,
       supportsNativeProperties,
       supportsOpenWithSystemPicker,
+      windowsShellContextMenusByRequestKey,
       toggleBookmarkMenuEntry,
       triggerFindSimilarForPath,
       userHomePath,
     ],
   );
+  const activeWindowsShellContextMenuRequest = useMemo(() => {
+    if (!ctxMenu.visible || !ctxMenu.invocation) {
+      return null;
+    }
+
+    return resolveExplorerWindowsShellContextMenuRequestForInvocation(
+      ctxMenu.invocation,
+      explorerMenuRuntimeEnvironment,
+    );
+  }, [ctxMenu.invocation, ctxMenu.visible, explorerMenuRuntimeEnvironment]);
+
+  useEffect(() => {
+    if (!activeWindowsShellContextMenuRequest) {
+      return;
+    }
+
+    void requestWindowsShellContextMenu(activeWindowsShellContextMenuRequest);
+  }, [
+    activeWindowsShellContextMenuRequest,
+    requestWindowsShellContextMenu,
+  ]);
 
   const resolvedContextMenu = useMemo(() => {
     if (!ctxMenu.visible || !ctxMenu.invocation) {
@@ -19660,18 +20306,33 @@ export function FileExplorer({
   }, [saveCurrentExplorerLayout, setError]);
   useEffect(() => {
     if (!activeChromeEditSession) {
-      if (actionsPaneAutoOpenedForCustomizeRef.current) {
-        actionsPaneAutoOpenedForCustomizeRef.current = false;
+      if (actionsPaneRestoreModeAfterCustomizeRef.current === "close") {
+        actionsPaneRestoreModeAfterCustomizeRef.current = null;
         setActionsVisible(false);
+        return;
+      }
+      if (actionsPaneRestoreModeAfterCustomizeRef.current === "actions") {
+        actionsPaneRestoreModeAfterCustomizeRef.current = null;
+        setOpenActivityLaneIdsSafely((currentLaneIds) =>
+          replaceExplorerActionsHostLane(currentLaneIds, "actions"),
+        );
       }
       return;
     }
 
-    if (!actionsVisible) {
-      actionsPaneAutoOpenedForCustomizeRef.current = true;
-      setActionsVisible(true);
+    if (actionsPaneRestoreModeAfterCustomizeRef.current == null) {
+      actionsPaneRestoreModeAfterCustomizeRef.current = actionsVisible
+        ? "actions"
+        : "close";
     }
-  }, [actionsVisible, activeChromeEditSession]);
+    prepareActionsPaneForCustomizeMode();
+  }, [
+    actionsVisible,
+    activeChromeEditSession,
+    prepareActionsPaneForCustomizeMode,
+    setActionsVisible,
+    setOpenActivityLaneIdsSafely,
+  ]);
   const explorerCustomizeCatalog = useMemo(
     () =>
       buildExplorerCustomizeCatalog({
@@ -20410,13 +21071,12 @@ export function FileExplorer({
       event.preventDefault();
       event.stopPropagation();
       if (!getLiveExplorerChromeEditSession()) {
+        prepareActionsPaneForCustomizeMode();
         openChromeEditSession({
           themeId: explorerChromeThemeId,
           layoutId: effectiveChromeLayoutId,
           initialOverride: persistedExplorerChromeOverride,
         });
-        actionsPaneAutoOpenedForCustomizeRef.current = true;
-        setActionsVisible(true);
       }
       setShowExplorerLayoutCommandMenu(false);
       setShowModeProfileMenu(false);
@@ -20455,6 +21115,7 @@ export function FileExplorer({
       explorerChromeThemeId,
       getLiveExplorerChromeEditSession,
       openChromeEditSession,
+      prepareActionsPaneForCustomizeMode,
       persistedExplorerChromeOverride,
       setChromeEditDraggingControl,
       setChromeEditHighlightedDropTarget,
@@ -20657,6 +21318,7 @@ export function FileExplorer({
   const beginExplorerChromeCustomization = useCallback(() => {
     setShowExplorerLayoutCommandMenu(false);
     setShowModeProfileMenu(false);
+    prepareActionsPaneForCustomizeMode();
     openChromeEditSession({
       themeId: explorerChromeThemeId,
       layoutId: effectiveChromeLayoutId,
@@ -20666,6 +21328,7 @@ export function FileExplorer({
     effectiveChromeLayoutId,
     explorerChromeThemeId,
     openChromeEditSession,
+    prepareActionsPaneForCustomizeMode,
     persistedExplorerChromeOverride,
   ]);
   const persistExplorerChromeCustomizationDraft = useCallback(
@@ -21054,24 +21717,20 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation === "grid"
       ? (activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT)
       : (activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT);
-  const shouldRenderRail =
-    activityPaneVisible && activeActivityLane === "files" && sourcesVisible;
+  const shouldRenderRail = sourcesVisible;
   const openSourcesPanel = useCallback(() => {
-    setActiveActivityLane("files");
-    setActivityPaneVisible(true);
     setSourcesVisible(true);
-  }, []);
+    setActiveActivityLane("files");
+  }, [setSourcesVisible]);
   const closeSourcesPanel = useCallback(() => {
     setSourcesVisible(false);
-    if (activeActivityLane === "files") {
-      setActivityPaneVisible(false);
-    }
-  }, [activeActivityLane]);
+  }, [setSourcesVisible]);
   const openExplorerUtilityPane = useCallback((laneId: ExplorerActivityLaneId) => {
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      setExplorerActivityLaneOpen(currentLaneIds, laneId, true),
+    );
     setActiveActivityLane(laneId);
-    setActivityPaneVisible(true);
-    setSourcesVisible(false);
-  }, []);
+  }, [setOpenActivityLaneIdsSafely]);
   const toggleSourcesPanel = useCallback(() => {
     if (shouldRenderRail) {
       closeSourcesPanel();
@@ -21081,17 +21740,20 @@ export function FileExplorer({
   }, [closeSourcesPanel, openSourcesPanel, shouldRenderRail]);
   const actionsPaneVisible = actionsVisible;
   const openActionsPanel = useCallback(() => {
-    actionsPaneAutoOpenedForCustomizeRef.current = false;
-    setActionsVisible(true);
-  }, []);
+    actionsPaneRestoreModeAfterCustomizeRef.current = null;
+    setOpenActivityLaneIdsSafely((currentLaneIds) =>
+      replaceExplorerActionsHostLane(currentLaneIds, "actions"),
+    );
+  }, [setOpenActivityLaneIdsSafely]);
   const closeActionsPanel = useCallback(() => {
-    actionsPaneAutoOpenedForCustomizeRef.current = false;
-    setActionsVisible(false);
     setActionsPaneSelectedControlId(null);
     if (activeChromeEditSession) {
       saveExplorerChromeCustomization();
+      return;
     }
-  }, [activeChromeEditSession, saveExplorerChromeCustomization]);
+    actionsPaneRestoreModeAfterCustomizeRef.current = null;
+    setActionsVisible(false);
+  }, [activeChromeEditSession, saveExplorerChromeCustomization, setActionsVisible]);
   const toggleActionsPanel = useCallback(() => {
     if (actionsPaneVisible) {
       closeActionsPanel();
@@ -21111,9 +21773,10 @@ export function FileExplorer({
       }
 
       if (laneId === "search") {
-        if (activityPaneVisible && activeActivityLane === "search") {
-          setActivityPaneVisible(false);
-          setSourcesVisible(false);
+        if (openActivityLaneIdSet.has("search")) {
+          setOpenActivityLaneIdsSafely((currentLaneIds) =>
+            setExplorerActivityLaneOpen(currentLaneIds, "search", false),
+          );
           return;
         }
         openExplorerUtilityPane("search");
@@ -21121,9 +21784,10 @@ export function FileExplorer({
       }
 
       if (laneId === "semantic") {
-        if (activityPaneVisible && activeActivityLane === "semantic") {
-          setActivityPaneVisible(false);
-          setSourcesVisible(false);
+        if (openActivityLaneIdSet.has("semantic")) {
+          setOpenActivityLaneIdsSafely((currentLaneIds) =>
+            setExplorerActivityLaneOpen(currentLaneIds, "semantic", false),
+          );
           return;
         }
         openExplorerUtilityPane("semantic");
@@ -21132,9 +21796,10 @@ export function FileExplorer({
       }
 
       if (laneId === "tasks") {
-        if (activityPaneVisible && activeActivityLane === "tasks") {
-          setActivityPaneVisible(false);
-          setSourcesVisible(false);
+        if (openActivityLaneIdSet.has("tasks")) {
+          setOpenActivityLaneIdsSafely((currentLaneIds) =>
+            setExplorerActivityLaneOpen(currentLaneIds, "tasks", false),
+          );
           return;
         }
         openExplorerUtilityPane("tasks");
@@ -21152,11 +21817,7 @@ export function FileExplorer({
       }
 
       if (laneId === "terminal") {
-        if (bottomTerminalVisible) {
-          toggleBottomExplorerTerminal();
-          return;
-        }
-        revealBottomExplorerTerminal();
+        toggleSideExplorerTerminal();
         return;
       }
 
@@ -21166,7 +21827,7 @@ export function FileExplorer({
           return;
         }
         if (activeChromeEditSession) {
-          actionsPaneAutoOpenedForCustomizeRef.current = false;
+          actionsPaneRestoreModeAfterCustomizeRef.current = null;
           saveExplorerChromeCustomization();
         }
         openActionsPanel();
@@ -21177,31 +21838,32 @@ export function FileExplorer({
         closeActionsPanel();
         return;
       }
-      openActionsPanel();
       if (!activeChromeEditSession) {
         beginExplorerChromeCustomization();
+        return;
       }
+      setOpenActivityLaneIdsSafely((currentLaneIds) =>
+        replaceExplorerActionsHostLane(currentLaneIds, "customize"),
+      );
     },
     [
       actionsPaneVisible,
-      activeActivityLane,
       activeChromeEditSession,
-      activityPaneVisible,
       beginExplorerChromeCustomization,
-      bottomTerminalVisible,
       closeActionsPanel,
       closeSourcesPanel,
+      openActivityLaneIdSet,
       openExplorerUtilityPane,
       openActionsPanel,
       openSourcesPanel,
       previewPanelVisible,
-      revealBottomExplorerTerminal,
       saveExplorerChromeCustomization,
+      setOpenActivityLaneIdsSafely,
       setPreviewEnabled,
       setPreviewSplitMode,
       setSearchMode,
       shouldRenderRail,
-      toggleBottomExplorerTerminal,
+      toggleSideExplorerTerminal,
       togglePreviewEnabled,
     ],
   );
@@ -31059,273 +31721,174 @@ export function FileExplorer({
     }),
     [homeTasks.length, searchResults.length],
   );
+  const leftExplorerActivityRailDefinitions = useMemo(
+    () =>
+      getExplorerActivityLaneDefinitionsForRailSide(
+        "left",
+        activityLanePlacementById,
+        activityLaneOrderBySide,
+      ),
+    [activityLaneOrderBySide, activityLanePlacementById],
+  );
+  const rightExplorerActivityRailDefinitions = useMemo(
+    () =>
+      getExplorerActivityLaneDefinitionsForRailSide(
+        "right",
+        activityLanePlacementById,
+        activityLaneOrderBySide,
+      ),
+    [activityLaneOrderBySide, activityLanePlacementById],
+  );
   const activeExplorerActivityLaneIds = useMemo(() => {
     const laneIds = new Set<ExplorerActivityLaneId>();
-    if (shouldRenderRail) {
-      laneIds.add("files");
+    for (const laneId of openActivityLaneIds) {
+      if (laneId === "preview") {
+        if (previewPanelVisible) {
+          laneIds.add("preview");
+        }
+        continue;
+      }
+      if (explorerActionsHostLaneIdSet.has(laneId)) {
+        continue;
+      }
+      laneIds.add(laneId);
     }
-    if (
-      activityPaneVisible &&
-      (activeActivityLane === "search" ||
-        activeActivityLane === "semantic" ||
-        activeActivityLane === "tasks")
-    ) {
-      laneIds.add(activeActivityLane);
-    }
-    if (previewPanelVisible) {
-      laneIds.add("preview");
-    }
-    if (actionsPaneVisible) {
-      laneIds.add(activeChromeEditSession ? "customize" : "actions");
-    }
-    if (bottomTerminalVisible) {
-      laneIds.add("terminal");
+    if (actionsPaneVisible && activeActionsHostLaneId) {
+      laneIds.add(activeActionsHostLaneId);
     }
     return laneIds;
   }, [
     actionsPaneVisible,
-    activeActivityLane,
-    activeChromeEditSession,
-    activityPaneVisible,
-    bottomTerminalVisible,
+    activeActionsHostLaneId,
+    openActivityLaneIds,
     previewPanelVisible,
-    shouldRenderRail,
   ]);
-  const explorerUtilityDockPane = useMemo(() => {
-    const utilityLaneActive =
-      activityPaneVisible &&
-      (activeActivityLane === "search" ||
-        activeActivityLane === "semantic" ||
-        activeActivityLane === "tasks");
-    if (!utilityLaneActive) {
-      return null;
-    }
+  const handleMoveExplorerActivityLane = useCallback(
+    (
+      laneId: ExplorerActivityLaneId,
+      targetSide: ExplorerActivityRailSide,
+      targetIndex: number,
+    ) => {
+      const nextPlacement = moveExplorerActivityLane({
+        laneId,
+        targetSide,
+        targetIndex,
+        placementById: activityLanePlacementById,
+        orderBySide: activityLaneOrderBySide,
+      });
+      setActivityLanePlacementById(nextPlacement.placementById);
+      setActivityLaneOrderBySide(nextPlacement.orderBySide);
 
-    return (
-      <div
-        data-overlay-explorer-plane="utility-dock"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
-          minWidth: 0,
-        }}
-      >
-        <div style={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1 }}>
-          <ResizablePane
-            size={sidebarWidth}
-            minSize={Math.max(300, sidebarBounds.minWidth)}
-            maxSize={Math.max(sidebarBounds.maxWidth, 560)}
-            onSizeChange={setSidebarWidth}
-            borderColor={`${accent}55`}
-            handleSide="right"
-            style={sidebarPaneStyle}
-          >
-            <ExplorerDockLayoutAdapter
-              activePaneId={activeActivityLane}
-              onActivePaneChange={(paneId) => {
-                if (
-                  paneId === "search" ||
-                  paneId === "semantic" ||
-                  paneId === "tasks"
-                ) {
-                  setActiveActivityLane(paneId);
-                  if (paneId === "semantic") {
-                    setSearchMode("semantic");
-                  }
-                }
-              }}
-              panes={[
-                {
-                  id: "search",
-                  title: "Search",
-                  content: (
-                    <ExplorerSearchLane
-                      currentPath={currentPath}
-                      loading={searchLoading}
-                      mode={searchMode}
-                      onCancel={clearSearch}
-                      onModeChange={handleSearchLaneModeChange}
-                      onOpenResult={openSearchLaneResult}
-                      onQueryChange={handleSearchLaneQueryChange}
-                      onToggleHidden={toggleSearchLaneHiddenFiles}
-                      query={search}
-                      results={searchResults}
-                      showHidden={showHidden}
-                      tone={explorerSlateTone}
-                    />
-                  ),
-                },
-                {
-                  id: "semantic",
-                  title: "Semantic",
-                  content: (
-                    <ExplorerSemanticLane
-                      currentPath={currentPath}
-                      diagnostics={semanticSearchDiagnostics}
-                      onBuild={() => void requestSemanticIndexBuild("build")}
-                      onClear={() => void requestSemanticIndexBuild("clear")}
-                      onFindSimilar={runSemanticLaneFindSimilar}
-                      onQueryChange={(nextQuery) => {
-                        setSearchMode("semantic");
-                        setSemanticSearchSourcePath(null);
-                        setSearch(nextQuery);
-                      }}
-                      onRebuild={() => void requestSemanticIndexBuild("rebuild")}
-                      query={searchMode === "semantic" ? search : ""}
-                      selectedPath={semanticSelectionCandidate?.path ?? null}
-                      statusLabel={semanticIndexStatusLabel}
-                      summary={semanticIndexSummary}
-                      tone={explorerSlateTone}
-                    />
-                  ),
-                },
-                {
-                  id: "tasks",
-                  title: "Tasks",
-                  content: (
-                    <ExplorerSlatePane tone={explorerSlateTone}>
-                      <ExplorerSlatePaneHeader
-                        title="Tasks"
-                        subtitle="Explorer background work"
-                        tone={explorerSlateTone}
-                      />
-                      <div
-                        style={{
-                          flex: 1,
-                          minHeight: 0,
-                          overflow: "auto",
-                          padding: 12,
-                        }}
-                      >
-                        <ExplorerTaskCenterContent
-                          accent={accent}
-                          border="var(--overlay-explorer-panel-border)"
-                          danger={EXP.red}
-                          muted={EXP.muted}
-                          tasks={homeTasks}
-                          text={EXP.text}
-                          title="Explorer Tasks"
-                        />
-                      </div>
-                    </ExplorerSlatePane>
-                  ),
-                },
-              ]}
-            />
-          </ResizablePane>
-        </div>
-      </div>
-    );
-  }, [
-    accent,
-    activeActivityLane,
-    activityPaneVisible,
-    clearSearch,
-    currentPath,
-    explorerSlateTone,
-    handleSearchLaneModeChange,
-    handleSearchLaneQueryChange,
-    homeTasks,
-    openSearchLaneResult,
-    requestSemanticIndexBuild,
-    runSemanticLaneFindSimilar,
-    search,
-    searchLoading,
-    searchMode,
-    searchResults,
-    semanticIndexStatusLabel,
-    semanticIndexSummary,
-    semanticSearchDiagnostics,
-    semanticSelectionCandidate,
-    setSearchMode,
-    setSidebarWidth,
-    showHidden,
-    sidebarBounds.maxWidth,
-    sidebarBounds.minWidth,
-    sidebarPaneStyle,
-    sidebarWidth,
-    toggleSearchLaneHiddenFiles,
-  ]);
-  const explorerRailPane = useMemo(() => {
-    if (!shouldRenderRail) {
-      return null;
-    }
+      if (laneId === "preview") {
+        setPreviewSplitMode("pane");
+        setPreviewEnabled(true);
+        return;
+      }
 
-    return (
+      if (laneId === "terminal") {
+        revealSideExplorerTerminal();
+        return;
+      }
+
+      if (laneId === "actions") {
+        openActionsPanel();
+        return;
+      }
+
+      if (laneId === "customize") {
+        if (!activeChromeEditSession) {
+          beginExplorerChromeCustomization();
+          return;
+        }
+        setOpenActivityLaneIdsSafely((currentLaneIds) =>
+          replaceExplorerActionsHostLane(currentLaneIds, "customize"),
+        );
+        return;
+      }
+
+      setOpenActivityLaneIdsSafely((currentLaneIds) =>
+        setExplorerActivityLaneOpen(currentLaneIds, laneId, true),
+      );
+      setActiveActivityLane(laneId);
+      if (laneId === "semantic") {
+        setSearchMode("semantic");
+      }
+    },
+    [
+      activityLaneOrderBySide,
+      activityLanePlacementById,
+      activeChromeEditSession,
+      beginExplorerChromeCustomization,
+      openActionsPanel,
+      revealSideExplorerTerminal,
+      setOpenActivityLaneIdsSafely,
+      setPreviewEnabled,
+      setPreviewSplitMode,
+      setSearchMode,
+    ],
+  );
+  const explorerFilesLanePane = useMemo(
+    () => (
       <div
         data-overlay-explorer-plane="rail"
         style={{
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
+          ...sidebarPaneStyle,
+          flex: 1,
           minWidth: 0,
         }}
       >
-        <div style={{ display: "flex", minHeight: 0, minWidth: 0, flex: 1 }}>
-          <ResizablePane
-            size={sidebarWidth}
-            minSize={sidebarBounds.minWidth}
-            maxSize={sidebarBounds.maxWidth}
-            onSizeChange={setSidebarWidth}
-            borderColor={`${accent}55`}
-            handleSide="right"
-            style={sidebarPaneStyle}
-          >
-            <ExplorerSideRail
-              appearance={appearance}
-              accent={accent}
-              brandLabel={explorerTheme.railBrandLabel}
-              sidebarWidth={sidebarWidth}
-              currentPath={currentPath}
-              dropScopeId={explorerDropScopeId}
-              locationTitle={locationTitle}
-              locationLabel={locationLabel}
-              drives={drives}
-              drivesLoading={drivesLoading}
-              showHiddenFiles={showHidden}
-              isCompactDock={isCompactDock}
-              savedSearches={savedSearches}
-              availableTags={tagMetadata.tags}
-              activeTagFilterIds={activeTagFilterIds}
-              onNavigate={navigate}
-              onGoHome={goHome}
-              localTreeRefreshRevision={localTreeRefreshRevision}
-              onOpenSavedSearch={(savedSearch) => {
-                void applySavedSearch(savedSearch);
-              }}
-              onDeleteSavedSearch={(savedSearchId) => {
-                void deleteExplorerSavedSearch(savedSearchId)
-                  .then(() =>
-                    setSavedSearches((current) =>
-                      current.filter(
-                        (savedSearch) => savedSearch.id !== savedSearchId,
-                      ),
-                    ),
-                  )
-                  .catch((deleteError) => setError(String(deleteError)));
-              }}
-              onToggleTagFilter={(tagId) =>
-                setActiveTagFilterIds((current) =>
-                  current.includes(tagId)
-                    ? current.filter((candidate) => candidate !== tagId)
-                    : [...current, tagId],
-                )
-              }
-              onClearTagFilters={() => setActiveTagFilterIds([])}
-              onBookmarkCreated={handleBookmarkCreated}
-              resolveDroppedSources={resolveDroppedBookmarkSources}
-              onCloseSources={closeSourcesPanel}
-              chromeLayoutId={effectiveChromeLayoutId}
-              chromeOverride={explorerChromeOverride}
-              chromeEditMode={explorerChromeEditMode}
-              railHeaderLayoutDynamics={explorerRailHeaderLayoutDynamics}
-            />
-          </ResizablePane>
-        </div>
+        <ExplorerSideRail
+          appearance={appearance}
+          accent={accent}
+          brandLabel={explorerTheme.railBrandLabel}
+          sidebarWidth={sidebarWidth}
+          currentPath={currentPath}
+          dropScopeId={explorerDropScopeId}
+          locationTitle={locationTitle}
+          locationLabel={locationLabel}
+          drives={drives}
+          drivesLoading={drivesLoading}
+          showHiddenFiles={showHidden}
+          isCompactDock={isCompactDock}
+          savedSearches={savedSearches}
+          availableTags={tagMetadata.tags}
+          activeTagFilterIds={activeTagFilterIds}
+          onNavigate={navigate}
+          onGoHome={goHome}
+          localTreeRefreshRevision={localTreeRefreshRevision}
+          onOpenSavedSearch={(savedSearch) => {
+            void applySavedSearch(savedSearch);
+          }}
+          onDeleteSavedSearch={(savedSearchId) => {
+            void deleteExplorerSavedSearch(savedSearchId)
+              .then(() =>
+                setSavedSearches((current) =>
+                  current.filter(
+                    (savedSearch) => savedSearch.id !== savedSearchId,
+                  ),
+                ),
+              )
+              .catch((deleteError) => setError(String(deleteError)));
+          }}
+          onToggleTagFilter={(tagId) =>
+            setActiveTagFilterIds((current) =>
+              current.includes(tagId)
+                ? current.filter((candidate) => candidate !== tagId)
+                : [...current, tagId],
+            )
+          }
+          onClearTagFilters={() => setActiveTagFilterIds([])}
+          onBookmarkCreated={handleBookmarkCreated}
+          resolveDroppedSources={resolveDroppedBookmarkSources}
+          onCloseSources={closeSourcesPanel}
+          chromeLayoutId={effectiveChromeLayoutId}
+          chromeOverride={explorerChromeOverride}
+          chromeEditMode={explorerChromeEditMode}
+          railHeaderLayoutDynamics={explorerRailHeaderLayoutDynamics}
+        />
       </div>
-    );
-  }, [
+    ),
+    [
     accent,
     activeTagFilterIds,
     appearance,
@@ -31352,15 +31915,115 @@ export function FileExplorer({
     savedSearches,
     setActiveTagFilterIds,
     setError,
-    setSidebarWidth,
+    setSavedSearches,
     showHidden,
-    shouldRenderRail,
-    sidebarBounds.maxWidth,
-    sidebarBounds.minWidth,
     sidebarPaneStyle,
     sidebarWidth,
     tagMetadata.tags,
   ]);
+  const explorerSearchLanePane = useMemo(
+    () => (
+      <ExplorerSearchLane
+        currentPath={currentPath}
+        loading={searchLoading}
+        mode={searchMode}
+        onCancel={clearSearch}
+        onModeChange={handleSearchLaneModeChange}
+        onOpenResult={openSearchLaneResult}
+        onQueryChange={handleSearchLaneQueryChange}
+        onToggleHidden={toggleSearchLaneHiddenFiles}
+        query={search}
+        results={searchResults}
+        showHidden={showHidden}
+        tone={explorerSlateTone}
+      />
+    ),
+    [
+      clearSearch,
+      currentPath,
+      explorerSlateTone,
+      handleSearchLaneModeChange,
+      handleSearchLaneQueryChange,
+      openSearchLaneResult,
+      search,
+      searchLoading,
+      searchMode,
+      searchResults,
+      showHidden,
+      toggleSearchLaneHiddenFiles,
+    ],
+  );
+  const explorerSemanticLanePane = useMemo(
+    () => (
+      <ExplorerSemanticLane
+        currentPath={currentPath}
+        diagnostics={semanticSearchDiagnostics}
+        onBuild={() => void requestSemanticIndexBuild("build")}
+        onClear={() => void requestSemanticIndexBuild("clear")}
+        onFindSimilar={runSemanticLaneFindSimilar}
+        onQueryChange={(nextQuery) => {
+          setSearchMode("semantic");
+          setSemanticSearchSourcePath(null);
+          setSearch(nextQuery);
+        }}
+        onRebuild={() => void requestSemanticIndexBuild("rebuild")}
+        query={searchMode === "semantic" ? search : ""}
+        selectedPath={semanticSelectionCandidate?.path ?? null}
+        statusLabel={semanticIndexStatusLabel}
+        summary={semanticIndexSummary}
+        tone={explorerSlateTone}
+      />
+    ),
+    [
+      currentPath,
+      explorerSlateTone,
+      requestSemanticIndexBuild,
+      runSemanticLaneFindSimilar,
+      search,
+      searchMode,
+      semanticIndexStatusLabel,
+      semanticIndexSummary,
+      semanticSearchDiagnostics,
+      semanticSelectionCandidate?.path,
+    ],
+  );
+  const explorerTasksLanePane = useMemo(
+    () => (
+      <ExplorerSlatePane tone={explorerSlateTone}>
+        <ExplorerSlatePaneHeader
+          title="Tasks"
+          subtitle="Explorer background work"
+          tone={explorerSlateTone}
+        />
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+            padding: 12,
+          }}
+        >
+          <ExplorerTaskCenterContent
+            accent={accent}
+            border="var(--overlay-explorer-panel-border)"
+            danger={EXP.red}
+            muted={EXP.muted}
+            tasks={homeTasks}
+            text={EXP.text}
+            title="Explorer Tasks"
+          />
+        </div>
+      </ExplorerSlatePane>
+    ),
+    [
+      EXP.muted,
+      EXP.red,
+      EXP.text,
+      accent,
+      explorerSlateTone,
+      homeTasks,
+    ],
+  );
   const explorerToolbarPane = useMemo(
     () => (
       <div data-overlay-explorer-plane="toolbar" style={toolbarContainerStyle}>
@@ -31731,7 +32394,7 @@ export function FileExplorer({
     ],
   );
   const explorerPreviewPane = useMemo(() => {
-    if (!previewPanelVisible) {
+    if (!previewPanelVisible || !previewOpen) {
       return null;
     }
 
@@ -31740,6 +32403,7 @@ export function FileExplorer({
         appearance={appearance}
         preview={preview}
         width={previewWidth}
+        fillAvailableWidth
         placement="trailing"
         presentationMode={previewSplitMode}
         previewLocked={previewLocked}
@@ -31766,6 +32430,7 @@ export function FileExplorer({
           activePreviewWorkbenchSelection?.resolutionSource ?? null
         }
         onWidthChange={setPreviewWidth}
+        showResizeHandle={false}
         onOpenPreviewWorkbench={openPreviewWithWorkbench}
         onSetPreviewWorkbenchDefault={setPreviewWorkbenchDefault}
         onTextChange={updatePreviewTextContent}
@@ -31884,6 +32549,7 @@ export function FileExplorer({
     previewExternalChromeControls,
     previewJumpToFolderEnabled,
     previewLocked,
+    previewOpen,
     previewPanelVisible,
     previewRefreshRevision,
     previewSplitMode,
@@ -31955,6 +32621,9 @@ export function FileExplorer({
       contextKind: ExplorerMenuContextKind;
       summary: string;
       openWithTargetPath: string | null;
+      windowsShellContextMenuRequest:
+        | ReturnType<typeof resolveExplorerWindowsShellContextMenuRequest>
+        | null;
       menu: ReturnType<typeof buildExplorerRuntimeMenu>;
     }> = [];
     const baseMenuOptions = {
@@ -31989,6 +32658,11 @@ export function FileExplorer({
         ...baseMenuOptions,
         invocation: selectionInvocation,
       });
+      const selectionWindowsShellContextMenuRequest =
+        resolveExplorerWindowsShellContextMenuRequestForInvocation(
+          selectionInvocation,
+          explorerMenuRuntimeEnvironment,
+        );
       const selectionSummary =
         selectedMenuInvocationEntries.length > 1
           ? `${selectedMenuInvocationEntries.length} selected items`
@@ -32000,6 +32674,8 @@ export function FileExplorer({
         contextKind: selectionKind,
         summary: selectionSummary,
         openWithTargetPath: selectionMenu.primaryEntry?.path ?? null,
+        windowsShellContextMenuRequest:
+          selectionWindowsShellContextMenuRequest,
         menu: selectionMenu,
       });
     }
@@ -32015,12 +32691,19 @@ export function FileExplorer({
       ...baseMenuOptions,
       invocation: currentFolderInvocation,
     });
+    const currentFolderWindowsShellContextMenuRequest =
+      resolveExplorerWindowsShellContextMenuRequestForInvocation(
+        currentFolderInvocation,
+        explorerMenuRuntimeEnvironment,
+      );
     scopes.push({
       id: "current-folder",
       label: "Current Folder",
       contextKind: "background",
       summary: currentPath,
       openWithTargetPath: currentPath,
+      windowsShellContextMenuRequest:
+        currentFolderWindowsShellContextMenuRequest,
       menu: currentFolderMenu,
     });
 
@@ -32036,12 +32719,19 @@ export function FileExplorer({
         ...baseMenuOptions,
         invocation: previewInvocation,
       });
+      const previewWindowsShellContextMenuRequest =
+        resolveExplorerWindowsShellContextMenuRequestForInvocation(
+          previewInvocation,
+          explorerMenuRuntimeEnvironment,
+        );
       scopes.push({
         id: "preview",
         label: "Preview",
         contextKind: "preview-pane",
         summary: actionsPanePreviewTarget.path,
         openWithTargetPath: previewMenu.primaryEntry?.path ?? null,
+        windowsShellContextMenuRequest:
+          previewWindowsShellContextMenuRequest,
         menu: previewMenu,
       });
     }
@@ -32082,6 +32772,13 @@ export function FileExplorer({
     }
     return activeActionsPaneRuntimeScope.openWithTargetPath;
   }, [actionsPaneVisible, activeActionsPaneRuntimeScope]);
+  const activeActionsPaneWindowsShellContextMenuRequest = useMemo(() => {
+    if (!actionsPaneVisible || !activeActionsPaneRuntimeScope) {
+      return null;
+    }
+
+    return activeActionsPaneRuntimeScope.windowsShellContextMenuRequest;
+  }, [actionsPaneVisible, activeActionsPaneRuntimeScope]);
 
   useEffect(() => {
     if (!activeActionsPaneOpenWithTargetPath) {
@@ -32090,6 +32787,18 @@ export function FileExplorer({
 
     void requestOpenWithPrograms(activeActionsPaneOpenWithTargetPath);
   }, [activeActionsPaneOpenWithTargetPath, requestOpenWithPrograms]);
+  useEffect(() => {
+    if (!activeActionsPaneWindowsShellContextMenuRequest) {
+      return;
+    }
+
+    void requestWindowsShellContextMenu(
+      activeActionsPaneWindowsShellContextMenuRequest,
+    );
+  }, [
+    activeActionsPaneWindowsShellContextMenuRequest,
+    requestWindowsShellContextMenu,
+  ]);
   const explorerActionsPane = useMemo(() => {
     if (!actionsPaneVisible) {
       return null;
@@ -32098,74 +32807,68 @@ export function FileExplorer({
     return (
       <div
         data-overlay-explorer-plane="actions"
-        style={{ display: "flex", minHeight: 0, minWidth: 0 }}
+        style={{
+          ...actionsPaneShellStyle,
+          flex: 1,
+          overflow: "hidden",
+        }}
       >
-        <ResizablePane
-          size={actionsWidth}
-          minSize={EXPLORER_ACTIONS_WIDTH_BOUNDS.min}
-          maxSize={EXPLORER_ACTIONS_WIDTH_BOUNDS.max}
-          onSizeChange={setActionsWidth}
-          borderColor={`${accent}55`}
-          handleSide="left"
-          style={actionsPaneShellStyle}
-        >
-          <ExplorerActionsPane
-            accent={accent}
-            appearance={appearance}
-            border={EXP.border}
-            commandBinding={selectedExplorerCustomizeCommandBinding}
-            customizeMode={Boolean(activeChromeEditSession)}
-            catalog={explorerCustomizeCatalog}
-            muted={EXP.muted}
-            pendingHotkeyPrompt={pendingExplorerHotkeyPrompt}
-            runtimeActiveContextKind={
-              activeActionsPaneRuntimeScope?.contextKind ?? "background"
-            }
-            runtimeActiveScopeId={activeActionsPaneRuntimeScope?.id ?? null}
-            runtimeContextLabel={
-              activeActionsPaneRuntimeScope?.label ?? "Current Folder"
-            }
-            runtimeContextSummary={
-              activeActionsPaneRuntimeScope?.summary ?? currentPath
-            }
-            runtimeMenuDensity={
-              activeActionsPaneRuntimeScope?.menu.presentation.density ??
-              "balanced"
-            }
-            runtimeMenuNodes={activeActionsPaneRuntimeScope?.menu.nodes ?? []}
-            runtimeShowDescriptions={
-              activeActionsPaneRuntimeScope?.menu.presentation
-                .showDescriptions ?? true
-            }
-            runtimeScopeOptions={actionsPaneRuntimeScopes.map((scope) => ({
-              id: scope.id,
-              label: scope.label,
-              contextKind: scope.contextKind,
-              summary: scope.summary,
-              commandCount: scope.commandCount,
-            }))}
-            selectedEntry={selectedExplorerCustomizeEntry}
-            selectedPlacement={selectedExplorerCustomizePlacement}
-            text={EXP.text}
-            onBeginCatalogDrag={beginCatalogExplorerChromePointerDrag}
-            onClose={closeActionsPanel}
-            onOpenRuntimeMenuComposer={openContextMenuComposerSettings}
-            onRequestHotkeyCapture={(controlId) => {
-              selectExplorerCustomizeControl(controlId);
-              requestExplorerChromeHotkeyCapture(controlId);
-            }}
-            onSelectControl={selectExplorerCustomizeControl}
-            onSelectRuntimeScope={(scopeId) =>
-              setActionsPaneScopeId(
-                scopeId as "selection" | "current-folder" | "preview",
-              )
-            }
-            onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
-            onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
-            onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
-            onSetSelectedWidthPx={setSelectedExplorerChromeWidthPx}
-          />
-        </ResizablePane>
+        <ExplorerActionsPane
+          accent={accent}
+          appearance={appearance}
+          border={EXP.border}
+          commandBinding={selectedExplorerCustomizeCommandBinding}
+          customizeMode={Boolean(activeChromeEditSession)}
+          catalog={explorerCustomizeCatalog}
+          muted={EXP.muted}
+          pendingHotkeyPrompt={pendingExplorerHotkeyPrompt}
+          runtimeActiveContextKind={
+            activeActionsPaneRuntimeScope?.contextKind ?? "background"
+          }
+          runtimeActiveScopeId={activeActionsPaneRuntimeScope?.id ?? null}
+          runtimeContextLabel={
+            activeActionsPaneRuntimeScope?.label ?? "Current Folder"
+          }
+          runtimeContextSummary={
+            activeActionsPaneRuntimeScope?.summary ?? currentPath
+          }
+          runtimeMenuDensity={
+            activeActionsPaneRuntimeScope?.menu.presentation.density ??
+            "balanced"
+          }
+          runtimeMenuNodes={activeActionsPaneRuntimeScope?.menu.nodes ?? []}
+          runtimeShowDescriptions={
+            activeActionsPaneRuntimeScope?.menu.presentation
+              .showDescriptions ?? true
+          }
+          runtimeScopeOptions={actionsPaneRuntimeScopes.map((scope) => ({
+            id: scope.id,
+            label: scope.label,
+            contextKind: scope.contextKind,
+            summary: scope.summary,
+            commandCount: scope.commandCount,
+          }))}
+          selectedEntry={selectedExplorerCustomizeEntry}
+          selectedPlacement={selectedExplorerCustomizePlacement}
+          text={EXP.text}
+          onBeginCatalogDrag={beginCatalogExplorerChromePointerDrag}
+          onClose={closeActionsPanel}
+          onOpenRuntimeMenuComposer={openContextMenuComposerSettings}
+          onRequestHotkeyCapture={(controlId) => {
+            selectExplorerCustomizeControl(controlId);
+            requestExplorerChromeHotkeyCapture(controlId);
+          }}
+          onSelectControl={selectExplorerCustomizeControl}
+          onSelectRuntimeScope={(scopeId) =>
+            setActionsPaneScopeId(
+              scopeId as "selection" | "current-folder" | "preview",
+            )
+          }
+          onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
+          onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
+          onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
+          onSetSelectedWidthPx={setSelectedExplorerChromeWidthPx}
+        />
       </div>
     );
   }, [
@@ -32178,7 +32881,6 @@ export function FileExplorer({
     actionsPaneRuntimeScopes,
     activeActionsPaneRuntimeScope,
     actionsPaneScopeId,
-    actionsWidth,
     activeChromeEditSession,
     appearance,
     beginCatalogExplorerChromePointerDrag,
@@ -32198,34 +32900,206 @@ export function FileExplorer({
     setSelectedExplorerChromeShowLabel,
     setSelectedExplorerChromeSizeVariant,
   ]);
-  const explorerRightActivityDockPane = useMemo(() => {
-    if (!explorerPreviewPane && !explorerActionsPane) {
+  const explorerSideTerminalPane = useMemo(() => {
+    if (!sideExplorerTerminalMounted && !sideExplorerTerminalVisible) {
       return null;
     }
 
-    const split = Boolean(explorerPreviewPane && explorerActionsPane);
+    if (!explorerTerminalWorkingDirectory) {
+      return (
+        <ExplorerSlatePane tone={explorerSlateTone}>
+          <ExplorerSlatePaneHeader
+            title="Terminal"
+            subtitle="Unavailable for virtual or cloud locations"
+            tone={explorerSlateTone}
+          />
+        </ExplorerSlatePane>
+      );
+    }
+
     return (
       <div
-        data-overlay-explorer-plane="right-activity-dock"
-        data-overlay-explorer-right-activity-split={split ? "true" : "false"}
+        data-overlay-explorer-plane="side-terminal"
         style={{
-          display: "flex",
-          alignItems: "stretch",
-          gap: split ? 10 : 0,
+          flex: 1,
           minHeight: 0,
           minWidth: 0,
           overflow: "hidden",
-          padding: "10px 0 10px 10px",
-          boxSizing: "border-box",
+          border: "1px solid var(--overlay-explorer-panel-border)",
+          borderRadius: "var(--overlay-explorer-panel-radius)",
+          boxShadow: "var(--overlay-explorer-toolbar-shadow)",
           background: "var(--overlay-explorer-content-bg)",
-          flexShrink: 0,
         }}
       >
-        {explorerPreviewPane}
-        {explorerActionsPane}
+        <TerminalOverlay
+          isOpen
+          embedded
+          onClose={closeSideExplorerTerminal}
+          appearance={appearance}
+          terminalIdNamespace={sideExplorerTerminalNamespace}
+          workingDirectory={explorerTerminalWorkingDirectory}
+          bootReady={sideExplorerTerminalVisible}
+          consumeExplorerCwdSync={false}
+          pendingCommandRequest={sideExplorerTerminalCommandRequest}
+          onCommandRequestHandled={handleSideExplorerTerminalCommandHandled}
+          onReportedWorkingDirectoryChange={
+            handleSideExplorerTerminalReportedWorkingDirectoryChange
+          }
+          focusRequestKey={sideExplorerTerminalFocusRequestKey}
+        />
       </div>
     );
-  }, [explorerActionsPane, explorerPreviewPane]);
+  }, [
+    appearance,
+    closeSideExplorerTerminal,
+    explorerSlateTone,
+    explorerTerminalWorkingDirectory,
+    handleSideExplorerTerminalCommandHandled,
+    handleSideExplorerTerminalReportedWorkingDirectoryChange,
+    sideExplorerTerminalCommandRequest,
+    sideExplorerTerminalFocusRequestKey,
+    sideExplorerTerminalMounted,
+    sideExplorerTerminalNamespace,
+    sideExplorerTerminalVisible,
+  ]);
+  const renderExplorerActivityDockLaneContent = useCallback(
+    (laneId: ExplorerActivityLaneId) => {
+      switch (laneId) {
+        case "files":
+          return explorerFilesLanePane;
+        case "search":
+          return explorerSearchLanePane;
+        case "semantic":
+          return explorerSemanticLanePane;
+        case "tasks":
+          return explorerTasksLanePane;
+        case "preview":
+          return explorerPreviewPane;
+        case "actions":
+        case "customize":
+          return explorerActionsPane;
+        case "terminal":
+          return explorerSideTerminalPane;
+        default:
+          return null;
+      }
+    },
+    [
+      explorerActionsPane,
+      explorerFilesLanePane,
+      explorerPreviewPane,
+      explorerSearchLanePane,
+      explorerSemanticLanePane,
+      explorerSideTerminalPane,
+      explorerTasksLanePane,
+    ],
+  );
+  const renderExplorerActivityDockForSide = useCallback(
+    (side: ExplorerActivityRailSide) => {
+      const renderedLaneIds = orderedOpenActivityLaneIdsBySide[side].filter(
+        (laneId) => {
+          if (laneId === "preview") {
+            return previewPanelVisible && previewOpen;
+          }
+          if (laneId === "actions" || laneId === "customize") {
+            return actionsPaneVisible && activeActionsHostLaneId === laneId;
+          }
+          if (laneId === "terminal") {
+            return sideExplorerTerminalMounted || sideExplorerTerminalVisible;
+          }
+          return true;
+        },
+      );
+      if (renderedLaneIds.length === 0) {
+        return null;
+      }
+
+      const sideWidth = getExplorerActivityDockWidthForSide(side);
+      const sideBounds = getExplorerActivityDockWidthBoundsForSide(side);
+
+      return (
+        <div
+          data-overlay-explorer-plane={
+            side === "left" ? "left-activity-dock" : "right-activity-dock"
+          }
+          data-overlay-explorer-activity-dock-side={side}
+          style={{
+            display: "flex",
+            alignItems: "stretch",
+            minHeight: 0,
+            minWidth: 0,
+            flexShrink: 0,
+            overflow: "hidden",
+            padding: side === "left" ? "10px 10px 10px 0" : "10px 0 10px 10px",
+            boxSizing: "border-box",
+            background: "var(--overlay-explorer-content-bg)",
+          }}
+        >
+          <ResizablePane
+            size={sideWidth}
+            minSize={sideBounds.min}
+            maxSize={sideBounds.max}
+            onSizeChange={(nextWidth) =>
+              setExplorerActivityDockWidthForSide(side, nextWidth)
+            }
+            borderColor={`${accent}55`}
+            handleSide={side === "left" ? "right" : "left"}
+            style={actionsPaneShellStyle}
+          >
+            <div
+              style={{
+                display: "flex",
+                flex: 1,
+                minHeight: 0,
+                minWidth: 0,
+                gap: renderedLaneIds.length > 1 ? 10 : 0,
+                overflow: "hidden",
+              }}
+            >
+              {renderedLaneIds.map((laneId) => (
+                <div
+                  key={laneId}
+                  data-overlay-explorer-activity-dock-lane={laneId}
+                  style={{
+                    flex: "1 1 0",
+                    minHeight: 0,
+                    minWidth: 0,
+                    display: "flex",
+                    overflow: "hidden",
+                  }}
+                >
+                  {renderExplorerActivityDockLaneContent(laneId)}
+                </div>
+              ))}
+            </div>
+          </ResizablePane>
+        </div>
+      );
+    },
+    [
+      actionsPaneShellStyle,
+      actionsPaneVisible,
+      activeActionsHostLaneId,
+      accent,
+      getExplorerActivityDockWidthBoundsForSide,
+      getExplorerActivityDockWidthForSide,
+      orderedOpenActivityLaneIdsBySide,
+      previewOpen,
+      previewPanelVisible,
+      renderExplorerActivityDockLaneContent,
+      setExplorerActivityDockWidthForSide,
+      sideExplorerTerminalMounted,
+      sideExplorerTerminalVisible,
+    ],
+  );
+  const leftExplorerActivityDockPane = useMemo(
+    () => renderExplorerActivityDockForSide("left"),
+    [renderExplorerActivityDockForSide],
+  );
+  const rightExplorerActivityDockPane = useMemo(
+    () => renderExplorerActivityDockForSide("right"),
+    [renderExplorerActivityDockForSide],
+  );
 
   return (
     <div
@@ -32455,14 +33329,14 @@ export function FileExplorer({
             activeLaneId={activeActivityLane}
             activeLaneIds={activeExplorerActivityLaneIds}
             appearance={appearance}
-            laneDefinitions={explorerActivityRailDefinitionsBySide.left}
+            laneDefinitions={leftExplorerActivityRailDefinitions}
             laneBadges={activityLaneBadges}
+            onMoveLane={handleMoveExplorerActivityLane}
             onSelectLane={selectExplorerActivityLane}
             railSide="left"
             tone={explorerSlateTone}
           />
-          {explorerRailPane}
-          {explorerUtilityDockPane}
+          {leftExplorerActivityDockPane}
 
           <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
             <div
@@ -33082,12 +33956,13 @@ export function FileExplorer({
               </div>
             </div>
           </div>
-          {explorerRightActivityDockPane}
+          {rightExplorerActivityDockPane}
           <ExplorerActivityRail
             activeLaneIds={activeExplorerActivityLaneIds}
             appearance={appearance}
-            laneDefinitions={explorerActivityRailDefinitionsBySide.right}
+            laneDefinitions={rightExplorerActivityRailDefinitions}
             laneBadges={activityLaneBadges}
+            onMoveLane={handleMoveExplorerActivityLane}
             onSelectLane={selectExplorerActivityLane}
             railSide="right"
             tone={explorerSlateTone}

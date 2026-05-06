@@ -307,6 +307,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::audio_engine::audio_engine_sync_selection_to_armed_deck,
             crate::open_with::open_with_get_associated_programs,
             crate::open_with::open_with_launch_program,
+            crate::open_with::open_with_get_shell_context_menu,
+            crate::open_with::open_with_invoke_shell_context_menu_item,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,

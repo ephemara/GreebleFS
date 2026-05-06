@@ -34,6 +34,18 @@ export function renderExplorerCommandLibraryIcon(
   iconName?: string,
   size = 13,
 ): ReactNode {
+  if (iconName?.startsWith("data:image/")) {
+    return (
+      <img
+        src={iconName}
+        alt=""
+        width={size}
+        height={size}
+        style={{ width: size, height: size, objectFit: "contain" }}
+      />
+    );
+  }
+
   switch (iconName) {
     case "Clipboard":
       return <Clipboard size={size} />;

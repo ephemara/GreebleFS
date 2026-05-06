@@ -49,13 +49,39 @@ pub struct GetAssociatedProgramsResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ShellContextMenuItem {
     pub id: u32,
     pub name: String,
     pub verb: Option<String>,
     pub icon: Option<String>,
     pub children: Option<Vec<ShellContextMenuItem>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ShellContextMenuTargetKind {
+    Entry,
+    MultiSelect,
+    Background,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellContextMenuRequest {
+    pub target_kind: ShellContextMenuTargetKind,
+    pub current_directory_path: String,
+    pub target_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellContextMenuInvokeRequest {
+    pub menu_request: ShellContextMenuRequest,
+    pub command_id: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command_verb: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

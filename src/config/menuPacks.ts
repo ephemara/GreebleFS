@@ -287,6 +287,9 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       commandId: 'built-in.open-with',
       quickSlot: 'secondary',
     }),
+    createEntry('entry.windows-shell-actions', 'command', 25, {
+      commandId: 'built-in.windows-shell-actions',
+    }),
     createEntry('entry.send-to-mobile', 'command', 30, {
       commandId: 'built-in.send-to-mobile-download',
     }),
@@ -341,6 +344,9 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
     } as Partial<ExplorerMenuLayoutEntry>),
     createEntry('background.separator.system', 'separator', 30),
     createEntry('background.open-with', 'command', 40, { commandId: 'built-in.open-with' }),
+    createEntry('background.windows-shell-actions', 'command', 45, {
+      commandId: 'built-in.windows-shell-actions',
+    }),
     createEntry('background.system.slot', 'group-slot', 50, {
       group: 'system',
       sourceFilter: 'any',
@@ -358,6 +364,9 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const multiSelectLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('multi.copy-path', 'command', 10, { commandId: 'built-in.copy-path' }),
     createEntry('multi.properties', 'command', 20, { commandId: 'built-in.properties' }),
+    createEntry('multi.windows-shell-actions', 'command', 25, {
+      commandId: 'built-in.windows-shell-actions',
+    }),
     createEntry('multi.separator.primary', 'separator', 30),
     createEntry('multi.clipboard.slot', 'group-slot', 40, {
       group: 'clipboard',
@@ -388,6 +397,9 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const searchResultLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('search.open', 'command', 10, { commandId: 'built-in.open', quickSlot: 'primary' }),
     createEntry('search.open-with', 'command', 20, { commandId: 'built-in.open-with' }),
+    createEntry('search.windows-shell-actions', 'command', 25, {
+      commandId: 'built-in.windows-shell-actions',
+    }),
     createEntry('search.send-to-mobile', 'command', 30, {
       commandId: 'built-in.send-to-mobile-download',
     }),
@@ -424,6 +436,9 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
   const previewPaneLayout: ExplorerMenuLayoutEntry[] = [
     createEntry('preview.open', 'command', 10, { commandId: 'built-in.open', quickSlot: 'primary' }),
     createEntry('preview.open-with', 'command', 20, { commandId: 'built-in.open-with' }),
+    createEntry('preview.windows-shell-actions', 'command', 25, {
+      commandId: 'built-in.windows-shell-actions',
+    }),
     createEntry('preview.separator.preview', 'separator', 30),
     createEntry('preview.preview.slot', 'group-slot', 40, {
       group: 'preview',

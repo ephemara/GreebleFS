@@ -30,6 +30,9 @@ import type { LoadedExplorerAction } from '../../config/actionPacks';
 import type {
   ExplorerAssociatedProgram,
   ExplorerAssociatedProgramsCatalog,
+  ExplorerShellContextMenuInvokeRequest,
+  ExplorerShellContextMenuItem,
+  ExplorerShellContextMenuRequest,
 } from '../../runtime/explorerBackend';
 import {
   resolveExplorerPreviewContextMenuActions,
@@ -72,6 +75,19 @@ export interface ExplorerOpenWithProgramsState {
   requestedAtEpochMs: number | null;
 }
 
+export interface ExplorerWindowsShellContextMenuState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  items: ExplorerShellContextMenuItem[] | null;
+  error: string | null;
+  requestId: number | null;
+  requestedAtEpochMs: number | null;
+}
+
+export interface ExplorerResolvedWindowsShellContextMenuRequest {
+  request: ExplorerShellContextMenuRequest;
+  requestKey: string;
+}
+
 export interface ExplorerMenuRuntimeActionContext {
   invocation: ExplorerMenuInvocationContext;
   targetEntries: ExplorerMenuInvocationEntry[];
@@ -95,6 +111,10 @@ export interface ExplorerMenuRuntimeEnvironment {
   supportsOpenWithSystemPicker: boolean;
   supportsNativeProperties: boolean;
   openWithProgramsByPath: Record<string, ExplorerOpenWithProgramsState | undefined>;
+  windowsShellContextMenusByRequestKey: Record<
+    string,
+    ExplorerWindowsShellContextMenuState | undefined
+  >;
   supportsNativeIntegration: (path: string) => boolean;
   isCloudExplorerPath: (path: string) => boolean;
   isExplorerArchiveVirtualPath: (path: string) => boolean;
@@ -108,6 +128,9 @@ export interface ExplorerMenuRuntimeEnvironment {
     path: string,
     programPath: string,
     launchArguments?: string[],
+  ) => Promise<void>;
+  invokeWindowsShellContextMenuItem: (
+    request: ExplorerShellContextMenuInvokeRequest,
   ) => Promise<void>;
   openAsAdmin: (path: string) => Promise<void>;
   openInTerminal: (path: string) => void | Promise<void>;
@@ -341,6 +364,134 @@ function dedupeOpenWithPrograms(
   return deduped;
 }
 
+function buildExplorerWindowsShellContextMenuRequestKey(
+  request: ExplorerShellContextMenuRequest,
+): string {
+  return [
+    request.targetKind,
+    request.currentDirectoryPath,
+    ...request.targetPaths,
+  ].join('\u0000');
+}
+
+function canResolveWindowsShellContextMenuPath(
+  path: string,
+  environment: ExplorerMenuRuntimeEnvironment,
+): boolean {
+  return (
+    Boolean(path) &&
+    environment.supportsNativeIntegration(path) &&
+    !environment.isCloudExplorerPath(path) &&
+    !environment.isExplorerArchiveVirtualPath(path)
+  );
+}
+
+function resolveWindowsShellContextMenuCurrentDirectory(
+  targetEntries: ExplorerMenuInvocationEntry[],
+  environment: ExplorerMenuRuntimeEnvironment,
+): string {
+  const firstParentPath = targetEntries[0]?.parentPath?.trim() ?? '';
+  if (
+    firstParentPath &&
+    targetEntries.every((entry) => entry.parentPath.trim() === firstParentPath)
+  ) {
+    return firstParentPath;
+  }
+
+  return environment.currentPath;
+}
+
+export function resolveExplorerWindowsShellContextMenuRequest(
+  invocation: ExplorerMenuInvocationContext,
+  targetEntries: ExplorerMenuInvocationEntry[],
+  primaryEntry: ExplorerMenuInvocationEntry | null,
+  environment: ExplorerMenuRuntimeEnvironment,
+): ExplorerResolvedWindowsShellContextMenuRequest | null {
+  if (environment.runtimePlatform !== 'windows') {
+    return null;
+  }
+
+  if (invocation.kind === 'background') {
+    if (
+      !canResolveWindowsShellContextMenuPath(environment.currentPath, environment)
+    ) {
+      return null;
+    }
+
+    const request: ExplorerShellContextMenuRequest = {
+      targetKind: 'background',
+      currentDirectoryPath: environment.currentPath,
+      targetPaths: [],
+    };
+
+    return {
+      request,
+      requestKey: buildExplorerWindowsShellContextMenuRequestKey(request),
+    };
+  }
+
+  const shellTargetEntries =
+    targetEntries.length > 0
+      ? targetEntries
+      : primaryEntry
+        ? [primaryEntry]
+        : invocation.previewTarget
+          ? [invocation.previewTarget]
+          : [];
+
+  if (shellTargetEntries.length === 0) {
+    return null;
+  }
+
+  if (
+    shellTargetEntries.some(
+      (entry) => !canResolveWindowsShellContextMenuPath(entry.path, environment),
+    )
+  ) {
+    return null;
+  }
+
+  const targetKind =
+    shellTargetEntries.length > 1 || invocation.kind === 'multi-select'
+      ? 'multiSelect'
+      : 'entry';
+  const request: ExplorerShellContextMenuRequest = {
+    targetKind,
+    currentDirectoryPath:
+      targetKind === 'entry'
+        ? shellTargetEntries[0]?.parentPath || environment.currentPath
+        : resolveWindowsShellContextMenuCurrentDirectory(
+            shellTargetEntries,
+            environment,
+          ),
+    targetPaths: shellTargetEntries.map((entry) => entry.path),
+  };
+
+  return {
+    request,
+    requestKey: buildExplorerWindowsShellContextMenuRequestKey(request),
+  };
+}
+
+export function resolveExplorerWindowsShellContextMenuRequestForInvocation(
+  invocation: ExplorerMenuInvocationContext,
+  environment: ExplorerMenuRuntimeEnvironment,
+): ExplorerResolvedWindowsShellContextMenuRequest | null {
+  const targetEntries = getActionEntries(invocation);
+  const primaryEntry = getPrimaryActionEntry(
+    invocation,
+    environment,
+    targetEntries,
+  );
+
+  return resolveExplorerWindowsShellContextMenuRequest(
+    invocation,
+    targetEntries,
+    primaryEntry,
+    environment,
+  );
+}
+
 function getPrimaryActionEntry(
   invocation: ExplorerMenuInvocationContext,
   environment: ExplorerMenuRuntimeEnvironment,
@@ -562,6 +713,15 @@ function canShowCommand(
     case 'open-with':
       return environment.supportsNativeOpenWith
         && environment.supportsNativeIntegration(entryPath);
+    case 'windows-shell-actions':
+      return (
+        resolveExplorerWindowsShellContextMenuRequest(
+          invocation,
+          targetEntries,
+          primaryEntry,
+          environment,
+        ) != null
+      );
     case 'open-admin':
       return environment.supportsNativeIntegration(entryPath)
         && !environment.isExplorerArchiveVirtualPath(entryPath);
@@ -756,6 +916,7 @@ function executeBuiltInLeaf(
     case 'refresh':
       return () => environment.refresh();
     case 'open-with':
+    case 'windows-shell-actions':
     default:
       return () => undefined;
   }
@@ -802,6 +963,8 @@ function resolveBuiltInLabel(
       return 'Edit Menu';
     case 'send-to-mobile-download':
       return 'Send to iPhone';
+    case 'windows-shell-actions':
+      return 'Windows Actions';
     default:
       return command.title;
   }
@@ -1000,10 +1163,88 @@ function createRuntimeLeafNode(
   };
 }
 
+function createWindowsShellContextMenuNodes(
+  command: ExplorerCommandDefinition,
+  request: ExplorerShellContextMenuRequest,
+  items: ExplorerShellContextMenuItem[],
+  depth: number,
+  environment: ExplorerMenuRuntimeEnvironment,
+  idPrefix: string,
+): ExplorerRuntimeMenuNode[] {
+  const nodes: ExplorerRuntimeMenuNode[] = [];
+
+  items.forEach((item, index) => {
+    const itemId = `${idPrefix}.${index}.${item.id || 'submenu'}`;
+    const itemIcon = item.icon ?? command.iconName;
+    const childItems = item.children ?? [];
+
+    if (childItems.length > 0) {
+      const children = sanitizeNodeList(
+        createWindowsShellContextMenuNodes(
+          command,
+          request,
+          childItems,
+          depth + 1,
+          environment,
+          itemId,
+        ),
+      );
+      if (children.length === 0) {
+        return;
+      }
+
+      nodes.push({
+        kind: 'submenu',
+        id: itemId,
+        label: item.name,
+        depth,
+        iconName: itemIcon,
+        tone: 'safe',
+        source: 'layout',
+        quickSlot: 'none',
+        fallbackBucket: 'default',
+        children,
+      });
+      return;
+    }
+
+    if (item.id === 0) {
+      return;
+    }
+
+    nodes.push({
+      kind: 'command',
+      id: itemId,
+      commandId: command.id,
+      label: item.name,
+      description: item.verb
+        ? `Windows shell action (${item.verb}).`
+        : 'Imported from the Windows context menu.',
+      depth,
+      iconName: itemIcon,
+      tone: 'safe',
+      source: 'layout',
+      quickSlot: 'none',
+      fallbackBucket: 'default',
+      disabled: false,
+      shortcutId: undefined,
+      command,
+      onSelect: () =>
+        environment.invokeWindowsShellContextMenuItem({
+          menuRequest: request,
+          commandId: item.id,
+          commandVerb: item.verb ?? null,
+        }),
+    });
+  });
+
+  return nodes;
+}
+
 function createResolverChildren(
   command: ExplorerCommandDefinition,
-  _invocation: ExplorerMenuInvocationContext,
-  _targetEntries: ExplorerMenuInvocationEntry[],
+  invocation: ExplorerMenuInvocationContext,
+  targetEntries: ExplorerMenuInvocationEntry[],
   primaryEntry: ExplorerMenuInvocationEntry | null,
   environment: ExplorerMenuRuntimeEnvironment,
   depth: number,
@@ -1146,6 +1387,72 @@ function createResolverChildren(
       }
 
       return children;
+    }
+    case 'windows-shell-actions': {
+      const resolvedRequest = resolveExplorerWindowsShellContextMenuRequest(
+        invocation,
+        targetEntries,
+        primaryEntry,
+        environment,
+      );
+      if (!resolvedRequest) {
+        return [];
+      }
+
+      const state =
+        environment.windowsShellContextMenusByRequestKey[
+          resolvedRequest.requestKey
+        ];
+
+      if (state?.status === 'ready' && state.items) {
+        const children = sanitizeNodeList(
+          createWindowsShellContextMenuNodes(
+            command,
+            resolvedRequest.request,
+            state.items,
+            depth,
+            environment,
+            `${command.id}.windows-shell-actions`,
+          ),
+        );
+
+        if (children.length > 0) {
+          return children;
+        }
+
+        return [
+          createDisabledResolverNode(
+            `${command.id}.empty`,
+            'No Windows Actions Found',
+            'Windows did not report any native context-menu actions for this target.',
+            command,
+            depth,
+          ),
+        ];
+      }
+
+      if (state?.status === 'error') {
+        return [
+          createDisabledResolverNode(
+            `${command.id}.error`,
+            'Unable to Load Windows Actions',
+            state.error
+              ?? 'Windows did not return a usable context menu for this target.',
+            command,
+            depth,
+          ),
+        ];
+      }
+
+      return [
+        createDisabledResolverNode(
+          `${command.id}.loading`,
+          'Loading Windows Actions…',
+          'Resolving the native Windows context-menu actions for this target.',
+          command,
+          depth,
+        ),
+      ];
     }
     default:
       return [];

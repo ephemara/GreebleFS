@@ -62,6 +62,16 @@
           "fallbackBucket": "default"
         },
         {
+          "id": "entry.windows-shell-actions",
+          "kind": "command",
+          "commandId": "built-in.windows-shell-actions",
+          "parentEntryId": null,
+          "order": 25,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
           "id": "entry.send-to-mobile",
           "kind": "command",
           "commandId": "built-in.send-to-mobile-download",
@@ -277,6 +287,16 @@
           "fallbackBucket": "default"
         },
         {
+          "id": "background.windows-shell-actions",
+          "kind": "command",
+          "commandId": "built-in.windows-shell-actions",
+          "parentEntryId": null,
+          "order": 45,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
           "id": "background.system.slot",
           "kind": "group-slot",
           "group": "system",
@@ -330,6 +350,16 @@
           "commandId": "built-in.properties",
           "parentEntryId": null,
           "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "multi.windows-shell-actions",
+          "kind": "command",
+          "commandId": "built-in.windows-shell-actions",
+          "parentEntryId": null,
+          "order": 25,
           "enabled": true,
           "quickSlot": "none",
           "fallbackBucket": "default"
@@ -430,6 +460,16 @@
           "commandId": "built-in.open-with",
           "parentEntryId": null,
           "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "search.windows-shell-actions",
+          "kind": "command",
+          "commandId": "built-in.windows-shell-actions",
+          "parentEntryId": null,
+          "order": 25,
           "enabled": true,
           "quickSlot": "none",
           "fallbackBucket": "default"
@@ -544,6 +584,16 @@
           "commandId": "built-in.open-with",
           "parentEntryId": null,
           "order": 20,
+          "enabled": true,
+          "quickSlot": "none",
+          "fallbackBucket": "default"
+        },
+        {
+          "id": "preview.windows-shell-actions",
+          "kind": "command",
+          "commandId": "built-in.windows-shell-actions",
+          "parentEntryId": null,
+          "order": 25,
           "enabled": true,
           "quickSlot": "none",
           "fallbackBucket": "default"

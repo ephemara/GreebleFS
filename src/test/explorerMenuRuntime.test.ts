@@ -13,6 +13,7 @@ import {
 } from '../config/menuPacks';
 import {
   buildExplorerRuntimeMenu,
+  resolveExplorerWindowsShellContextMenuRequestForInvocation,
   resolveMenuInvocationInputModality,
   type ExplorerMenuRuntimeEnvironment,
   type ExplorerRuntimeMenuNode,
@@ -73,6 +74,7 @@ function createEnvironment(
     supportsOpenWithSystemPicker: true,
     supportsNativeProperties: true,
     openWithProgramsByPath: {},
+    windowsShellContextMenusByRequestKey: {},
     supportsNativeIntegration: vi.fn(() => true),
     isCloudExplorerPath: vi.fn(() => false),
     isExplorerArchiveVirtualPath: vi.fn(() => false),
@@ -83,6 +85,7 @@ function createEnvironment(
     openEntry: vi.fn(),
     openWithSystemPicker: vi.fn(async () => {}),
     openWithProgram: vi.fn(async () => {}),
+    invokeWindowsShellContextMenuItem: vi.fn(async () => {}),
     openAsAdmin: vi.fn(async () => {}),
     openInTerminal: vi.fn(),
     openInFilesystemAquarium: vi.fn(),
@@ -293,6 +296,111 @@ describe('explorerMenuRuntime', () => {
       'assoc-handler:textedit',
       [],
     );
+  });
+
+  it('resolves imported Windows shell actions with submenu hierarchy and invocation metadata', async () => {
+    const targetEntry = createEntry({
+      path: 'C:/workspace/notes/demo.txt',
+      parentPath: 'C:/workspace/notes',
+      name: 'demo.txt',
+      stem: 'demo',
+    });
+    const invocation = createInvocation({
+      kind: 'entry',
+      primaryEntry: targetEntry,
+      selectedEntries: [targetEntry],
+      currentLocation: targetEntry.parentPath,
+    });
+    const previewEnvironment = createEnvironment({
+      currentPath: targetEntry.parentPath,
+      runtimePlatform: 'windows',
+    });
+    const resolvedRequest =
+      resolveExplorerWindowsShellContextMenuRequestForInvocation(
+        invocation,
+        previewEnvironment,
+      );
+
+    if (!resolvedRequest) {
+      throw new Error('Expected a Windows shell context-menu request');
+    }
+
+    const environment = createEnvironment({
+      currentPath: targetEntry.parentPath,
+      runtimePlatform: 'windows',
+      windowsShellContextMenusByRequestKey: {
+        [resolvedRequest.requestKey]: {
+          status: 'ready',
+          error: null,
+          requestId: null,
+          requestedAtEpochMs: null,
+          items: [
+            {
+              id: 21,
+              name: 'Open in Notepad',
+              verb: 'open',
+              icon: null,
+              children: null,
+            },
+            {
+              id: 0,
+              name: 'Send to',
+              verb: null,
+              icon: null,
+              children: [
+                {
+                  id: 42,
+                  name: 'Compressed (zipped) folder',
+                  verb: 'zip',
+                  icon: null,
+                  children: null,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const menu = buildExplorerRuntimeMenu({
+      invocation,
+      menuPacks: [createBuiltInExplorerMenuPack()],
+      activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
+      layoutOverridesByContext: {},
+      themeRendererPreference: 'classic',
+      actions: [],
+      pluginContextMenuItems: [],
+      environment,
+    });
+
+    const windowsActionsNode = findNodeByLabel(menu.nodes, 'Windows Actions');
+    expect(windowsActionsNode?.kind).toBe('submenu');
+    if (!windowsActionsNode || windowsActionsNode.kind !== 'submenu') {
+      throw new Error('Expected Windows Actions submenu');
+    }
+
+    const sendToNode = findNodeByLabel(windowsActionsNode.children, 'Send to');
+    expect(sendToNode?.kind).toBe('submenu');
+    if (!sendToNode || sendToNode.kind !== 'submenu') {
+      throw new Error('Expected Send to submenu');
+    }
+
+    const zipNode = findNodeByLabel(
+      sendToNode.children,
+      'Compressed (zipped) folder',
+    );
+    expect(zipNode?.kind).toBe('command');
+    if (!zipNode || zipNode.kind !== 'command') {
+      throw new Error('Expected zipped-folder command');
+    }
+
+    await zipNode.onSelect();
+
+    expect(environment.invokeWindowsShellContextMenuItem).toHaveBeenCalledWith({
+      menuRequest: resolvedRequest.request,
+      commandId: 42,
+      commandVerb: 'zip',
+    });
   });
 
   it('surfaces the send-to-iphone command for a single local file selection', async () => {

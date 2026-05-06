@@ -813,6 +813,22 @@ async openWithLaunchProgram(filePath: string, programPath: string, launchArgumen
     else return { status: "error", error: e  as any };
 }
 },
+async openWithGetShellContextMenu(request: ShellContextMenuRequest) : Promise<Result<ShellContextMenuItem[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_with_get_shell_context_menu", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openWithInvokeShellContextMenuItem(request: ShellContextMenuInvokeRequest) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_with_invoke_shell_context_menu_item", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async fsOpenWithDialog(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_open_with_dialog", { path }) };
@@ -2722,6 +2738,10 @@ export type SecondaryWindowSize = { width: number; height: number }
 export type SecondaryWindowSurfaceKind = "explorer-picker" | "file-operations" | "panel" | "plugin-panel" | "action-widget"
 export type ShellBlueprint = { id: ShellBlueprintId; label: string; description: string; navigationModel: ShellNavigationModel; surfaceStyle: ShellSurfaceStyle; supportsPinnedPanels: boolean; supportsViewportDock: boolean; supportsPanelTabs: boolean; supportsDualScreen: boolean }
 export type ShellBlueprintId = "classic-dock" | "ide-workbench" | "xmb-cross-media" | "retro-desktop" | "tile-start" | "handheld-dual-screen"
+export type ShellContextMenuInvokeRequest = { menuRequest: ShellContextMenuRequest; commandId: number; commandVerb?: string | null }
+export type ShellContextMenuItem = { id: number; name: string; verb: string | null; icon: string | null; children: ShellContextMenuItem[] | null }
+export type ShellContextMenuRequest = { targetKind: ShellContextMenuTargetKind; currentDirectoryPath: string; targetPaths: string[] }
+export type ShellContextMenuTargetKind = "entry" | "multiSelect" | "background"
 export type ShellNavigationModel = "tabs" | "cross-axis" | "desktop" | "tiles" | "stacked-dual-pane"
 export type ShellSurfaceStyle = "glass" | "solid" | "skeuomorphic" | "flat" | "pixel"
 export type SqliteDbInfo = { path: string; tables: SqliteTableInfo[] }

@@ -14,12 +14,26 @@ mod macos;
 
 pub use types::{
     AssociatedProgramsCatalog, GetAssociatedProgramsResult, GetShellContextMenuResult,
-    OpenWithResult,
+    OpenWithResult, ShellContextMenuInvokeRequest, ShellContextMenuItem, ShellContextMenuRequest,
+    ShellContextMenuTargetKind,
 };
 
 use std::path::Path;
 use std::process::Command;
 use utils::canonicalize_path;
+
+fn build_legacy_shell_context_menu_request(file_path: &str) -> ShellContextMenuRequest {
+    let current_directory_path = Path::new(file_path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+        .unwrap_or_else(|| file_path.to_string());
+
+    ShellContextMenuRequest {
+        target_kind: ShellContextMenuTargetKind::Entry,
+        current_directory_path,
+        target_paths: vec![file_path.to_string()],
+    }
+}
 
 #[tauri::command]
 pub fn get_associated_programs(file_path: String) -> GetAssociatedProgramsResult {
@@ -236,7 +250,7 @@ pub fn open_native_open_with_dialog(file_path: String) -> OpenWithResult {
 pub fn get_shell_context_menu(file_path: String) -> GetShellContextMenuResult {
     #[cfg(target_os = "windows")]
     {
-        windows::get_shell_context_menu_impl(&file_path)
+        windows::get_shell_context_menu_impl(&build_legacy_shell_context_menu_request(&file_path))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -257,7 +271,11 @@ pub fn invoke_shell_context_menu_item(
 ) -> OpenWithResult {
     #[cfg(target_os = "windows")]
     {
-        windows::invoke_shell_command(&file_path, command_id, command_verb.as_deref())
+        windows::invoke_shell_command(
+            &build_legacy_shell_context_menu_request(&file_path),
+            command_id,
+            command_verb.as_deref(),
+        )
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -266,5 +284,42 @@ pub fn invoke_shell_context_menu_item(
             success: false,
             error: Some("Shell context menu is only supported on Windows".to_string()),
         }
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn open_with_get_shell_context_menu(
+    request: ShellContextMenuRequest,
+) -> Result<Vec<ShellContextMenuItem>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::get_shell_context_menu_impl(&request).into_result()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = request;
+        Err("Windows shell actions are only supported on Windows.".to_string())
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn open_with_invoke_shell_context_menu_item(
+    request: ShellContextMenuInvokeRequest,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::invoke_shell_command(
+            &request.menu_request,
+            request.command_id,
+            request.command_verb.as_deref(),
+        )
+        .into_result()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = request;
+        Err("Windows shell actions are only supported on Windows.".to_string())
     }
 }

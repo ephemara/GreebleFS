@@ -441,6 +441,7 @@ import {
 import { previewSoundEffect } from "../runtime/soundEffects";
 import {
   buildExplorerRuntimeMenu,
+  resolveExplorerWindowsShellContextMenuRequestForInvocation,
   type ExplorerMenuRuntimeEnvironment,
   type ExplorerRuntimeMenuNode,
 } from "./explorer/explorerMenuRuntime";
@@ -468,6 +469,18 @@ function ThemeBadge({
 }
 
 function renderSettingsContextMenuIcon(iconName?: string): ReactNode {
+  if (iconName?.startsWith("data:image/")) {
+    return (
+      <img
+        src={iconName}
+        alt=""
+        width={13}
+        height={13}
+        style={{ width: 13, height: 13, objectFit: "contain" }}
+      />
+    );
+  }
+
   switch (iconName) {
     case "Clipboard":
       return <Clipboard size={13} />;
@@ -4437,6 +4450,128 @@ export function SettingsPage({
           },
         },
       },
+      windowsShellContextMenusByRequestKey:
+        previewRuntimePlatform === "windows"
+          ? (() => {
+              const resolvedRequest =
+                resolveExplorerWindowsShellContextMenuRequestForInvocation(
+                  contextMenuPreviewInvocation,
+                  {
+                    currentPath: contextMenuPreviewInvocation.currentLocation,
+                    currentPathIsCloud: false,
+                    currentPathIsHome: false,
+                    currentLocationSupportsMutation: true,
+                    currentPathIsArchiveVirtual: false,
+                    userHomePath: "/home/ephemara",
+                    runtimePlatform: "windows",
+                    clipboardAvailable: true,
+                    canCreateDirectory: true,
+                    canCreateFile: true,
+                    revealPathLabel: "Reveal in Explorer",
+                    propertiesLabel: "Properties",
+                    supportsNativeOpenWith: true,
+                    supportsOpenWithSystemPicker: true,
+                    supportsNativeProperties: true,
+                    openWithProgramsByPath: {},
+                    windowsShellContextMenusByRequestKey: {},
+                    supportsNativeIntegration: () => true,
+                    isCloudExplorerPath: () => false,
+                    isExplorerArchiveVirtualPath: () => false,
+                    isSemanticSearchTextLikeExtension: (extension) =>
+                      ["txt", "ts", "md", "json"].includes(
+                        extension.toLowerCase(),
+                      ),
+                    isExplorerArchiveEntry: (entry) =>
+                      ["zip", "tar", "gz"].includes(
+                        entry.extension.toLowerCase(),
+                      ),
+                    isBookmarked: () => false,
+                    canRunAudioBatch: () => false,
+                    openEntry: () => undefined,
+                    openWithSystemPicker: async () => undefined,
+                    openWithProgram: async () => undefined,
+                    invokeWindowsShellContextMenuItem: async () => undefined,
+                    openAsAdmin: async () => undefined,
+                    openInTerminal: () => undefined,
+                    openInFilesystemAquarium: () => undefined,
+                    sendToMobileDownload: async () => undefined,
+                    revealExplorerPath: async () => undefined,
+                    openExplorerPropertiesPanel: () => undefined,
+                    copyToSysClipboard: () => undefined,
+                    queueClipboard: () => undefined,
+                    requestTransferDestination: () => undefined,
+                    extractArchive: () => undefined,
+                    duplicateEntries: () => undefined,
+                    findSimilar: async () => undefined,
+                    startRename: () => undefined,
+                    openTagDialog: () => undefined,
+                    toggleBookmark: () => undefined,
+                    openTrashDialog: () => undefined,
+                    openNew: () => undefined,
+                    paste: () => undefined,
+                    refresh: async () => undefined,
+                    navigate: async () => undefined,
+                    openSettingsSection: () => undefined,
+                    openContextMenuComposer: () => undefined,
+                    runAudioBatch: async () => undefined,
+                    executeActionCommand: async () => undefined,
+                    executePluginCommand: async () => undefined,
+                    onError: () => undefined,
+                  },
+                );
+
+              if (!resolvedRequest) {
+                return {};
+              }
+
+              return {
+                [resolvedRequest.requestKey]: {
+                  status: "ready",
+                  error: null,
+                  requestId: null,
+                  requestedAtEpochMs: null,
+                  items: [
+                    {
+                      id: 101,
+                      name: "Open in Notepad",
+                      verb: "open",
+                      icon: null,
+                      children: null,
+                    },
+                    {
+                      id: 102,
+                      name: "Pin to Quick Access",
+                      verb: "pintohome",
+                      icon: null,
+                      children: null,
+                    },
+                    {
+                      id: 0,
+                      name: "Send to",
+                      verb: null,
+                      icon: null,
+                      children: [
+                        {
+                          id: 103,
+                          name: "Compressed (zipped) folder",
+                          verb: "zip",
+                          icon: null,
+                          children: null,
+                        },
+                      ],
+                    },
+                    {
+                      id: 104,
+                      name: "Properties",
+                      verb: "properties",
+                      icon: null,
+                      children: null,
+                    },
+                  ],
+                },
+              };
+            })()
+          : {},
       supportsNativeIntegration: () => true,
       isCloudExplorerPath: () => false,
       isExplorerArchiveVirtualPath: () => false,
@@ -4449,6 +4584,7 @@ export function SettingsPage({
       openEntry: () => undefined,
       openWithSystemPicker: async () => undefined,
       openWithProgram: async () => undefined,
+      invokeWindowsShellContextMenuItem: async () => undefined,
       openAsAdmin: async () => undefined,
       openInTerminal: () => undefined,
       openInFilesystemAquarium: () => undefined,

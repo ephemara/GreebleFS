@@ -109,6 +109,10 @@ import {
   type TerminalShellIntegrationRequest,
   type TerminalShellIntegrationState,
   type TerminalShellIntegrationStateEvent,
+  type ShellContextMenuInvokeRequest,
+  type ShellContextMenuItem,
+  type ShellContextMenuRequest,
+  type ShellContextMenuTargetKind,
   type YaziSchedulerTaskSnap,
 } from "../generated/tauri";
 
@@ -139,6 +143,11 @@ export type ExplorerCloudProviderConfigurationStatus =
   CloudProviderConfigurationStatus;
 export type ExplorerAssociatedProgram = AssociatedProgram;
 export type ExplorerAssociatedProgramsCatalog = AssociatedProgramsCatalog;
+export type ExplorerShellContextMenuItem = ShellContextMenuItem;
+export type ExplorerShellContextMenuRequest = ShellContextMenuRequest;
+export type ExplorerShellContextMenuInvokeRequest =
+  ShellContextMenuInvokeRequest;
+export type ExplorerShellContextMenuTargetKind = ShellContextMenuTargetKind;
 export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
 export type ExplorerTagMutation = ExplorerTagMutationRequest;
 export type ExplorerSavedSearch = ExplorerSavedSearchRecord;
@@ -654,6 +663,8 @@ export type ExplorerBackendContract = {
   openWithDialog: typeof openExplorerPathWithDialog;
   getAssociatedPrograms: typeof getExplorerAssociatedPrograms;
   openPathWithProgram: typeof openExplorerPathWithProgram;
+  getShellContextMenu: typeof getExplorerShellContextMenu;
+  invokeShellContextMenuItem: typeof invokeExplorerShellContextMenuItem;
   revealPath: typeof revealExplorerPath;
   showPathProperties: typeof showExplorerPathProperties;
   openPathAsAdmin: typeof openExplorerPathAsAdmin;
@@ -1312,6 +1323,40 @@ export async function openExplorerPathWithProgram(
   }
   unwrapTauriResult(
     await commands.openWithLaunchProgram(path, programPath, launchArguments),
+  );
+}
+
+function assertExplorerShellContextMenuRequestIsLocal(
+  request: ExplorerShellContextMenuRequest,
+): void {
+  if (getExplorerPathSourceKind(request.currentDirectoryPath) !== "local") {
+    throw new Error(
+      "Windows shell actions are only available for local filesystem folders.",
+    );
+  }
+
+  for (const targetPath of request.targetPaths) {
+    if (getExplorerPathSourceKind(targetPath) !== "local") {
+      throw new Error(
+        "Windows shell actions are only available for local filesystem items.",
+      );
+    }
+  }
+}
+
+export async function getExplorerShellContextMenu(
+  request: ExplorerShellContextMenuRequest,
+): Promise<ExplorerShellContextMenuItem[]> {
+  assertExplorerShellContextMenuRequestIsLocal(request);
+  return unwrapTauriResult(await commands.openWithGetShellContextMenu(request));
+}
+
+export async function invokeExplorerShellContextMenuItem(
+  request: ExplorerShellContextMenuInvokeRequest,
+): Promise<void> {
+  assertExplorerShellContextMenuRequestIsLocal(request.menuRequest);
+  unwrapTauriResult(
+    await commands.openWithInvokeShellContextMenuItem(request),
   );
 }
 
@@ -2110,6 +2155,8 @@ export const explorerBackendContract: ExplorerBackendContract = {
   openWithDialog: openExplorerPathWithDialog,
   getAssociatedPrograms: getExplorerAssociatedPrograms,
   openPathWithProgram: openExplorerPathWithProgram,
+  getShellContextMenu: getExplorerShellContextMenu,
+  invokeShellContextMenuItem: invokeExplorerShellContextMenuItem,
   revealPath: revealExplorerPath,
   showPathProperties: showExplorerPathProperties,
   openPathAsAdmin: openExplorerPathAsAdmin,
