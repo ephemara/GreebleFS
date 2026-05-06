@@ -564,6 +564,7 @@ describe('pluginRuntime helpers', () => {
       'greeblefs-workbench-spreadsheet/preview/spreadsheetWorkbench.tsx',
     ],
     ['audio', 'greeblefs-workbench-audio/preview/audioWorkbench.tsx'],
+    ['image', 'greeblefs-workbench-image/preview/imageWorkbench.tsx'],
     ['video', 'greeblefs-workbench-video/preview/videoWorkbench.tsx'],
     ['folder', 'greeblefs-workbench-folder/preview/folderWorkbench.tsx'],
     ['archive', 'greeblefs-workbench-archive/preview/archiveWorkbench.tsx'],

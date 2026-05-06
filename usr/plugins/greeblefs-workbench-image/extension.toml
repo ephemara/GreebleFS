@@ -1,0 +1,41 @@
+id = "greeblefs-workbench-image"
+version = "1"
+name = "GreebleFS Image Workbench"
+description = "First-party extension-backed image preview, edit, and cutout workbench."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "image", "media", "cutout"]
+
+[[testFiles]]
+id = "image-slate"
+label = "Image Slate Fixture"
+path = "examples/image-slate.svg"
+description = "Tiny generated SVG fixture for plugin-panel preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "image"
+title = "Image Workbench"
+renderer = "preview/imageWorkbench.tsx"
+priority = 720
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["avif", "bmp", "gif", "ico", "jpeg", "jpg", "png", "svg", "tif", "tiff", "webp"]
+fileNames = []
+previewKinds = ["image"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = true
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = true
+save = true
+export = true
+workflowTabs = true
+contextMenu = true
+prefetch = true
+closeGuard = true

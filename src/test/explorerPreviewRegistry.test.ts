@@ -299,6 +299,19 @@ describe("explorerPreviewRegistry", () => {
         previewKinds: ["shader"],
       },
     });
+    const imageLane = createPluginLane({
+      id: "greeblefs-workbench-image.preview.image",
+      pluginId: "greeblefs-workbench-image",
+      pluginName: "GreebleFS Image Workbench",
+      title: "Image Workbench",
+      priority: 720,
+      match: {
+        appliesTo: "file",
+        extensions: [],
+        fileNames: [],
+        previewKinds: ["image"],
+      },
+    });
 
     const folderDescriptor = resolveExplorerPreviewDescriptor(
       createEntry({
@@ -386,6 +399,27 @@ describe("explorerPreviewRegistry", () => {
       kind: "shader",
       extension: "wgsl",
       format: "wgsl",
+    });
+
+    const imageDescriptor = resolveExplorerPreviewDescriptor(
+      createEntry({
+        name: "render.png",
+        path: "/tmp/render.png",
+        extension: "png",
+        size: 4096,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [imageLane],
+      },
+    );
+    expect(imageDescriptor.kind).toBe("plugin");
+    if (imageDescriptor.kind !== "plugin") {
+      throw new Error("Expected image to resolve through a plugin workbench.");
+    }
+    expect(imageDescriptor.delegateDescriptor).toEqual({
+      kind: "image",
+      extension: "png",
     });
   });
 

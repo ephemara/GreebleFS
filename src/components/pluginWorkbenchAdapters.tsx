@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { getExplorerArchiveDescriptor } from '../config/explorerArchives';
 import {
+  getImageEditorContentType,
   getModelPreviewFormat,
   getMonacoLanguage,
   getSpreadsheetFileKind,
@@ -25,6 +26,7 @@ import { ExplorerArchivePreview } from './ExplorerArchivePreview';
 import { ExplorerAudioWorkbench } from './ExplorerAudioWorkbench';
 import { ExplorerDocxWorkbench } from './ExplorerDocxWorkbench';
 import { ExplorerFolderPreview } from './ExplorerFolderPreview';
+import { ExplorerImageEditor } from './ExplorerImageEditor';
 import { ExplorerShaderWorkbench } from './ExplorerShaderWorkbench';
 import { ModelPreview } from './ModelPreview';
 import { ExplorerPdfWorkbench } from './ExplorerPdfWorkbench';
@@ -882,6 +884,39 @@ export function AudioWorkbenchPreviewAdapter({
       workflowTabId={workflowTabId}
       onRegisterWorkflowTabs={onRegisterWorkflowTabs}
       onExported={() => onRefreshPreviewEntry?.()}
+    />
+  );
+}
+
+export function ImageWorkbenchPreviewAdapter({
+  file,
+  viewMode,
+  workflowTabId,
+  previewBackedByArchiveVirtual,
+  onRegisterWorkflowTabs,
+  onRegisterContextMenuRegistration,
+  onRefreshPreviewEntry,
+}: OverlayPluginPreviewLaneProps) {
+  const isEditableImageFormat = getImageEditorContentType(file.extension) != null;
+  const imageSource = file.assetUrl.trim() || file.resolvedPath;
+
+  return (
+    <ExplorerImageEditor
+      imagePath={file.resolvedPath}
+      logicalImagePath={file.path}
+      imageName={file.name}
+      imageSource={imageSource}
+      mode={
+        isEditableImageFormat &&
+        viewMode === 'edit' &&
+        !previewBackedByArchiveVirtual
+          ? 'edit'
+          : 'preview'
+      }
+      workflowTabId={workflowTabId}
+      onRegisterWorkflowTabs={onRegisterWorkflowTabs}
+      onRegisterContextMenuRegistration={onRegisterContextMenuRegistration}
+      onSaved={() => onRefreshPreviewEntry?.()}
     />
   );
 }

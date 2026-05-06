@@ -1,3 +1,14 @@
+# 2026-05-06 - First-Party Image Workbench Package
+
+- Added `usr/plugins/greeblefs-workbench-image` so image previews participate in the extension-owned first-party workbench chooser alongside folder, archive, audio, video, text, shader, and document workbenches.
+- The package contributes an `image` preview lane with `previewKinds = ["image"]`, a Plugins Manager SVG fixture, preview/edit chrome metadata, and a tiny `imageWorkbench.tsx` renderer that imports `ImageWorkbenchPreviewAdapter` from the virtual `greeblefs-workbenches` module.
+- `ImageWorkbenchPreviewAdapter` is intentionally a thin bridge over `ExplorerImageEditor`; built-in image fallback remains in `FileExplorer.tsx` while package parity continues lane by lane. Avoid duplicating the image extension list in resolver tests; preview-kind matching should prove plugin lanes can claim built-in image descriptors.
+- Validation:
+  - Passed: `bunx vitest run src/test/pluginRuntime.test.ts src/test/explorerPreviewRegistry.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/explorerPreviewWorkflowTabs.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx esbuild usr/plugins/greeblefs-workbench-image/preview/imageWorkbench.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --external:greeblefs-workbenches --outfile=.tmp-image-workbench-check.js`
+
 # 2026-05-06 - Explorer Actions Pane Single-Pane Runtime Browser
 
 - Tightened runtime `ExplorerActionsPane` after the first compression pass still looked too boxy in the live UI.
