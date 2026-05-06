@@ -5,9 +5,16 @@ export function resolvePluginsDirectory(): string {
   return getManagedContentDirectory('plugins');
 }
 
+export function resolvePluginPackagesDirectory(): string {
+  return getManagedContentDirectory('packages');
+}
+
 export const pluginSystemConfig = {
   get pluginsDirectory(): string {
     return resolvePluginsDirectory();
+  },
+  get packagesDirectory(): string {
+    return resolvePluginPackagesDirectory();
   },
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   backendDirectoryName: 'backend',
@@ -30,6 +37,10 @@ export type FrontendPluginExtension =
 
 export function getPluginDirectory(pluginId: string): string {
   return joinPlatformPath(pluginSystemConfig.pluginsDirectory, pluginId);
+}
+
+export function getPluginPackageDirectory(packageId: string): string {
+  return joinPlatformPath(pluginSystemConfig.packagesDirectory, packageId);
 }
 
 export function getPluginBackendDirectory(pluginId: string): string {

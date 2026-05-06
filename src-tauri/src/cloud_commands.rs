@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{ipc::Response, AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -728,7 +728,7 @@ pub async fn cloud_read_preview_bytes(
     app: AppHandle,
     path: String,
     max_bytes: Option<u64>,
-) -> Result<Response, String> {
+) -> Result<tauri::transport::BinaryResponse, String> {
     let state = app.state::<CloudRuntimeState>();
     let payload = download_cloud_file(&app, &state, &path).await?;
     let allowed_bytes = resolve_cloud_preview_byte_limit(max_bytes);
@@ -739,7 +739,7 @@ pub async fn cloud_read_preview_bytes(
         ));
     }
 
-    Ok(Response::new(payload.bytes))
+    Ok(tauri::transport::BinaryResponse::new(payload.bytes))
 }
 
 fn resolve_cloud_preview_byte_limit(requested_bytes: Option<u64>) -> u64 {

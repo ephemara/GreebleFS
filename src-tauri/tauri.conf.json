@@ -41,6 +41,16 @@
       "icons/icon.icns",
       "icons/icon.png"
     ],
+    "windows": {
+      "nsis": {
+        "template": "./windows/greeblefs-installer.nsi",
+        "headerImage": "./windows/assets/greeblefs-installer-header.bmp",
+        "sidebarImage": "./windows/assets/greeblefs-installer-sidebar.bmp",
+        "installerIcon": "icons/icon.ico",
+        "installMode": "perMachine",
+        "startMenuFolder": "GreebleFS"
+      }
+    },
     "resources": {
       "../dist-mobile/": "mobile-dist/",
       "../usr/": "usr/",

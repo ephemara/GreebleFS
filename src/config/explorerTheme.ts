@@ -1064,7 +1064,7 @@ export function resolveExplorerThemeRecipe(
     '--overlay-explorer-popup-bg': 'var(--overlay-bg-menu)',
     '--overlay-explorer-popup-max-height': 'min(27.5rem, calc(100vh - 1.5rem))',
     '--overlay-explorer-preview-chooser-width': '20rem',
-    '--overlay-explorer-view-menu-max-width': 'min(26.25rem, calc(100vw - 1.5rem))',
+    '--overlay-explorer-view-menu-max-width': 'min(15rem, calc(100vw - 1rem))',
     '--overlay-explorer-popup-shadow': 'var(--overlay-shadow)',
     '--overlay-explorer-popup-item-hover-bg': 'var(--overlay-bg-card-hover)',
     '--overlay-explorer-popup-shadow-lg': 'var(--overlay-shadow)',

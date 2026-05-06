@@ -96,7 +96,6 @@ pub mod terminal;
 pub mod thumbnail_commands;
 #[cfg(all(target_os = "windows", not(test)))]
 pub mod url_drop;
-#[cfg(not(test))]
 pub mod usr;
 #[cfg(not(test))]
 pub mod usr_profiles;
@@ -129,6 +128,7 @@ use fs_commands::initialize_fs_command_events;
 use native_task_graph::NativeTaskGraphManager;
 #[cfg(not(test))]
 use plugin_commands::PluginWatcherState;
+#[cfg(not(test))]
 use preview_streaming::PreviewStreamingManager;
 #[cfg(not(test))]
 use remote_storage_commands::RemoteStorageState;
@@ -142,199 +142,21 @@ use terminal::TerminalManager;
 use window_commands::{TrayVisibilityState, MAIN_WINDOW_LABEL};
 
 #[cfg(not(test))]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PreviewBytesInvokeArgs {
-    path: String,
-    max_bytes: Option<u64>,
-}
-
-#[cfg(not(test))]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ArchiveEntryPreviewBytesInvokeArgs {
-    archive_path: String,
-    entry_path: String,
-    max_bytes: Option<u64>,
-}
-
-#[cfg(not(test))]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeArtifactBytesInvokeArgs {
-    request: crate::runtime_pipeline::commands::RuntimeReadArtifactBytesRequest,
-}
-
-#[cfg(not(test))]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GlobalSearchQueryUnderPathInvokeArgs {
-    root_path: String,
-    query: String,
-    options: crate::global_search::GlobalSearchQueryOptions,
-}
-
-#[cfg(not(test))]
-fn parse_json_invoke_args<T: for<'de> serde::Deserialize<'de>>(
-    message: &tauri::ipc::InvokeMessage<tauri::Wry>,
-) -> Result<T, String> {
-    ipc_runtime::binary::parse_json_invoke_args(message)
-}
-
-#[cfg(not(test))]
-fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let command = invoke.message.command().to_string();
-
-    match command.as_str() {
-        "fs_read_preview_bytes" => {
-            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
-                Ok(args) => args,
-                Err(error) => {
-                    invoke.resolver.reject(error);
-                    return true;
-                }
-            };
-            let resolver = invoke.resolver;
-            let app = invoke.message.webview().app_handle().clone();
-            let native_task_graph =
-                NativeTaskGraphManager::clone(&*app.state::<NativeTaskGraphManager>());
-            let preview_streaming =
-                PreviewStreamingManager::clone(&*app.state::<PreviewStreamingManager>());
-            ipc_runtime::binary::spawn_raw_invoke_response(
-                resolver,
-                fs_commands::fs_read_preview_bytes(
-                    native_task_graph,
-                    preview_streaming,
-                    args.path,
-                    args.max_bytes,
-                ),
-            );
-            true
-        }
-        "fs_read_archive_entry_preview_bytes" => {
-            let args =
-                match parse_json_invoke_args::<ArchiveEntryPreviewBytesInvokeArgs>(&invoke.message)
-                {
-                    Ok(args) => args,
-                    Err(error) => {
-                        invoke.resolver.reject(error);
-                        return true;
-                    }
-                };
-            let resolver = invoke.resolver;
-            let app = invoke.message.webview().app_handle().clone();
-            let native_task_graph =
-                NativeTaskGraphManager::clone(&*app.state::<NativeTaskGraphManager>());
-            let preview_streaming =
-                PreviewStreamingManager::clone(&*app.state::<PreviewStreamingManager>());
-            ipc_runtime::binary::spawn_raw_invoke_response(
-                resolver,
-                fs_commands::fs_read_archive_entry_preview_bytes(
-                    native_task_graph,
-                    preview_streaming,
-                    args.archive_path,
-                    args.entry_path,
-                    args.max_bytes,
-                ),
-            );
-            true
-        }
-        "cloud_read_preview_bytes" => {
-            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
-                Ok(args) => args,
-                Err(error) => {
-                    invoke.resolver.reject(error);
-                    return true;
-                }
-            };
-            let resolver = invoke.resolver;
-            let app = invoke.message.webview().app_handle().clone();
-            ipc_runtime::binary::spawn_raw_invoke_response(
-                resolver,
-                cloud_commands::cloud_read_preview_bytes(app, args.path, args.max_bytes),
-            );
-            true
-        }
-        "remote_read_preview_bytes" => {
-            let args = match parse_json_invoke_args::<PreviewBytesInvokeArgs>(&invoke.message) {
-                Ok(args) => args,
-                Err(error) => {
-                    invoke.resolver.reject(error);
-                    return true;
-                }
-            };
-            let resolver = invoke.resolver;
-            let command_app = invoke.message.webview().app_handle().clone();
-            let state_app = command_app.clone();
-            ipc_runtime::binary::spawn_raw_invoke_response(resolver, async move {
-                let state = state_app.state::<RemoteStorageState>();
-                remote_storage_commands::remote_read_preview_bytes(
-                    command_app,
-                    state,
-                    args.path,
-                    args.max_bytes,
-                )
-                .await
-            });
-            true
-        }
-        "runtime_read_artifact_bytes" => {
-            let args =
-                match parse_json_invoke_args::<RuntimeArtifactBytesInvokeArgs>(&invoke.message) {
-                    Ok(args) => args,
-                    Err(error) => {
-                        invoke.resolver.reject(error);
-                        return true;
-                    }
-                };
-            let resolver = invoke.resolver;
-            let command_app = invoke.message.webview().app_handle().clone();
-            let state_app = command_app.clone();
-            ipc_runtime::binary::spawn_raw_invoke_response(resolver, async move {
-                let registry = state_app.state::<runtime_pipeline::RuntimeRegistryState>();
-                runtime_pipeline::commands::runtime_read_artifact_bytes(
-                    command_app,
-                    registry,
-                    args.request,
-                )
-                .await
-            });
-            true
-        }
-        "global_search_query_under_path" => {
-            let args = match parse_json_invoke_args::<GlobalSearchQueryUnderPathInvokeArgs>(
-                &invoke.message,
-            ) {
-                Ok(args) => args,
-                Err(error) => {
-                    invoke.resolver.reject(error);
-                    return true;
-                }
-            };
-            let resolver = invoke.resolver;
-            let app = invoke.message.webview().app_handle().clone();
-            ipc_runtime::binary::spawn_raw_invoke_response(
-                resolver,
-                global_search::query::global_search_query_under_path(
-                    app,
-                    args.root_path,
-                    args.query,
-                    args.options,
-                ),
-            );
-            true
-        }
-        _ => false,
-    }
-}
-
-#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_graphics::apply_linux_graphics_startup_configuration();
 
     let builder = specta_bindings::app_specta_builder();
     let specta_invoke_handler = builder.invoke_handler();
+    let transport_invoke_handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![
+        crate::fs_commands::fs_read_preview_bytes,
+        crate::fs_commands::fs_read_archive_entry_preview_bytes,
+        crate::cloud_commands::cloud_read_preview_bytes,
+        crate::remote_storage_commands::remote_read_preview_bytes,
+        crate::runtime_pipeline::commands::runtime_read_artifact_bytes,
+        crate::global_search::query::global_search_query_under_path,
+    ];
     let invoke_handler =
         move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke.message.command() {
             "fs_read_preview_bytes"
@@ -342,7 +164,7 @@ pub fn run() {
             | "cloud_read_preview_bytes"
             | "remote_read_preview_bytes"
             | "runtime_read_artifact_bytes"
-            | "global_search_query_under_path" => raw_preview_invoke_handler(invoke),
+            | "global_search_query_under_path" => transport_invoke_handler(invoke),
             _ => specta_invoke_handler(invoke),
         };
 

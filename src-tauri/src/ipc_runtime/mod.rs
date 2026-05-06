@@ -1,107 +1,41 @@
 pub mod artifacts;
 pub mod binary;
-pub mod resources;
-pub mod streams;
 
-use crate::message_ring::{MessageRingWriteOutcome, MessageStreamsPolicy};
 use artifacts::{ArtifactRegistry, RegisterArtifactPathRequest};
-use greeble_ipc_contracts::{
-    IpcArtifactDescriptor, IpcRegisterArtifactPathRequest, IpcResourceHandle, IpcStreamHandle,
-};
-use resources::ResourceRegistry;
+use greeble_ipc_contracts::{IpcArtifactDescriptor, IpcRegisterArtifactPathRequest};
 use std::path::PathBuf;
-use streams::{IpcStreamReplayResponse, IpcStreamStatus, StreamRegistry};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 pub struct IpcRuntimeState {
     artifacts: ArtifactRegistry,
-    resources: ResourceRegistry,
-    streams: StreamRegistry,
 }
 
 impl IpcRuntimeState {
     pub fn new() -> Self {
-        Self::with_message_stream_policy(MessageStreamsPolicy::default())
-    }
-
-    pub fn with_message_stream_policy(message_stream_policy: MessageStreamsPolicy) -> Self {
         Self {
             artifacts: ArtifactRegistry::default(),
-            resources: ResourceRegistry::default(),
-            streams: StreamRegistry::new(message_stream_policy),
         }
     }
 
     #[cfg(not(test))]
-    pub fn from_app(app: &tauri::AppHandle) -> Self {
-        Self::with_message_stream_policy(MessageStreamsPolicy::from_app(app))
+    pub fn from_app(_app: &AppHandle) -> Self {
+        Self::new()
     }
 
     pub fn register_artifact_path(
         &self,
+        app: &AppHandle,
         request: RegisterArtifactPathRequest,
     ) -> Result<IpcArtifactDescriptor, String> {
-        self.artifacts.register_path(request)
+        self.artifacts.register_path(app, request)
     }
 
-    pub fn release_artifact(&self, id: &str) -> Result<(), String> {
-        self.artifacts.release(id)
+    pub fn release_artifact(&self, app: &AppHandle, id: &str) -> Result<(), String> {
+        self.artifacts.release(app, id)
     }
 
-    pub fn register_resource(
-        &self,
-        kind: &str,
-        stable_key: Option<&str>,
-    ) -> Result<IpcResourceHandle, String> {
-        self.resources.register(kind, stable_key)
-    }
-
-    pub fn release_resource(&self, id: &str) -> Result<(), String> {
-        self.resources.release(id)
-    }
-
-    pub fn register_stream(
-        &self,
-        kind: &str,
-        stable_key: Option<&str>,
-    ) -> Result<IpcStreamHandle, String> {
-        self.streams.register(kind, stable_key)
-    }
-
-    pub fn release_stream(&self, id: &str) -> Result<(), String> {
-        self.streams.release(id)
-    }
-
-    pub fn next_stream_packet_metadata(
-        &self,
-        id: &str,
-    ) -> Result<greeble_ipc_contracts::IpcStreamPacketMetadata, String> {
-        self.streams.next_packet_metadata(id)
-    }
-
-    pub fn publish_stream_packet<TPayload, TBuild>(
-        &self,
-        id: &str,
-        build: TBuild,
-    ) -> Result<(TPayload, MessageRingWriteOutcome), String>
-    where
-        TPayload: serde::Serialize,
-        TBuild: FnOnce(greeble_ipc_contracts::IpcStreamPacketMetadata) -> Result<TPayload, String>,
-    {
-        self.streams.publish_packet(id, build)
-    }
-
-    pub fn replay_stream(
-        &self,
-        id: &str,
-        from_sequence: Option<u64>,
-        limit: Option<usize>,
-    ) -> Result<IpcStreamReplayResponse, String> {
-        self.streams.replay(id, from_sequence, limit)
-    }
-
-    pub fn stream_status(&self, id: &str) -> Result<IpcStreamStatus, String> {
-        self.streams.status(id)
+    pub fn artifact_path(&self, id: &str) -> Result<Option<PathBuf>, String> {
+        self.artifacts.artifact_path(id)
     }
 }
 
@@ -114,6 +48,7 @@ impl Default for IpcRuntimeState {
 #[tauri::command]
 #[specta::specta]
 pub async fn ipc_register_artifact_path(
+    app: AppHandle,
     state: State<'_, IpcRuntimeState>,
     request: IpcRegisterArtifactPathRequest,
 ) -> Result<IpcArtifactDescriptor, String> {
@@ -122,7 +57,7 @@ pub async fn ipc_register_artifact_path(
         return Err("IPC artifact registration requires a non-empty filePath.".to_string());
     }
 
-    state.register_artifact_path(RegisterArtifactPathRequest {
+    state.register_artifact_path(&app, RegisterArtifactPathRequest {
         kind: request.kind,
         file_path: PathBuf::from(trimmed_file_path),
         media_type: request.media_type,
@@ -136,46 +71,9 @@ pub async fn ipc_register_artifact_path(
 #[tauri::command]
 #[specta::specta]
 pub async fn ipc_release_artifact(
+    app: AppHandle,
     state: State<'_, IpcRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    state.release_artifact(&id)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn ipc_release_resource(
-    state: State<'_, IpcRuntimeState>,
-    id: String,
-) -> Result<(), String> {
-    state.release_resource(&id)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn ipc_release_stream(
-    state: State<'_, IpcRuntimeState>,
-    id: String,
-) -> Result<(), String> {
-    state.release_stream(&id)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn ipc_replay_stream(
-    state: State<'_, IpcRuntimeState>,
-    id: String,
-    from_sequence: Option<u64>,
-    limit: Option<usize>,
-) -> Result<IpcStreamReplayResponse, String> {
-    state.replay_stream(&id, from_sequence, limit)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn ipc_get_stream_status(
-    state: State<'_, IpcRuntimeState>,
-    id: String,
-) -> Result<IpcStreamStatus, String> {
-    state.stream_status(&id)
+    state.release_artifact(&app, &id)
 }

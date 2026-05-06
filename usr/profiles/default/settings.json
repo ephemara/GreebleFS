@@ -104,7 +104,7 @@
         }
       }
     },
-    "collectionPreviewMode": "list",
+    "collectionPreviewMode": "overview",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
     "contextMenuLayoutOverridesByContext": {},
@@ -309,7 +309,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.2930000025811699,
+    "gridZoom": 0.25899999823393594,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -446,7 +446,7 @@
     },
     "panelStateByProfile": {
       "overlay-classic": {
-        "activePanelId": "greeble3d",
+        "activePanelId": "plugins",
         "dismissedPanelIds": [
           "notes",
           "go-sample-panel"
@@ -454,7 +454,8 @@
         "openPanelIds": [
           "settings",
           "terminal",
-          "explorer"
+          "explorer",
+          "greeblefs-action-forge"
         ]
       }
     },
@@ -488,7 +489,7 @@
     "shellProfile": "auto",
     "showSidebar": false,
     "windowMode": "windowed",
-    "windowedHeight": 888,
-    "windowedWidth": 857
+    "windowedHeight": 560,
+    "windowedWidth": 1015
   }
 }

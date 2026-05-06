@@ -39,7 +39,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{ipc::Response, AppHandle, State};
+use tauri::{AppHandle, State};
 use tauri_specta::Event;
 use uuid::Uuid;
 use yazi_fs::{
@@ -5814,12 +5814,12 @@ pub async fn fs_read_file_base64(
     .await
 }
 
-pub async fn fs_read_preview_bytes(
-    native_task_graph: NativeTaskGraphManager,
-    preview_streaming: PreviewStreamingManager,
+async fn fs_read_preview_bytes_impl(
+    native_task_graph: &NativeTaskGraphManager,
+    preview_streaming: &PreviewStreamingManager,
     path: String,
     max_bytes: Option<u64>,
-) -> Result<Response, String> {
+) -> Result<tauri::transport::BinaryResponse, String> {
     let target = PathBuf::from(&path);
     let policy = preview_streaming.policy().clone();
     let bytes = run_native_blocking_task(
@@ -5833,16 +5833,32 @@ pub async fn fs_read_preview_bytes(
         move |token| read_local_preview_bytes(&target, max_bytes, &policy, &token),
     )
     .await?;
-    Ok(Response::new(bytes))
+    Ok(tauri::transport::BinaryResponse::new(bytes))
 }
 
-pub async fn fs_read_archive_entry_preview_bytes(
-    native_task_graph: NativeTaskGraphManager,
-    preview_streaming: PreviewStreamingManager,
+#[tauri::command]
+pub async fn fs_read_preview_bytes(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    preview_streaming: State<'_, PreviewStreamingManager>,
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<tauri::transport::BinaryResponse, String> {
+    fs_read_preview_bytes_impl(
+        native_task_graph.inner(),
+        preview_streaming.inner(),
+        path,
+        max_bytes,
+    )
+    .await
+}
+
+async fn fs_read_archive_entry_preview_bytes_impl(
+    native_task_graph: &NativeTaskGraphManager,
+    preview_streaming: &PreviewStreamingManager,
     archive_path: String,
     entry_path: String,
     max_bytes: Option<u64>,
-) -> Result<Response, String> {
+) -> Result<tauri::transport::BinaryResponse, String> {
     let target = PathBuf::from(&archive_path);
     let policy = preview_streaming.policy().clone();
     let allowed_bytes = resolve_preview_byte_limit(max_bytes, policy.archive_entry_max_bytes);
@@ -5867,7 +5883,25 @@ pub async fn fs_read_archive_entry_preview_bytes(
         },
     )
     .await?;
-    Ok(Response::new(bytes))
+    Ok(tauri::transport::BinaryResponse::new(bytes))
+}
+
+#[tauri::command]
+pub async fn fs_read_archive_entry_preview_bytes(
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    preview_streaming: State<'_, PreviewStreamingManager>,
+    archive_path: String,
+    entry_path: String,
+    max_bytes: Option<u64>,
+) -> Result<tauri::transport::BinaryResponse, String> {
+    fs_read_archive_entry_preview_bytes_impl(
+        native_task_graph.inner(),
+        preview_streaming.inner(),
+        archive_path,
+        entry_path,
+        max_bytes,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -8955,9 +8989,14 @@ mod tests {
         let file_path = dir.path().join("preview.glb");
         fs::write(&file_path, [1u8, 2, 3, 4]).unwrap();
 
-        let response = fs_read_preview_bytes(file_path.to_string_lossy().into(), Some(1024))
-            .await
-            .expect("native preview bytes should succeed");
+        let response = fs_read_preview_bytes_impl(
+            &NativeTaskGraphManager::default(),
+            &PreviewStreamingManager::default(),
+            file_path.to_string_lossy().into(),
+            Some(1024),
+        )
+        .await
+        .expect("native preview bytes should succeed");
         let body = tauri::ipc::IpcResponse::body(response).expect("response body");
         match body {
             tauri::ipc::InvokeResponseBody::Raw(bytes) => assert_eq!(bytes, vec![1u8, 2, 3, 4]),
@@ -8971,7 +9010,14 @@ mod tests {
         let file_path = dir.path().join("huge-preview.glb");
         fs::write(&file_path, vec![0u8; 32]).unwrap();
 
-        let error = match fs_read_preview_bytes(file_path.to_string_lossy().into(), Some(8)).await {
+        let error = match fs_read_preview_bytes_impl(
+            &NativeTaskGraphManager::default(),
+            &PreviewStreamingManager::default(),
+            file_path.to_string_lossy().into(),
+            Some(8),
+        )
+        .await
+        {
             Ok(_) => panic!("preview transport should enforce requested limit"),
             Err(error) => error,
         };

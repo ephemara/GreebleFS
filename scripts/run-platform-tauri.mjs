@@ -19,7 +19,11 @@ const isDirectScriptRun = process.argv[1]
 const sharedNodeModules = path.join(projectRoot, "node_modules");
 const sharedTauriCliDir = path.join(sharedNodeModules, "@tauri-apps", "cli");
 const sharedTauriCliEntry = path.join(sharedTauriCliDir, "tauri.js");
+const srcTauriRoot = path.join(projectRoot, "src-tauri");
+const defaultWorkspaceCargoTargetDir = path.join(projectRoot, "target");
 const cacheRoot = path.join(os.homedir(), ".cache", "greeblefs-tauri");
+const defaultWindowsReleaseArtifactRoot = path.join(defaultWorkspaceCargoTargetDir, "release-support");
+const windowsReleaseInstallerAliasFileName = "GreebleFS Setup.exe";
 const hasExplicitArtifactRoot = Boolean(
   process.env.GREEBLEFS_VPS_ARTIFACTS_ROOT || process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT,
 );
@@ -29,10 +33,15 @@ const artifactRoot = hasExplicitArtifactRoot
 const defaultFrontendDist = hasExplicitArtifactRoot
   ? path.join(artifactRoot, "dist")
   : path.join(projectRoot, "dist");
+const defaultRepoMobileShareBundleDist = path.join(projectRoot, "dist-mobile");
+const defaultArtifactMobileShareBundleDist = process.platform === "win32" && !hasExplicitArtifactRoot
+  ? path.join(defaultWindowsReleaseArtifactRoot, "dist-mobile")
+  : path.join(artifactRoot, "dist-mobile");
 const defaultCargoTargetDir = hasExplicitArtifactRoot
   ? path.join(artifactRoot, "cargo-target", "tauri")
-  : path.join(projectRoot, "src-tauri", "target");
+  : defaultWorkspaceCargoTargetDir;
 const cacheNodeModules = path.join(cacheRoot, "node_modules");
+const defaultViteCacheDir = path.join(cacheRoot, "vite", "desktop");
 const frontendDist = process.env.GREEBLEFS_TAURI_FRONTEND_DIST || process.env.OVERLAYTERM_TAURI_FRONTEND_DIST
   ? path.resolve(process.env.GREEBLEFS_TAURI_FRONTEND_DIST || process.env.OVERLAYTERM_TAURI_FRONTEND_DIST)
   : defaultFrontendDist;
@@ -49,7 +58,6 @@ const spectaBindingsGeneratedPath = path.join(projectRoot, spectaBindingsGenerat
 const spectaBindingsCacheDirectory = path.join(tauriCargoTargetDir, "dev-cache");
 const spectaBindingsCachePath = path.join(spectaBindingsCacheDirectory, "specta-bindings-state.json");
 const spectaBindingsCacheVersion = 1;
-const mobileShareBundleDist = path.join(projectRoot, "dist-mobile");
 const spectaBindingsFingerprintTargets = [
   { kind: "file", relativePath: "Cargo.toml" },
   { kind: "file", relativePath: "Cargo.lock" },
@@ -84,6 +92,7 @@ const mcpRoot = path.join(projectRoot, "MCP");
 const mcpStateDirectory = path.join(mcpRoot, ".state");
 const mcpTauriDevStatusPath = path.join(mcpStateDirectory, "tauri-dev-session.json");
 const mcpTauriDevLogPath = path.join(mcpStateDirectory, "tauri-dev.log");
+const mcpTauronWebviewDiagnosticsPath = path.join(mcpStateDirectory, "tauron-webview2-session.json");
 const defaultMcpWebviewDebugPort = (
   process.env.GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT
   || process.env.OVERLAYTERM_MCP_WEBVIEW2_DEBUG_PORT
@@ -96,6 +105,41 @@ function hasExplicitEnvValue(value) {
 
 function normalizePathForLogs(value) {
   return value.replace(/\\/g, "/");
+}
+
+function formatBundleDirectoryResourcePath(directoryPath) {
+  return `${directoryPath.replace(/\\/g, "/").replace(/\/+$/, "")}/`;
+}
+
+function formatProjectPathForTauriConfig(targetPath, pathLabel) {
+  const relativePath = path.relative(srcTauriRoot, targetPath);
+  if (path.isAbsolute(relativePath)) {
+    throw new Error(
+      `${pathLabel} must stay on the same drive as src-tauri so Tauri can bundle it correctly. Received ${normalizePathForLogs(targetPath)}.`,
+    );
+  }
+
+  return normalizePathForLogs(relativePath || ".");
+}
+
+function formatBundleDirectoryResourcePathForTauriProject(directoryPath) {
+  return formatBundleDirectoryResourcePath(
+    formatProjectPathForTauriConfig(directoryPath, "bundle resource directory"),
+  );
+}
+
+function resolveMobileShareBundleDist(tauriCommand, existingEnv = process.env) {
+  const explicitMobileOutDir = (
+    existingEnv.GREEBLEFS_VITE_MOBILE_OUT_DIR
+    || existingEnv.OVERLAYTERM_VITE_MOBILE_OUT_DIR
+  )?.trim();
+  if (explicitMobileOutDir) {
+    return path.resolve(explicitMobileOutDir);
+  }
+
+  return tauriCommand === "build"
+    ? defaultArtifactMobileShareBundleDist
+    : defaultRepoMobileShareBundleDist;
 }
 
 function resolveTauriFrontendDevUrl(existingEnv = process.env) {
@@ -150,11 +194,23 @@ function buildMcpDevelopmentEnvironment({
   };
 
   if (platform === "win32" && webviewDebugPort) {
-    const remoteDebuggingArgument = `--remote-debugging-port=${webviewDebugPort}`;
-    environment.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = appendBrowserArgument(
-      existingEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
-      remoteDebuggingArgument,
-    );
+    environment.TAURON_WEBVIEW2_REMOTE_DEBUGGING_PORT = webviewDebugPort;
+    environment.TAURON_WEBVIEW2_DIAGNOSTICS_FILE = mcpTauronWebviewDiagnosticsPath;
+    environment.TAURON_WEBVIEW2_LOG = "1";
+
+    const tauronAdditionalBrowserArgs = (
+      existingEnv.GREEBLEFS_MCP_WEBVIEW2_BROWSER_ARGS
+      || existingEnv.OVERLAYTERM_MCP_WEBVIEW2_BROWSER_ARGS
+      || existingEnv.TAURON_WEBVIEW2_ADDITIONAL_BROWSER_ARGS
+    )?.trim();
+    if (tauronAdditionalBrowserArgs) {
+      environment.TAURON_WEBVIEW2_ADDITIONAL_BROWSER_ARGS = tauronAdditionalBrowserArgs;
+    }
+
+    if (hasExplicitEnvValue(existingEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS)) {
+      environment.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS =
+        existingEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS.trim();
+    }
   }
 
   return {
@@ -165,6 +221,9 @@ function buildMcpDevelopmentEnvironment({
       logFilePath: normalizePathForLogs(mcpTauriDevLogPath),
       frontendDevUrl,
       webviewDebugPort,
+      tauronWebviewDiagnosticsPath: platform === "win32"
+        ? normalizePathForLogs(mcpTauronWebviewDiagnosticsPath)
+        : null,
     },
   };
 }
@@ -504,6 +563,8 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
   const config = JSON.parse(rawConfig);
   const runtimeConfigPath = path.join(tauriConfigDir, "tauri.vps.config.json");
+  const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
+  const runtimeFrontendDist = formatProjectPathForTauriConfig(frontendDist, "frontendDist");
   const runPrefix = `${packageManagerCommand} run`;
   const explicitDevUrl = (process.env.GREEBLEFS_TAURI_DEV_URL || process.env.OVERLAYTERM_TAURI_DEV_URL)?.trim();
   const explicitDevPort = (process.env.GREEBLEFS_TAURI_DEV_PORT || process.env.OVERLAYTERM_TAURI_DEV_PORT)?.trim();
@@ -520,8 +581,23 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
     ...config.build,
     beforeDevCommand,
     beforeBuildCommand: `${runPrefix} build`,
-    frontendDist,
+    frontendDist: runtimeFrontendDist,
   };
+
+  if (config.bundle?.resources && !Array.isArray(config.bundle.resources)) {
+    const rewrittenResources = {};
+    for (const [resourceSource, resourceDestination] of Object.entries(config.bundle.resources)) {
+      if (resourceSource === "../dist-mobile/" || resourceSource === "../dist-mobile") {
+        rewrittenResources[formatBundleDirectoryResourcePathForTauriProject(mobileShareBundleDist)] = resourceDestination;
+      } else {
+        rewrittenResources[resourceSource] = resourceDestination;
+      }
+    }
+    config.bundle = {
+      ...config.bundle,
+      resources: rewrittenResources,
+    };
+  }
 
   if (resolvedDevUrl) {
     config.build.devUrl = resolvedDevUrl;
@@ -575,10 +651,18 @@ async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
     return;
   }
 
+  const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
   console.log(
     `Preparing mobile share bundle at ${normalizePathForLogs(path.relative(projectRoot, mobileShareBundleDist) || ".") }...`
   );
-  const mobileBundleExitCode = await runCommand(packageManagerCommand, ["run", "build:mobile"]);
+  const mobileBundleExitCode = await runCommand(
+    packageManagerCommand,
+    ["run", "build:mobile"],
+    {
+      GREEBLEFS_VITE_MOBILE_OUT_DIR: mobileShareBundleDist,
+      OVERLAYTERM_VITE_MOBILE_OUT_DIR: mobileShareBundleDist,
+    },
+  );
   if (mobileBundleExitCode !== 0) {
     process.exit(mobileBundleExitCode);
   }
@@ -610,6 +694,54 @@ function runCommand(command, args, extraEnv = {}) {
   });
 }
 
+async function findLatestNsisInstallerExecutable(bundleDirectoryPath) {
+  if (!(await pathExists(bundleDirectoryPath))) {
+    return null;
+  }
+
+  const installerCandidates = await Promise.all(
+    (await fs.readdir(bundleDirectoryPath, { withFileTypes: true }))
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".exe"))
+      .map(async (entry) => {
+        const installerPath = path.join(bundleDirectoryPath, entry.name);
+        const stats = await fs.stat(installerPath);
+        return {
+          installerPath,
+          lastModifiedAt: stats.mtimeMs,
+        };
+      }),
+  );
+
+  installerCandidates.sort((left, right) => right.lastModifiedAt - left.lastModifiedAt);
+  return installerCandidates[0]?.installerPath ?? null;
+}
+
+async function mirrorWindowsInstallerIntoReleaseRoot() {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  const releaseDirectoryPath = path.join(tauriCargoTargetDir, "release");
+  const nsisBundleDirectoryPath = path.join(releaseDirectoryPath, "bundle", "nsis");
+  const latestInstallerPath = await findLatestNsisInstallerExecutable(nsisBundleDirectoryPath);
+  if (!latestInstallerPath) {
+    return null;
+  }
+
+  const versionedInstallerPath = path.join(releaseDirectoryPath, path.basename(latestInstallerPath));
+  const stableInstallerPath = path.join(releaseDirectoryPath, windowsReleaseInstallerAliasFileName);
+
+  await fs.mkdir(releaseDirectoryPath, { recursive: true });
+  await fs.copyFile(latestInstallerPath, versionedInstallerPath);
+  await fs.copyFile(latestInstallerPath, stableInstallerPath);
+
+  return {
+    sourceInstallerPath: latestInstallerPath,
+    versionedInstallerPath,
+    stableInstallerPath,
+  };
+}
+
 async function runCommandWithMcpTauriDevStatus(command, args, extraEnv = {}, sessionConfig) {
   const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
   await ensureMcpStateDirectory();
@@ -628,6 +760,7 @@ async function runCommandWithMcpTauriDevStatus(command, args, extraEnv = {}, ses
     lastOutputAt: null,
     frontendDevUrl: sessionConfig.frontendDevUrl,
     webviewDebugPort: sessionConfig.webviewDebugPort,
+    tauronWebviewDiagnosticsPath: sessionConfig.tauronWebviewDiagnosticsPath ?? null,
     logFilePath: sessionConfig.logFilePath,
     statusFilePath: sessionConfig.statusFilePath,
   };
@@ -774,10 +907,12 @@ async function main() {
 
   assertTauronForkAvailable(projectRoot);
   await ensureNativeBindingAvailable();
-  await fs.mkdir(frontendDist, { recursive: true });
   const packageManagerCommand = getPackageManagerCommand();
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
+  const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
+  await fs.mkdir(frontendDist, { recursive: true });
+  await fs.mkdir(mobileShareBundleDist, { recursive: true });
   const windowsRustAccelerationEnvironment = buildWindowsRustAccelerationEnvironment();
   const sharedRustBuildEnvironment = {
     CARGO_TARGET_DIR: tauriCargoTargetDir,
@@ -800,6 +935,11 @@ async function main() {
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
     : cacheNodeModules;
+  const viteCacheDir = (
+    process.env.GREEBLEFS_VITE_CACHE_DIR
+    || process.env.OVERLAYTERM_VITE_CACHE_DIR
+    || defaultViteCacheDir
+  );
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
   const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand, tauriCommand);
   const mcpDevelopment = buildMcpDevelopmentEnvironment({ tauriCommand });
@@ -812,8 +952,12 @@ async function main() {
   const tauriEnvironment = {
     NODE_PATH: existingNodePath,
     npm_config_optional: "true",
+    GREEBLEFS_VITE_CACHE_DIR: viteCacheDir,
+    OVERLAYTERM_VITE_CACHE_DIR: viteCacheDir,
     GREEBLEFS_VITE_OUT_DIR: frontendDist,
     OVERLAYTERM_VITE_OUT_DIR: frontendDist,
+    GREEBLEFS_VITE_MOBILE_OUT_DIR: mobileShareBundleDist,
+    OVERLAYTERM_VITE_MOBILE_OUT_DIR: mobileShareBundleDist,
     ...linuxGraphicsEnvironment,
     ...sharedRustBuildEnvironment,
     ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
@@ -831,6 +975,15 @@ async function main() {
         [sharedTauriCliEntry, ...tauriArgs],
         tauriEnvironment,
       );
+
+  if (exitCode === 0 && tauriCommand === "build") {
+    const mirroredInstaller = await mirrorWindowsInstallerIntoReleaseRoot();
+    if (mirroredInstaller) {
+      console.log(
+        `Mirrored Windows installer to ${normalizePathForLogs(path.relative(projectRoot, mirroredInstaller.stableInstallerPath) || mirroredInstaller.stableInstallerPath)} and ${normalizePathForLogs(path.relative(projectRoot, mirroredInstaller.versionedInstallerPath) || mirroredInstaller.versionedInstallerPath)}.`,
+      );
+    }
+  }
 
   process.exit(exitCode);
 }

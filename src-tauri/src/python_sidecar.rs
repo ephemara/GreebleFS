@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -155,6 +156,17 @@ struct PythonSidecarSession {
     stdout: BufReader<ChildStdout>,
     pid: u32,
     request_counter: u64,
+}
+
+#[derive(Debug)]
+struct PythonSidecarSessionResource {
+    runtime_root: String,
+}
+
+impl tauri::Resource for PythonSidecarSessionResource {
+    fn name(&self) -> Cow<'_, str> {
+        Cow::Owned(format!("python-sidecar-session:{}", self.runtime_root))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -708,11 +720,12 @@ fn spawn_sidecar_session(
     manifest: PythonSidecarWorkspaceManifest,
     sidecar_paths: PythonSidecarPaths,
 ) -> Result<PythonSidecarSession, String> {
-    let ipc_runtime = app.state::<IpcRuntimeState>();
-    let resource_handle = ipc_runtime.register_resource(
-        "python-sidecar-session",
-        Some(&path_to_string(&paths.root_dir)),
-    )?;
+    let resource_handle = IpcResourceHandle {
+        rid: app.resources_table().add(PythonSidecarSessionResource {
+            runtime_root: path_to_string(&paths.root_dir),
+        }),
+        kind: "python-sidecar-session".to_string(),
+    };
     let managed_python = managed_python_path(paths);
     let log_file = OpenOptions::new()
         .create(true)
@@ -781,7 +794,7 @@ fn spawn_sidecar_session(
             .error
             .unwrap_or_else(|| "Python sidecar handshake failed.".to_string());
         session.stop();
-        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
+        close_sidecar_session_resource(app, &session.resource_handle);
         return Err(error);
     }
 
@@ -800,7 +813,7 @@ fn spawn_sidecar_session(
         || handshake_payload.transport != manifest.transport
     {
         session.stop();
-        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
+        close_sidecar_session_resource(app, &session.resource_handle);
         return Err("Python sidecar handshake did not match the local manifest.".to_string());
     }
 
@@ -812,7 +825,7 @@ fn spawn_sidecar_session(
     expected_actions.sort();
     if handshake_payload.available_actions != expected_actions {
         session.stop();
-        let _ = ipc_runtime.release_resource(&session.resource_handle.id);
+        close_sidecar_session_resource(app, &session.resource_handle);
         return Err("Python sidecar handshake returned an unexpected action registry.".to_string());
     }
 
@@ -875,9 +888,7 @@ fn current_sidecar_process_status(
                 "Python sidecar exited with status {}.",
                 status.code().unwrap_or(-1)
             )))?;
-            let _ = app
-                .state::<IpcRuntimeState>()
-                .release_resource(&session.resource_handle.id);
+            close_sidecar_session_resource(app, &session.resource_handle);
             *session_guard = None;
             Ok((false, None))
         }
@@ -886,9 +897,7 @@ fn current_sidecar_process_status(
             manager.set_last_error(Some(format!(
                 "Failed to inspect Python sidecar process state: {error}"
             )))?;
-            let _ = app
-                .state::<IpcRuntimeState>()
-                .release_resource(&session.resource_handle.id);
+            close_sidecar_session_resource(app, &session.resource_handle);
             *session_guard = None;
             Ok((false, None))
         }
@@ -905,9 +914,7 @@ fn stop_current_sidecar_session(
         .map_err(|_| "python sidecar session lock poisoned".to_string())?;
     if let Some(session) = session_guard.as_mut() {
         session.stop();
-        let _ = app
-            .state::<IpcRuntimeState>()
-            .release_resource(&session.resource_handle.id);
+        close_sidecar_session_resource(app, &session.resource_handle);
     }
     *session_guard = None;
     Ok(())
@@ -1017,9 +1024,10 @@ fn stop_sidecar_impl(
 }
 
 fn resolve_sidecar_output_artifacts(
-    ipc_runtime: &IpcRuntimeState,
+    app: &AppHandle,
     output_artifacts: Option<Vec<PythonSidecarOutputArtifactEnvelope>>,
 ) -> Result<ResolvedPythonSidecarOutputArtifacts, String> {
+    let ipc_runtime = app.state::<IpcRuntimeState>();
     let Some(output_artifacts) = output_artifacts else {
         return Ok(ResolvedPythonSidecarOutputArtifacts::default());
     };
@@ -1040,7 +1048,7 @@ fn resolve_sidecar_output_artifacts(
                 let trimmed_file_path = candidate.file_path.trim();
                 if trimmed_file_path.is_empty() {
                     for artifact_id in newly_registered_artifact_ids {
-                        let _ = ipc_runtime.release_artifact(&artifact_id);
+                        let _ = ipc_runtime.release_artifact(app, &artifact_id);
                     }
                     return Err(
                         "Python sidecar output artifact candidates require a non-empty filePath."
@@ -1055,6 +1063,7 @@ fn resolve_sidecar_output_artifacts(
                     .delete_on_release
                     .unwrap_or(matches!(retention, IpcArtifactRetention::Ephemeral));
                 let descriptor = match ipc_runtime.register_artifact_path(
+                    app,
                     crate::ipc_runtime::artifacts::RegisterArtifactPathRequest {
                         kind: candidate.kind,
                         file_path: PathBuf::from(trimmed_file_path),
@@ -1068,7 +1077,7 @@ fn resolve_sidecar_output_artifacts(
                     Ok(descriptor) => descriptor,
                     Err(error) => {
                         for artifact_id in newly_registered_artifact_ids {
-                            let _ = ipc_runtime.release_artifact(&artifact_id);
+                            let _ = ipc_runtime.release_artifact(app, &artifact_id);
                         }
                         return Err(error);
                     }
@@ -1149,10 +1158,7 @@ fn call_sidecar_impl(
     }
 
     manager.set_last_error(None)?;
-    let resolved_output_artifacts = resolve_sidecar_output_artifacts(
-        &app.state::<IpcRuntimeState>(),
-        response.output_artifacts,
-    )?;
+    let resolved_output_artifacts = resolve_sidecar_output_artifacts(app, response.output_artifacts)?;
 
     Ok(PythonSidecarActionResponse {
         runtime_status,
@@ -1173,6 +1179,10 @@ fn call_sidecar_impl(
             .resource_handles
             .unwrap_or_else(|| vec![session.resource_handle.clone()]),
     })
+}
+
+fn close_sidecar_session_resource(app: &AppHandle, resource_handle: &IpcResourceHandle) {
+    let _ = app.resources_table().close(resource_handle.rid);
 }
 
 #[tauri::command]
@@ -1300,9 +1310,11 @@ mod tests {
         let tempdir = tempdir().expect("tempdir");
         let preview_path = tempdir.path().join("preview.png");
         fs::write(&preview_path, b"preview-artifact").expect("preview artifact should be written");
+        let app = tauri::test::mock_app();
+        let _ = app.manage(IpcRuntimeState::new());
 
         let resolved = resolve_sidecar_output_artifacts(
-            &IpcRuntimeState::new(),
+            app.handle(),
             Some(vec![PythonSidecarOutputArtifactEnvelope::Candidate(
                 PythonSidecarOutputArtifactCandidate {
                     token: Some("preview-mask".to_string()),
@@ -1321,6 +1333,7 @@ mod tests {
         assert_eq!(resolved.tokens, vec![Some("preview-mask".to_string())]);
         assert_eq!(resolved.descriptors.len(), 1);
         assert_eq!(resolved.descriptors[0].kind, "image.cutout.preview-mask");
+        assert_ne!(resolved.descriptors[0].resource_rid, 0);
         assert_eq!(
             resolved.descriptors[0].media_type.as_deref(),
             Some("image/png")

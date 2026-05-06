@@ -27,6 +27,14 @@ interface ExplorerFloatingSurfaceProps
 interface ExplorerFloatingSurfacePosition {
   left: number;
   top: number;
+  strategy: "absolute" | "fixed";
+}
+
+interface ExplorerFloatingSurfaceConstraintRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 function resolveExplorerFloatingSurfacePortalRoot(
@@ -55,14 +63,16 @@ function clampExplorerFloatingSurfacePosition(
 function resolveExplorerFloatingSurfacePosition(args: {
   anchorRect: DOMRect;
   panelRect: DOMRect;
+  constraintRect?: ExplorerFloatingSurfaceConstraintRect | null;
   side: ExplorerFloatingSurfaceSide;
   align: ExplorerFloatingSurfaceAlign;
   offset: number;
   viewportPadding: number;
-}): ExplorerFloatingSurfacePosition {
+}): Pick<ExplorerFloatingSurfacePosition, "left" | "top"> {
   const {
     anchorRect,
     panelRect,
+    constraintRect,
     side,
     align,
     offset,
@@ -70,6 +80,10 @@ function resolveExplorerFloatingSurfacePosition(args: {
   } = args;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
+  const boundaryLeft = constraintRect?.left ?? 0;
+  const boundaryTop = constraintRect?.top ?? 0;
+  const boundaryRight = constraintRect?.right ?? viewportWidth;
+  const boundaryBottom = constraintRect?.bottom ?? viewportHeight;
   const desiredLeft =
     align === "start"
       ? anchorRect.left
@@ -81,14 +95,34 @@ function resolveExplorerFloatingSurfacePosition(args: {
   return {
     left: clampExplorerFloatingSurfacePosition(
       desiredLeft,
-      viewportPadding,
-      viewportWidth - panelRect.width - viewportPadding,
+      boundaryLeft + viewportPadding,
+      boundaryRight - panelRect.width - viewportPadding,
     ),
     top: clampExplorerFloatingSurfacePosition(
       desiredTop,
-      viewportPadding,
-      viewportHeight - panelRect.height - viewportPadding,
+      boundaryTop + viewportPadding,
+      boundaryBottom - panelRect.height - viewportPadding,
     ),
+  };
+}
+
+function projectExplorerFloatingSurfacePositionToPortalRoot(args: {
+  viewportPosition: Pick<ExplorerFloatingSurfacePosition, "left" | "top">;
+  portalRoot: HTMLElement;
+}): ExplorerFloatingSurfacePosition {
+  const { viewportPosition, portalRoot } = args;
+  if (portalRoot === document.body) {
+    return {
+      ...viewportPosition,
+      strategy: "fixed",
+    };
+  }
+
+  const portalRootRect = portalRoot.getBoundingClientRect();
+  return {
+    left: viewportPosition.left - portalRootRect.left + portalRoot.scrollLeft,
+    top: viewportPosition.top - portalRootRect.top + portalRoot.scrollTop,
+    strategy: "absolute",
   };
 }
 
@@ -130,15 +164,26 @@ export function ExplorerFloatingSurface({
         setPosition(null);
         return;
       }
+      const portalRootRect =
+        nextPortalRoot && nextPortalRoot !== document.body
+          ? nextPortalRoot.getBoundingClientRect()
+          : null;
+      const viewportPosition = resolveExplorerFloatingSurfacePosition({
+        anchorRect: anchorElement.getBoundingClientRect(),
+        panelRect: panelElement.getBoundingClientRect(),
+        constraintRect: portalRootRect,
+        side,
+        align,
+        offset,
+        viewportPadding,
+      });
       setPosition(
-        resolveExplorerFloatingSurfacePosition({
-          anchorRect: anchorElement.getBoundingClientRect(),
-          panelRect: panelElement.getBoundingClientRect(),
-          side,
-          align,
-          offset,
-          viewportPadding,
-        }),
+        nextPortalRoot
+          ? projectExplorerFloatingSurfacePositionToPortalRoot({
+              viewportPosition,
+              portalRoot: nextPortalRoot,
+            })
+          : null,
       );
     };
 
@@ -175,7 +220,7 @@ export function ExplorerFloatingSurface({
       data-overlay-explorer-floating-surface="true"
       data-overlay-explorer-floating-surface-group={surfaceGroup}
       style={{
-        position: "fixed",
+        position: position?.strategy ?? "fixed",
         left: position?.left ?? -99999,
         top: position?.top ?? -99999,
         zIndex: `var(${zIndexCssVar}, ${zIndexFallback})`,

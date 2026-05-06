@@ -7,7 +7,12 @@ import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/ap
 import { resetTerminalWebglSupportCacheForTests } from '../components/terminal/terminalRendererSupport';
 import { useExplorerStore } from '../store/explorerStore';
 
-const { mockWebglAddonInstances, mockXtermInstances } = vi.hoisted(() => ({
+const {
+  mockWebglAddonInstances,
+  mockXtermInstances,
+  subscribeTransportStreamMock,
+  transportStreamHandlers,
+} = vi.hoisted(() => ({
   mockWebglAddonInstances: [] as {
     clearTextureAtlas: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
@@ -21,7 +26,13 @@ const { mockWebglAddonInstances, mockXtermInstances } = vi.hoisted(() => ({
     reset: ReturnType<typeof vi.fn>;
     emitData: (data: string) => void;
   }[],
+  subscribeTransportStreamMock: vi.fn(),
+  transportStreamHandlers: new Map<string, (payload: unknown) => void>(),
 })); 
+
+vi.mock('@tauri-apps/api/transport', () => ({
+  subscribeStream: subscribeTransportStreamMock,
+}));
 
 class MockXtermLine {
   constructor(private readonly text: string) {}
@@ -120,7 +131,21 @@ describe('TerminalOverlay', () => {
   beforeEach(() => {
     mockWebglAddonInstances.length = 0;
     mockXtermInstances.length = 0;
+    transportStreamHandlers.clear();
     resetTerminalWebglSupportCacheForTests();
+    subscribeTransportStreamMock.mockReset();
+    subscribeTransportStreamMock.mockImplementation(async (handle, listener) => {
+      const streamId =
+        typeof handle === 'string'
+          ? handle
+          : typeof handle === 'object' && handle !== null && 'id' in handle
+            ? String(handle.id)
+            : 'unknown-stream';
+      transportStreamHandlers.set(streamId, listener as (payload: unknown) => void);
+      return async () => {
+        transportStreamHandlers.delete(streamId);
+      };
+    });
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
       const invokeArgs =
@@ -143,30 +168,6 @@ describe('TerminalOverlay', () => {
           return {
             id: `stream-${terminalId}`,
             kind: 'terminal-output',
-            eventName: `ipc-stream-terminal-output-${terminalId}`,
-          };
-        case 'ipc_replay_stream':
-          return {
-            streamId: typeof invokeArgs?.id === 'string' ? invokeArgs.id : `stream-${terminalId}`,
-            packets: [],
-            replayGap: null,
-            telemetry: {
-              retainedMessages: 0,
-              retainedBytes: 0,
-              oldestSequence: null,
-              nextSequence: 0,
-              totalWrittenMessages: 0,
-              totalWrittenBytes: 0,
-              chunkedMessages: 0,
-              overflow: {
-                overflowed: false,
-                overflowCount: 0,
-                droppedMessages: 0,
-                droppedBytes: 0,
-                firstDroppedSequence: null,
-                latestDroppedSequence: null,
-              },
-            },
           };
         case 'terminal_register_shell_integration':
         case 'terminal_sync_cwd':
@@ -177,7 +178,6 @@ describe('TerminalOverlay', () => {
         case 'terminal_write_many':
         case 'terminal_resize':
         case 'terminal_kill':
-        case 'ipc_release_stream':
           return null;
         default:
           return null;
@@ -186,7 +186,7 @@ describe('TerminalOverlay', () => {
     vi.mocked(listen).mockReset();
     vi.mocked(listen).mockResolvedValue(() => {});
     useSettingsStore.getState().resetToDefaults();
-    useSettingsStore.getState().updateTerminal({ integratedHost: 'xterm' });
+    useSettingsStore.getState().updateTerminal({ integratedHost: 'xterm', showSidebar: true });
 
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -212,26 +212,18 @@ describe('TerminalOverlay', () => {
   });
 
   it('copies the active terminal buffer to the clipboard', async () => {
-    const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
-    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
-      eventHandlers.set(String(eventName), handler as (event: { payload: unknown }) => void);
-      return () => {
-        eventHandlers.delete(String(eventName));
-      };
-    });
-
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
     expect(screen.queryByTestId('terminal-pane-fx-overlay-0')).not.toBeInTheDocument();
     const copyButton = await screen.findByRole('button', { name: 'Copy Output' });
     await waitFor(() => expect(copyButton).toBeEnabled());
-    await waitFor(() => expect(eventHandlers.has('ipc-stream-terminal-output-overlay-0')).toBe(true));
+    await waitFor(() => expect(transportStreamHandlers.has('stream-overlay-0')).toBe(true));
 
-    const outputHandler = eventHandlers.get('ipc-stream-terminal-output-overlay-0');
+    const outputHandler = transportStreamHandlers.get('stream-overlay-0');
     if (!outputHandler) {
       throw new Error('Missing output stream handler');
     }
-    outputHandler({ payload: { data: 'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json' } });
+    outputHandler({ data: 'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json' });
 
     await userEvent.click(copyButton);
 
@@ -244,6 +236,7 @@ describe('TerminalOverlay', () => {
 
   it('replays retained xterm output without releasing terminal-owned streams on teardown', async () => {
     const invokeMock = vi.mocked(invoke);
+    const transportUnlisten = vi.fn(async () => undefined);
     invokeMock.mockImplementation(async (command: string, args?: unknown) => {
       const invokeArgs =
         typeof args === 'object' && args !== null
@@ -254,49 +247,6 @@ describe('TerminalOverlay', () => {
         return {
           id: 'stream-overlay-0',
           kind: 'terminal-output',
-          eventName: 'ipc-stream-terminal-output-overlay-0',
-        };
-      }
-
-      if (command === 'ipc_replay_stream') {
-        return {
-          streamId: 'stream-overlay-0',
-          packets: [
-            {
-              metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
-              frameMetadata: {
-                sequence: 0,
-                emittedAtEpochMs: 1,
-                byteLength: 120,
-                frameIndex: 0,
-                frameCount: 1,
-                chunked: false,
-              },
-              payloadJson: JSON.stringify({
-                terminalId: 'overlay-0',
-                metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
-                data: 'PS C:\\Dev\\GreebleFS> ',
-              }),
-            },
-          ],
-          replayGap: null,
-          telemetry: {
-            retainedMessages: 1,
-            retainedBytes: 120,
-            oldestSequence: 0,
-            nextSequence: 1,
-            totalWrittenMessages: 1,
-            totalWrittenBytes: 120,
-            chunkedMessages: 0,
-            overflow: {
-              overflowed: false,
-              overflowCount: 0,
-              droppedMessages: 0,
-              droppedBytes: 0,
-              firstDroppedSequence: null,
-              latestDroppedSequence: null,
-            },
-          },
         };
       }
 
@@ -320,23 +270,48 @@ describe('TerminalOverlay', () => {
         command === 'terminal_write' ||
         command === 'terminal_write_many' ||
         command === 'terminal_resize' ||
-        command === 'terminal_kill' ||
-        command === 'ipc_release_stream'
+        command === 'terminal_kill'
       ) {
         return null;
       }
 
       return invokeArgs ?? null;
     });
+    subscribeTransportStreamMock.mockImplementationOnce(async (handle, listener, options) => {
+      const streamId =
+        typeof handle === 'string'
+          ? handle
+          : typeof handle === 'object' && handle !== null && 'id' in handle
+            ? String(handle.id)
+            : 'unknown-stream';
+      transportStreamHandlers.set(streamId, listener as (payload: unknown) => void);
+      expect(options).toEqual({
+        includeReplay: true,
+        replayFromSequence: 0,
+        replayLimit: undefined,
+        closeOnUnsubscribe: false,
+      });
+      (listener as (payload: unknown) => void)({
+        terminalId: 'overlay-0',
+        metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
+        data: 'PS C:\\Dev\\GreebleFS> ',
+      });
+      return transportUnlisten;
+    });
 
     const { unmount } = render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('ipc_replay_stream', {
-        id: 'stream-overlay-0',
-        fromSequence: 0,
-        limit: null,
-      });
+      expect(subscribeTransportStreamMock).toHaveBeenCalledWith(
+        { id: 'stream-overlay-0', kind: 'terminal-output' },
+        expect.any(Function),
+        {
+          includeReplay: true,
+          replayFromSequence: 0,
+          replayLimit: undefined,
+          closeOnUnsubscribe: false,
+        },
+      );
       expect(mockXtermInstances[0]?.write).toHaveBeenCalledWith('PS C:\\Dev\\GreebleFS> ');
     });
 
@@ -344,8 +319,8 @@ describe('TerminalOverlay', () => {
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('terminal_kill', { id: 'overlay-0' });
+      expect(transportUnlisten).toHaveBeenCalledTimes(1);
     });
-    expect(invokeMock).not.toHaveBeenCalledWith('ipc_release_stream', expect.anything());
   }, 20000);
 
   it('keeps the embedded terminal root pinned to the parent bounds', () => {
@@ -570,7 +545,7 @@ describe('TerminalOverlay', () => {
     );
 
     await waitFor(() => {
-      expect(eventHandlers.has('ipc-stream-terminal-output-preview-pane-0')).toBe(true);
+      expect(transportStreamHandlers.has('stream-preview-pane-0')).toBe(true);
       expect(eventHandlers.has('terminal-shell-integration-state-event')).toBe(true);
     });
 
@@ -686,32 +661,6 @@ describe('TerminalOverlay', () => {
         return {
           id: 'stream-overlay-0',
           kind: 'terminal-output',
-          eventName: 'ipc-stream-terminal-output-overlay-0',
-        };
-      }
-
-      if (command === 'ipc_replay_stream') {
-        return {
-          streamId: 'stream-overlay-0',
-          packets: [],
-          replayGap: null,
-          telemetry: {
-            retainedMessages: 0,
-            retainedBytes: 0,
-            oldestSequence: null,
-            nextSequence: 0,
-            totalWrittenMessages: 0,
-            totalWrittenBytes: 0,
-            chunkedMessages: 0,
-            overflow: {
-              overflowed: false,
-              overflowCount: 0,
-              droppedMessages: 0,
-              droppedBytes: 0,
-              firstDroppedSequence: null,
-              latestDroppedSequence: null,
-            },
-          },
         };
       }
 

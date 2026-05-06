@@ -1,0 +1,3115 @@
+======================================================
+GreebleFS Windows new-user flow
+======================================================
+Mode: omega release install + launch
+Delegating to scripts\platform\install-windows-local.ps1
+
+======================================
+ GreebleFS Windows NSIS Installer
+======================================
+
+Repository: D:\GreebleFS
+Mode: passive installer
+Install root: C:\Users\Admin\AppData\Local\Programs\GreebleFS
+Usr workspace: C:\Users\Admin\AppData\Local\Programs\GreebleFS\usr
+
+Stopping running GreebleFS processes before the bundle build...
+
+[1/5] Installing project dependencies...
+> bun install --frozen-lockfile
+bun install v1.3.9 (cf6cdbbb)
+
+Checked 790 installs across 848 packages (no changes) [99.00ms]
+[2/5] Generating branded NSIS installer artwork...
+> powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\platform\generate-windows-installer-art.ps1
+Generated installer artwork:
+  D:\GreebleFS\src-tauri\windows\assets\greeblefs-installer-header.bmp
+  D:\GreebleFS\src-tauri\windows\assets\greeblefs-installer-sidebar.bmp
+[3/5] Building the Windows NSIS release bundle...
+> bun run release:windows:bundle
+$ bun run tauri build --bundles nsis --ci
+$ node scripts/run-platform-tauri.mjs build --bundles nsis --ci
+Installing @tauri-apps/cli-win32-x64-msvc@2.11.0 into VPS-local cache...
+bun add v1.3.9 (cf6cdbbb)
+
+installed @tauri-apps/cli-win32-x64-msvc@2.11.0
+
+[138.00ms] done
+Preparing Go runtime assets...
+$ bash scripts/go/bootstrap.sh
+[greeblefs/go] installed wasm_exec.js -> public/runtime/wasm_exec.js
+[greeblefs/go] tidying workspace modules
+[greeblefs/go] bootstrap complete
+        Info Looking up installed tauri packages to check mismatched versions...
+        Warn The bundle identifier "co.greeblefs.app" set in `"--config" identifier` ends with `.app`. This is not recommended because it conflicts with the application bundle extension on macOS.
+     Running beforeBuildCommand `bun.exe run build`
+$ bun run go:bootstrap && bun scripts/sync-canonical-icons.mjs && bun run bindings:generate && vite build && vite build --config vite.mobile.config.ts
+$ bash scripts/go/bootstrap.sh
+[greeblefs/go] installed wasm_exec.js -> public/runtime/wasm_exec.js
+[greeblefs/go] tidying workspace modules
+[greeblefs/go] bootstrap complete
+Synced 103 canonical icons (72 copied, 31 generated) and removed 0 legacy folder icons.
+$ node scripts/run-export-bindings.mjs
+    Blocking waiting for file lock on build directory
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling windows-link v0.2.1
+   Compiling autocfg v1.5.0
+   Compiling serde_core v1.0.228
+   Compiling memchr v2.8.0
+   Compiling log v0.4.29
+   Compiling itoa v1.0.18
+   Compiling thiserror v2.0.18
+   Compiling version_check v0.9.5
+   Compiling syn v2.0.117
+   Compiling libm v0.2.16
+   Compiling parking_lot_core v0.9.12
+   Compiling getrandom v0.3.4
+   Compiling num-traits v0.2.19
+   Compiling strsim v0.11.1
+   Compiling serde v1.0.228
+   Compiling stable_deref_trait v1.2.1
+   Compiling equivalent v1.0.2
+   Compiling scopeguard v1.2.0
+   Compiling bytes v1.11.1
+   Compiling lock_api v0.4.14
+   Compiling anyhow v1.0.102
+   Compiling smallvec v1.15.1
+   Compiling jobserver v0.1.34
+   Compiling find-msvc-tools v0.1.9
+   Compiling powerfmt v0.2.0
+   Compiling shlex v1.3.0
+   Compiling typenum v1.20.0
+   Compiling cc v1.2.61
+   Compiling time-core v0.1.8
+   Compiling unicode-segmentation v1.13.2
+   Compiling once_cell v1.21.4
+   Compiling num-conv v0.2.1
+   Compiling ident_case v1.0.1
+   Compiling windows-sys v0.61.2
+   Compiling bitflags v2.11.1
+   Compiling regex-syntax v0.8.10
+   Compiling thiserror v1.0.69
+   Compiling fnv v1.0.7
+   Compiling percent-encoding v2.3.2
+   Compiling pin-project-lite v0.2.17
+   Compiling siphasher v1.0.3
+   Compiling hashbrown v0.17.0
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v2.0.18
+   Compiling zeroize_derive v1.4.3
+   Compiling thiserror-impl v1.0.69
+   Compiling zeroize v1.8.2
+   Compiling libc v0.2.186
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling bytemuck_derive v1.10.2
+   Compiling byteorder v1.5.0
+   Compiling zmij v1.0.21
+   Compiling windows-targets v0.52.6
+   Compiling generic-array v0.14.7
+   Compiling foldhash v0.2.0
+   Compiling bytemuck v1.25.0
+   Compiling synstructure v0.13.2
+   Compiling zerocopy v0.8.48
+   Compiling zerocopy-derive v0.8.48
+   Compiling darling_core v0.23.0
+   Compiling new_debug_unreachable v1.0.6
+   Compiling base64 v0.22.1
+   Compiling zerofrom-derive v0.1.7
+   Compiling convert_case v0.10.0
+   Compiling getrandom v0.2.17
+   Compiling subtle v2.6.1
+   Compiling derive_more-impl v2.1.1
+   Compiling zerofrom v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling darling_macro v0.23.0
+   Compiling yoke v0.8.2
+   Compiling parking_lot v0.12.5
+   Compiling darling v0.23.0
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.5
+   Compiling semver v1.0.28
+   Compiling dyn-clone v1.0.20
+   Compiling crypto-common v0.1.7
+   Compiling cpufeatures v0.2.17
+   Compiling winnow v1.0.2
+   Compiling zerovec v0.11.6
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling tinystr v0.8.3
+   Compiling litemap v0.8.2
+   Compiling heck v0.5.0
+   Compiling writeable v0.6.3
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling potential_utf v0.1.5
+   Compiling icu_locale_core v2.2.0
+   Compiling zerotrie v0.2.4
+   Compiling icu_normalizer_data v2.2.0
+   Compiling utf8_iter v1.0.4
+   Compiling icu_collections v2.2.0
+   Compiling rand_core v0.6.4
+   Compiling icu_provider v2.2.0
+   Compiling icu_properties_data v2.2.0
+   Compiling phf_shared v0.13.1
+   Compiling num-integer v0.1.46
+   Compiling tokio-macros v2.7.0
+   Compiling fastrand v2.4.1
+   Compiling phf_generator v0.13.1
+   Compiling icu_properties v2.2.0
+   Compiling typeid v1.0.3
+   Compiling crossbeam-utils v0.8.21
+   Compiling socket2 v0.6.3
+   Compiling http v1.4.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling mio v1.2.0
+   Compiling deranged v0.5.8
+   Compiling futures-core v0.3.32
+   Compiling const-oid v0.9.6
+   Compiling tokio v1.52.2
+   Compiling derive_more v2.1.1
+   Compiling aho-corasick v1.1.4
+   Compiling bit-vec v0.8.0
+   Compiling simd-adler32 v0.3.9
+   Compiling time v0.3.47
+   Compiling block-buffer v0.10.4
+   Compiling rustc-hash v2.1.2
+   Compiling arrayvec v0.7.6
+   Compiling regex-automata v0.4.14
+   Compiling crc32fast v1.5.0
+   Compiling digest v0.10.7
+   Compiling phf_macros v0.13.1
+   Compiling rustc_version v0.4.1
+   Compiling serde_with_macros v3.19.0
+   Compiling regex v1.12.3
+   Compiling either v1.15.0
+   Compiling time-macros v0.2.27
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling phf_codegen v0.13.1
+   Compiling tracing-core v0.1.36
+   Compiling quick-xml v0.39.3
+   Compiling rustversion v1.0.22
+   Compiling tracing-attributes v0.1.31
+   Compiling windows-interface v0.59.3
+   Compiling serde_derive_internals v0.29.1
+   Compiling option-ext v0.2.0
+   Compiling indexmap v2.14.0
+   Compiling tracing v0.1.44
+   Compiling unic-common v0.9.0
+   Compiling dunce v1.0.5
+   Compiling unic-char-range v0.9.0
+   Compiling unic-ucd-version v0.9.0
+   Compiling unic-char-property v0.9.0
+   Compiling phf v0.13.1
+   Compiling string_cache_codegen v0.6.1
+   Compiling allocator-api2 v0.2.21
+   Compiling winnow v0.7.15
+   Compiling precomputed-hash v0.1.1
+   Compiling getrandom v0.4.2
+   Compiling alloc-no-stdlib v2.0.4
+   Compiling serde_json v1.0.149
+   Compiling paste v1.0.15
+   Compiling alloc-stdlib v0.2.2
+   Compiling web_atoms v0.2.4
+   Compiling unic-ucd-ident v0.9.0
+   Compiling icu_normalizer v2.2.0
+   Compiling windows-implement v0.60.2
+   Compiling serde_spanned v1.1.1
+   Compiling idna_adapter v1.2.2
+   Compiling brotli-decompressor v5.0.0
+   Compiling string_cache v0.9.0
+   Compiling rand_chacha v0.3.1
+   Compiling futures-macro v0.3.32
+   Compiling futures-task v0.3.32
+   Compiling futures-sink v0.3.32
+   Compiling utf-8 v0.7.6
+   Compiling ctor-proc-macro v0.0.7
+   Compiling dtoa v1.0.11
+   Compiling dtoa-short v0.3.5
+   Compiling ctor v0.8.0
+   Compiling tendril v0.5.0
+   Compiling brotli v8.0.2
+   Compiling rand v0.8.6
+   Compiling uuid v1.23.1
+   Compiling idna v1.1.0
+   Compiling selectors v0.36.1
+   Compiling cssparser-macros v0.6.1
+   Compiling form_urlencoded v1.2.2
+   Compiling spin v0.9.8
+   Compiling indexmap v1.9.3
+   Compiling glob v0.3.3
+   Compiling erased-serde v0.4.10
+   Compiling bitflags v1.3.2
+   Compiling camino v1.2.2
+   Compiling cssparser v0.36.0
+   Compiling url v2.5.8
+   Compiling markup5ever v0.38.0
+   Compiling itertools v0.14.0
+   Compiling winapi-util v0.1.11
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling servo_arc v0.4.3
+   Compiling hashbrown v0.12.3
+   Compiling winapi v0.3.9
+   Compiling schemars v0.8.22
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling same-file v1.0.6
+   Compiling html5ever v0.38.0
+   Compiling cfb v0.7.3
+   Compiling jsonptr v0.6.3
+   Compiling schemars_derive v0.8.22
+   Compiling sha2 v0.10.9
+   Compiling bit-set v0.8.0
+   Compiling cargo-platform v0.1.9
+   Compiling futures-io v0.3.32
+   Compiling cargo_metadata v0.19.2
+   Compiling dom_query v0.27.0
+   Compiling plist v1.9.0
+   Compiling json-patch v3.0.1
+   Compiling infer v0.19.0
+   Compiling serde-untagged v0.1.9
+   Compiling walkdir v2.5.0
+   Compiling urlpattern v0.3.0
+   Compiling serde_with v3.19.0
+   Compiling fdeflate v0.3.7
+   Compiling slab v0.4.12
+   Compiling futures-channel v0.3.32
+   Compiling base64ct v1.8.3
+   Compiling lazy_static v1.5.0
+   Compiling futures-util v0.3.32
+   Compiling tauri-utils v2.9.0 (D:\tauron\crates\tauri-utils)
+   Compiling block-padding v0.3.3
+   Compiling pkg-config v0.3.33
+   Compiling inout v0.1.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling cipher v0.4.4
+   Compiling crossbeam-deque v0.8.6
+   Compiling num-bigint v0.4.6
+   Compiling rayon-core v1.13.0
+   Compiling half v2.7.1
+   Compiling windows-link v0.1.3
+   Compiling equator-macro v0.4.2
+   Compiling profiling-procmacros v1.0.18
+   Compiling vswhom-sys v0.1.3
+   Compiling unicode-width v0.2.2
+   Compiling profiling v1.0.18
+   Compiling equator v0.4.2
+   Compiling num-rational v0.4.2
+   Compiling rayon v1.12.0
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling zlib-rs v0.6.3
+   Compiling toml v1.1.2+spec-1.1.0
+   Compiling aligned-vec v0.6.4
+   Compiling tauri-plugin v2.6.0 (D:\tauron\crates\tauri-plugin)
+   Compiling pem-rfc7468 v0.7.0
+   Compiling hmac v0.12.1
+   Compiling windows-sys v0.59.0
+   Compiling litrs v1.0.0
+   Compiling v_frame v0.3.9
+   Compiling vswhom v0.1.0
+   Compiling windows-result v0.3.4
+   Compiling document-features v0.2.12
+   Compiling hashbrown v0.16.1
+   Compiling flate2 v1.1.9
+   Compiling as-slice v0.2.1
+   Compiling nom v8.0.0
+   Compiling av-scenechange v0.14.1
+   Compiling built v0.8.0
+   Compiling rav1e v0.8.1
+   Compiling aligned v0.4.3
+   Compiling dirs-sys v0.5.0
+   Compiling arg_enum_proc_macro v0.3.4
+   Compiling winreg v0.55.0
+   Compiling no_std_io2 v0.9.4
+   Compiling embed-resource v3.0.9
+   Compiling pastey v0.1.1
+   Compiling y4m v0.8.0
+   Compiling ryu v1.0.23
+   Compiling quick-error v2.0.1
+   Compiling weezl v0.1.12
+   Compiling utf8parse v0.2.2
+   Compiling tauri-winres v0.3.6
+   Compiling av1-grain v0.2.5
+   Compiling bitstream-io v4.10.0
+   Compiling dirs v6.0.0
+   Compiling maybe-rayon v0.1.1
+   Compiling pbkdf2 v0.12.2
+   Compiling aes v0.8.4
+   Compiling cargo_toml v0.22.3
+   Compiling atomic v0.6.1
+   Compiling num-derive v0.4.2
+   Compiling hybrid-array v0.4.11
+   Compiling simd_helpers v0.1.0
+   Compiling cfg_aliases v0.2.1
+   Compiling zune-core v0.5.1
+   Compiling noop_proc_macro v0.3.0
+   Compiling imgref v1.12.1
+   Compiling zune-jpeg v0.5.15
+   Compiling loop9 v0.1.5
+   Compiling tauri-build v2.6.0 (D:\tauron\crates\tauri-build)
+   Compiling der v0.7.10
+   Compiling windows-strings v0.4.2
+   Compiling salsa20 v0.10.2
+   Compiling cbc v0.1.2
+   Compiling avif-serialize v0.8.8
+   Compiling zune-inflate v0.2.54
+   Compiling rand_core v0.9.5
+   Compiling fax v0.2.7
+   Compiling bit_field v0.10.3
+   Compiling pxfm v0.1.29
+   Compiling const-oid v0.10.2
+   Compiling rgb v0.8.53
+   Compiling color_quant v1.1.0
+   Compiling byteorder-lite v0.1.0
+   Compiling lebe v0.5.3
+   Compiling exr v1.74.0
+   Compiling image-webp v0.2.4
+   Compiling ravif v0.13.0
+   Compiling moxcms v0.8.1
+   Compiling gif v0.14.2
+   Compiling tiff v0.11.3
+   Compiling rand_chacha v0.9.0
+   Compiling spki v0.7.3
+   Compiling scrypt v0.11.0
+   Compiling windows-core v0.61.2
+   Compiling png v0.18.1
+   Compiling qoi v0.4.1
+   Compiling num-complex v0.4.6
+   Compiling static_assertions v1.1.0
+   Compiling indoc v2.0.7
+   Compiling image v0.25.10
+   Compiling pkcs5 v0.7.1
+   Compiling rand v0.9.4
+   Compiling tauri v2.11.0 (D:\tauron\crates\tauri)
+   Compiling crypto-common v0.2.1
+   Compiling castaway v0.2.4
+   Compiling strum_macros v0.27.2
+   Compiling ring v0.17.14
+   Compiling raw-window-handle v0.6.2
+   Compiling yazi-macro v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-macro)
+   Compiling typed-path v0.12.3
+   Compiling strum v0.27.2
+   Compiling compact_str v0.9.0
+   Compiling pkcs8 v0.10.2
+   Compiling kasuari v0.4.12
+   Compiling lru v0.16.4
+   Compiling unicode-truncate v2.0.1
+   Compiling windows-threading v0.1.0
+   Compiling futures-executor v0.3.32
+   Compiling crossterm_winapi v0.9.1
+   Compiling instability v0.3.12
+   Compiling cmov v0.5.3
+   Compiling crossterm v0.29.0
+   Compiling futures v0.3.32
+   Compiling windows-future v0.2.1
+   Compiling ctutils v0.4.2
+   Compiling ratatui-core v0.1.0
+   Compiling windows-numerics v0.2.0
+   Compiling windows-collections v0.2.0
+   Compiling block-buffer v0.12.0
+   Compiling darling_core v0.20.11
+   Compiling anstyle v1.0.14
+   Compiling strength_reduce v0.2.4
+   Compiling once_cell_polyfill v1.70.2
+   Compiling untrusted v0.9.0
+   Compiling transpose v0.2.3
+   Compiling digest v0.11.3
+   Compiling windows v0.61.3
+   Compiling primal-check v0.3.4
+   Compiling ff v0.13.1
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling darling_macro v0.20.11
+   Compiling base16ct v0.2.0
+   Compiling sec1 v0.7.3
+   Compiling darling v0.20.11
+   Compiling windows-core v0.62.2
+   Compiling group v0.13.0
+   Compiling rustfft v6.4.1
+   Compiling anstyle-parse v1.0.0
+   Compiling hkdf v0.12.4
+   Compiling signature v2.2.0
+   Compiling crypto-bigint v0.5.5
+   Compiling ordered-float v5.3.0
+   Compiling line-clipping v0.3.7
+   Compiling Inflector v0.11.4
+   Compiling colorchoice v1.0.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling hex v0.4.3
+   Compiling hax-lib v0.3.5
+   Compiling ref-cast v1.0.25
+   Compiling elliptic-curve v0.13.8
+   Compiling specta-macros v2.0.0-rc.18
+   Compiling ratatui-widgets v0.3.0
+   Compiling derive_builder_core v0.20.2
+   Compiling pem-rfc7468 v1.0.0
+   Compiling crossbeam-channel v0.5.15
+   Compiling universal-hash v0.5.1
+   Compiling dpi v0.1.2
+   Compiling windows-result v0.1.2
+   Compiling webview2-com-sys v0.38.2
+   Compiling windows-interface v0.56.0
+   Compiling windows-implement v0.56.0
+   Compiling hax-lib-macros v0.3.5
+   Compiling ref-cast-impl v1.0.25
+   Compiling windows-version v0.1.7
+   Compiling cpufeatures v0.3.0
+   Compiling mime v0.3.17
+   Compiling opaque-debug v0.3.1
+   Compiling windows-core v0.56.0
+   Compiling derive_builder_macro v0.20.2
+   Compiling der v0.8.0-rc.9
+   Compiling ratatui-macros v0.7.0
+   Compiling specta v2.0.0-rc.22
+   Compiling yazi-shared v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-shared)
+   Compiling ratatui-crossterm v0.1.0
+   Compiling rfc6979 v0.4.0
+   Compiling arc-swap v1.9.1
+   Compiling bstr v1.12.1
+   Compiling phf_shared v0.11.3
+   Compiling cookie v0.18.1
+   Compiling windows-threading v0.2.1
+   Compiling which v8.0.2
+   Compiling rand_core v0.10.0-rc-3
+   Compiling clap_lex v1.1.0
+   Compiling windows-future v0.3.2
+   Compiling phf_generator v0.11.3
+   Compiling ecdsa v0.16.9
+   Compiling spki v0.8.0-rc.4
+   Compiling ratatui v0.30.0
+   Compiling windows v0.56.0
+   Compiling derive_builder v0.20.2
+   Compiling polyval v0.6.2
+   Compiling symphonia-core v0.5.5
+   Compiling primeorder v0.13.6
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling anstyle-wincon v3.0.11
+   Compiling twox-hash v2.1.2
+   Compiling vergen-lib v9.1.0
+   Compiling curve25519-dalek v4.1.3
+   Compiling anstyle-query v1.1.5
+   Compiling num-iter v0.1.45
+   Compiling webview2-com-macros v0.8.1
+   Compiling ordered-float v4.6.0
+   Compiling encoding_rs v0.8.35
+   Compiling libcrux-intrinsics v0.0.4
+   Compiling anstream v1.0.0
+   Compiling yazi-shim v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-shim)
+   Compiling trash v5.2.6
+   Compiling windows v0.62.2
+   Compiling ghash v0.5.1
+   Compiling globset v0.4.18
+   Compiling crypto-bigint v0.7.0-rc.10
+   Compiling yazi-tty v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-tty)
+   Compiling libcrux-secrets v0.0.4
+   Compiling png v0.17.16
+   Compiling yazi-ffi v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-ffi)
+   Compiling ssh-encoding v0.2.0
+   Compiling ctr v0.9.2
+   Compiling vergen v9.1.0
+   Compiling clap_derive v4.6.1
+   Compiling aead v0.5.2
+   Compiling keyboard-types v0.7.0
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling windows_x86_64_msvc v0.53.1
+   Compiling syn v1.0.109
+   Compiling tauri-runtime v2.11.0 (D:\tauron\crates\tauri-runtime)
+   Compiling num-bigint-dig v0.8.6
+   Compiling libcrux-sha3 v0.0.4
+   Compiling radium v0.7.0
+   Compiling wry v0.55.1
+   Compiling aes-gcm v0.10.3
+   Compiling yazi-fs v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-fs)
+warning: variable does not need to be mutable
+  --> crates\fileexplorer\crates\yazi-fs\src\cha\cha.rs:62:7
+   |
+62 |         let mut kind = ChaKind::DUMMY;
+   |             ----^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `yazi-fs` (lib) generated 1 warning (run `cargo fix --lib -p yazi-fs` to apply 1 suggestion)
+   Compiling ico v0.5.0
+   Compiling libcrux-traits v0.0.4
+   Compiling crypto-primes v0.7.0-pre.4
+   Compiling clap_builder v4.6.0
+   Compiling pkcs8 v0.11.0-rc.8
+   Compiling pkcs1 v0.8.0-rc.4
+   Compiling signature v3.0.0-rc.6
+   Compiling poly1305 v0.8.0
+   Compiling sha1 v0.11.0
+   Compiling sha2 v0.11.0
+   Compiling ed25519 v2.2.3
+   Compiling chacha20 v0.9.1
+   Compiling blowfish v0.9.1
+   Compiling password-hash v0.5.0
+   Compiling vergen-gitcl v9.1.0
+   Compiling blake2 v0.10.6
+   Compiling libcrux-platform v0.0.2
+   Compiling tls_codec_derive v0.4.2
+   Compiling yazi-codegen v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-codegen)
+   Compiling libcrux-ml-kem v0.0.4
+   Compiling by_address v1.2.1
+   Compiling palette v0.7.6
+   Compiling tauri-runtime-wry v2.11.0 (D:\tauron\crates\tauri-runtime-wry)
+   Compiling target-lexicon v0.12.16
+   Compiling foldhash v0.1.5
+   Compiling tap v1.0.1
+   Compiling wyz v0.5.1
+   Compiling hashbrown v0.15.5
+   Compiling webview2-com v0.38.2
+   Compiling palette_derive v0.7.6
+   Compiling tls_codec v0.4.2
+   Compiling yazi-config v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-config)
+   Compiling tao v0.35.2
+   Compiling argon2 v0.5.3
+   Compiling bcrypt-pbkdf v0.10.0
+   Compiling ssh-cipher v0.2.0
+   Compiling ed25519-dalek v2.2.0
+   Compiling rsa v0.10.0-rc.10
+   Compiling clap v4.6.1
+   Compiling tauri-codegen v2.6.0 (D:\tauron\crates\tauri-codegen)
+   Compiling muda v0.19.1
+   Compiling p256 v0.13.2
+   Compiling p384 v0.13.1
+   Compiling p521 v0.13.3
+   Compiling luajit-src v210.6.6+707c12b
+   Compiling softbuffer v0.4.8
+   Compiling sha1 v0.10.6
+   Compiling safe_arch v0.9.3
+   Compiling delegate v0.13.5
+   Compiling serialize-to-javascript-impl v0.1.2
+   Compiling lua-src v550.0.0
+   Compiling chrono v0.4.44
+   Compiling fast-srgb8 v1.0.0
+   Compiling md5 v0.7.0
+   Compiling funty v2.0.0
+   Compiling pageant v0.2.0
+   Compiling bitvec v1.0.1
+   Compiling mlua-sys v0.10.0
+   Compiling serialize-to-javascript v0.1.2
+   Compiling wezterm-dynamic-derive v0.1.1
+   Compiling wide v0.8.3
+   Compiling internal-russh-forked-ssh-key v0.6.16+upstream-0.6.7
+   Compiling tray-icon v0.23.1
+   Compiling tauri-macros v2.6.0 (D:\tauron\crates\tauri-macros)
+   Compiling windows-targets v0.53.5
+   Compiling clap_complete v4.6.3
+   Compiling russh-cryptovec v0.58.0
+   Compiling yazi-emulator v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-emulator)
+   Compiling phf_macros v0.11.3
+   Compiling window-vibrancy v0.6.0
+   Compiling tokio-util v0.7.18
+   Compiling generic-array v1.4.1
+   Compiling russh-util v0.52.0
+   Compiling serde_repr v0.1.20
+   Compiling enum_dispatch v0.3.13
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling simdutf8 v0.1.5
+   Compiling hex-literal v0.4.1
+   Compiling http-range v0.1.5
+   Compiling ucd-trie v0.1.7
+   Compiling data-encoding v2.11.0
+   Compiling russh v0.58.0
+   Compiling proc-macro-error2 v2.0.1
+   Compiling ansi-to-tui v8.0.1
+   Compiling phf v0.11.3
+   Compiling quantette v0.5.1
+   Compiling pyo3-build-config v0.21.2
+   Compiling symphonia-metadata v0.5.5
+   Compiling deadpool-runtime v0.3.1
+   Compiling http-body v1.0.1
+   Compiling windows-result v0.2.0
+   Compiling ordered-float v2.10.1
+   Compiling error-code v3.3.2
+   Compiling httparse v1.10.1
+   Compiling khronos_api v3.1.0
+   Compiling num_cpus v1.17.0
+   Compiling deadpool v0.13.0
+   Compiling serde-value v0.7.0
+   Compiling clipboard-win v5.4.1
+   Compiling windows-strings v0.1.0
+   Compiling yazi-sftp v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-sftp)
+   Compiling yazi-adapter v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-adapter)
+   Compiling mlua_derive v0.11.0
+   Compiling pest v2.8.6
+   Compiling clap_complete_fig v4.5.2
+   Compiling clap_complete_nushell v4.6.0
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling rustls-pki-types v1.14.1
+   Compiling windows-implement v0.58.0
+   Compiling windows-interface v0.58.0
+   Compiling tower-service v0.3.3
+   Compiling mlua v0.11.6
+   Compiling pest_meta v2.8.6
+   Compiling windows-core v0.58.0
+   Compiling yazi-boot v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-boot)
+   Compiling yazi-vfs v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-vfs)
+   Compiling tattoy-wezterm-dynamic v0.2.1
+   Compiling nix v0.29.0
+   Compiling atomic-waker v1.1.2
+   Compiling xml-rs v0.8.28
+   Compiling try-lock v0.2.5
+   Compiling lab v0.11.0
+   Compiling minimal-lexical v0.2.1
+   Compiling nom v7.1.3
+   Compiling gl_generator v0.14.0
+   Compiling csscolorparser v0.6.2
+   Compiling want v0.3.1
+   Compiling h2 v0.4.14
+   Compiling yazi-widgets v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-widgets)
+   Compiling pest_generator v2.8.6
+   Compiling mac_address v1.1.8
+   Compiling onig_sys v69.9.3
+   Compiling tokio-stream v0.1.18
+   Compiling euclid v0.22.14
+   Compiling crunchy v0.2.4
+   Compiling deltae v0.3.2
+   Compiling winreg v0.10.1
+   Compiling rustls v0.23.40
+   Compiling httpdate v1.0.3
+   Compiling zstd-safe v7.2.4
+   Compiling windows_x86_64_msvc v0.48.5
+   Compiling parking v2.2.1
+   Compiling tattoy-wezterm-color-types v0.3.0
+   Compiling tattoy-wezterm-input-types v0.1.0
+   Compiling yazi-binding v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-binding)
+   Compiling pest_derive v2.8.6
+   Compiling hyper v1.9.0
+   Compiling wezterm-blob-leases v0.1.1
+   Compiling glutin_wgl_sys v0.6.1
+   Compiling windows v0.58.0
+   Compiling rustls-webpki v0.103.13
+   Compiling symphonia-utils-xiph v0.5.5
+   Compiling windows-sys v0.60.2
+   Compiling phf_codegen v0.11.3
+   Compiling naga v26.0.0
+   Compiling vtparse v0.7.0
+   Compiling sync_wrapper v1.0.2
+   Compiling libloading v0.8.9
+   Compiling filetime v0.2.27
+   Compiling ipnet v2.12.0
+   Compiling khronos-egl v6.0.0
+   Compiling hexf-parse v0.2.1
+   Compiling rustc-hash v1.1.0
+   Compiling ash v0.38.0+1.3.281
+   Compiling tower-layer v0.3.3
+   Compiling hyper-util v0.1.20
+   Compiling tattoy-wezterm-escape-parser v0.1.0-1
+   Compiling terminfo v0.9.0
+   Compiling yazi-parser v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-parser)
+   Compiling tattoy-wezterm-char-props v0.1.3
+   Compiling yazi-dds v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-dds)
+   Compiling wezterm-dynamic v0.2.1
+   Compiling wgpu-hal v26.0.6
+   Compiling codespan-reporting v0.12.0
+   Compiling filedescriptor v0.8.3
+   Compiling schemars_derive v1.2.1
+   Compiling async-trait v0.1.89
+   Compiling gpu-descriptor-types v0.2.0
+   Compiling spirv v0.3.0+sdk-1.3.268.0
+   Compiling gpu-alloc-types v0.3.0
+   Compiling ownedbytes v0.9.0
+   Compiling ahash v0.8.12
+   Compiling memoffset v0.6.5
+   Compiling tinyvec_macros v0.1.1
+   Compiling finl_unicode v1.4.0
+   Compiling presser v0.3.1
+   Compiling prettyplease v0.2.37
+   Compiling unicase v2.9.0
+   Compiling tattoy-wezterm-cell v0.1.0-1
+   Compiling mime_guess v2.0.5
+   Compiling tinyvec v1.11.0
+   Compiling tantivy-common v0.10.0
+   Compiling gpu-alloc v0.6.0
+   Compiling schemars v1.2.1
+   Compiling gpu-descriptor v0.3.2
+   Compiling tokio-rustls v0.26.4
+   Compiling wezterm-bidi v0.2.3
+   Compiling windows-targets v0.48.5
+   Compiling bitpacking v0.9.3
+   Compiling zstd v0.13.3
+   Compiling onig v6.5.3
+   Compiling tower v0.5.3
+   Compiling pyo3-ffi v0.21.2
+   Compiling http-body-util v0.1.3
+   Compiling fancy-regex v0.14.0
+   Compiling windows-strings v0.3.1
+   Compiling rand_distr v0.4.3
+   Compiling concurrent-queue v2.5.0
+   Compiling wgpu-types v26.0.0
+   Compiling safe_arch v0.7.4
+   Compiling bincode v1.3.3
+   Compiling serial-core v0.4.0
+   Compiling windows-implement v0.59.0
+   Compiling matrixmultiply v0.3.10
+   Compiling cfg_aliases v0.1.1
+   Compiling utf8-ranges v1.0.5
+   Compiling glow v0.16.0
+   Compiling renderdoc-sys v1.1.0
+   Compiling audio-core v0.2.1
+   Compiling fixedbitset v0.4.2
+   Compiling downcast-rs v1.2.1
+   Compiling vcpkg v0.2.15
+   Compiling range-alloc v0.1.5
+   Compiling libsqlite3-sys v0.30.1
+   Compiling tattoy-wezterm-surface v0.1.0-fork.2
+   Compiling tantivy-fst v0.5.0
+   Compiling nix v0.28.0
+   Compiling windows-core v0.59.0
+   Compiling serial-windows v0.4.0
+   Compiling syntect v5.3.0
+   Compiling gpu-allocator v0.27.0
+   Compiling wide v0.7.33
+   Compiling event-listener v4.0.3
+   Compiling tantivy-bitpacker v0.9.0
+   Compiling windows-sys v0.48.0
+   Compiling yazi-proxy v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-proxy)
+   Compiling tar v0.4.45
+   Compiling webpki-roots v1.0.7
+   Compiling yazi-term v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-term)
+   Compiling lru v0.12.5
+   Compiling serde_urlencoded v0.7.1
+   Compiling wgpu-core v26.0.1
+   Compiling inout v0.2.2
+   Compiling tauri-plugin-fs v2.5.1
+   Compiling tauri-plugin-shell v2.3.5
+   Compiling tauri-plugin-screenshots v2.2.0
+   Compiling tauri-plugin-store v2.4.3
+   Compiling tauri-plugin-window-state v2.4.1
+   Compiling tauri-plugin-autostart v2.5.1
+   Compiling tauri-plugin-opener v2.5.4
+   Compiling tauri-plugin-notification v2.3.3
+   Compiling tauri-plugin-global-shortcut v2.3.1
+   Compiling lzma-sys v0.1.20
+   Compiling shared_library v0.1.9
+   Compiling approx v0.5.1
+   Compiling slotmap v1.1.1
+   Compiling multer v3.1.0
+   Compiling quick-xml v0.37.5
+   Compiling memoffset v0.9.1
+   Compiling fs-err v3.3.0
+   Compiling libloading v0.9.0
+   Compiling piston-float v1.0.1
+   Compiling memmem v0.1.1
+   Compiling murmurhash32 v0.3.1
+   Compiling rawpointer v0.2.1
+   Compiling ttf-parser v0.25.1
+   Compiling pdfium-render v0.8.37
+   Compiling shell-words v1.1.1
+   Compiling adler v1.0.2
+   Compiling pin-utils v0.1.0
+   Compiling portable-atomic v1.13.1
+   Compiling heck v0.4.1
+   Compiling yazi-prebuilt v0.1.0
+   Compiling yazi-plugin v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-plugin)
+   Compiling pyo3-macros-backend v0.21.2
+   Compiling nix v0.25.1
+   Compiling owned_ttf_parser v0.25.1
+   Compiling miniz_oxide v0.7.4
+   Compiling tauri-winrt-notification v0.7.2
+   Compiling tantivy-stacker v0.6.0
+   Compiling tattoy-termwiz v0.24.0-fork.2
+   Compiling vecmath v1.0.0
+   Compiling simba v0.8.1
+   Compiling pdfium-auto v0.3.0
+   Compiling cipher v0.5.1
+   Compiling bon-macros v3.9.1
+   Compiling hyper-rustls v0.27.9
+   Compiling wgpu-core-deps-windows-linux-android v26.0.0
+   Compiling hashbrown v0.14.5
+   Compiling dirs-sys v0.4.1
+   Compiling tantivy-sstable v0.6.0
+   Compiling async-priority-channel v0.2.0
+   Compiling serial v0.4.0
+   Compiling windows v0.59.0
+   Compiling audioadapter-sample v3.0.0
+   Compiling audioadapter v3.0.0
+   Compiling tower-http v0.6.9
+   Compiling unicode-normalization v0.1.25
+   Compiling futures-lite v2.6.1
+   Compiling tempfile v3.27.0
+   Compiling pyo3 v0.21.2
+   Compiling ffmpeg_common v26.2.2 (D:\GreebleFS\crates\ffmpeg-suite-rs\ffmpeg-common)
+   Compiling specta-serde v0.0.9
+warning: unused variable: `executable`
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:145:25
+    |
+145 |     pub async fn detect(executable: &str) -> Result<Self> {
+    |                         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_executable`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: static `TIME_REGEX` is never used
+ --> crates\ffmpeg-suite-rs\ffmpeg-common\src\utils.rs:9:8
+  |
+9 | static TIME_REGEX: Lazy<Regex> =
+  |        ^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:12:1
+   |
+12 | pub mod error;
+   | ^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:6:9
+   |
+ 6 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:13:1
+   |
+13 | pub mod process;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:14:1
+   |
+14 | pub mod types;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:15:1
+   |
+15 | pub mod utils;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:22:9
+   |
+22 |         message: String,
+   |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:23:9
+   |
+23 |         exit_status: Option<ExitStatus>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:24:9
+   |
+24 |         stderr: Option<String>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:54:9
+   |
+54 |         context: String,
+   |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:56:9
+   |
+56 |         source: Box<Error>,
+   |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:95:5
+   |
+95 |     fn context<S: Into<String>>(self, context: S) -> Result<T>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:111:5
+    |
+111 |     pub fn new(message: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:118:5
+    |
+118 |     pub fn detail(mut self, detail: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:123:5
+    |
+123 |     pub fn build(self) -> Error {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:225:16
+    |
+225 |     Metadata { key: String, value: Option<String> },
+    |                ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:225:29
+    |
+225 |     Metadata { key: String, value: Option<String> },
+    |                             ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:261:5
+    |
+261 |     Video,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:262:5
+    |
+262 |     VideoNoAttached,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:263:5
+    |
+263 |     Audio,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:264:5
+    |
+264 |     Subtitle,
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:265:5
+    |
+265 |     Data,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:266:5
+    |
+266 |     Attachment,
+    |     ^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:270:5
+    |
+270 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:291:5
+    |
+291 |     Quiet,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:292:5
+    |
+292 |     Panic,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:293:5
+    |
+293 |     Fatal,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:294:5
+    |
+294 |     Error,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:295:5
+    |
+295 |     Warning,
+    |     ^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:296:5
+    |
+296 |     Info,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:297:5
+    |
+297 |     Verbose,
+    |     ^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:298:5
+    |
+298 |     Debug,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:299:5
+    |
+299 |     Trace,
+    |     ^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:303:5
+    |
+303 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:317:5
+    |
+317 |     pub fn as_number(&self) -> i32 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:343:5
+    |
+343 |     pub fn new(format: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:347:5
+    |
+347 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:352:5
+    |
+352 |     pub fn yuv420p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:356:5
+    |
+356 |     pub fn yuv422p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:360:5
+    |
+360 |     pub fn yuv444p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:364:5
+    |
+364 |     pub fn rgb24() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:368:5
+    |
+368 |     pub fn bgr24() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:372:5
+    |
+372 |     pub fn rgba() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:376:5
+    |
+376 |     pub fn bgra() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:380:5
+    |
+380 |     pub fn gray() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:384:5
+    |
+384 |     pub fn nv12() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:400:5
+    |
+400 |     pub fn new(format: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:404:5
+    |
+404 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:409:5
+    |
+409 |     pub fn u8() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:413:5
+    |
+413 |     pub fn s16() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:417:5
+    |
+417 |     pub fn s32() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:421:5
+    |
+421 |     pub fn flt() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:425:5
+    |
+425 |     pub fn dbl() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:429:5
+    |
+429 |     pub fn u8p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:433:5
+    |
+433 |     pub fn s16p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:437:5
+    |
+437 |     pub fn s32p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:441:5
+    |
+441 |     pub fn fltp() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:445:5
+    |
+445 |     pub fn dblp() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:461:5
+    |
+461 |     pub fn new(codec: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:465:5
+    |
+465 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:470:5
+    |
+470 |     pub fn h264() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:474:5
+    |
+474 |     pub fn h265() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:478:5
+    |
+478 |     pub fn vp9() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:482:5
+    |
+482 |     pub fn av1() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:486:5
+    |
+486 |     pub fn mpeg2video() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:490:5
+    |
+490 |     pub fn mpeg4() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:495:5
+    |
+495 |     pub fn aac() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:499:5
+    |
+499 |     pub fn mp3() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:503:5
+    |
+503 |     pub fn opus() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:507:5
+    |
+507 |     pub fn flac() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:511:5
+    |
+511 |     pub fn ac3() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:515:5
+    |
+515 |     pub fn pcm_s16le() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:520:5
+    |
+520 |     pub fn copy() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling hmac v0.13.0
+   Compiling naga v29.0.3
+warning: `ffmpeg_common` (lib) generated 73 warnings (run `cargo fix --lib -p ffmpeg_common` to apply 1 suggestion)
+   Compiling wgpu v26.0.1
+   Compiling sharded-slab v0.1.7
+   Compiling matchers v0.2.0
+   Compiling open v5.3.4
+   Compiling tracing-log v0.2.0
+   Compiling snafu-derive v0.8.9
+   Compiling nu-ansi-term v0.50.3
+   Compiling windows-sys v0.52.0
+   Compiling windows-core v0.52.0
+   Compiling utf16string v0.2.0
+   Compiling windows-interface v0.52.0
+   Compiling windows-implement v0.52.0
+   Compiling humansize v2.1.3
+   Compiling thread_local v1.1.9
+   Compiling ab_glyph_rasterizer v0.1.10
+   Compiling widestring v1.2.1
+   Compiling bumpalo v3.20.2
+   Compiling cpubits v0.1.1
+   Compiling bit-vec v0.7.0
+   Compiling memmap2 v0.9.10
+   Compiling fastdivide v0.4.2
+   Compiling extended v0.1.0
+   Compiling maybe-owned v0.3.4
+   Compiling com-scrape-types v0.1.1
+   Compiling cpal v0.17.3
+   Compiling crc-catalog v2.5.0
+   Compiling bit-vec v0.9.1
+   Compiling dotenvy v0.15.7
+   Compiling libbz2-rs-sys v0.2.3
+   Compiling downcast-rs v2.0.2
+   Compiling fixedbitset v0.5.7
+   Compiling bzip2 v0.6.1
+   Compiling petgraph v0.8.3
+   Compiling tantivy-columnar v0.6.0
+   Compiling greeblefs v0.1.0 (D:\GreebleFS\src-tauri)
+   Compiling xcap v0.3.3
+   Compiling bit-set v0.9.1
+   Compiling crc v3.4.0
+   Compiling vst3 v0.3.0
+   Compiling symphonia-format-riff v0.5.5
+   Compiling bit-set v0.6.0
+   Compiling aes v0.9.0
+   Compiling zopfli v0.8.3
+   Compiling tracing-subscriber v0.3.23
+   Compiling ab_glyph v0.2.32
+   Compiling windows v0.52.0
+   Compiling tattoy-wezterm-term v0.1.0-fork.5
+   Compiling snafu v0.8.9
+   Compiling filetime_creation v0.2.0
+   Compiling pbkdf2 v0.13.0
+   Compiling specta-typescript v0.0.9
+   Compiling notify-rust v4.17.0
+   Compiling reqwest v0.12.28
+   Compiling audioadapter-buffers v3.0.0
+   Compiling bon v3.9.1
+   Compiling nalgebra v0.32.6
+   Compiling portable-pty v0.8.1
+   Compiling yazi-scheduler v26.2.2 (D:\GreebleFS\crates\fileexplorer\crates\yazi-scheduler)
+   Compiling dirs v5.0.1
+   Compiling hashlink v0.9.1
+   Compiling pyo3-macros v0.21.2
+   Compiling axum-core v0.5.6
+   Compiling auto-launch v0.5.0
+   Compiling socket-pktinfo v0.3.2
+   Compiling shared_child v1.1.1
+   Compiling symphonia-format-mkv v0.5.5
+   Compiling symphonia-codec-vorbis v0.5.5
+   Compiling symphonia-format-isomp4 v0.5.5
+   Compiling symphonia-format-ogg v0.5.5
+   Compiling symphonia-bundle-flac v0.5.5
+   Compiling tantivy-query-grammar v0.25.0
+   Compiling symphonia-format-caf v0.5.5
+   Compiling symphonia-bundle-mp3 v0.5.5
+   Compiling global-hotkey v0.7.0
+   Compiling num v0.4.3
+   Compiling symphonia-codec-aac v0.5.5
+   Compiling symphonia-codec-pcm v0.5.5
+   Compiling symphonia-codec-adpcm v0.5.5
+   Compiling symphonia-codec-alac v0.5.5
+   Compiling realfft v3.5.0
+   Compiling fs4 v0.13.1
+   Compiling codespan-reporting v0.13.1
+   Compiling serial2 v0.2.36
+   Compiling lzma-rust2 v0.16.2
+   Compiling flume v0.11.1
+   Compiling nt-time v0.8.1
+   Compiling yasna v0.5.2
+   Compiling itertools v0.12.1
+   Compiling tauri-specta-macros v2.0.0-rc.16
+   Compiling if-addrs v0.15.0
+   Compiling os_pipe v1.2.3
+   Compiling pem v3.0.6
+   Compiling file-opening v0.1.0 (D:\GreebleFS\crates\file-opening)
+   Compiling sketches-ddsketch v0.3.1
+   Compiling rust-stemmers v1.2.0
+   Compiling tantivy-tokenizer-api v0.6.0
+   Compiling hyperloglogplus v0.4.1
+   Compiling lzma-rust v0.1.7
+   Compiling visibility v0.1.1
+   Compiling notify-types v2.1.0
+   Compiling spirv v0.4.0+sdk-1.4.341.0
+   Compiling windowfunctions v0.1.1
+   Compiling serde_path_to_error v0.1.20
+   Compiling include_dir_macros v0.7.4
+   Compiling measure_time v0.9.0
+   Compiling linked-hash-map v0.5.6
+   Compiling dasp_sample v0.11.0
+   Compiling deflate64 v0.1.12
+   Compiling unindent v0.2.4
+   Compiling fallible-iterator v0.3.0
+   Compiling constant_time_eq v0.4.2
+   Compiling oneshot v0.1.13
+   Compiling ttf-parser v0.20.0
+   Compiling ppmd-rust v1.4.0
+   Compiling matchit v0.8.4
+   Compiling htmlescape v0.3.1
+   Compiling levenshtein_automata v0.2.1
+   Compiling census v0.4.2
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling lz4_flex v0.11.6
+   Compiling rusqlite v0.32.1
+   Compiling tantivy v0.25.0
+   Compiling zip v8.6.0
+   Compiling fontdb v0.16.2
+   Compiling axum v0.8.9
+   Compiling lopdf v0.32.0
+   Compiling include_dir v0.7.4
+   Compiling rubato v2.0.0
+   Compiling notify v8.2.0
+   Compiling sevenz-rust v0.6.1
+   Compiling imageproc v0.25.1
+   Compiling rcgen v0.14.7
+   Compiling file-opening-windows v0.1.0 (D:\GreebleFS\crates\file-opening-windows)
+   Compiling mdns-sd v0.18.2
+   Compiling tauri-specta v2.0.0-rc.21
+   Compiling portable-pty v0.9.0
+   Compiling symphonia v0.5.5
+   Compiling drag v2.1.1
+   Compiling axum-server v0.8.0
+   Compiling yazi-specta v0.1.0 (D:\GreebleFS\crates\yazi-specta)
+   Compiling shadow-terminal v0.2.3
+   Compiling xz2 v0.1.7
+   Compiling vst-host v26.2.2 (D:\GreebleFS\crates\vst-host)
+warning: unused variable: `raw_handle`
+   --> crates\vst-host\src\lib.rs:314:5
+    |
+314 |     raw_handle: *mut std::ffi::c_void,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_raw_handle`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `load_required_symbol` is never used
+   --> crates\vst-host\src\lib.rs:292:4
+    |
+292 | fn load_required_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<T, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `vst-host` (lib) generated 2 warnings (run `cargo fix --lib -p vst-host` to apply 1 suggestion)
+   Compiling rust_ffprobe v26.2.2 (D:\GreebleFS\crates\ffmpeg-suite-rs\rust_ffprobe)
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:82:1
+   |
+82 | pub mod builder;
+   | ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:76:9
+   |
+76 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:83:1
+   |
+83 | pub mod format;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:84:1
+   |
+84 | pub mod parsers;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:85:1
+   |
+85 | pub mod types;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\rust_ffprobe\src\format.rs:263:5
+    |
+263 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\rust_ffprobe\src\format.rs:284:5
+    |
+284 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:32:5
+   |
+32 |     Format,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:33:5
+   |
+33 |     Streams,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:34:5
+   |
+34 |     Packets,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:35:5
+   |
+35 |     Frames,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:36:5
+   |
+36 |     Programs,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:37:5
+   |
+37 |     Chapters,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:38:5
+   |
+38 |     Error,
+   |     ^^^^^
+
+warning: missing documentation for a method
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:42:5
+   |
+42 |     pub fn as_str(&self) -> &'static str {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:65:1
+   |
+65 | pub enum IntervalPosition {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling rust_ffmpeg v26.2.2 (D:\GreebleFS\crates\ffmpeg-suite-rs\rust_ffmpeg)
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\codec.rs:1:57
+  |
+1 | use ffmpeg_common::{Codec, CommandBuilder, PixelFormat, Result, SampleFormat};
+  |                                                         ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:1:21
+  |
+1 | use ffmpeg_common::{Result, utils};
+  |                     ^^^^^^
+
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\format.rs:1:37
+  |
+1 | use ffmpeg_common::{CommandBuilder, Result};
+  |                                     ^^^^^^
+
+warning: unused imports: `PixelFormat`, `Result`, and `SampleFormat`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\output.rs:2:49
+  |
+2 |     Codec, CommandBuilder, Duration, MediaPath, PixelFormat, Result, SampleFormat, Size,
+  |                                                 ^^^^^^^^^^^  ^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration as StdDuration`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\output.rs:5:5
+  |
+5 | use std::time::Duration as StdDuration;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `SelectionRule` is more private than the item `StreamSelection::or`
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:164:5
+    |
+164 |     pub fn or(mut self, rule: SelectionRule) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `StreamSelection::or` is reachable at visibility `pub`
+    |
+note: but type `SelectionRule` is only usable at visibility `pub(self)`
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:93:1
+    |
+ 93 | enum SelectionRule {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: field `id` is never read
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:351:5
+    |
+350 | struct FilterNode {
+    |        ---------- field in this struct
+351 |     id: String,
+    |     ^^
+    |
+    = note: `FilterNode` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `from` and `to` are never read
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:359:5
+    |
+358 | struct FilterEdge {
+    |        ---------- fields in this struct
+359 |     from: String,
+    |     ^^^^
+360 |     to: String,
+    |     ^^
+    |
+    = note: `FilterEdge` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:59:1
+   |
+59 | pub mod builder;
+   | ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:53:9
+   |
+53 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:60:1
+   |
+60 | pub mod codec;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:61:1
+   |
+61 | pub mod filter;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:62:1
+   |
+62 | pub mod format;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:63:1
+   |
+63 | pub mod input;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:64:1
+   |
+64 | pub mod output;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:65:1
+   |
+65 | pub mod stream;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:336:5
+    |
+336 |     CounterClockwiseFlip = 0,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:337:5
+    |
+337 |     Clockwise = 1,
+    |     ^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:338:5
+    |
+338 |     CounterClockwise = 2,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:339:5
+    |
+339 |     ClockwiseFlip = 3,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\input.rs:270:5
+    |
+270 |     pub fn webcam(device: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\input.rs:286:5
+    |
+286 |     pub fn screen_capture() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:219:5
+    |
+219 |     pub default: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:220:5
+    |
+220 |     pub dub: bool,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:221:5
+    |
+221 |     pub original: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:222:5
+    |
+222 |     pub comment: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:223:5
+    |
+223 |     pub lyrics: bool,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:224:5
+    |
+224 |     pub karaoke: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:225:5
+    |
+225 |     pub forced: bool,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:226:5
+    |
+226 |     pub hearing_impaired: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:227:5
+    |
+227 |     pub visual_impaired: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:228:5
+    |
+228 |     pub clean_effects: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:229:5
+    |
+229 |     pub attached_pic: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:230:5
+    |
+230 |     pub timed_thumbnails: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:231:5
+    |
+231 |     pub captions: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:232:5
+    |
+232 |     pub descriptions: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:233:5
+    |
+233 |     pub metadata: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: `rust_ffprobe` (lib) generated 15 warnings
+warning: `rust_ffmpeg` (lib) generated 36 warnings (run `cargo fix --lib -p rust_ffmpeg` to apply 5 suggestions)
+   Compiling arboard v3.6.1
+   Compiling file_icon_provider v1.0.0
+   Compiling ignore v0.4.25
+   Compiling overlay-contracts v0.1.0 (D:\GreebleFS\crates\overlay-contracts)
+   Compiling greeble-ipc-contracts v26.2.2 (D:\GreebleFS\crates\greeble-ipc-contracts)
+   Compiling local-ip-address v0.6.12
+   Compiling keyring v3.6.3
+   Compiling async-recursion v1.1.1
+   Compiling pollster v0.4.0
+   Compiling urlencoding v2.1.3
+warning: unused imports: `LinuxDisplayBackend` and `current_linux_display_backend`
+ --> src-tauri\src\wayland_dock.rs:7:29
+  |
+7 | use crate::linux_graphics::{current_linux_display_backend, LinuxDisplayBackend};
+  |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `compute_file_checksums` is never used
+    --> src-tauri\src\explorer_pro_commands.rs:1045:15
+     |
+1045 | pub(crate) fn compute_file_checksums(path: &Path) -> Result<(String, String), String> {
+     |               ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `AudioBatchProcess` is never constructed
+   --> src-tauri\src\fs_commands.rs:273:5
+    |
+238 | pub(crate) enum ExplorerTaskRetryContext {
+    |                 ------------------------ variant in this enum
+...
+273 |     AudioBatchProcess {
+    |     ^^^^^^^^^^^^^^^^^
+    |
+    = note: `ExplorerTaskRetryContext` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `PREVIEW_MASK_ARTIFACT_TOKEN` is never used
+  --> src-tauri\src\image_cutout_commands.rs:18:7
+   |
+18 | const PREVIEW_MASK_ARTIFACT_TOKEN: &str = "preview-mask";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `CUTOUT_PREVIEW_ARTIFACT_TOKEN` is never used
+  --> src-tauri\src\image_cutout_commands.rs:19:7
+   |
+19 | const CUTOUT_PREVIEW_ARTIFACT_TOKEN: &str = "cutout-preview";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `workflow_mode` is never read
+   --> src-tauri\src\image_cutout_commands.rs:170:5
+    |
+168 | struct ImageCutoutSession {
+    |        ------------------ field in this struct
+169 |     logical_output_path: Option<String>,
+170 |     workflow_mode: ImageCutoutWorkflowMode,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `ImageCutoutSession` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: constant `MOBILE_PUSH_DEFAULT_CONTACT_CLAIM` is never used
+  --> src-tauri\src\lan_share\push.rs:25:7
+   |
+25 | const MOBILE_PUSH_DEFAULT_CONTACT_CLAIM: &str = "mailto:mobile@greeblefs.local";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MobilePushNotificationEnvelope` is never constructed
+   --> src-tauri\src\lan_share\push.rs:109:8
+    |
+109 | struct MobilePushNotificationEnvelope {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MobilePushNotificationData` is never constructed
+   --> src-tauri\src\lan_share\push.rs:120:8
+    |
+120 | struct MobilePushNotificationData {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_mobile_download_relative_path` is never used
+   --> src-tauri\src\lan_share\push.rs:376:4
+    |
+376 | fn build_mobile_download_relative_path(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_mobile_download_open_url` is never used
+   --> src-tauri\src\lan_share\push.rs:402:4
+    |
+402 | fn build_mobile_download_open_url(share_url: &str, relative_path: &str) -> Result<String, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `share_path` and `file_hub` are never read
+  --> src-tauri\src\lan_share\types.rs:43:16
+   |
+37 | pub(super) struct ActiveServer {
+   |                   ------------ fields in this struct
+...
+43 |     pub(super) share_path: PathBuf,
+   |                ^^^^^^^^^^
+44 |     pub(super) file_hub: Option<Vec<PathBuf>>,
+   |                ^^^^^^^^
+
+warning: struct `LinuxWebkitNvidiaWorkaroundPlan` is never constructed
+  --> src-tauri\src\linux_graphics.rs:83:8
+   |
+83 | struct LinuxWebkitNvidiaWorkaroundPlan {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `preferred_backend_reason_label` is never used
+   --> src-tauri\src\linux_graphics.rs:414:4
+    |
+414 | fn preferred_backend_reason_label(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `resolve_linux_webkit_nvidia_workaround` is never used
+   --> src-tauri\src\linux_graphics.rs:473:4
+    |
+473 | fn resolve_linux_webkit_nvidia_workaround(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `run_command_with_timeout` is never used
+  --> src-tauri\src\open_with\utils.rs:76:8
+   |
+76 | pub fn run_command_with_timeout(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_unix_executable_permissions_if_present` is never used
+   --> src-tauri\src\plugin_commands.rs:389:4
+    |
+389 | fn ensure_unix_executable_permissions_if_present(_executable: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `transport` is never read
+  --> src-tauri\src\runtime_pipeline\sidecar.rs:68:5
+   |
+66 | struct ExternalSidecarSession {
+   |        ---------------------- field in this struct
+67 |     runtime_id: String,
+68 |     transport: String,
+   |     ^^^^^^^^^
+
+warning: function `fallback_root_drive_info` is never used
+   --> src-tauri\src\volume_inventory.rs:834:4
+    |
+834 | fn fallback_root_drive_info() -> DriveInfo {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_external_mount_path` is never used
+   --> src-tauri\src\volume_inventory.rs:851:4
+    |
+851 | fn is_external_mount_path(path: &Path) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_bool_token` is never used
+   --> src-tauri\src\volume_inventory.rs:879:4
+    |
+879 | fn parse_bool_token(value: &str) -> Option<bool> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_WINDOW_NAMESPACE` is never used
+  --> src-tauri\src\wayland_dock.rs:20:7
+   |
+20 | const WAYLAND_DOCK_WINDOW_NAMESPACE: &str = "greeblefs-dock";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_DEFAULT_WIDTH` is never used
+  --> src-tauri\src\wayland_dock.rs:21:7
+   |
+21 | const WAYLAND_DOCK_DEFAULT_WIDTH: i32 = 1280;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_DEFAULT_HEIGHT` is never used
+  --> src-tauri\src\wayland_dock.rs:22:7
+   |
+22 | const WAYLAND_DOCK_DEFAULT_HEIGHT: i32 = 760;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `greeblefs` (lib) generated 24 warnings (run `cargo fix --lib -p greeblefs` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 16m 14s
+     Running `src-tauri\target\export-bindings\debug\export-bindings.exe`
+Exported Specta bindings to D:\GreebleFS\src-tauri\../src/generated/tauri.ts
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+node_modules/@glideapps/glide-data-grid/dist/esm/data-editor/group-rename.js (4:13): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/data-editor/group-rename.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-editor-container/data-grid-container.js (7:13): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-editor-container/data-grid-container.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-editor-container/data-grid-container.js (8:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-editor-container/data-grid-container.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/private/markdown-overlay-editor-style.js (2:13): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/private/markdown-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (2:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (3:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (4:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (5:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (6:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js (7:14): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/data-grid-overlay-editor/data-grid-overlay-editor-style.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/@glideapps/glide-data-grid/dist/esm/internal/scrolling-data-grid/infinite-scroller.js (7:13): A comment
+
+"/*#__PURE__*/"
+
+in "node_modules/@glideapps/glide-data-grid/dist/esm/internal/scrolling-data-grid/infinite-scroller.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+[32m✓[39m 3798 modules transformed.
+rendering chunks...
+[plugin vite:reporter] 
+(!) D:/GreebleFS/src/store/settingsStore.ts is dynamically imported by D:/GreebleFS/src/runtime/usrProfiles.ts, D:/GreebleFS/src/runtime/usrProfiles.ts but also statically imported by D:/GreebleFS/src/App.tsx, D:/GreebleFS/src/animation/interactionMotion.tsx, D:/GreebleFS/src/animation/layoutDynamics.tsx, D:/GreebleFS/src/components/ExplorerAudioWorkbench.tsx, D:/GreebleFS/src/components/ExplorerCollectionPreviewSurface.tsx, D:/GreebleFS/src/components/ExplorerImageCutoutSurface.tsx, D:/GreebleFS/src/components/ExplorerImageEditor.tsx, D:/GreebleFS/src/components/ExplorerPdfWorkbench.tsx, D:/GreebleFS/src/components/ExplorerSpreadsheetWorkbench.tsx, D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/GitManager.tsx, D:/GreebleFS/src/components/NotesManager.tsx, D:/GreebleFS/src/components/PluginsManager.tsx, D:/GreebleFS/src/components/SettingsPage.tsx, D:/GreebleFS/src/components/TerminalOverlay.tsx, D:/GreebleFS/src/components/explorer/ExplorerSideRail.tsx, D:/GreebleFS/src/components/explorer/ExplorerWorkspace.tsx, D:/GreebleFS/src/components/pluginWorkbenchAdapters.tsx, D:/GreebleFS/src/runtime/devMcpBridge.ts, D:/GreebleFS/src/runtime/pluginSettingsRuntime.ts, D:/GreebleFS/src/runtime/telemetry.ts, D:/GreebleFS/src/runtime/telemetryBackend.ts, D:/GreebleFS/src/runtime/useFolderPluginRuntime.ts, D:/GreebleFS/src/windows/FileOperationsWindowApp.tsx, D:/GreebleFS/src/windows/PickerWindowApp.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) D:/GreebleFS/src/runtime/tauriClient.ts is dynamically imported by D:/GreebleFS/src/config/appContentDirectories.ts but also statically imported by D:/GreebleFS/src/App.tsx, D:/GreebleFS/src/components/ExplorerFontPreview.tsx, D:/GreebleFS/src/components/ExplorerSqlitePreview.tsx, D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/GitManager.tsx, D:/GreebleFS/src/components/SettingsPage.tsx, D:/GreebleFS/src/components/TerminalOverlay.tsx, D:/GreebleFS/src/components/wallpaperRuntime.tsx, D:/GreebleFS/src/config/actionPacks.ts, D:/GreebleFS/src/config/dockPresentations.ts, D:/GreebleFS/src/config/explorerLayouts.ts, D:/GreebleFS/src/config/homePackages.ts, D:/GreebleFS/src/config/iconThemePackages.ts, D:/GreebleFS/src/config/layoutProfiles.ts, D:/GreebleFS/src/config/managedContentDirectoryStacks.ts, D:/GreebleFS/src/config/menuPacks.ts, D:/GreebleFS/src/config/pluginPackages.ts, D:/GreebleFS/src/config/soundPacks.ts, D:/GreebleFS/src/config/themeBundlePacks.ts, D:/GreebleFS/src/config/themePackages.ts, D:/GreebleFS/src/config/topBarPackages.ts, D:/GreebleFS/src/config/vscodeThemeCompatibility.ts, D:/GreebleFS/src/runtime/accelerationRuntimeBackend.ts, D:/GreebleFS/src/runtime/actionBackend.ts, D:/GreebleFS/src/runtime/audioVstEditorBackend.ts, D:/GreebleFS/src/runtime/audioWorkbenchBackend.ts, D:/GreebleFS/src/runtime/explorerBackend.ts, D:/GreebleFS/src/runtime/extensionHostApi.ts, D:/GreebleFS/src/runtime/externalRuntimeBackend.ts, D:/GreebleFS/src/runtime/globalSearchBackend.ts, D:/GreebleFS/src/runtime/gpuRuntimeBackend.ts, D:/GreebleFS/src/runtime/homeBackend.ts, D:/GreebleFS/src/runtime/imageCutoutBackend.ts, D:/GreebleFS/src/runtime/ipc/artifacts.ts, D:/GreebleFS/src/runtime/ipc/binary.ts, D:/GreebleFS/src/runtime/ipc/resources.ts, D:/GreebleFS/src/runtime/ipc/streams.ts, D:/GreebleFS/src/runtime/mobilePushBackend.ts, D:/GreebleFS/src/runtime/mobileShareRuntime.ts, D:/GreebleFS/src/runtime/pdfPreviewBackend.ts, D:/GreebleFS/src/runtime/pythonRuntimeBackend.ts, D:/GreebleFS/src/runtime/secondaryWindows.ts, D:/GreebleFS/src/runtime/shaderPreviewBackend.ts, D:/GreebleFS/src/runtime/storageBackend.ts, D:/GreebleFS/src/runtime/tailscaleBackend.ts, D:/GreebleFS/src/runtime/telemetryBackend.ts, D:/GreebleFS/src/runtime/themeEngineBackend.ts, D:/GreebleFS/src/runtime/useFolderPluginRuntime.ts, D:/GreebleFS/src/runtime/videoEditorBackend.ts, D:/GreebleFS/src/runtime/vstBackend.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) D:/GreebleFS/node_modules/@monaco-editor/react/dist/index.mjs is dynamically imported by D:/GreebleFS/src/components/ExplorerMonacoCodeView.tsx, D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/GitManager.tsx but also statically imported by D:/GreebleFS/src/components/ExplorerShaderWorkbench.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) D:/GreebleFS/src/components/ModelPreview.tsx is dynamically imported by D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/FileExplorer.tsx but also statically imported by D:/GreebleFS/src/components/pluginWorkbenchAdapters.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) D:/GreebleFS/src/components/documentPreview.tsx is dynamically imported by D:/GreebleFS/src/components/FileExplorer.tsx, D:/GreebleFS/src/components/FileExplorer.tsx but also statically imported by D:/GreebleFS/src/components/ExplorerTextWorkbenchSurface.tsx, D:/GreebleFS/src/components/NotesManager.tsx, dynamic import will not move module into another chunk.
+
+computing gzip size...
+[2mdist/[22m[32mindex.html                                        [39m[1m[2m    0.47 kB[22m[1m[22m[2m │ gzip:     0.30 kB[22m
+[2mdist/[22m[32massets/moduleRuntime.worker-DlipeQch.js           [39m[1m[2m    1.26 kB[22m[1m[22m
+[2mdist/[22m[32massets/explorerVisibleEntries.worker-C_2OVJ0s.js  [39m[1m[2m    5.73 kB[22m[1m[22m
+[2mdist/[22m[32massets/typescript-B-R0H3KL.js                     [39m[1m[2m3,571.65 kB[22m[1m[22m
+[2mdist/[22m[35massets/FileExplorer-CboqyRqi.css                  [39m[1m[2m   19.94 kB[22m[1m[22m[2m │ gzip:     3.94 kB[22m
+[2mdist/[22m[35massets/index-CRsXTSB3.css                         [39m[1m[2m  102.08 kB[22m[1m[22m[2m │ gzip:    16.06 kB[22m
+[2mdist/[22m[36massets/_commonjs-dynamic-modules-TDtrdbi3.js      [39m[1m[2m    0.24 kB[22m[1m[22m[2m │ gzip:     0.19 kB[22m
+[2mdist/[22m[36massets/useSyncedWindowAppearance-rbTd7c4W.js      [39m[1m[2m    0.55 kB[22m[1m[22m[2m │ gzip:     0.32 kB[22m
+[2mdist/[22m[36massets/PickerWindowApp-CfP-lt5b.js                [39m[1m[2m    2.99 kB[22m[1m[22m[2m │ gzip:     1.38 kB[22m
+[2mdist/[22m[36massets/FileOperationsWindowApp-CUj9nN__.js        [39m[1m[2m    3.14 kB[22m[1m[22m[2m │ gzip:     1.26 kB[22m
+[2mdist/[22m[36massets/data-grid-overlay-editor-kYYy_2qx.js       [39m[1m[2m    3.72 kB[22m[1m[22m[2m │ gzip:     1.84 kB[22m
+[2mdist/[22m[36massets/usrProfileStaticConfigRuntime-ChEHzHRm.js  [39m[1m[2m    4.11 kB[22m[1m[22m[2m │ gzip:     1.28 kB[22m
+[2mdist/[22m[36massets/GoRuntimeSmokePanel-B4r11R-6.js            [39m[1m[2m    5.83 kB[22m[1m[22m[2m │ gzip:     2.10 kB[22m
+[2mdist/[22m[36massets/explorerWorkspaceLayouts-5IEMs5-_.js       [39m[1m[2m   11.06 kB[22m[1m[22m[2m │ gzip:     2.80 kB[22m
+[2mdist/[22m[36massets/number-overlay-editor-UrduXekc.js          [39m[1m[2m   16.40 kB[22m[1m[22m[2m │ gzip:     6.35 kB[22m
+[2mdist/[22m[36massets/explorerCustomizeCatalog-C3NGEIq4.js       [39m[1m[2m   31.07 kB[22m[1m[22m[2m │ gzip:     2.88 kB[22m
+[2mdist/[22m[36massets/GitManager-DCHbADyf.js                     [39m[1m[2m   57.93 kB[22m[1m[22m[2m │ gzip:    16.85 kB[22m
+[2mdist/[22m[36massets/StoragePanel-Ppy3SyG_.js                   [39m[1m[2m   59.76 kB[22m[1m[22m[2m │ gzip:    15.18 kB[22m
+[2mdist/[22m[36massets/NotesManager-DUI5HtLA.js                   [39m[1m[2m  398.67 kB[22m[1m[22m[2m │ gzip:   120.34 kB[22m
+[2mdist/[22m[36massets/SettingsPage-B2oWy7CM.js                   [39m[1m[2m  449.62 kB[22m[1m[22m[2m │ gzip:   100.50 kB[22m
+[2mdist/[22m[36massets/index-BvoUTl-n.js                          [39m[1m[33m  501.94 kB[39m[22m[2m │ gzip:   130.83 kB[22m
+[2mdist/[22m[36massets/App-8C_uLlyd.js                            [39m[1m[33m  542.17 kB[39m[22m[2m │ gzip:   147.69 kB[22m
+[2mdist/[22m[36massets/appearanceSync-hDVr_Ena.js                 [39m[1m[33m  696.40 kB[39m[22m[2m │ gzip:   188.30 kB[22m
+[2mdist/[22m[36massets/index-C57p9ft3.js                          [39m[1m[33m  776.21 kB[39m[22m[2m │ gzip:   204.78 kB[22m
+[2mdist/[22m[36massets/typescript-D3HbTlIB.js                     [39m[1m[33m3,570.91 kB[39m[22m[2m │ gzip: 1,023.17 kB[22m
+[2mdist/[22m[36massets/FileExplorer-uO15TCMA.js                   [39m[1m[33m4,014.24 kB[39m[22m[2m │ gzip: 1,126.89 kB[22m
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[32m✓ built in 2m 8s[39m
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 1765 modules transformed.
+rendering chunks...
+computing gzip size...
+[2m../src-tauri/target/release-support/dist-mobile/[22m[32mindex.html                            [39m[1m[2m  1.33 kB[22m[1m[22m[2m │ gzip:  0.51 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[35massets/index-DFcc0vMn.css             [39m[1m[2m 31.72 kB[22m[1m[22m[2m │ gzip:  5.30 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/mobile-virtual-DEBnpZrz.js     [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:  0.39 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/mobile-icons-B3gQ6IUF.js       [39m[1m[2m 10.29 kB[22m[1m[22m[2m │ gzip:  3.79 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/mobile-vendor-CwSolMZ4.js      [39m[1m[2m 16.85 kB[22m[1m[22m[2m │ gzip:  5.47 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/mobile-gestures-DAe2fb0F.js    [39m[1m[2m 97.91 kB[22m[1m[22m[2m │ gzip: 29.51 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/index-UWuqz-Qn.js              [39m[1m[2m 98.01 kB[22m[1m[22m[2m │ gzip: 26.08 kB[22m
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36massets/mobile-react-core-Dj04zrcb.js  [39m[1m[2m192.52 kB[22m[1m[22m[2m │ gzip: 60.37 kB[22m
+[32m✓ built in 11.28s[39m
+
+PWA v1.2.0
+Building sw.ts service worker ("es" format)...
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 79 modules transformed.
+rendering chunks...
+computing gzip size...
+[2m../src-tauri/target/release-support/dist-mobile/[22m[36msw.mjs  [39m[1m[2m19.35 kB[22m[1m[22m[2m │ gzip: 6.39 kB[22m
+[32m✓ built in 569ms[39m
+
+PWA v1.2.0
+mode      injectManifest
+format:   es
+precache  9 entries (439.23 KiB)
+files generated
+  ../src-tauri/target/release-support/dist-mobile/sw.js
+   Compiling tauri-utils v2.9.0 (D:\tauron\crates\tauri-utils)
+   Compiling phf_shared v0.13.1
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling winnow v0.7.15
+   Compiling phf v0.13.1
+   Compiling tauri-runtime v2.11.0 (D:\tauron\crates\tauri-runtime)
+warning: variable does not need to be mutable
+  --> crates\fileexplorer\crates\yazi-fs\src\cha\cha.rs:62:7
+   |
+62 |         let mut kind = ChaKind::DUMMY;
+   |             ----^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `yazi-fs` (lib) generated 1 warning (run `cargo fix --lib -p yazi-fs` to apply 1 suggestion)
+   Compiling tauri-runtime-wry v2.11.0 (D:\tauron\crates\tauri-runtime-wry)
+warning: unused variable: `executable`
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:145:25
+    |
+145 |     pub async fn detect(executable: &str) -> Result<Self> {
+    |                         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_executable`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: static `TIME_REGEX` is never used
+ --> crates\ffmpeg-suite-rs\ffmpeg-common\src\utils.rs:9:8
+  |
+9 | static TIME_REGEX: Lazy<Regex> =
+  |        ^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:12:1
+   |
+12 | pub mod error;
+   | ^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:6:9
+   |
+ 6 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:13:1
+   |
+13 | pub mod process;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:14:1
+   |
+14 | pub mod types;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\lib.rs:15:1
+   |
+15 | pub mod utils;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:22:9
+   |
+22 |         message: String,
+   |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:23:9
+   |
+23 |         exit_status: Option<ExitStatus>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:24:9
+   |
+24 |         stderr: Option<String>,
+   |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:54:9
+   |
+54 |         context: String,
+   |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:56:9
+   |
+56 |         source: Box<Error>,
+   |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+  --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:95:5
+   |
+95 |     fn context<S: Into<String>>(self, context: S) -> Result<T>;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:111:5
+    |
+111 |     pub fn new(message: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:118:5
+    |
+118 |     pub fn detail(mut self, detail: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\error.rs:123:5
+    |
+123 |     pub fn build(self) -> Error {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:225:16
+    |
+225 |     Metadata { key: String, value: Option<String> },
+    |                ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:225:29
+    |
+225 |     Metadata { key: String, value: Option<String> },
+    |                             ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:261:5
+    |
+261 |     Video,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:262:5
+    |
+262 |     VideoNoAttached,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:263:5
+    |
+263 |     Audio,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:264:5
+    |
+264 |     Subtitle,
+    |     ^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:265:5
+    |
+265 |     Data,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:266:5
+    |
+266 |     Attachment,
+    |     ^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:270:5
+    |
+270 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:291:5
+    |
+291 |     Quiet,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:292:5
+    |
+292 |     Panic,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:293:5
+    |
+293 |     Fatal,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:294:5
+    |
+294 |     Error,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:295:5
+    |
+295 |     Warning,
+    |     ^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:296:5
+    |
+296 |     Info,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:297:5
+    |
+297 |     Verbose,
+    |     ^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:298:5
+    |
+298 |     Debug,
+    |     ^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:299:5
+    |
+299 |     Trace,
+    |     ^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:303:5
+    |
+303 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:317:5
+    |
+317 |     pub fn as_number(&self) -> i32 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:343:5
+    |
+343 |     pub fn new(format: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:347:5
+    |
+347 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:352:5
+    |
+352 |     pub fn yuv420p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:356:5
+    |
+356 |     pub fn yuv422p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:360:5
+    |
+360 |     pub fn yuv444p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:364:5
+    |
+364 |     pub fn rgb24() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:368:5
+    |
+368 |     pub fn bgr24() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:372:5
+    |
+372 |     pub fn rgba() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:376:5
+    |
+376 |     pub fn bgra() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:380:5
+    |
+380 |     pub fn gray() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:384:5
+    |
+384 |     pub fn nv12() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:400:5
+    |
+400 |     pub fn new(format: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:404:5
+    |
+404 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:409:5
+    |
+409 |     pub fn u8() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:413:5
+    |
+413 |     pub fn s16() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:417:5
+    |
+417 |     pub fn s32() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:421:5
+    |
+421 |     pub fn flt() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:425:5
+    |
+425 |     pub fn dbl() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:429:5
+    |
+429 |     pub fn u8p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:433:5
+    |
+433 |     pub fn s16p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:437:5
+    |
+437 |     pub fn s32p() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:441:5
+    |
+441 |     pub fn fltp() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:445:5
+    |
+445 |     pub fn dblp() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:461:5
+    |
+461 |     pub fn new(codec: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:465:5
+    |
+465 |     pub fn as_str(&self) -> &str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:470:5
+    |
+470 |     pub fn h264() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:474:5
+    |
+474 |     pub fn h265() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:478:5
+    |
+478 |     pub fn vp9() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:482:5
+    |
+482 |     pub fn av1() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:486:5
+    |
+486 |     pub fn mpeg2video() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:490:5
+    |
+490 |     pub fn mpeg4() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:495:5
+    |
+495 |     pub fn aac() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:499:5
+    |
+499 |     pub fn mp3() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:503:5
+    |
+503 |     pub fn opus() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:507:5
+    |
+507 |     pub fn flac() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:511:5
+    |
+511 |     pub fn ac3() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:515:5
+    |
+515 |     pub fn pcm_s16le() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\ffmpeg-common\src\types.rs:520:5
+    |
+520 |     pub fn copy() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `ffmpeg_common` (lib) generated 73 warnings (run `cargo fix --lib -p ffmpeg_common` to apply 1 suggestion)
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\codec.rs:1:57
+  |
+1 | use ffmpeg_common::{Codec, CommandBuilder, PixelFormat, Result, SampleFormat};
+  |                                                         ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:1:21
+  |
+1 | use ffmpeg_common::{Result, utils};
+  |                     ^^^^^^
+
+warning: unused import: `Result`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\format.rs:1:37
+  |
+1 | use ffmpeg_common::{CommandBuilder, Result};
+  |                                     ^^^^^^
+
+warning: unused imports: `PixelFormat`, `Result`, and `SampleFormat`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\output.rs:2:49
+  |
+2 |     Codec, CommandBuilder, Duration, MediaPath, PixelFormat, Result, SampleFormat, Size,
+  |                                                 ^^^^^^^^^^^  ^^^^^^  ^^^^^^^^^^^^
+
+warning: unused import: `std::time::Duration as StdDuration`
+ --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\output.rs:5:5
+  |
+5 | use std::time::Duration as StdDuration;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `SelectionRule` is more private than the item `StreamSelection::or`
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:164:5
+    |
+164 |     pub fn or(mut self, rule: SelectionRule) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ method `StreamSelection::or` is reachable at visibility `pub`
+    |
+note: but type `SelectionRule` is only usable at visibility `pub(self)`
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:93:1
+    |
+ 93 | enum SelectionRule {
+    | ^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: field `id` is never read
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:351:5
+    |
+350 | struct FilterNode {
+    |        ---------- field in this struct
+351 |     id: String,
+    |     ^^
+    |
+    = note: `FilterNode` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `from` and `to` are never read
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:359:5
+    |
+358 | struct FilterEdge {
+    |        ---------- fields in this struct
+359 |     from: String,
+    |     ^^^^
+360 |     to: String,
+    |     ^^
+    |
+    = note: `FilterEdge` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:59:1
+   |
+59 | pub mod builder;
+   | ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:53:9
+   |
+53 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:60:1
+   |
+60 | pub mod codec;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:61:1
+   |
+61 | pub mod filter;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:62:1
+   |
+62 | pub mod format;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:63:1
+   |
+63 | pub mod input;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:64:1
+   |
+64 | pub mod output;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\lib.rs:65:1
+   |
+65 | pub mod stream;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:336:5
+    |
+336 |     CounterClockwiseFlip = 0,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:337:5
+    |
+337 |     Clockwise = 1,
+    |     ^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:338:5
+    |
+338 |     CounterClockwise = 2,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\filter.rs:339:5
+    |
+339 |     ClockwiseFlip = 3,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\input.rs:270:5
+    |
+270 |     pub fn webcam(device: impl Into<String>) -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an associated function
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\input.rs:286:5
+    |
+286 |     pub fn screen_capture() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:219:5
+    |
+219 |     pub default: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:220:5
+    |
+220 |     pub dub: bool,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:221:5
+    |
+221 |     pub original: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:222:5
+    |
+222 |     pub comment: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:223:5
+    |
+223 |     pub lyrics: bool,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:224:5
+    |
+224 |     pub karaoke: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:225:5
+    |
+225 |     pub forced: bool,
+    |     ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:226:5
+    |
+226 |     pub hearing_impaired: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:227:5
+    |
+227 |     pub visual_impaired: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:228:5
+    |
+228 |     pub clean_effects: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:229:5
+    |
+229 |     pub attached_pic: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:230:5
+    |
+230 |     pub timed_thumbnails: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:231:5
+    |
+231 |     pub captions: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:232:5
+    |
+232 |     pub descriptions: bool,
+    |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\ffmpeg-suite-rs\rust_ffmpeg\src\stream.rs:233:5
+    |
+233 |     pub metadata: bool,
+    |     ^^^^^^^^^^^^^^^^^^
+
+warning: `rust_ffmpeg` (lib) generated 36 warnings (run `cargo fix --lib -p rust_ffmpeg` to apply 5 suggestions)
+warning: unused variable: `raw_handle`
+   --> crates\vst-host\src\lib.rs:314:5
+    |
+314 |     raw_handle: *mut std::ffi::c_void,
+    |     ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_raw_handle`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `load_required_symbol` is never used
+   --> crates\vst-host\src\lib.rs:292:4
+    |
+292 | fn load_required_symbol<T: Copy>(library: &Library, symbol_name: &[u8]) -> Result<T, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:82:1
+   |
+82 | pub mod builder;
+   | ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:76:9
+   |
+76 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:83:1
+   |
+83 | pub mod format;
+   | ^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:84:1
+   |
+84 | pub mod parsers;
+   | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a module
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\lib.rs:85:1
+   |
+85 | pub mod types;
+   | ^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\rust_ffprobe\src\format.rs:263:5
+    |
+263 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> crates\ffmpeg-suite-rs\rust_ffprobe\src\format.rs:284:5
+    |
+284 |     pub fn as_str(&self) -> &'static str {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:32:5
+   |
+32 |     Format,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:33:5
+   |
+33 |     Streams,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:34:5
+   |
+34 |     Packets,
+   |     ^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:35:5
+   |
+35 |     Frames,
+   |     ^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:36:5
+   |
+36 |     Programs,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:37:5
+   |
+37 |     Chapters,
+   |     ^^^^^^^^
+
+warning: missing documentation for a variant
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:38:5
+   |
+38 |     Error,
+   |     ^^^^^
+
+warning: missing documentation for a method
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:42:5
+   |
+42 |     pub fn as_str(&self) -> &'static str {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for an enum
+  --> crates\ffmpeg-suite-rs\rust_ffprobe\src\types.rs:65:1
+   |
+65 | pub enum IntervalPosition {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `vst-host` (lib) generated 2 warnings (run `cargo fix --lib -p vst-host` to apply 1 suggestion)
+warning: `rust_ffprobe` (lib) generated 15 warnings
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling tauri-plugin v2.6.0 (D:\tauron\crates\tauri-plugin)
+   Compiling tauri-build v2.6.0 (D:\tauron\crates\tauri-build)
+   Compiling tauri-codegen v2.6.0 (D:\tauron\crates\tauri-codegen)
+   Compiling tauri v2.11.0 (D:\tauron\crates\tauri)
+   Compiling tauri-macros v2.6.0 (D:\tauron\crates\tauri-macros)
+   Compiling tauri-plugin-screenshots v2.2.0
+   Compiling tauri-plugin-store v2.4.3
+   Compiling tauri-plugin-fs v2.5.1
+   Compiling tauri-plugin-opener v2.5.4
+   Compiling tauri-plugin-notification v2.3.3
+   Compiling tauri-plugin-global-shortcut v2.3.1
+   Compiling tauri-plugin-autostart v2.5.1
+   Compiling tauri-plugin-window-state v2.4.1
+   Compiling tauri-plugin-shell v2.3.5
+   Compiling greeblefs v0.1.0 (D:\GreebleFS\src-tauri)
+   Compiling tauri-specta v2.0.0-rc.21
+warning: unused imports: `LinuxDisplayBackend` and `current_linux_display_backend`
+ --> src-tauri\src\wayland_dock.rs:7:29
+  |
+7 | use crate::linux_graphics::{current_linux_display_backend, LinuxDisplayBackend};
+  |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `compute_file_checksums` is never used
+    --> src-tauri\src\explorer_pro_commands.rs:1045:15
+     |
+1045 | pub(crate) fn compute_file_checksums(path: &Path) -> Result<(String, String), String> {
+     |               ^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variant `AudioBatchProcess` is never constructed
+   --> src-tauri\src\fs_commands.rs:273:5
+    |
+238 | pub(crate) enum ExplorerTaskRetryContext {
+    |                 ------------------------ variant in this enum
+...
+273 |     AudioBatchProcess {
+    |     ^^^^^^^^^^^^^^^^^
+    |
+    = note: `ExplorerTaskRetryContext` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: constant `PREVIEW_MASK_ARTIFACT_TOKEN` is never used
+  --> src-tauri\src\image_cutout_commands.rs:18:7
+   |
+18 | const PREVIEW_MASK_ARTIFACT_TOKEN: &str = "preview-mask";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `CUTOUT_PREVIEW_ARTIFACT_TOKEN` is never used
+  --> src-tauri\src\image_cutout_commands.rs:19:7
+   |
+19 | const CUTOUT_PREVIEW_ARTIFACT_TOKEN: &str = "cutout-preview";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `workflow_mode` is never read
+   --> src-tauri\src\image_cutout_commands.rs:170:5
+    |
+168 | struct ImageCutoutSession {
+    |        ------------------ field in this struct
+169 |     logical_output_path: Option<String>,
+170 |     workflow_mode: ImageCutoutWorkflowMode,
+    |     ^^^^^^^^^^^^^
+    |
+    = note: `ImageCutoutSession` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: constant `MOBILE_PUSH_DEFAULT_CONTACT_CLAIM` is never used
+  --> src-tauri\src\lan_share\push.rs:25:7
+   |
+25 | const MOBILE_PUSH_DEFAULT_CONTACT_CLAIM: &str = "mailto:mobile@greeblefs.local";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MobilePushNotificationEnvelope` is never constructed
+   --> src-tauri\src\lan_share\push.rs:109:8
+    |
+109 | struct MobilePushNotificationEnvelope {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MobilePushNotificationData` is never constructed
+   --> src-tauri\src\lan_share\push.rs:120:8
+    |
+120 | struct MobilePushNotificationData {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_mobile_download_relative_path` is never used
+   --> src-tauri\src\lan_share\push.rs:376:4
+    |
+376 | fn build_mobile_download_relative_path(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `build_mobile_download_open_url` is never used
+   --> src-tauri\src\lan_share\push.rs:402:4
+    |
+402 | fn build_mobile_download_open_url(share_url: &str, relative_path: &str) -> Result<String, String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `share_path` and `file_hub` are never read
+  --> src-tauri\src\lan_share\types.rs:43:16
+   |
+37 | pub(super) struct ActiveServer {
+   |                   ------------ fields in this struct
+...
+43 |     pub(super) share_path: PathBuf,
+   |                ^^^^^^^^^^
+44 |     pub(super) file_hub: Option<Vec<PathBuf>>,
+   |                ^^^^^^^^
+
+warning: struct `LinuxWebkitNvidiaWorkaroundPlan` is never constructed
+  --> src-tauri\src\linux_graphics.rs:83:8
+   |
+83 | struct LinuxWebkitNvidiaWorkaroundPlan {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `preferred_backend_reason_label` is never used
+   --> src-tauri\src\linux_graphics.rs:414:4
+    |
+414 | fn preferred_backend_reason_label(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `resolve_linux_webkit_nvidia_workaround` is never used
+   --> src-tauri\src\linux_graphics.rs:473:4
+    |
+473 | fn resolve_linux_webkit_nvidia_workaround(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `run_command_with_timeout` is never used
+  --> src-tauri\src\open_with\utils.rs:76:8
+   |
+76 | pub fn run_command_with_timeout(
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `ensure_unix_executable_permissions_if_present` is never used
+   --> src-tauri\src\plugin_commands.rs:389:4
+    |
+389 | fn ensure_unix_executable_permissions_if_present(_executable: &Path) -> Result<(), String> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `transport` is never read
+  --> src-tauri\src\runtime_pipeline\sidecar.rs:68:5
+   |
+66 | struct ExternalSidecarSession {
+   |        ---------------------- field in this struct
+67 |     runtime_id: String,
+68 |     transport: String,
+   |     ^^^^^^^^^
+
+warning: function `fallback_root_drive_info` is never used
+   --> src-tauri\src\volume_inventory.rs:834:4
+    |
+834 | fn fallback_root_drive_info() -> DriveInfo {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `is_external_mount_path` is never used
+   --> src-tauri\src\volume_inventory.rs:851:4
+    |
+851 | fn is_external_mount_path(path: &Path) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `parse_bool_token` is never used
+   --> src-tauri\src\volume_inventory.rs:879:4
+    |
+879 | fn parse_bool_token(value: &str) -> Option<bool> {
+    |    ^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_WINDOW_NAMESPACE` is never used
+  --> src-tauri\src\wayland_dock.rs:20:7
+   |
+20 | const WAYLAND_DOCK_WINDOW_NAMESPACE: &str = "greeblefs-dock";
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_DEFAULT_WIDTH` is never used
+  --> src-tauri\src\wayland_dock.rs:21:7
+   |
+21 | const WAYLAND_DOCK_DEFAULT_WIDTH: i32 = 1280;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `WAYLAND_DOCK_DEFAULT_HEIGHT` is never used
+  --> src-tauri\src\wayland_dock.rs:22:7
+   |
+22 | const WAYLAND_DOCK_DEFAULT_HEIGHT: i32 = 760;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+

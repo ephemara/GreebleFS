@@ -1,7 +1,6 @@
 // Copyright 2026 K-Studio. All Rights Reserved.
 // Terminal PTY implementation for ULTACODE
 
-use crate::ipc_runtime::IpcRuntimeState;
 use crate::runtime_pipeline::host_events::{
     HostEventBusState, HostEventScope, HOST_EVENT_TOPIC_TERMINAL_OUTPUT,
     HOST_EVENT_TOPIC_TERMINAL_SHELL_INTEGRATION_CHANGED,
@@ -15,7 +14,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 #[cfg(target_os = "windows")]
@@ -35,6 +34,17 @@ pub struct TerminalManager {
     shell_states: Mutex<HashMap<String, TerminalShellIntegrationState>>,
     output_streams: Mutex<HashMap<String, IpcStreamHandle>>,
     hidden_host_command_echoes: Mutex<HashMap<String, VecDeque<Vec<u8>>>>,
+}
+
+fn to_ipc_stream_packet_metadata(
+    metadata: tauri::transport::StreamPacketMetadata,
+) -> IpcStreamPacketMetadata {
+    IpcStreamPacketMetadata {
+        stream_id: metadata.stream_id,
+        sequence: metadata.sequence,
+        emitted_at_epoch_ms: metadata.emitted_at_epoch_ms,
+        byte_length: metadata.byte_length,
+    }
 }
 
 const TERMINAL_SHELL_INTEGRATION_CWD_PREFIX: &[u8] = b"\x1b]633;GreebleFS;Cwd=";
@@ -696,7 +706,7 @@ impl TerminalManager {
     pub fn open_output_stream(
         &self,
         id: &str,
-        ipc_runtime: &IpcRuntimeState,
+        app: &AppHandle,
     ) -> Result<IpcStreamHandle, String> {
         let _ = self.terminal_instance(id)?;
         if let Some(existing) = self
@@ -709,7 +719,11 @@ impl TerminalManager {
             return Ok(existing);
         }
 
-        let handle = ipc_runtime.register_stream("terminal-output", Some(id))?;
+        let handle = tauri::transport::register_stream(app, "terminal-output", Some(id))?;
+        let handle = IpcStreamHandle {
+            id: handle.id,
+            kind: handle.kind,
+        };
         let mut output_streams = self
             .output_streams
             .lock()
@@ -718,7 +732,7 @@ impl TerminalManager {
         Ok(handle)
     }
 
-    pub fn kill(&self, id: &str, ipc_runtime: &IpcRuntimeState) -> Result<(), String> {
+    pub fn kill(&self, id: &str, app: &AppHandle) -> Result<(), String> {
         let mut terminals = self.terminals.lock().unwrap();
         terminals
             .remove(id)
@@ -733,7 +747,7 @@ impl TerminalManager {
             .map_err(|_| "terminal output stream lock poisoned".to_string())?
             .remove(id)
         {
-            ipc_runtime.release_stream(&stream_handle.id)?;
+            tauri::transport::close_stream(app, &stream_handle.id)?;
         }
         if let Ok(mut hidden_host_command_echoes) = self.hidden_host_command_echoes.lock() {
             hidden_host_command_echoes.remove(id);
@@ -878,8 +892,7 @@ impl TerminalManager {
         });
 
         if let Some(mut reader) = reader {
-            let ipc_runtime = app.state::<IpcRuntimeState>();
-            let stream_handle = match self.open_output_stream(&id, &ipc_runtime) {
+            let stream_handle = match self.open_output_stream(&id, &app) {
                 Ok(handle) => handle,
                 Err(error) => {
                     log::warn!("failed to open terminal output stream for {id}: {error}");
@@ -906,15 +919,17 @@ impl TerminalManager {
                                 .consume(&parsed_chunk.visible_output);
                             if !visible_output.is_empty() {
                                 let data = String::from_utf8_lossy(&visible_output).to_string();
-                                let packet = match app
-                                    .state::<IpcRuntimeState>()
-                                    .publish_stream_packet(&stream_handle.id, |metadata| {
+                                let packet = match tauri::transport::publish_stream_packet(
+                                    &app,
+                                    &stream_handle.id,
+                                    |metadata| {
                                         Ok(TerminalOutputStreamPacket {
                                             terminal_id: terminal_id.clone(),
-                                            metadata,
+                                            metadata: to_ipc_stream_packet_metadata(metadata),
                                             data,
                                         })
-                                    }) {
+                                    },
+                                ) {
                                     Ok((packet, _outcome)) => packet,
                                     Err(error) => {
                                         log::warn!(
@@ -925,7 +940,6 @@ impl TerminalManager {
                                         continue;
                                     }
                                 };
-                                let _ = app.emit(&stream_handle.event_name, packet.clone());
                                 publish_terminal_output_host_event(&app, &packet);
                             }
 
@@ -1583,8 +1597,7 @@ pub async fn terminal_spawn(
 
     let result = terminal_manager.spawn(&id, working_dir, shell, rows, cols);
     if result.is_ok() {
-        let ipc_runtime = app.state::<IpcRuntimeState>();
-        if let Err(error) = terminal_manager.open_output_stream(&id, &ipc_runtime) {
+        if let Err(error) = terminal_manager.open_output_stream(&id, &app) {
             log::warn!("failed to prime terminal output stream for {id}: {error}");
         }
         terminal_manager.start_reader_thread(id, app.clone());
@@ -1598,11 +1611,11 @@ pub async fn terminal_spawn(
 #[tauri::command]
 #[specta::specta]
 pub async fn terminal_open_output_stream(
+    app: AppHandle,
     terminal_manager: tauri::State<'_, TerminalManager>,
-    ipc_runtime: tauri::State<'_, IpcRuntimeState>,
     id: String,
 ) -> Result<IpcStreamHandle, String> {
-    terminal_manager.open_output_stream(&id, &ipc_runtime)
+    terminal_manager.open_output_stream(&id, &app)
 }
 
 #[tauri::command]
@@ -1642,11 +1655,11 @@ pub async fn terminal_resize(
 #[tauri::command]
 #[specta::specta]
 pub async fn terminal_kill(
+    app: AppHandle,
     terminal_manager: tauri::State<'_, TerminalManager>,
-    ipc_runtime: tauri::State<'_, IpcRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    terminal_manager.kill(&id, &ipc_runtime)
+    terminal_manager.kill(&id, &app)
 }
 
 #[tauri::command]

@@ -665,7 +665,7 @@ fn handle_runtime_sidecar_unsubscribe_packet(
     }
 
     let host_event_bus = app.state::<HostEventBusState>();
-    let removed = host_event_bus.unsubscribe(subscription_id.as_str());
+    let removed = host_event_bus.unsubscribe(app, subscription_id.as_str());
     owned_subscription_ids
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -741,7 +741,7 @@ fn cleanup_sidecar_subscriptions(app: &AppHandle, session: &ExternalSidecarSessi
     }
     let host_event_bus = app.state::<HostEventBusState>();
     for subscription_id in subscription_ids {
-        host_event_bus.unsubscribe(subscription_id.as_str());
+        host_event_bus.unsubscribe(app, subscription_id.as_str());
     }
 }
 

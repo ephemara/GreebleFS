@@ -1,6 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
-import type { IpcStreamHandle, IpcStreamReplayResponse } from "../../generated/tauri";
-import { commands, unwrapTauriResult } from "../tauriClient";
+import { subscribeStream as subscribeTransportStream } from "@tauri-apps/api/transport";
+import type { IpcStreamHandle } from "../../generated/tauri";
 import { bindDeferredUnlisten } from "../deferredUnlisten";
 
 export type ManagedIpcStreamHandle = IpcStreamHandle;
@@ -29,45 +28,19 @@ export async function subscribeIpcStream<TPayload>(
     listener(payload);
   };
 
-  const unlistenPromise = listen<TPayload>(handle.eventName, (event) => {
-    deliverOnce(event.payload);
+  const unsubscribePromise = subscribeTransportStream<TPayload>(handle, deliverOnce, {
+    includeReplay:
+      options.includeReplay === true || options.replayFromSequence != null,
+    replayFromSequence: options.replayFromSequence ?? undefined,
+    replayLimit: options.replayLimit ?? undefined,
+    closeOnUnsubscribe: options.releaseOnUnsubscribe ?? true,
   });
-  const stopStreamListener = bindDeferredUnlisten(unlistenPromise);
-  await unlistenPromise;
-
-  if (options.includeReplay === true || options.replayFromSequence != null) {
-    const replay = unwrapTauriResult(
-      await commands.ipcReplayStream(
-        handle.id,
-        options.replayFromSequence ?? 0,
-        options.replayLimit ?? null,
-      ),
-    ) as IpcStreamReplayResponse;
-    for (const packet of replay.packets) {
-      const payload = parseReplayPayload<TPayload>(packet.payloadJson);
-      if (payload != null) {
-        deliverOnce(payload);
-      }
-    }
-  }
+  const stopStreamListener = bindDeferredUnlisten(unsubscribePromise);
+  await unsubscribePromise;
 
   return () => {
     stopStreamListener();
-    if (options.releaseOnUnsubscribe ?? true) {
-      void commands
-        .ipcReleaseStream(handle.id)
-        .then(unwrapTauriResult)
-        .catch(() => {});
-    }
   };
-}
-
-function parseReplayPayload<TPayload>(payloadJson: string): TPayload | null {
-  try {
-    return JSON.parse(payloadJson) as TPayload;
-  } catch {
-    return null;
-  }
 }
 
 function readStreamSequence(payload: unknown): number | null {

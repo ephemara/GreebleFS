@@ -1,6 +1,6 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { appLocalDataDir, join } from "@tauri-apps/api/path";
-import { BaseDirectory, mkdir, readFile, writeFile } from "@tauri-apps/plugin-fs";
+import { resourceUrl } from "@tauri-apps/api/transport";
+import { BaseDirectory, mkdir, writeFile } from "@tauri-apps/plugin-fs";
 import type {
   IpcArtifactDescriptor,
   IpcArtifactRef,
@@ -10,9 +10,7 @@ import type {
 import { commands, unwrapTauriResult } from "../tauriClient";
 
 const ipcArtifactUrlCache = new Map<string, string>();
-const pendingIpcArtifactUrlReads = new Map<string, Promise<string>>();
 const FRONTEND_IPC_ARTIFACT_ROOT = "ipc-artifacts/frontend";
-let appLocalDataRootPathPromise: Promise<string> | null = null;
 
 export type ManagedIpcArtifactDescriptor = IpcArtifactDescriptor;
 export type ManagedIpcArtifactRef = IpcArtifactRef;
@@ -36,7 +34,7 @@ export function toIpcArtifactRef(
   return {
     id: descriptor.id,
     kind: descriptor.kind,
-    filePath: descriptor.filePath,
+    resourceRid: descriptor.resourceRid,
     mediaType: descriptor.mediaType,
     identityKey: descriptor.identityKey,
     contentRevision: descriptor.contentRevision,
@@ -51,22 +49,9 @@ export async function resolveIpcArtifactUrl(
     return cachedUrl;
   }
 
-  const pendingUrlRead = pendingIpcArtifactUrlReads.get(descriptor.id);
-  if (pendingUrlRead) {
-    return pendingUrlRead;
-  }
-
-  const nextUrlRead = buildIpcArtifactUrl(descriptor)
-    .then((nextUrl) => {
-      ipcArtifactUrlCache.set(descriptor.id, nextUrl);
-      return nextUrl;
-    })
-    .finally(() => {
-      pendingIpcArtifactUrlReads.delete(descriptor.id);
-    });
-
-  pendingIpcArtifactUrlReads.set(descriptor.id, nextUrlRead);
-  return nextUrlRead;
+  const resolvedUrl = resourceUrl(descriptor.resourceRid);
+  ipcArtifactUrlCache.set(descriptor.id, resolvedUrl);
+  return resolvedUrl;
 }
 
 export async function stageIpcArtifactBytes(
@@ -117,141 +102,8 @@ export async function releaseIpcArtifact(
   artifact: string | ManagedIpcArtifactDescriptor,
 ): Promise<void> {
   const id = typeof artifact === "string" ? artifact : artifact.id;
-  revokeCachedArtifactUrl(id);
   ipcArtifactUrlCache.delete(id);
-  pendingIpcArtifactUrlReads.delete(id);
   unwrapTauriResult(await commands.ipcReleaseArtifact(id));
-}
-
-async function buildIpcArtifactUrl(
-  descriptor: ManagedIpcArtifactDescriptor,
-): Promise<string> {
-  const hydratedObjectUrl = await tryBuildArtifactObjectUrl(descriptor);
-  if (hydratedObjectUrl) {
-    return hydratedObjectUrl;
-  }
-  return toLocalAssetUrl(descriptor.filePath);
-}
-
-async function tryBuildArtifactObjectUrl(
-  descriptor: ManagedIpcArtifactDescriptor,
-): Promise<string | null> {
-  if (
-    typeof window === "undefined" ||
-    typeof URL === "undefined" ||
-    typeof URL.createObjectURL !== "function" ||
-    typeof Blob === "undefined"
-  ) {
-    return null;
-  }
-
-  try {
-    const bytes = await readBackendArtifactBytes(descriptor.filePath);
-    const blob = new Blob([bytes], {
-      type: descriptor.mediaType || resolveFileMediaType(descriptor.filePath),
-    });
-    return URL.createObjectURL(blob);
-  } catch {
-    return null;
-  }
-}
-
-function toLocalAssetUrl(filePath: string): string {
-  if (typeof window === "undefined") {
-    return filePath;
-  }
-
-  try {
-    return convertFileSrc(filePath);
-  } catch {
-    const normalizedPath = filePath.replace(/\\/g, "/");
-    return normalizedPath.startsWith("/")
-      ? `file://${encodeURI(normalizedPath)}`
-      : `file:///${encodeURI(normalizedPath)}`;
-  }
-}
-
-async function readBackendArtifactBytes(filePath: string): Promise<Uint8Array> {
-  const normalizedFilePath = normalizeFilesystemPath(filePath);
-  const appLocalDataRoot = await getNormalizedAppLocalDataRoot();
-  const appLocalDataRelativePath = resolveRelativePathWithinRoot(
-    normalizedFilePath,
-    appLocalDataRoot,
-  );
-  if (appLocalDataRelativePath) {
-    return readFile(appLocalDataRelativePath, {
-      baseDir: BaseDirectory.AppLocalData,
-    });
-  }
-  return readFile(normalizedFilePath);
-}
-
-async function getNormalizedAppLocalDataRoot(): Promise<string> {
-  if (!appLocalDataRootPathPromise) {
-    appLocalDataRootPathPromise = appLocalDataDir().then((directoryPath) =>
-      normalizeDirectoryPath(directoryPath),
-    );
-  }
-  return appLocalDataRootPathPromise;
-}
-
-function resolveRelativePathWithinRoot(
-  filePath: string,
-  rootPath: string,
-): string | null {
-  const normalizedFilePath = normalizePathForComparison(filePath);
-  const normalizedRootPath = normalizePathForComparison(rootPath);
-  if (
-    normalizedFilePath !== normalizedRootPath &&
-    !normalizedFilePath.startsWith(`${normalizedRootPath}/`)
-  ) {
-    return null;
-  }
-
-  const rawRelativePath = normalizeFilesystemPath(filePath)
-    .slice(normalizeFilesystemPath(rootPath).length)
-    .replace(/^\/+/, "");
-  return rawRelativePath || null;
-}
-
-function normalizePathForComparison(value: string): string {
-  const normalizedValue = normalizeFilesystemPath(value).replace(/[\\/]+$/, "");
-  return /^[a-z]:\//i.test(normalizedValue)
-    ? normalizedValue.toLowerCase()
-    : normalizedValue;
-}
-
-function normalizeFilesystemPath(value: string): string {
-  return value.replace(/\\/g, "/");
-}
-
-function resolveFileMediaType(filePath: string): string {
-  switch (extractPathExtension(filePath)) {
-    case ".png":
-      return "image/png";
-    case ".jpg":
-    case ".jpeg":
-      return "image/jpeg";
-    case ".webp":
-      return "image/webp";
-    case ".gif":
-      return "image/gif";
-    case ".svg":
-      return "image/svg+xml";
-    default:
-      return "application/octet-stream";
-  }
-}
-
-function revokeCachedArtifactUrl(id: string): void {
-  const cachedUrl = ipcArtifactUrlCache.get(id);
-  if (
-    cachedUrl?.startsWith("blob:") &&
-    typeof URL !== "undefined" &&
-    typeof URL.revokeObjectURL === "function"
-  ) {
-    URL.revokeObjectURL(cachedUrl);
-  }
 }
 
 function buildDefaultFrontendArtifactRelativePath(
@@ -318,11 +170,10 @@ function normalizeDirectoryPath(value: string): string {
 }
 
 function resolveFileExtension(mediaType: string | null): string {
-  switch ((mediaType || "").toLowerCase()) {
+  switch (mediaType?.toLowerCase()) {
     case "image/png":
       return ".png";
     case "image/jpeg":
-    case "image/jpg":
       return ".jpg";
     case "image/webp":
       return ".webp";
@@ -330,22 +181,11 @@ function resolveFileExtension(mediaType: string | null): string {
       return ".gif";
     case "image/svg+xml":
       return ".svg";
+    case "application/json":
+      return ".json";
+    case "text/plain":
+      return ".txt";
     default:
       return ".bin";
   }
-}
-
-function extractPathExtension(filePath: string): string | null {
-  const normalizedFileName = normalizeFilesystemPath(filePath)
-    .split("/")
-    .filter(Boolean)
-    .pop();
-  if (!normalizedFileName) {
-    return null;
-  }
-  const extensionIndex = normalizedFileName.lastIndexOf(".");
-  if (extensionIndex <= 0 || extensionIndex === normalizedFileName.length - 1) {
-    return null;
-  }
-  return normalizedFileName.slice(extensionIndex).toLowerCase();
 }

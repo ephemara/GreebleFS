@@ -157,7 +157,7 @@ pub async fn fs_read_entry_thumbnail(
             crate::gpu_runtime::global_gpu_runtime(),
             &normalized,
         )?;
-        build_entry_thumbnail_from_artifact(&normalized, artifact)
+        build_entry_thumbnail_from_artifact(&app, &normalized, artifact)
     })
     .await
     .map_err(|error| format!("Thumbnail generation task failed to join: {error}"))?
@@ -237,10 +237,12 @@ fn build_image_thumbnail_png_with_runtime(
 }
 
 fn build_entry_thumbnail_from_artifact(
+    app: &AppHandle,
     request: &NormalizedThumbnailRequest,
     artifact: ExplorerThumbnailArtifact,
 ) -> Result<ExplorerEntryThumbnail, String> {
-    let poster_data_url = artifact_path_to_data_url(Path::new(&artifact.poster.file_path))?;
+    let poster_path = resolve_registered_thumbnail_artifact_path(app, &artifact.poster)?;
+    let poster_data_url = artifact_path_to_data_url(poster_path.as_path())?;
     let hover_timestamps = sample_thumbnail_hover_timestamps(
         request,
         artifact.kind.clone(),
@@ -251,8 +253,9 @@ fn build_entry_thumbnail_from_artifact(
         .iter()
         .enumerate()
         .map(|(index, descriptor)| {
+            let hover_frame_path = resolve_registered_thumbnail_artifact_path(app, descriptor)?;
             Ok(ExplorerVideoHoverFrame {
-                image_data_url: artifact_path_to_data_url(Path::new(&descriptor.file_path))?,
+                image_data_url: artifact_path_to_data_url(hover_frame_path.as_path())?,
                 timestamp_seconds: *hover_timestamps.get(index).unwrap_or(&0.0),
             })
         })
@@ -263,6 +266,16 @@ fn build_entry_thumbnail_from_artifact(
         hover_frames,
         hover_frame_delay_ms: artifact.hover_frame_delay_ms,
     })
+}
+
+fn resolve_registered_thumbnail_artifact_path(
+    app: &AppHandle,
+    descriptor: &IpcArtifactDescriptor,
+) -> Result<PathBuf, String> {
+    let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
+    ipc_runtime
+        .artifact_path(&descriptor.id)?
+        .ok_or_else(|| format!("Thumbnail artifact path is no longer registered: {}", descriptor.id))
 }
 
 fn build_entry_thumbnail_artifact(
@@ -434,12 +447,17 @@ fn persist_thumbnail_artifact_record(
                     None
                 },
             ),
-            poster_path: artifact.poster.file_path.clone(),
+            poster_path: resolve_registered_thumbnail_artifact_path(app, &artifact.poster)?
+                .to_string_lossy()
+                .to_string(),
             hover_frame_paths: artifact
                 .hover_frames
                 .iter()
-                .map(|descriptor| descriptor.file_path.clone())
-                .collect(),
+                .map(|descriptor| {
+                    resolve_registered_thumbnail_artifact_path(app, descriptor)
+                        .map(|path| path.to_string_lossy().to_string())
+                })
+                .collect::<Result<Vec<_>, String>>()?,
             hover_frame_delay_ms: artifact.hover_frame_delay_ms,
         },
     )
@@ -455,7 +473,7 @@ fn register_thumbnail_artifact_descriptor(
         .first_raw()
         .map(str::to_string);
     let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
-    ipc_runtime.register_artifact_path(RegisterArtifactPathRequest {
+    ipc_runtime.register_artifact_path(app, RegisterArtifactPathRequest {
         kind: artifact_kind.to_string(),
         file_path: artifact_path.to_path_buf(),
         media_type,

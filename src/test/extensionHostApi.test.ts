@@ -11,7 +11,6 @@ vi.mock("../runtime/ipc/streams", () => ({
 vi.mock("../runtime/tauriClient", () => ({
   commands: {
     extensionHostCall: vi.fn(),
-    ipcReleaseStream: vi.fn(),
   },
   unwrapTauriResult: vi.fn((value: { status?: string; data?: unknown }) =>
     value?.status === "ok" ? value.data : value,
@@ -26,12 +25,7 @@ describe("extensionHostApi events", () => {
   beforeEach(() => {
     subscribeIpcStreamMock.mockReset();
     vi.mocked(commands.extensionHostCall).mockReset();
-    vi.mocked(commands.ipcReleaseStream).mockReset();
     vi.mocked(subscribeIpcStream).mockResolvedValue(() => undefined);
-    vi.mocked(commands.ipcReleaseStream).mockResolvedValue({
-      status: "ok",
-      data: null,
-    });
   });
 
   it("requests retained host events when replayFrom is provided without includeSnapshot", async () => {
@@ -61,7 +55,6 @@ describe("extensionHostApi events", () => {
               streamHandle: {
                 id: "stream-1",
                 kind: "host-events",
-                eventName: "ipc-stream-host-events-subscription-1",
               },
             }),
           },

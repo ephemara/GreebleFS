@@ -9,6 +9,7 @@ use tauri::Manager;
 const REPO_USR_MANIFEST_TEXT: &str = include_str!("../../usr/manifest.json");
 pub const DEFAULT_USR_PROFILE_ID: &str = "default";
 const USR_PROFILES_DIRECTORY_NAME: &str = "profiles";
+const INSTALL_PROFILE_FILE_NAME: &str = "greeblefs-install-profile.toml";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -49,6 +50,13 @@ pub struct ManagedContentRoots {
     pub writable_root: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallerManagedContentProfile {
+    pub managed_content_root: Option<String>,
+    pub plugins_directory: Option<String>,
+}
+
 fn normalize_env_path(value: Option<String>) -> Option<PathBuf> {
     value
         .map(|entry| entry.trim().to_string())
@@ -63,6 +71,51 @@ fn read_first_env_path(var_names: &[&str]) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn resolve_install_root_from_current_executable() -> Option<PathBuf> {
+    env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+}
+
+fn resolve_install_profile_path(install_root: &Path) -> PathBuf {
+    install_root.join(INSTALL_PROFILE_FILE_NAME)
+}
+
+fn resolve_profile_path_value(raw_value: Option<&str>, install_root: &Path) -> Option<PathBuf> {
+    let normalized_value = raw_value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let candidate_path = PathBuf::from(normalized_value);
+    if candidate_path.is_absolute() {
+        Some(candidate_path)
+    } else {
+        Some(install_root.join(candidate_path))
+    }
+}
+
+fn resolve_managed_content_root_from_profile_text(
+    profile_text: &str,
+    install_root: &Path,
+) -> Option<PathBuf> {
+    let profile = toml::from_str::<InstallerManagedContentProfile>(profile_text).ok()?;
+    if let Some(explicit_root) =
+        resolve_profile_path_value(profile.managed_content_root.as_deref(), install_root)
+    {
+        return Some(explicit_root);
+    }
+
+    let plugins_directory =
+        resolve_profile_path_value(profile.plugins_directory.as_deref(), install_root)?;
+    plugins_directory.parent().map(Path::to_path_buf)
+}
+
+fn resolve_managed_content_root_from_install_profile() -> Option<PathBuf> {
+    let install_root = resolve_install_root_from_current_executable()?;
+    let install_profile_path = resolve_install_profile_path(&install_root);
+    let install_profile_text = fs::read_to_string(install_profile_path).ok()?;
+    resolve_managed_content_root_from_profile_text(&install_profile_text, &install_root)
 }
 
 pub fn load_usr_manifest() -> Result<UsrManifest, String> {
@@ -112,6 +165,10 @@ pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, S
         "OVERLAYTERM_MANAGED_CONTENT_ROOT",
     ]) {
         return Ok(explicit_root);
+    }
+
+    if let Some(installer_managed_root) = resolve_managed_content_root_from_install_profile() {
+        return Ok(installer_managed_root);
     }
 
     let app_local_data_root = app
@@ -230,4 +287,48 @@ pub fn resolve_usr_relative_path(
 pub fn read_usr_text_file(app: &tauri::AppHandle, relative_path: &str) -> Result<String, String> {
     let path = resolve_usr_relative_path(app, relative_path)?;
     fs::read_to_string(&path).map_err(|error| format!("Failed to read {}: {error}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_managed_content_root_from_profile_text;
+    use std::path::Path;
+
+    #[test]
+    fn installer_profile_prefers_explicit_managed_content_root() {
+        let install_root = Path::new("C:/Portable/GreebleFS");
+        let resolved_root = resolve_managed_content_root_from_profile_text(
+            r#"
+managedContentRoot = 'PortableUsr'
+pluginsDirectory = 'PortableUsr/plugins'
+"#,
+            install_root,
+        )
+        .expect("managed content root should resolve");
+        assert_eq!(resolved_root, install_root.join("PortableUsr"));
+    }
+
+    #[test]
+    fn installer_profile_derives_managed_content_root_from_plugins_directory() {
+        let install_root = Path::new("C:/Portable/GreebleFS");
+        let resolved_root = resolve_managed_content_root_from_profile_text(
+            r#"
+pluginsDirectory = 'D:\Shared\GreebleUsr\plugins'
+"#,
+            install_root,
+        )
+        .expect("plugins directory parent should resolve");
+        assert_eq!(resolved_root, Path::new("D:/Shared/GreebleUsr"));
+    }
+
+    #[test]
+    fn installer_profile_resolves_relative_plugins_directory_against_install_root() {
+        let install_root = Path::new("C:/Portable/GreebleFS");
+        let resolved_root = resolve_managed_content_root_from_profile_text(
+            "pluginsDirectory = 'usr/plugins'",
+            install_root,
+        )
+        .expect("relative plugins directory should resolve");
+        assert_eq!(resolved_root, install_root.join("usr"));
+    }
 }

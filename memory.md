@@ -1,3 +1,15 @@
+# 2026-05-06 - Dev WebView Reload Guard For Runtime Profile Settings
+
+- Fixed a dev-loop reload trap where ordinary UI/settings interactions rewrote `usr/profiles/shared/settings.json` and `usr/profiles/default/settings.json`, causing Vite to full-reload the Tauri WebView because those shipped defaults are imported by `src/config/usrDefaultSettings.ts`.
+- `vite.config.ts` now ignores `**/usr/profiles/**/settings.json` in the dev server watcher. This preserves the shipped default imports for first-run baselines while preventing runtime profile persistence from hard-refreshing the live desktop window.
+- `scripts/run-platform-tauri.mjs` now gives desktop Vite dev sessions an isolated cache directory at `~/.cache/greeblefs-tauri/vite/desktop` by default via `GREEBLEFS_VITE_CACHE_DIR` / `OVERLAYTERM_VITE_CACHE_DIR`. This avoids Windows `EPERM unlink node_modules/.vite/deps/...` failures when config changes or lockfile changes force dependency re-optimization while another process is holding the shared cache.
+- `scripts/cleanup-dev-processes.mjs` now actually cleans targeted GreebleFS dev process trees on Windows when called with `--include-running` or from the Tauri dev wrapper. Before this, the helper returned immediately on `win32`, leaving stale `tauri.js`, Vite, Cargo, and `greeblefs.exe` children alive across relaunches.
+- Diagnosis rule:
+  - If the window appears to "restart" while the `greeblefs.exe` PID stays stable, inspect `MCP/.state/tauri-dev.log` for `[vite] page reload ...` lines before changing tauron or the Rust-side Tauri runtime.
+  - Repeated `page reload usr/profiles/.../settings.json` is a Vite watcher/module-graph problem, not a tauron WebView2 process failure.
+- Validation:
+  - Passed: Vite config load check confirmed `server.watch.ignored` includes `**/usr/profiles/**/settings.json`.
+
 # 2026-05-06 - Action Forge First-Party Authoring Plugin And Render Fix
 
 - Added the first-party `Action Forge` package plugin under `usr/plugins/greeblefs-action-forge/`.

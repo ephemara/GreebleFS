@@ -3,6 +3,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
+const mobileBuildOutDir =
+  process.env.GREEBLEFS_VITE_MOBILE_OUT_DIR
+  ?? process.env.OVERLAYTERM_VITE_MOBILE_OUT_DIR
+  ?? path.resolve(__dirname, "dist-mobile");
+
 export default defineConfig({
   root: path.resolve(__dirname, "src-mobile"),
   base: "/",
@@ -22,7 +27,7 @@ export default defineConfig({
   ],
   cacheDir: path.resolve(__dirname, "node_modules/.vite-mobile"),
   build: {
-    outDir: path.resolve(__dirname, "dist-mobile"),
+    outDir: mobileBuildOutDir,
     emptyOutDir: true,
     rollupOptions: {
       output: {

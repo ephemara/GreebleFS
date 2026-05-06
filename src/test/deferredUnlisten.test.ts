@@ -69,6 +69,7 @@ describe('bindDeferredUnlisten', () => {
     const onError = vi.fn();
     const registrationError = new Error('registration failed');
     const unlistenError = new Error('unlisten failed');
+    const asyncUnlistenError = new Error('async unlisten failed');
 
     bindDeferredUnlisten(Promise.reject(registrationError), { onError });
     await Promise.resolve();
@@ -83,5 +84,15 @@ describe('bindDeferredUnlisten', () => {
 
     expect(() => cleanup()).not.toThrow();
     expect(onError).toHaveBeenCalledWith(unlistenError);
+
+    const asyncCleanup = bindDeferredUnlisten(Promise.resolve(() => (
+      Promise.reject(asyncUnlistenError)
+    )), { onError });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(() => asyncCleanup()).not.toThrow();
+    await Promise.resolve();
+    expect(onError).toHaveBeenCalledWith(asyncUnlistenError);
   });
 });

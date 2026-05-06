@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::{Manager, Runtime};
 
 #[derive(Debug, Clone)]
 pub struct RegisterArtifactPathRequest {
@@ -19,6 +20,7 @@ pub struct RegisterArtifactPathRequest {
 #[derive(Debug, Clone)]
 struct RegisteredArtifact {
     descriptor: IpcArtifactDescriptor,
+    file_path: PathBuf,
     delete_on_release: bool,
 }
 
@@ -28,8 +30,9 @@ pub struct ArtifactRegistry {
 }
 
 impl ArtifactRegistry {
-    pub fn register_path(
+    pub fn register_path<R: Runtime, M: Manager<R>>(
         &self,
+        app: &M,
         request: RegisterArtifactPathRequest,
     ) -> Result<IpcArtifactDescriptor, String> {
         let metadata = fs::metadata(&request.file_path).map_err(|error| {
@@ -45,6 +48,19 @@ impl ArtifactRegistry {
             ));
         }
 
+        let resource_handle = tauri::transport::register_file_resource(
+            app,
+            request.kind.clone(),
+            request.file_path.clone(),
+            request.media_type.clone(),
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to register IPC artifact transport resource '{}': {error}",
+                request.file_path.display()
+            )
+        })?;
+
         let descriptor = IpcArtifactDescriptor {
             id: stable_artifact_id(
                 &request.kind,
@@ -54,7 +70,7 @@ impl ArtifactRegistry {
                 request.retention,
             ),
             kind: request.kind,
-            file_path: request.file_path.to_string_lossy().to_string(),
+            resource_rid: resource_handle.rid,
             media_type: request.media_type,
             byte_length: Some(metadata.len()),
             retention: request.retention,
@@ -70,6 +86,7 @@ impl ArtifactRegistry {
             descriptor.id.clone(),
             RegisteredArtifact {
                 descriptor: descriptor.clone(),
+                file_path: request.file_path,
                 delete_on_release: request.delete_on_release,
             },
         );
@@ -77,7 +94,7 @@ impl ArtifactRegistry {
         Ok(descriptor)
     }
 
-    pub fn release(&self, id: &str) -> Result<(), String> {
+    pub fn release<R: Runtime, M: Manager<R>>(&self, app: &M, id: &str) -> Result<(), String> {
         let record = {
             let mut records = self
                 .records
@@ -87,8 +104,17 @@ impl ArtifactRegistry {
         }
         .ok_or_else(|| format!("Unknown IPC artifact id: {id}"))?;
 
+        app.resources_table()
+            .close(record.descriptor.resource_rid)
+            .map_err(|error| {
+                format!(
+                    "Failed to close IPC artifact transport resource '{}' (rid {}): {error}",
+                    id, record.descriptor.resource_rid
+                )
+            })?;
+
         if record.delete_on_release {
-            let artifact_path = PathBuf::from(&record.descriptor.file_path);
+            let artifact_path = record.file_path;
             if artifact_path.exists() {
                 fs::remove_file(&artifact_path).map_err(|error| {
                     format!(
@@ -102,11 +128,19 @@ impl ArtifactRegistry {
         Ok(())
     }
 
+    pub fn artifact_path(&self, id: &str) -> Result<Option<PathBuf>, String> {
+        let records = self
+            .records
+            .lock()
+            .map_err(|_| "IPC artifact registry lock poisoned".to_string())?;
+        Ok(records.get(id).map(|record| record.file_path.clone()))
+    }
+
     pub fn descriptor_to_ref(descriptor: &IpcArtifactDescriptor) -> IpcArtifactRef {
         IpcArtifactRef {
             id: descriptor.id.clone(),
             kind: descriptor.kind.clone(),
-            file_path: descriptor.file_path.clone(),
+            resource_rid: descriptor.resource_rid,
             media_type: descriptor.media_type.clone(),
             identity_key: descriptor.identity_key.clone(),
             content_revision: descriptor.content_revision.clone(),
@@ -145,10 +179,11 @@ mod tests {
         let tempdir = tempdir().expect("tempdir");
         let artifact_path = tempdir.path().join("thumb.png");
         fs::write(&artifact_path, b"thumb-bytes").expect("artifact should be written");
+        let app = tauri::test::mock_app();
 
         let registry = ArtifactRegistry::default();
         let first = registry
-            .register_path(RegisterArtifactPathRequest {
+            .register_path(app.handle(), RegisterArtifactPathRequest {
                 kind: "thumbnail.poster".to_string(),
                 file_path: artifact_path.clone(),
                 media_type: Some("image/png".to_string()),
@@ -159,7 +194,7 @@ mod tests {
             })
             .expect("first descriptor should register");
         let second = registry
-            .register_path(RegisterArtifactPathRequest {
+            .register_path(app.handle(), RegisterArtifactPathRequest {
                 kind: "thumbnail.poster".to_string(),
                 file_path: artifact_path,
                 media_type: Some("image/png".to_string()),
@@ -179,10 +214,11 @@ mod tests {
         let tempdir = tempdir().expect("tempdir");
         let artifact_path = tempdir.path().join("preview.bin");
         fs::write(&artifact_path, b"preview").expect("artifact should be written");
+        let app = tauri::test::mock_app();
 
         let registry = ArtifactRegistry::default();
         let descriptor = registry
-            .register_path(RegisterArtifactPathRequest {
+            .register_path(app.handle(), RegisterArtifactPathRequest {
                 kind: "preview.bytes".to_string(),
                 file_path: artifact_path.clone(),
                 media_type: None,
@@ -194,7 +230,7 @@ mod tests {
             .expect("descriptor should register");
 
         registry
-            .release(&descriptor.id)
+            .release(app.handle(), &descriptor.id)
             .expect("descriptor should release");
 
         assert!(!artifact_path.exists());

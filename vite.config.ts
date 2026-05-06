@@ -15,6 +15,7 @@ const ignoredWatchGlobs = [
   "**/src/test/**",
   "**/target-tests*/**",
   "**/plugins/**/node_modules/**",
+  "**/usr/profiles/**/settings.json",
 ];
 
 function projectPath(...segments: string[]): string {
@@ -44,7 +45,9 @@ export default defineConfig(async () => ({
   //
   // 1. prevent vite from obscuring rust errors
   clearScreen: false,
-  cacheDir: process.env.OVERLAYTERM_VITE_CACHE_DIR ?? path.resolve("node_modules/.vite"),
+  cacheDir: process.env.GREEBLEFS_VITE_CACHE_DIR
+    ?? process.env.OVERLAYTERM_VITE_CACHE_DIR
+    ?? path.resolve("node_modules/.vite"),
   build: {
     outDir: process.env.OVERLAYTERM_VITE_OUT_DIR ?? "dist",
     emptyOutDir: true,

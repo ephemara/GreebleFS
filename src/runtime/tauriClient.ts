@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { invokeBinary } from "@tauri-apps/api/transport";
 import * as tauriBindings from "../generated/tauri";
 import type { Result } from "../generated/tauri";
 import {
@@ -146,31 +147,23 @@ const baseCommands = {
       height,
     }),
   fsReadPreviewBytes: (path: string, maxBytes: number) =>
-    invoke<ArrayBuffer>("fs_read_preview_bytes", { path, maxBytes }).then(
-      (buffer) => new Uint8Array(buffer),
-    ),
+    invokeBinary("fs_read_preview_bytes", { path, maxBytes }),
   fsReadArchiveEntryPreviewBytes: (
     archivePath: string,
     entryPath: string,
     maxBytes: number,
   ) =>
-    invoke<ArrayBuffer>("fs_read_archive_entry_preview_bytes", {
+    invokeBinary("fs_read_archive_entry_preview_bytes", {
       archivePath,
       entryPath,
       maxBytes,
-    }).then((buffer) => new Uint8Array(buffer)),
+    }),
   cloudReadPreviewBytes: (path: string, maxBytes: number) =>
-    invoke<ArrayBuffer>("cloud_read_preview_bytes", { path, maxBytes }).then(
-      (buffer) => new Uint8Array(buffer),
-    ),
+    invokeBinary("cloud_read_preview_bytes", { path, maxBytes }),
   remoteReadPreviewBytes: (path: string, maxBytes: number) =>
-    invoke<ArrayBuffer>("remote_read_preview_bytes", { path, maxBytes }).then(
-      (buffer) => new Uint8Array(buffer),
-    ),
+    invokeBinary("remote_read_preview_bytes", { path, maxBytes }),
   runtimeReadArtifactBytes: (request: RuntimeReadArtifactBytesRequest) =>
-    invoke<ArrayBuffer>("runtime_read_artifact_bytes", { request }).then(
-      (buffer) => new Uint8Array(buffer),
-    ),
+    invokeBinary("runtime_read_artifact_bytes", { request }),
   audioEngineSetPluginParameter: (request: {
     deckId: "a" | "b";
     parameterId: number;

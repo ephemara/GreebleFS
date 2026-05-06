@@ -24,7 +24,7 @@ pub struct IpcRegisterArtifactPathRequest {
 pub struct IpcArtifactRef {
     pub id: String,
     pub kind: String,
-    pub file_path: String,
+    pub resource_rid: u32,
     pub media_type: Option<String>,
     pub identity_key: Option<String>,
     pub content_revision: Option<String>,
@@ -35,7 +35,7 @@ pub struct IpcArtifactRef {
 pub struct IpcArtifactDescriptor {
     pub id: String,
     pub kind: String,
-    pub file_path: String,
+    pub resource_rid: u32,
     pub media_type: Option<String>,
     pub byte_length: Option<u64>,
     pub retention: IpcArtifactRetention,
@@ -46,7 +46,7 @@ pub struct IpcArtifactDescriptor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct IpcResourceHandle {
-    pub id: String,
+    pub rid: u32,
     pub kind: String,
 }
 
@@ -55,7 +55,6 @@ pub struct IpcResourceHandle {
 pub struct IpcStreamHandle {
     pub id: String,
     pub kind: String,
-    pub event_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -64,4 +63,5 @@ pub struct IpcStreamPacketMetadata {
     pub stream_id: String,
     pub sequence: u64,
     pub emitted_at_epoch_ms: u64,
+    pub byte_length: u64,
 }

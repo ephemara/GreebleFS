@@ -22143,8 +22143,6 @@ export function FileExplorer({
   );
   const activeViewSwitcherModeLabel =
     currentExperimentalModeDefinition?.label ?? effectiveViewModeDefinition.label;
-  const activeViewSwitcherModeShortLabel =
-    currentExperimentalModeDefinition?.shortLabel ?? layoutZoomBadgeLabel;
   const selectStandardExplorerViewMode = useCallback(
     (modeId: ExplorerViewMode) => {
       updateExplorerSettings(
@@ -22303,22 +22301,6 @@ export function FileExplorer({
     showExperimentalHud,
     updateExplorerSettings,
   ]);
-  const toolbarViewSwitcherButton = useMemo<
-    ExplorerViewSwitcherButtonDescriptor
-  >(
-    () => ({
-      ariaLabel: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
-      title: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
-      label: activeViewSwitcherModeLabel,
-      shortLabel: activeViewSwitcherModeShortLabel,
-      icon: activeViewSwitcherModeIcon,
-    }),
-    [
-      activeViewSwitcherModeIcon,
-      activeViewSwitcherModeLabel,
-      activeViewSwitcherModeShortLabel,
-    ],
-  );
   const statusViewSwitcherModeButton = useMemo<
     ExplorerViewSwitcherButtonDescriptor
   >(
@@ -25331,21 +25313,8 @@ export function FileExplorer({
         id: "viewLayout",
         label: "View Layout",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) =>
-          !usesWorkspaceDenseChrome && isGlobalChromeSurfaceActive(surfaceId),
-        render: (placement) => (
-          <ExplorerViewSwitcherControl
-            variant="mode-only"
-            sizeVariant={placement.sizeVariant}
-            accent={accent}
-            text={EXP.text}
-            muted={EXP.muted}
-            muted2={EXP.muted2}
-            modeButton={toolbarViewSwitcherButton}
-            modeGroups={explorerViewSwitcherModeGroups}
-            modeMenuAriaLabel="Explorer layout menu"
-          />
-        ),
+        isVisible: () => false,
+        render: () => null,
       },
       {
         id: "togglePreview",
@@ -25872,7 +25841,6 @@ export function FileExplorer({
       statusViewSwitcherDensityGroups,
       statusViewSwitcherModeButton,
       statusViewSwitcherTransientHud,
-      toolbarViewSwitcherButton,
       openExplorerWorkflow,
       submitAddressDraft,
       triggerFindSimilarForPath,

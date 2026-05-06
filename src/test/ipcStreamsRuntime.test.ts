@@ -1,24 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listenMock } = vi.hoisted(() => ({
-  listenMock: vi.fn(),
+const { subscribeStreamMock } = vi.hoisted(() => ({
+  subscribeStreamMock: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: listenMock,
+vi.mock("@tauri-apps/api/transport", () => ({
+  subscribeStream: subscribeStreamMock,
 }));
 
-vi.mock("../runtime/tauriClient", () => ({
-  commands: {
-    ipcReleaseStream: vi.fn(),
-    ipcReplayStream: vi.fn(),
-  },
-  unwrapTauriResult: vi.fn((value: { status?: string; data?: unknown }) =>
-    value?.status === "ok" ? value.data : value,
-  ),
-}));
-
-import { commands } from "../runtime/tauriClient";
 import { resetDeferredUnlistenForTests } from "../runtime/deferredUnlisten";
 import { subscribeIpcStream } from "../runtime/ipc/streams";
 
@@ -35,50 +24,17 @@ function createDeferred<T>() {
 describe("ipc stream runtime", () => {
   beforeEach(() => {
     resetDeferredUnlistenForTests();
-    listenMock.mockReset();
-    vi.mocked(commands.ipcReleaseStream).mockReset();
-    vi.mocked(commands.ipcReplayStream).mockReset();
-    vi.mocked(commands.ipcReleaseStream).mockResolvedValue({
-      status: "ok",
-      data: null,
-    });
-    vi.mocked(commands.ipcReplayStream).mockResolvedValue({
-      status: "ok",
-      data: {
-        streamId: "stream-1",
-        packets: [],
-        replayGap: null,
-        telemetry: {
-          retainedMessages: 0,
-          retainedBytes: 0,
-          oldestSequence: null,
-          nextSequence: 0,
-          totalWrittenMessages: 0,
-          totalWrittenBytes: 0,
-          chunkedMessages: 0,
-          overflow: {
-            overflowed: false,
-            overflowCount: 0,
-            droppedMessages: 0,
-            droppedBytes: 0,
-            firstDroppedSequence: null,
-            latestDroppedSequence: null,
-          },
-        },
-      },
-    });
+    subscribeStreamMock.mockReset();
   });
 
-  it("forwards ordered payloads and releases the shared stream on teardown", async () => {
+  it("forwards ordered payloads and closes the transport subscription on teardown", async () => {
     const payloadListener = vi.fn();
-    const unlisten = vi.fn();
-    const eventHandlerRef: {
-      current: ((event: { payload: unknown }) => void) | null;
-    } = { current: null };
+    const unlisten = vi.fn(async () => undefined);
+    let transportListener: ((payload: unknown) => void) | null = null;
 
-    listenMock.mockImplementation(
-      async (_eventName: string, handler: unknown) => {
-        eventHandlerRef.current = handler as (event: { payload: unknown }) => void;
+    subscribeStreamMock.mockImplementation(
+      async (_handle: unknown, listener: (payload: unknown) => void) => {
+        transportListener = listener;
         return unlisten;
       },
     );
@@ -87,22 +43,18 @@ describe("ipc stream runtime", () => {
       {
         id: "stream-1",
         kind: "terminal-output",
-        eventName: "ipc-stream-terminal-output-preview-pane-0",
       },
       payloadListener,
     );
 
-    const capturedHandler = eventHandlerRef.current;
-    if (!capturedHandler) {
-      throw new Error("Missing IPC stream event handler");
+    if (!transportListener) {
+      throw new Error("Missing transport stream listener");
     }
 
-    capturedHandler({
-      payload: {
-        metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-        terminalId: "preview-pane-0",
-        data: "hello world",
-      },
+    transportListener({
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
+      terminalId: "preview-pane-0",
+      data: "hello world",
     });
 
     expect(payloadListener).toHaveBeenCalledWith(
@@ -114,95 +66,59 @@ describe("ipc stream runtime", () => {
     dispose();
 
     expect(unlisten).toHaveBeenCalledTimes(1);
-    expect(commands.ipcReleaseStream).toHaveBeenCalledWith("stream-1");
+    expect(subscribeStreamMock).toHaveBeenCalledWith(
+      { id: "stream-1", kind: "terminal-output" },
+      expect.any(Function),
+      {
+        includeReplay: false,
+        replayFromSequence: undefined,
+        replayLimit: undefined,
+        closeOnUnsubscribe: true,
+      },
+    );
   });
 
-  it("replays retained packets and dedupes live packets by stream sequence", async () => {
+  it("requests replay from transport and dedupes live packets by stream sequence", async () => {
     const payloadListener = vi.fn();
-    const unlisten = vi.fn();
-    const eventHandlerRef: {
-      current: ((event: { payload: unknown }) => void) | null;
-    } = { current: null };
+    const unlisten = vi.fn(async () => undefined);
+    let transportListener: ((payload: unknown) => void) | null = null;
 
-    listenMock.mockImplementation(
-      async (_eventName: string, handler: unknown) => {
-        eventHandlerRef.current = handler as (event: { payload: unknown }) => void;
+    subscribeStreamMock.mockImplementation(
+      async (_handle: unknown, listener: (payload: unknown) => void) => {
+        transportListener = listener;
         return unlisten;
       },
     );
-    vi.mocked(commands.ipcReplayStream).mockResolvedValueOnce({
-      status: "ok",
-      data: {
-        streamId: "stream-1",
-        packets: [
-          {
-            metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-            frameMetadata: {
-              sequence: 0,
-              emittedAtEpochMs: 1,
-              byteLength: 96,
-              frameIndex: 0,
-              frameCount: 1,
-              chunked: false,
-            },
-            payloadJson: JSON.stringify({
-              metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-              terminalId: "preview-pane-0",
-              data: "retained",
-            }),
-          },
-        ],
-        replayGap: null,
-        telemetry: {
-          retainedMessages: 1,
-          retainedBytes: 96,
-          oldestSequence: 0,
-          nextSequence: 1,
-          totalWrittenMessages: 1,
-          totalWrittenBytes: 96,
-          chunkedMessages: 0,
-          overflow: {
-            overflowed: false,
-            overflowCount: 0,
-            droppedMessages: 0,
-            droppedBytes: 0,
-            firstDroppedSequence: null,
-            latestDroppedSequence: null,
-          },
-        },
-      },
-    });
 
     const dispose = await subscribeIpcStream(
       {
         id: "stream-1",
         kind: "terminal-output",
-        eventName: "ipc-stream-terminal-output-preview-pane-0",
       },
       payloadListener,
       { replayFromSequence: 0, releaseOnUnsubscribe: false },
     );
 
-    const capturedHandler = eventHandlerRef.current;
-    if (!capturedHandler) {
-      throw new Error("Missing IPC stream event handler");
+    if (!transportListener) {
+      throw new Error("Missing transport stream listener");
     }
-    capturedHandler({
-      payload: {
-        metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-        terminalId: "preview-pane-0",
-        data: "duplicate-live",
-      },
+
+    transportListener({
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
+      terminalId: "preview-pane-0",
+      data: "retained",
     });
-    capturedHandler({
-      payload: {
-        metadata: { streamId: "stream-1", sequence: 1, emittedAtEpochMs: 2 },
-        terminalId: "preview-pane-0",
-        data: "live",
-      },
+    transportListener({
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
+      terminalId: "preview-pane-0",
+      data: "duplicate-live",
+    });
+    transportListener({
+      metadata: { streamId: "stream-1", sequence: 1, emittedAtEpochMs: 2 },
+      terminalId: "preview-pane-0",
+      data: "live",
     });
 
-    expect(commands.ipcReplayStream).toHaveBeenCalledWith("stream-1", 0, null);
     expect(payloadListener).toHaveBeenCalledTimes(2);
     expect(payloadListener).toHaveBeenNthCalledWith(
       1,
@@ -212,23 +128,32 @@ describe("ipc stream runtime", () => {
       2,
       expect.objectContaining({ data: "live" }),
     );
+    expect(subscribeStreamMock).toHaveBeenCalledWith(
+      { id: "stream-1", kind: "terminal-output" },
+      expect.any(Function),
+      {
+        includeReplay: true,
+        replayFromSequence: 0,
+        replayLimit: undefined,
+        closeOnUnsubscribe: false,
+      },
+    );
 
     dispose();
-    expect(commands.ipcReleaseStream).not.toHaveBeenCalled();
+    expect(unlisten).toHaveBeenCalledTimes(1);
   });
 
-  it("cleans up a late stream listener registration after page unload starts", async () => {
+  it("cleans up a late transport subscription registration after page unload starts", async () => {
     const payloadListener = vi.fn();
-    const unlisten = vi.fn();
-    const registration = createDeferred<() => void>();
+    const unlisten = vi.fn(async () => undefined);
+    const registration = createDeferred<() => Promise<void>>();
 
-    listenMock.mockImplementation(() => registration.promise);
+    subscribeStreamMock.mockImplementation(() => registration.promise);
 
     const disposePromise = subscribeIpcStream(
       {
         id: "stream-1",
         kind: "terminal-output",
-        eventName: "ipc-stream-terminal-output-preview-pane-0",
       },
       payloadListener,
     );

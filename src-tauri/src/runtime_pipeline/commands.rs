@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use tauri::{ipc::Response, AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -28,7 +28,6 @@ use crate::fs_commands::{
     FileEntry, FsWriteFileContent,
 };
 use crate::global_search::{GlobalSearchIndexQueryRequest, GlobalSearchScanSettings};
-use crate::ipc_runtime::IpcRuntimeState;
 use crate::native_task_graph::NativeTaskGraphManager;
 use crate::preview_streaming::PreviewStreamingManager;
 use crate::remote_storage_commands::{remote_list_dir, remote_open_file, RemoteStorageState};
@@ -1452,9 +1451,7 @@ async fn dispatch_extension_host_call(
             let host_event_bus = app.state::<HostEventBusState>();
             match dispatch_transport {
                 ExtensionHostDispatchTransport::BrowserIpc => {
-                    let ipc_runtime = app.state::<IpcRuntimeState>();
-                    let subscription =
-                        host_event_bus.subscribe_browser(app.clone(), &ipc_runtime, payload)?;
+                    let subscription = host_event_bus.subscribe_browser(app.clone(), payload)?;
                     encode_runtime_host_bridge_result(&subscription)
                 }
                 ExtensionHostDispatchTransport::RuntimeSidecar => Err(
@@ -1467,7 +1464,7 @@ async fn dispatch_extension_host_call(
             let payload: ExtensionHostUnsubscribeRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             let host_event_bus = app.state::<HostEventBusState>();
-            let subscription = host_event_bus.unsubscribe(payload.subscription_id.as_str());
+            let subscription = host_event_bus.unsubscribe(&app, payload.subscription_id.as_str());
             encode_runtime_host_bridge_result(&subscription)
         }
         "events.get_snapshot" => {
@@ -1769,8 +1766,8 @@ async fn dispatch_extension_host_call(
             let payload: RuntimeHostTerminalKillRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             crate::terminal::terminal_kill(
+                app.clone(),
                 app.state::<crate::terminal::TerminalManager>(),
-                app.state::<IpcRuntimeState>(),
                 payload.id,
             )
             .await?;
@@ -1786,8 +1783,8 @@ async fn dispatch_extension_host_call(
             let payload: RuntimeHostTerminalOpenOutputStreamRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             let stream = crate::terminal::terminal_open_output_stream(
+                app.clone(),
                 app.state::<crate::terminal::TerminalManager>(),
-                app.state::<IpcRuntimeState>(),
                 payload.id,
             )
             .await?;
@@ -2175,11 +2172,12 @@ fn canonicalize_runtime_artifact_inside_cache(
     Ok(artifact)
 }
 
+#[tauri::command]
 pub async fn runtime_read_artifact_bytes(
     app: AppHandle,
     registry: State<'_, RuntimeRegistry>,
     request: RuntimeReadArtifactBytesRequest,
-) -> Result<Response, String> {
+) -> Result<tauri::transport::BinaryResponse, String> {
     let package = require_package(&registry, &app, &request.runtime_id)?;
     if !package.manifest.kind.is_wasm() || !package.manifest.compiler.produces_wasm() {
         return Err(format!(
@@ -2227,7 +2225,7 @@ pub async fn runtime_read_artifact_bytes(
             artifact_path.display()
         )
     })?;
-    Ok(Response::new(bytes))
+    Ok(tauri::transport::BinaryResponse::new(bytes))
 }
 
 #[tauri::command]

@@ -42,6 +42,10 @@ function buildTargetCommandMarkers(projectRootPath) {
   ];
 }
 
+function normalizeCommandForMatching(value) {
+  return value.replace(/\\/g, "/").toLowerCase();
+}
+
 function isStoppedProcessState(stat) {
   return typeof stat === "string" && stat.includes("T");
 }
@@ -51,8 +55,128 @@ function isTargetDevelopmentProcess(command, projectRootPath) {
     return false;
   }
 
-  const targetMarkers = buildTargetCommandMarkers(projectRootPath);
-  return targetMarkers.some((marker) => command.includes(marker));
+  const normalizedCommand = normalizeCommandForMatching(command);
+  const targetMarkers = buildTargetCommandMarkers(projectRootPath).map(normalizeCommandForMatching);
+  return targetMarkers.some((marker) => normalizedCommand.includes(marker));
+}
+
+function normalizeWindowsProcessEntries(rawValue) {
+  if (!rawValue) {
+    return [];
+  }
+  const entries = Array.isArray(rawValue) ? rawValue : [rawValue];
+  return entries
+    .map((entry) => ({
+      pid: Number(entry.ProcessId),
+      parentPid: Number(entry.ParentProcessId),
+      command: typeof entry.CommandLine === "string" ? entry.CommandLine : "",
+    }))
+    .filter((entry) => Number.isFinite(entry.pid) && entry.pid > 0);
+}
+
+function inspectWindowsProcesses() {
+  const command = "$ErrorActionPreference = 'Stop'; "
+    + "Get-CimInstance Win32_Process "
+    + "| Select-Object ProcessId, ParentProcessId, CommandLine "
+    + "| ConvertTo-Json -Compress";
+  const snapshot = spawnSync(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+    {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+
+  if (snapshot.error) {
+    throw snapshot.error;
+  }
+
+  if (snapshot.status !== 0) {
+    throw new Error(snapshot.stderr || "Failed to inspect Windows process list.");
+  }
+
+  return normalizeWindowsProcessEntries(JSON.parse(snapshot.stdout || "[]"));
+}
+
+function collectProtectedAncestorPids(processes, currentPid) {
+  const processByPid = new Map(processes.map((processEntry) => [processEntry.pid, processEntry]));
+  const protectedAncestorPids = new Set([currentPid]);
+  let cursorPid = currentPid;
+  while (true) {
+    const currentProcess = processByPid.get(cursorPid);
+    if (
+      !currentProcess
+      || !currentProcess.parentPid
+      || protectedAncestorPids.has(currentProcess.parentPid)
+    ) {
+      break;
+    }
+    protectedAncestorPids.add(currentProcess.parentPid);
+    cursorPid = currentProcess.parentPid;
+  }
+  return protectedAncestorPids;
+}
+
+function collectProcessTreePids(processes, rootPids) {
+  const childrenByParentPid = new Map();
+  for (const processEntry of processes) {
+    if (!childrenByParentPid.has(processEntry.parentPid)) {
+      childrenByParentPid.set(processEntry.parentPid, []);
+    }
+    childrenByParentPid.get(processEntry.parentPid).push(processEntry.pid);
+  }
+
+  const collected = new Set();
+  const queue = [...rootPids];
+  while (queue.length > 0) {
+    const nextPid = queue.shift();
+    if (!nextPid || collected.has(nextPid)) {
+      continue;
+    }
+    collected.add(nextPid);
+    queue.push(...(childrenByParentPid.get(nextPid) ?? []));
+  }
+  return collected;
+}
+
+function cleanupWindowsGreeblefsDevProcesses({
+  projectRootPath,
+  includeRunning,
+  logger,
+}) {
+  if (!includeRunning) {
+    return [];
+  }
+
+  const processes = inspectWindowsProcesses();
+  const protectedAncestorPids = collectProtectedAncestorPids(processes, process.pid);
+  const rootPids = processes
+    .filter((processEntry) => !protectedAncestorPids.has(processEntry.pid))
+    .filter((processEntry) => isTargetDevelopmentProcess(processEntry.command, projectRootPath))
+    .map((processEntry) => processEntry.pid);
+  const targetPids = [...collectProcessTreePids(processes, rootPids)]
+    .filter((pid) => !protectedAncestorPids.has(pid));
+
+  const killedProcesses = [];
+  for (const pid of targetPids) {
+    const result = spawnSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    if (result.status === 0) {
+      const processEntry = processes.find((entry) => entry.pid === pid);
+      killedProcesses.push(processEntry ?? { pid, parentPid: 0, command: "" });
+    }
+  }
+
+  if (killedProcesses.length > 0) {
+    logger.log(
+      `Cleaned ${killedProcesses.length} stale GreebleFS dev process${killedProcesses.length === 1 ? "" : "es"} before startup.`,
+    );
+  }
+
+  return killedProcesses;
 }
 
 export function cleanupGreeblefsDevProcesses({
@@ -61,7 +185,11 @@ export function cleanupGreeblefsDevProcesses({
   logger = console,
 } = {}) {
   if (process.platform === "win32") {
-    return [];
+    return cleanupWindowsGreeblefsDevProcesses({
+      projectRootPath,
+      includeRunning,
+      logger,
+    });
   }
 
   const processSnapshot = spawnSync("ps", ["-eo", "pid=,ppid=,stat=,args="], {

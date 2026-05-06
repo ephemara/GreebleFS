@@ -1,4 +1,4 @@
-export type UnlistenCallback = () => void;
+export type UnlistenCallback = () => void | Promise<void>;
 
 export interface DeferredUnlistenOptions {
   onError?: (error: unknown) => void;
@@ -10,6 +10,20 @@ function reportDeferredUnlistenError(
   options: DeferredUnlistenOptions,
 ): void {
   options.onError?.(error);
+}
+
+function runDeferredUnlistenCallback(
+  unlisten: UnlistenCallback,
+  options: DeferredUnlistenOptions,
+): void {
+  try {
+    const result = unlisten();
+    if (result && typeof result.then === 'function') {
+      void result.catch((error) => reportDeferredUnlistenError(error, options));
+    }
+  } catch (error) {
+    reportDeferredUnlistenError(error, options);
+  }
 }
 
 let pageUnloadListenerInstalled = false;
@@ -67,11 +81,7 @@ export function bindDeferredUnlisten(
       return;
     }
 
-    try {
-      unlisten();
-    } catch (error) {
-      reportDeferredUnlistenError(error, options);
-    }
+    runDeferredUnlistenCallback(unlisten, options);
   };
 
   const cleanup = (): void => {
@@ -84,11 +94,7 @@ export function bindDeferredUnlisten(
   void unlistenPromise
     .then((unlisten) => {
       if (disposed || pageUnloadStarted) {
-        try {
-          unlisten();
-        } catch (error) {
-          reportDeferredUnlistenError(error, options);
-        }
+        runDeferredUnlistenCallback(unlisten, options);
         return;
       }
 

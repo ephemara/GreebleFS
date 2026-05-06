@@ -208,10 +208,6 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             crate::ipc_runtime::ipc_register_artifact_path,
             crate::ipc_runtime::ipc_release_artifact,
-            crate::ipc_runtime::ipc_release_resource,
-            crate::ipc_runtime::ipc_release_stream,
-            crate::ipc_runtime::ipc_replay_stream,
-            crate::ipc_runtime::ipc_get_stream_status,
             crate::terminal::terminal_spawn,
             crate::terminal::terminal_open_output_stream,
             crate::terminal::terminal_write,
@@ -510,9 +506,6 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<crate::message_ring::MessageRingReplayGap>()
         .typ::<crate::message_ring::MessageRingWriteOutcome>()
         .typ::<crate::message_ring::MessageStreamsPolicy>()
-        .typ::<crate::ipc_runtime::streams::IpcStreamReplayPacket>()
-        .typ::<crate::ipc_runtime::streams::IpcStreamReplayResponse>()
-        .typ::<crate::ipc_runtime::streams::IpcStreamStatus>()
         .typ::<CloudAccountSummary>()
         .typ::<CloudAccountsSnapshot>()
         .typ::<CloudAuthSession>()

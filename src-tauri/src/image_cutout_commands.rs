@@ -716,7 +716,7 @@ fn collect_session_preview_artifact_ids(session: &ImageCutoutSession) -> Vec<Str
 fn release_ipc_artifacts(app: &AppHandle, artifact_ids: &[String]) {
     let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
     for artifact_id in artifact_ids {
-        let _ = ipc_runtime.release_artifact(artifact_id);
+        let _ = ipc_runtime.release_artifact(app, artifact_id);
     }
 }
 
@@ -734,7 +734,7 @@ fn validate_cutout_input(request: &ImageCutoutSessionOpenRequest) -> Result<(), 
     let has_input_artifact = request
         .input_artifact
         .as_ref()
-        .map(|artifact| !artifact.id.trim().is_empty() && !artifact.file_path.trim().is_empty())
+        .map(|artifact| !artifact.id.trim().is_empty() && artifact.resource_rid != 0)
         .unwrap_or(false);
     if !has_input_path && !has_input_data_url && !has_input_artifact {
         return Err(

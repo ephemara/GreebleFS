@@ -471,17 +471,11 @@ export function createExtensionHostClient(
         return {
           subscription,
           unsubscribe: async () => {
-            stopStream();
+            await stopStream();
             await call<HostSubscription | null, { subscriptionId: string }>(
               'events.unsubscribe',
               { subscriptionId: subscription.subscriptionId },
             ).catch(() => null);
-            if (subscription.streamHandle) {
-              void commands
-                .ipcReleaseStream(subscription.streamHandle.id)
-                .then(unwrapTauriResult)
-                .catch(() => {});
-            }
           },
         };
       },

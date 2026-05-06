@@ -99,6 +99,10 @@ export function ExplorerViewSwitcherControl({
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [densityMenuOpen, setDensityMenuOpen] = useState(false);
   const menuSide = variant === "mode-and-density" ? "top" : "bottom";
+  const viewSwitcherMenuMaxWidth = "min(15rem, calc(100vw - 1rem))";
+  const viewSwitcherMenuMaxHeight = "min(24rem, calc(100vh - 1rem))";
+  const modeMenuMinWidth = variant === "mode-and-density" ? 212 : 220;
+  const densityMenuMinWidth = variant === "mode-and-density" ? 184 : 208;
   const modeSurfaceGroup = `explorer-view-switcher-mode-${sanitizedId}`;
   const densitySurfaceGroup = `explorer-view-switcher-density-${sanitizedId}`;
   const showsDensityButton =
@@ -232,13 +236,13 @@ export function ExplorerViewSwitcherControl({
 
   const menuItemStyle = (active: boolean): CSSProperties => ({
     display: "grid",
-    gridTemplateColumns: "18px minmax(0, 1fr)",
-    gap: 10,
-    alignItems: "start",
+    gridTemplateColumns: "16px minmax(0, 1fr)",
+    gap: 7,
+    alignItems: "center",
     width: "100%",
     border: "none",
-    borderRadius: 10,
-    padding: "8px 10px",
+    borderRadius: 8,
+    padding: "5px 8px",
     background: active
       ? "var(--overlay-explorer-chip-active-bg)"
       : "transparent",
@@ -251,18 +255,18 @@ export function ExplorerViewSwitcherControl({
     groups: readonly ExplorerViewSwitcherOptionGroup[],
     onOptionSelected: () => void,
   ) => (
-    <div style={{ display: "grid", gap: 8 }}>
+    <div style={{ display: "grid", gap: 5 }}>
       {groups.map((group) => {
         if (group.options.length === 0) {
           return null;
         }
         return (
-          <div key={group.id} style={{ display: "grid", gap: 4 }}>
+          <div key={group.id} style={{ display: "grid", gap: 2 }}>
             {group.label ? (
               <div
                 style={{
-                  padding: "4px 10px 2px",
-                  fontSize: 10,
+                  padding: "2px 8px 1px",
+                  fontSize: 9,
                   fontWeight: 800,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
@@ -279,6 +283,11 @@ export function ExplorerViewSwitcherControl({
                   type="button"
                   role="menuitemradio"
                   aria-checked={option.active}
+                  title={
+                    option.description
+                      ? `${option.label}: ${option.description}`
+                      : option.label
+                  }
                   onClick={() => {
                     option.onSelect();
                     onOptionSelected();
@@ -290,7 +299,6 @@ export function ExplorerViewSwitcherControl({
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      paddingTop: 1,
                       color: option.active ? accent : muted,
                     }}
                   >
@@ -303,26 +311,13 @@ export function ExplorerViewSwitcherControl({
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: 700,
                         color: text,
                       }}
                     >
                       {option.label}
                     </span>
-                    {option.description ? (
-                      <span
-                        style={{
-                          display: "block",
-                          marginTop: 2,
-                          fontSize: 10,
-                          lineHeight: 1.35,
-                          color: muted2,
-                        }}
-                      >
-                        {option.description}
-                      </span>
-                    ) : null}
                   </span>
                 </button>
               ))}
@@ -410,9 +405,11 @@ export function ExplorerViewSwitcherControl({
         surfaceGroup={modeSurfaceGroup}
         role="menu"
         aria-label={modeMenuAriaLabel}
-        minWidth={variant === "mode-and-density" ? 272 : 260}
-        maxWidth="var(--overlay-explorer-view-menu-max-width)"
-        style={{ display: "grid", gap: 8 }}
+        minWidth={modeMenuMinWidth}
+        maxWidth={viewSwitcherMenuMaxWidth}
+        maxHeight={viewSwitcherMenuMaxHeight}
+        padding={6}
+        style={{ display: "grid", gap: 5 }}
       >
         {renderMenuGroups(modeGroups, () => setModeMenuOpen(false))}
       </ExplorerPopupSurface>
@@ -461,9 +458,11 @@ export function ExplorerViewSwitcherControl({
             surfaceGroup={densitySurfaceGroup}
             role="menu"
             aria-label={densityMenuAriaLabel}
-            minWidth={260}
-            maxWidth="var(--overlay-explorer-view-menu-max-width)"
-            style={{ display: "grid", gap: 8 }}
+            minWidth={densityMenuMinWidth}
+            maxWidth={viewSwitcherMenuMaxWidth}
+            maxHeight={viewSwitcherMenuMaxHeight}
+            padding={6}
+            style={{ display: "grid", gap: 5 }}
           >
             {renderMenuGroups(
               densityGroups ?? [],

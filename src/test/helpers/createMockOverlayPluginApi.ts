@@ -234,7 +234,6 @@ export function createMockOverlayPluginApi(
         openOutputStream: async () => ({
           id: 'mock-terminal-stream',
           kind: 'terminal-output',
-          eventName: 'ipc-stream-terminal-output-mock-terminal',
         }),
         registerShellIntegration: async () => ({
           shellKind: 'unknown',

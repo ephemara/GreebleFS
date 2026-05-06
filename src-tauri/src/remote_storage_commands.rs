@@ -18,7 +18,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tauri::{ipc::Response, AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::{
     fs as tokio_fs,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -534,7 +534,7 @@ pub async fn remote_read_preview_bytes(
     state: State<'_, RemoteStorageState>,
     path: String,
     max_bytes: Option<u64>,
-) -> Result<Response, String> {
+) -> Result<tauri::transport::BinaryResponse, String> {
     let bytes = read_remote_file_bytes(
         &app,
         &state,
@@ -542,7 +542,7 @@ pub async fn remote_read_preview_bytes(
         resolve_preview_byte_limit(max_bytes, REMOTE_PREVIEW_BYTES_MAX_BYTES as u64),
     )
     .await?;
-    Ok(Response::new(bytes))
+    Ok(tauri::transport::BinaryResponse::new(bytes))
 }
 
 #[tauri::command]

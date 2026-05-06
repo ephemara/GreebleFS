@@ -11,10 +11,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use greeble_ipc_contracts::IpcStreamHandle;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 use uuid::Uuid;
 
-use crate::ipc_runtime::IpcRuntimeState;
 use crate::message_ring::{MessageFramedRing, MessageStreamsPolicy};
 use crate::runtime_pipeline::extension_host::{ExecutionContextSnapshot, FileTypeDescriptor};
 
@@ -192,22 +191,21 @@ impl HostEventBusState {
     pub fn subscribe_browser(
         &self,
         app: AppHandle,
-        ipc_runtime: &IpcRuntimeState,
         request: HostSubscriptionRequest,
     ) -> Result<crate::runtime_pipeline::extension_host::HostSubscription, String> {
         let subscription_id = Uuid::new_v4().to_string();
         let stream_handle =
-            ipc_runtime.register_stream("host-events", Some(subscription_id.as_str()))?;
+            tauri::transport::register_stream(&app, "host-events", Some(subscription_id.as_str()))?;
+        let stream_handle = IpcStreamHandle {
+            id: stream_handle.id,
+            kind: stream_handle.kind,
+        };
         let app_handle = app.clone();
-        let event_name = stream_handle.event_name.clone();
         let stream_id = stream_handle.id.clone();
         let sink: HostEventSink = Arc::new(move |event| {
-            let retained_event = app_handle
-                .state::<IpcRuntimeState>()
-                .publish_stream_packet(stream_id.as_str(), |_metadata| Ok(event.clone()))
-                .map(|(packet, _outcome)| packet)
-                .unwrap_or(event);
-            let _ = app_handle.emit(event_name.as_str(), retained_event);
+            let _ = tauri::transport::publish_stream_packet(&app_handle, stream_id.as_str(), |_metadata| {
+                Ok(event.clone())
+            });
         });
         self.register_subscription(
             subscription_id,
@@ -258,10 +256,14 @@ impl HostEventBusState {
 
     pub fn unsubscribe(
         &self,
+        app: &AppHandle,
         subscription_id: &str,
     ) -> Option<crate::runtime_pipeline::extension_host::HostSubscription> {
         let mut records = self.records_guard();
         let record = records.subscriptions.remove(subscription_id)?;
+        if let Some(stream_handle) = &record.stream_handle {
+            let _ = tauri::transport::close_stream(app, &stream_handle.id);
+        }
         Some(crate::runtime_pipeline::extension_host::HostSubscription {
             subscription_id: record.subscription_id,
             topics: record.request.topics,
