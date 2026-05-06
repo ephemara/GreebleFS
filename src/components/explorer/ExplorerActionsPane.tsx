@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -26,7 +27,6 @@ import {
   renderExplorerCommandLibraryIcon,
   resolveExplorerCommandSourceLabel,
 } from "./explorerCommandLibrary";
-import { resolveExplorerPopupSurfaceStyle } from "./explorerPopupStyles";
 import type {
   ExplorerRuntimeMenuCommandNode,
   ExplorerRuntimeMenuNode,
@@ -111,14 +111,6 @@ interface ExplorerActionsPaneRuntimeLetterGroup<
 > {
   letter: string;
   items: Item[];
-}
-
-interface ExplorerActionsPaneRuntimeBrowsePanel {
-  key: string;
-  title: string;
-  path: string[];
-  items: ExplorerActionsPaneRuntimeBrowseItem[];
-  letterGroups: ExplorerActionsPaneRuntimeLetterGroup<ExplorerActionsPaneRuntimeBrowseItem>[];
 }
 
 function groupCatalogEntriesByCategory(
@@ -268,54 +260,6 @@ function collectRuntimeSearchItems(
   return items;
 }
 
-function resolveRuntimeBrowsePanels(
-  nodes: ExplorerRuntimeMenuNode[],
-  openSubmenuPath: string[],
-): {
-  panels: ExplorerActionsPaneRuntimeBrowsePanel[];
-  resolvedPath: string[];
-} {
-  const panels: ExplorerActionsPaneRuntimeBrowsePanel[] = [];
-  const resolvedPath: string[] = [];
-  const resolvedLabelPath: string[] = [];
-  let currentNodes = nodes;
-
-  const rootItems = buildRuntimeBrowseItems(currentNodes, []);
-  panels.push({
-    key: "__root__",
-    title: "All Actions",
-    path: [],
-    items: rootItems,
-    letterGroups: groupRuntimeBrowseItemsByLetter(rootItems),
-  });
-
-  openSubmenuPath.forEach((submenuId) => {
-    const submenuNode = currentNodes.find(
-      (node): node is ExplorerRuntimeMenuSubmenuNode =>
-        node.kind === "submenu" && node.id === submenuId,
-    );
-    if (!submenuNode) {
-      return;
-    }
-    resolvedPath.push(submenuNode.id);
-    resolvedLabelPath.push(submenuNode.label);
-    currentNodes = submenuNode.children;
-    const items = buildRuntimeBrowseItems(currentNodes, resolvedLabelPath);
-    panels.push({
-      key: submenuNode.id,
-      title: submenuNode.label,
-      path: [...resolvedPath],
-      items,
-      letterGroups: groupRuntimeBrowseItemsByLetter(items),
-    });
-  });
-
-  return {
-    panels,
-    resolvedPath,
-  };
-}
-
 export function ExplorerActionsPane({
   accent,
   appearance,
@@ -387,9 +331,13 @@ export function ExplorerActionsPane({
       ),
     [runtimeMenuNodes],
   );
-  const runtimeBrowseState = useMemo(
-    () => resolveRuntimeBrowsePanels(runtimeMenuNodes, openRuntimeSubmenuPath),
-    [openRuntimeSubmenuPath, runtimeMenuNodes],
+  const runtimeBrowseRootItems = useMemo(
+    () => buildRuntimeBrowseItems(runtimeMenuNodes, []),
+    [runtimeMenuNodes],
+  );
+  const runtimeBrowseRootLetterGroups = useMemo(
+    () => groupRuntimeBrowseItemsByLetter(runtimeBrowseRootItems),
+    [runtimeBrowseRootItems],
   );
   const filteredRuntimeSearchGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -412,21 +360,10 @@ export function ExplorerActionsPane({
     );
     return groupRuntimeBrowseItemsByLetter(filteredItems);
   }, [query, runtimeSearchItems]);
-  const runtimeBrowsePanelWidth =
-    runtimeMenuDensity === "touch"
-      ? 296
-      : runtimeMenuDensity === "compact"
-        ? 236
-        : 256;
-  const runtimeBrowseSurfaceStyle = resolveExplorerPopupSurfaceStyle({
-    tone: "preview",
-    padding: 0,
-    overflowY: "hidden",
-    maxHeight: "none",
-  });
   const isRuntimeSearchActive = !customizeMode && query.trim().length > 0;
   const hasRuntimeCommands = runtimeSearchItems.length > 0;
-  const showRuntimeDescriptions = runtimeShowDescriptions || isRuntimeSearchActive;
+  const showRuntimeDescriptions =
+    isRuntimeSearchActive && runtimeShowDescriptions;
   const panelTextStyle = {
     color: text,
     fontFamily:
@@ -493,6 +430,11 @@ export function ExplorerActionsPane({
           background:
             "color-mix(in srgb, var(--overlay-explorer-toolbar-bg) 58%, transparent)",
           flexShrink: 0,
+          position: "sticky",
+          top: 0,
+          alignSelf: "flex-start",
+          maxHeight: "calc(100vh - 180px)",
+          overflowY: "auto",
         }}
       >
         {letters.map((letter) => (
@@ -528,11 +470,13 @@ export function ExplorerActionsPane({
       compact?: boolean;
       showMenuPath?: boolean;
       groupBorder?: boolean;
+      depth?: number;
     },
   ) => {
     const compact = options?.compact ?? false;
+    const depth = options?.depth ?? 0;
     const showRuntimeMetaRow = Boolean(
-      (options?.showMenuPath && item.menuPathLabel) || item.dragControlId,
+      options?.showMenuPath && item.menuPathLabel,
     );
     return (
       <button
@@ -585,6 +529,7 @@ export function ExplorerActionsPane({
               : "pointer",
           textAlign: "left",
           padding: compact ? "7px 9px" : "8px 10px",
+          paddingLeft: 10 + depth * 18,
           opacity: item.disabled ? 0.68 : 1,
         }}
       >
@@ -643,28 +588,22 @@ export function ExplorerActionsPane({
                 {options?.showMenuPath && item.menuPathLabel ? (
                   <span>{item.menuPathLabel}</span>
                 ) : null}
-                {item.dragControlId ? (
-                  <span style={{ color: accent }}>Pin</span>
-                ) : null}
               </span>
             ) : null}
           </span>
-          <span
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-end",
-              gap: 4,
-              fontSize: 9,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: item.dragControlId ? accent : muted,
-            }}
-          >
-            {item.shortcutId ? <span>{item.shortcutId}</span> : null}
-            {item.dragControlId ? <span>Pin</span> : null}
-          </span>
+          {item.shortcutId ? (
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: muted,
+              }}
+            >
+              {item.shortcutId}
+            </span>
+          ) : null}
         </div>
       </button>
     );
@@ -674,7 +613,7 @@ export function ExplorerActionsPane({
     item: ExplorerActionsPaneRuntimeSubmenuItem,
     panelPath: string[],
     submenuOpen: boolean,
-    options?: { groupBorder?: boolean },
+    options?: { groupBorder?: boolean; depth?: number },
   ) => (
     <button
       key={item.id}
@@ -695,6 +634,7 @@ export function ExplorerActionsPane({
         cursor: "pointer",
         textAlign: "left",
         padding: "8px 10px",
+        paddingLeft: 10 + (options?.depth ?? 0) * 18,
       }}
     >
       <div
@@ -742,14 +682,82 @@ export function ExplorerActionsPane({
     </button>
   );
 
+  const isRuntimeSubmenuPathOpen = (path: string[]) =>
+    path.every(
+      (submenuId, index) => openRuntimeSubmenuPath[index] === submenuId,
+    );
+
+  const renderRuntimeBrowseRows = (
+    items: ExplorerActionsPaneRuntimeBrowseItem[],
+    panelPath: string[],
+    labelPath: string[],
+    depth = 0,
+  ) =>
+    items.map((item, index) => {
+      const itemPath =
+        item.kind === "submenu" ? [...panelPath, item.id] : panelPath;
+      const rowKey =
+        item.kind === "submenu"
+          ? `${itemPath.join("::")}::submenu`
+          : `${labelPath.join("::")}::${item.id}`;
+
+      if (item.kind === "command") {
+        return renderRuntimeCommandButton(item, {
+          compact: runtimeMenuDensity === "compact",
+          depth,
+          groupBorder: index > 0,
+        });
+      }
+
+      const submenuOpen = isRuntimeSubmenuPathOpen(itemPath);
+      const childItems = submenuOpen
+        ? buildRuntimeBrowseItems(item.node.children, [
+            ...labelPath,
+            item.label,
+          ])
+        : [];
+
+      return (
+        <Fragment key={rowKey}>
+          {renderRuntimeSubmenuButton(item, panelPath, submenuOpen, {
+            depth,
+            groupBorder: index > 0,
+          })}
+          {submenuOpen ? (
+            <div
+              data-overlay-explorer-actions-inline-submenu={item.id}
+              style={{
+                borderTop:
+                  "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 72%, transparent)",
+                borderBottom:
+                  "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 72%, transparent)",
+                background:
+                  "color-mix(in srgb, var(--overlay-explorer-chip-bg) 52%, transparent)",
+              }}
+            >
+              {renderRuntimeBrowseRows(
+                childItems,
+                itemPath,
+                [...labelPath, item.label],
+                depth + 1,
+              )}
+            </div>
+          ) : null}
+        </Fragment>
+      );
+    });
+
   return (
     <div
       data-overlay-explorer-plane="actions"
       style={{
         ...panelTextStyle,
+        flex: "1 1 auto",
         display: "flex",
         flexDirection: "column",
         minHeight: 0,
+        minWidth: 0,
+        width: "100%",
         height: "100%",
         border: "1px solid var(--overlay-explorer-toolbar-border)",
         borderRadius: "var(--overlay-explorer-panel-radius)",
@@ -906,10 +914,10 @@ export function ExplorerActionsPane({
       <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
         <div
           style={{
-            padding: 12,
+            padding: customizeMode ? 12 : 0,
             display: "flex",
             flexDirection: "column",
-            gap: 14,
+            gap: customizeMode ? 14 : 0,
           }}
         >
           {customizeMode ? (
@@ -931,7 +939,8 @@ export function ExplorerActionsPane({
                 </div>
                 <div style={{ display: "grid", gap: 8 }}>
                   {entries.map((entry) => {
-                    const isSelected = entry.controlId === selectedEntry?.controlId;
+                    const isSelected =
+                      entry.controlId === selectedEntry?.controlId;
                     const entryTone = resolveEntryTone(entry);
                     return (
                       <button
@@ -1060,9 +1069,6 @@ export function ExplorerActionsPane({
                 <div
                   style={{
                     flex: 1,
-                    borderRadius: 12,
-                    border: "1px solid var(--overlay-explorer-chip-border)",
-                    background: "var(--overlay-explorer-chip-bg)",
                     padding: "12px 14px",
                     color: muted,
                     fontSize: 11,
@@ -1085,22 +1091,22 @@ export function ExplorerActionsPane({
                     {filteredRuntimeSearchGroups.map((group) => (
                       <section
                         key={group.letter}
-                        data-overlay-explorer-actions-letter-group={group.letter}
+                        data-overlay-explorer-actions-letter-group={
+                          group.letter
+                        }
                         ref={(node) => {
                           searchLetterSectionRefs.current[group.letter] = node;
                         }}
                         style={{
-                          borderRadius: 10,
-                          border: "1px solid var(--overlay-explorer-chip-border)",
-                          background: "var(--overlay-explorer-chip-bg)",
-                          overflow: "hidden",
+                          display: "flex",
+                          flexDirection: "column",
                         }}
                       >
                         <div
                           style={{
-                            padding: "6px 10px",
-                            borderBottom:
-                              "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 88%, transparent)",
+                            padding: "7px 12px 5px",
+                            borderTop:
+                              "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 72%, transparent)",
                             fontSize: 10,
                             fontWeight: 800,
                             letterSpacing: "0.12em",
@@ -1132,113 +1138,57 @@ export function ExplorerActionsPane({
           ) : (
             <section
               data-overlay-explorer-actions-browser="true"
-              style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}
+              style={{
+                display: "flex",
+                alignItems: "stretch",
+                minHeight: 0,
+              }}
             >
               <div
-                style={{ display: "contents" }}
+                data-overlay-explorer-actions-browser-panel="__root__"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
               >
-                {runtimeBrowseState.panels.map((panel) => (
-                  <div
-                    key={panel.key}
-                    data-overlay-explorer-actions-browser-panel={panel.key}
-                    style={{
-                      ...runtimeBrowseSurfaceStyle,
-                      width: runtimeBrowsePanelWidth,
-                      minHeight: 250,
-                      maxHeight: 560,
-                      flexShrink: 0,
-                      display: "flex",
+                {runtimeBrowseRootLetterGroups.map((group) => (
+                  <section
+                    key={`__root__:${group.letter}`}
+                    data-overlay-explorer-actions-letter-group={group.letter}
+                    ref={(node) => {
+                      const currentPanelRefs =
+                        browseLetterSectionRefs.current.__root__ ?? {};
+                      currentPanelRefs[group.letter] = node;
+                      browseLetterSectionRefs.current.__root__ =
+                        currentPanelRefs;
                     }}
+                    style={{ display: "flex", flexDirection: "column" }}
                   >
                     <div
                       style={{
-                        flex: 1,
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        overflow: "hidden",
+                        padding: "7px 12px 5px",
+                        borderTop:
+                          "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 72%, transparent)",
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: "0.12em",
+                        textTransform: "uppercase",
+                        color: muted,
                       }}
                     >
-                      {panel.path.length > 0 ? (
-                        <div
-                          style={{
-                            padding: "7px 10px",
-                            borderBottom:
-                              "1px solid color-mix(in srgb, var(--overlay-explorer-toolbar-border) 92%, transparent)",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: text,
-                          }}
-                        >
-                          {panel.title}
-                        </div>
-                      ) : null}
-                      <div
-                        style={{
-                          flex: 1,
-                          minHeight: 0,
-                          overflowY: "auto",
-                          display: "flex",
-                          flexDirection: "column",
-                          paddingBottom: 6,
-                        }}
-                      >
-                        {panel.letterGroups.map((group) => (
-                          <section
-                            key={`${panel.key}:${group.letter}`}
-                            data-overlay-explorer-actions-letter-group={group.letter}
-                            ref={(node) => {
-                              const currentPanelRefs =
-                                browseLetterSectionRefs.current[panel.key] ?? {};
-                              currentPanelRefs[group.letter] = node;
-                              browseLetterSectionRefs.current[panel.key] =
-                                currentPanelRefs;
-                            }}
-                            style={{ display: "flex", flexDirection: "column" }}
-                          >
-                            <div
-                              style={{
-                                padding: "6px 10px 5px",
-                                fontSize: 10,
-                                fontWeight: 800,
-                                letterSpacing: "0.12em",
-                                textTransform: "uppercase",
-                                color: muted,
-                              }}
-                            >
-                              {group.letter}
-                            </div>
-                            <div>
-                              {group.items.map((item, index) =>
-                                item.kind === "command"
-                                  ? renderRuntimeCommandButton(item, {
-                                      compact: runtimeMenuDensity === "compact",
-                                      groupBorder: index > 0,
-                                    })
-                                  : renderRuntimeSubmenuButton(
-                                      item,
-                                      panel.path,
-                                      runtimeBrowseState.resolvedPath[
-                                        panel.path.length
-                                      ] === item.id,
-                                      {
-                                        groupBorder: index > 0,
-                                      },
-                                    ),
-                              )}
-                            </div>
-                          </section>
-                        ))}
-                      </div>
+                      {group.letter}
                     </div>
-                    {renderLetterJumpRail(
-                      panel.letterGroups.map((group) => group.letter),
-                      (letter) => jumpToBrowseLetter(panel.key, letter),
-                      panel.key,
-                    )}
-                  </div>
+                    <div>{renderRuntimeBrowseRows(group.items, [], [], 0)}</div>
+                  </section>
                 ))}
               </div>
+              {renderLetterJumpRail(
+                runtimeBrowseRootLetterGroups.map((group) => group.letter),
+                (letter) => jumpToBrowseLetter("__root__", letter),
+                "__root__",
+              )}
             </section>
           )}
 

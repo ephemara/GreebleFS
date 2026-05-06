@@ -1,3 +1,19 @@
+# 2026-05-06 - Explorer Actions Pane Single-Pane Runtime Browser
+
+- Tightened runtime `ExplorerActionsPane` after the first compression pass still looked too boxy in the live UI.
+- Browse mode is now one continuous action browser under the search bar instead of a row of nested/sidecar panel cards.
+  - Root actions stay grouped A-Z in a single scroll surface.
+  - Submenus expand inline below their row, preserving nested access without creating another visible pane box.
+  - The vertical A-Z rail stays pinned on the side as the only browse navigation affordance.
+  - The pane root explicitly flexes to the full host width so the action surface reaches the dock rail instead of leaving a black gutter.
+- Runtime browse rows are action-first.
+  - Descriptions are hidden while browsing and only allowed in active search results when the runtime menu presentation asks for them.
+  - The duplicated authored-action `Pin` metadata was removed from rows; drag-to-pin behavior still works without turning the menu into tutorial chrome.
+- Durable rule: runtime Actions should feel like a compact command tool. Avoid sidecar panel stacks, nested card shells, repeated labels, or explanatory metadata in browse mode.
+- Validation:
+  - Passed: `bunx vitest run src/test/ExplorerActionsPane.test.tsx --reporter=dot --testTimeout=30000`
+  - The broader `fileExplorer.viewModes.test.tsx` focused command-browser run currently fails before reaching the actions pane because unrelated dirty `src/components/FileExplorer.tsx` state prevents `notes.txt` from rendering in that test setup.
+
 # 2026-05-06 - Plugin Dependency Graph And Shared UI Package Lane
 
 - Implemented the V1 Slate-like dependency lane for GreebleFS package plugins.

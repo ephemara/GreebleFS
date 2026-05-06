@@ -2,9 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ExplorerActionsPane } from "../components/explorer/ExplorerActionsPane";
-import type {
-  ExplorerBuiltInContextMenuCatalogItem,
-} from "../config/explorerContextMenu";
+import type { ExplorerBuiltInContextMenuCatalogItem } from "../config/explorerContextMenu";
 import type {
   ExplorerRuntimeMenuCommandNode,
   ExplorerRuntimeMenuNode,
@@ -202,21 +200,35 @@ describe("ExplorerActionsPane", () => {
 
     await waitFor(() => {
       expect(
-        pane.querySelectorAll("[data-overlay-explorer-actions-browser-panel]")
-          .length,
-      ).toBe(2);
+        pane.querySelector(
+          '[data-overlay-explorer-actions-inline-submenu="submenu.open-with"]',
+        ),
+      ).not.toBeNull();
     });
-    expect(screen.getByRole("button", { name: /Alpha App/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Zebra App/i })).toBeInTheDocument();
+    expect(
+      pane.querySelectorAll("[data-overlay-explorer-actions-browser-panel]")
+        .length,
+    ).toBe(1);
+    expect(
+      screen.getByRole("button", { name: /Alpha App/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Zebra App/i }),
+    ).toBeInTheDocument();
 
     fireEvent.mouseEnter(screen.getByRole("button", { name: /More Tools/i }));
 
     await waitFor(() => {
       expect(
-        pane.querySelectorAll("[data-overlay-explorer-actions-browser-panel]")
-          .length,
-      ).toBe(3);
+        pane.querySelector(
+          '[data-overlay-explorer-actions-inline-submenu="submenu.more-tools"]',
+        ),
+      ).not.toBeNull();
     });
+    expect(
+      pane.querySelectorAll("[data-overlay-explorer-actions-browser-panel]")
+        .length,
+    ).toBe(1);
     expect(
       screen.getByRole("button", { name: /Archive Integrity Check/i }),
     ).toBeInTheDocument();
@@ -253,12 +265,9 @@ describe("ExplorerActionsPane", () => {
       ],
     });
 
-    fireEvent.change(
-      screen.getByPlaceholderText(/search actions/i),
-      {
-        target: { value: "app" },
-      },
-    );
+    fireEvent.change(screen.getByPlaceholderText(/search actions/i), {
+      target: { value: "app" },
+    });
 
     expect(
       document.querySelector(
