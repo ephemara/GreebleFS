@@ -334,6 +334,16 @@ import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerActivityRail } from "./explorer/ExplorerActivityRail";
 import {
+  createOverlayContextMenuCommandNode,
+  createOverlayContextMenuSeparatorNode,
+  createOverlayContextMenuSubmenuNode,
+  type ExplorerActivityRailContextMenuRequest,
+  type ExplorerChromeContextMenuRequest,
+  type ExplorerSideRailContextMenuRequest,
+  type OverlayContextMenuNode,
+  type OverlayContextMenuOpenRequest,
+} from "./explorer/overlayContextMenuModel";
+import {
   ExplorerSearchLane,
   type ExplorerUtilitySearchResult,
 } from "./explorer/ExplorerSearchLane";
@@ -510,8 +520,10 @@ import {
 import type { SettingsSectionKey } from "../config/settingsNavigation";
 import {
   defaultExplorerActivityLanePlacementById,
+  getExplorerActivityLaneDefinition,
   getExplorerActivityLaneDefinitionsForRailSide,
   moveExplorerActivityLane,
+  normalizeExplorerHiddenActivityLaneIds,
   type ExplorerActivityLaneId,
   type ExplorerActivityLaneOrderBySide,
   type ExplorerActivityLanePlacementById,
@@ -673,6 +685,7 @@ import { playSoundEffect } from "../runtime/soundEffects";
 import {
   getExplorerChromeSurfaceDefinition,
   moveExplorerChromeControlInResolvedSurfaces,
+  normalizeExplorerChromeOverrideSnapshot,
   resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
@@ -1160,6 +1173,13 @@ interface ContextMenuState {
   x: number;
   y: number;
   invocation: ExplorerMenuInvocationContext | null;
+  localMenu: {
+    nodes: OverlayContextMenuNode[];
+    presentation?: {
+      density?: "compact" | "balanced" | "touch";
+      showDescriptions?: boolean;
+    };
+  } | null;
 }
 interface RenameState {
   active: boolean;
@@ -9326,6 +9346,7 @@ export function FileExplorer({
     x: 0,
     y: 0,
     invocation: null,
+    localMenu: null,
   });
   const previewMenuContext = useMemo<ExplorerMenuPreviewContext | null>(
     () =>
@@ -13258,7 +13279,13 @@ export function FileExplorer({
       return;
     }
     setSelected(new Set());
-    setCtxMenu({ visible: false, x: 0, y: 0, invocation: null });
+    setCtxMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      invocation: null,
+      localMenu: null,
+    });
     setDeleteTargets([]);
     setPickerOverwriteTargetPath(null);
     setPickerSaveFileName(
@@ -18026,6 +18053,7 @@ export function FileExplorer({
       x: 0,
       y: 0,
       invocation: null,
+      localMenu: null,
     });
   }, []);
   const openContextMenu = useCallback(
@@ -18038,6 +18066,24 @@ export function FileExplorer({
         x: event.clientX,
         y: event.clientY,
         invocation,
+        localMenu: null,
+      });
+    },
+    [],
+  );
+  const openLocalContextMenu = useCallback(
+    (request: OverlayContextMenuOpenRequest) => {
+      request.event.preventDefault();
+      request.event.stopPropagation();
+      setCtxMenu({
+        visible: true,
+        x: request.event.clientX,
+        y: request.event.clientY,
+        invocation: null,
+        localMenu: {
+          nodes: request.nodes,
+          presentation: request.presentation,
+        },
       });
     },
     [],
