@@ -1,3 +1,33 @@
+# 2026-05-06 - Tauron Transport 2.0 Phase 1 Cutover
+
+- Completed the first broad transport cutover from app-owned Tauri workarounds to framework-owned tauron transport across both `D:/tauron` and `D:/GreebleFS`.
+- Tauron is now the source of truth for binary responses, replayable streams, resource-backed URLs, and the Phase 1 Windows path/url hardening.
+  - Added `crates/tauri/src/transport/` with `BinaryResponse`, resource registration, replayable stream retention, subscription commands, and close/replay helpers.
+  - Added `packages/api/src/transport.ts` with `invokeBinary`, `resourceUrl`, `replayStream`, and `subscribeStream`.
+  - Extended the API lane so GreebleFS now consumes `@tauri-apps/api` from `file:../tauron/packages/api/dist` while still leaving `@tauri-apps/cli` on the upstream npm package.
+- GreebleFS transport ownership is now much thinner.
+  - Binary preview/artifact reads in `src/runtime/tauriClient.ts` now use tauron `invokeBinary(...)` instead of the old custom raw invoke handler path.
+  - `src-tauri/src/lib.rs` removed the old `raw_preview_invoke_handler`; preview/read commands now return `tauri::transport::BinaryResponse` as ordinary commands.
+  - Stream subscriptions in `src/runtime/ipc/streams.ts`, terminal output, and browser host-events now use tauron transport streams instead of app-owned event names, replay commands, and release commands.
+  - Artifact/resource contracts now use tauron resource ids: `IpcArtifactDescriptor` / `IpcArtifactRef` carry `resourceRid`, `IpcResourceHandle` carries `rid`, and `IpcStreamHandle` no longer carries `eventName`.
+  - Frontend artifact URLs now resolve through tauron `resourceUrl(...)`; transport-owned artifacts should not fall back to `file://`.
+- Durable rules:
+  - Treat tauron transport as the canonical home for new binary/resource/stream primitives. GreebleFS should only keep app semantics, artifact lifecycle, and higher-level command contracts on top.
+  - Do not introduce new frontend contracts that depend on raw event names or backend file paths when a tauron `StreamHandle` or resource rid can carry the same responsibility.
+  - Keep `scripts/tauron-preflight.mjs` responsible for both Cargo-fork validation and tauron JS API dist freshness. On Windows it must invoke `pnpm build:api` via `cmd.exe` to avoid the direct `pnpm.cmd` spawn failure.
+- Validation:
+  - Passed: `cargo check -p tauri` in `D:/tauron`
+  - Passed: `cargo test -p tauri transport -- --nocapture` in `D:/tauron`
+  - Passed: `pnpm build:api` in `D:/tauron`
+  - Passed: `bun install`
+  - Passed: `bun run bindings:generate`
+  - Passed: `bunx vitest run src/test/ipcArtifactsRuntime.test.ts src/test/ipcStreamsRuntime.test.ts src/test/extensionHostApi.test.ts src/test/terminalOverlay.test.tsx`
+  - Passed: `cargo check -p greeblefs --tests`
+- Current blockers outside the transport cutover itself:
+  - `bun run test:unit` is already red in many unrelated areas on this worktree, including missing theme/icon/shader fixture directories, vendor import issues, and existing settings/UI expectation drift.
+  - `bun run test:runtime-stack:quick` currently stops in `src/test/settingsStore.test.ts`, where expected defaults no longer match the repo's current settings baseline.
+  - `bun run test:rust` no longer fails on the transport `MockRuntime` type mismatch, but the wider `greeblefs` lib test binary still aborts on Windows with `STATUS_ENTRYPOINT_NOT_FOUND` during startup, which is a broader native-test harness issue to investigate separately from transport.
+
 # 2026-05-06 - Dev WebView Reload Guard For Runtime Profile Settings
 
 - Fixed a dev-loop reload trap where ordinary UI/settings interactions rewrote `usr/profiles/shared/settings.json` and `usr/profiles/default/settings.json`, causing Vite to full-reload the Tauri WebView because those shipped defaults are imported by `src/config/usrDefaultSettings.ts`.
