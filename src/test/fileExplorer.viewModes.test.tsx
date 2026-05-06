@@ -1194,6 +1194,11 @@ async function selectStatusViewMode(name: RegExp | string) {
   fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
 }
 
+async function selectStatusDensityOption(name: RegExp | string) {
+  const menu = await openStatusDensityMenu();
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+}
+
 async function openExplorerCustomizeCommand() {
   act(() => {
     window.dispatchEvent(
@@ -5712,14 +5717,25 @@ const value = 1;
       statusSurface?.closest('[data-overlay-explorer-plane="main"]'),
     ).toBeNull();
     expect(within(switcher).getAllByRole("button")).toHaveLength(2);
+    expect(
+      within(switcher).getByRole("button", {
+        name: /explorer view mode: default/i,
+      }),
+    ).toBeInTheDocument();
 
     const modeMenu = await openStatusViewModeMenu();
     expect(
-      within(modeMenu).getByRole("menuitemradio", { name: /columns/i }),
+      within(modeMenu).getByRole("menuitemradio", { name: /default/i }),
     ).toBeTruthy();
     expect(
-      within(modeMenu).getByRole("menuitemradio", { name: /list/i }),
-    ).toBeTruthy();
+      within(modeMenu).queryByRole("menuitemradio", { name: /columns/i }),
+    ).toBeNull();
+    expect(
+      within(modeMenu).queryByRole("menuitemradio", { name: /list/i }),
+    ).toBeNull();
+    expect(
+      within(modeMenu).queryByRole("menuitemradio", { name: /details/i }),
+    ).toBeNull();
     expect(
       within(modeMenu).getByRole("menuitemradio", {
         name: /adaptive semantic grid/i,
@@ -5736,7 +5752,7 @@ const value = 1;
       }),
     ).toBeTruthy();
     fireEvent.click(
-      within(modeMenu).getByRole("menuitemradio", { name: /details/i }),
+      within(modeMenu).getByRole("menuitemradio", { name: /default/i }),
     );
 
     const densityMenu = await openStatusDensityMenu();
@@ -6004,7 +6020,7 @@ const value = 1;
     }
   });
 
-  it("uses list view as the standard-view proxy when leaving a unique footer mode", async () => {
+  it("uses the saved built-in layout as the default-view proxy when leaving a unique footer mode", async () => {
     useSettingsStore.getState().updateExplorer({
       viewMode: "columns",
       experimentalViewMode: "constellation",
@@ -6013,14 +6029,14 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    await selectStatusViewMode(/list/i);
+    await selectStatusViewMode(/default/i);
 
     await waitFor(() => {
       expect(
         useSettingsStore.getState().settings.explorer.experimentalViewMode,
       ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
-        "list",
+        "columns",
       );
     });
   });
@@ -6443,7 +6459,7 @@ const value = 1;
     20000,
   );
 
-  it("switches between icon and list view from footer toggles", async () => {
+  it("switches between default and built-in layouts from the footer toggles", async () => {
     useSettingsStore.getState().updateExplorer({
       viewMode: "details",
       experimentalViewMode: "timeline-surface",
@@ -6452,29 +6468,25 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      within(
-        await openStatusViewModeMenu(),
-      ).getByRole("menuitemradio", { name: /l icons/i }),
-    );
+    await selectStatusViewMode(/default/i);
     await waitFor(() => {
       expect(
         useSettingsStore.getState().settings.explorer.experimentalViewMode,
       ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "details",
+      );
+    });
+
+    await selectStatusDensityOption(/^L Icons$/i);
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
         "icons-l",
       );
     });
 
-    fireEvent.click(
-      within(
-        await openStatusViewModeMenu(),
-      ).getByRole("menuitemradio", { name: /list/i }),
-    );
+    await selectStatusDensityOption(/^List$/i);
     await waitFor(() => {
-      expect(
-        useSettingsStore.getState().settings.explorer.experimentalViewMode,
-      ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
         "list",
       );

@@ -22171,7 +22171,10 @@ export function FileExplorer({
     [accent, currentExperimentalModeDefinition, effectiveViewModeDefinition],
   );
   const activeViewSwitcherModeLabel =
-    currentExperimentalModeDefinition?.label ?? effectiveViewModeDefinition.label;
+    currentExperimentalModeDefinition?.label ?? "Default";
+  const selectDefaultExplorerViewMode = useCallback(() => {
+    updateExplorerSettings({ experimentalViewMode: "off" });
+  }, [updateExplorerSettings]);
   const selectStandardExplorerViewMode = useCallback(
     (modeId: ExplorerViewMode) => {
       updateExplorerSettings(
@@ -22202,20 +22205,7 @@ export function FileExplorer({
   const explorerViewSwitcherModeGroups = useMemo<
     ExplorerViewSwitcherOptionGroup[]
   >(() => {
-    const standardOptions = explorerViewModes.map((mode) => {
-      const active =
-        effectiveExperimentalViewMode === "off" && effectiveViewMode === mode.id;
-      return {
-        id: mode.id,
-        label: mode.label,
-        description: mode.description,
-        active,
-        icon: (
-          <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
-        ),
-        onSelect: () => selectStandardExplorerViewMode(mode.id),
-      };
-    });
+    const defaultViewActive = effectiveExperimentalViewMode === "off";
     const experimentalOptions = explorerExperimentalModes
       .filter((mode) => mode.available)
       .map((mode) => {
@@ -22238,8 +22228,23 @@ export function FileExplorer({
     return [
       {
         id: "standard",
-        label: "Built-in Views",
-        options: standardOptions,
+        options: [
+          {
+            id: "default",
+            label: "Default",
+            description:
+              "Use the built-in explorer layouts controlled by the density button.",
+            active: defaultViewActive,
+            icon: (
+              <ExplorerLayoutGlyph
+                mode={effectiveViewModeDefinition}
+                accent={accent}
+                active={defaultViewActive}
+              />
+            ),
+            onSelect: selectDefaultExplorerViewMode,
+          },
+        ],
       },
       ...(experimentalOptions.length > 0
         ? [
@@ -22254,9 +22259,9 @@ export function FileExplorer({
   }, [
     accent,
     effectiveExperimentalViewMode,
-    effectiveViewMode,
+    effectiveViewModeDefinition,
+    selectDefaultExplorerViewMode,
     selectExperimentalExplorerViewMode,
-    selectStandardExplorerViewMode,
   ]);
   const explorerStandardDensityGroups = useMemo<
     ExplorerViewSwitcherOptionGroup[]
