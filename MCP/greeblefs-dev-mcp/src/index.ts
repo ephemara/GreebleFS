@@ -177,6 +177,13 @@ async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<R
   return {
     generatedAt: new Date().toISOString(),
     status,
+    startup: {
+      phase: status.startupPhase,
+      hint: status.startupHint,
+      recentLogActivity: status.recentLogActivity,
+      attachProbeDeferredReason: status.attachProbeDeferredReason,
+    },
+    frameworkDiagnostics: status.tauronWebviewDiagnostics,
     bridgeStatus,
     hostApiSchema,
     snapshotSummary,

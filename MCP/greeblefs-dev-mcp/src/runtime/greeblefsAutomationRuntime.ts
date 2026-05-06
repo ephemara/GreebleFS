@@ -21,6 +21,7 @@ const mcpStateDirectory = path.join(mcpRoot, '.state');
 const screenshotDirectory = path.join(mcpStateDirectory, 'screenshots');
 const tauriDevStatusPath = path.join(mcpStateDirectory, 'tauri-dev-session.json');
 const tauriDevLogPath = path.join(mcpStateDirectory, 'tauri-dev.log');
+const tauronWebviewDiagnosticsPath = path.join(mcpStateDirectory, 'tauron-webview2-session.json');
 const fallbackBrowserProfileDirectory = path.join(mcpStateDirectory, 'fallback-browser-profile');
 const preferredPlaywrightLaunchChannels = [
   process.env.GREEBLEFS_MCP_PLAYWRIGHT_CHANNEL?.trim(),
@@ -54,23 +55,84 @@ export interface GreeblefsTauriDevSessionRecord {
   lastOutputAt?: string | null;
   frontendDevUrl?: string | null;
   webviewDebugPort?: string | null;
+  tauronWebviewDiagnosticsPath?: string | null;
   logFilePath?: string | null;
   statusFilePath?: string | null;
 }
+
+export interface TauronWebviewDiagnosticsWebviewRecord {
+  label?: string;
+  status?: string;
+  url?: string;
+  dataDirectory?: string | null;
+  resolvedAdditionalBrowserArgs?: string | null;
+  requestedAdditionalBrowserArgs?: string | null;
+  rawWebview2AdditionalBrowserArgumentsEnv?: string | null;
+  remoteDebuggingPort?: number | null;
+  browserExtensionsEnabled?: boolean;
+  devtoolsEnabled?: boolean;
+  customEnvironmentProvided?: boolean;
+  reusedExistingWebContext?: boolean;
+  windowTheme?: string | null;
+  configurationWarnings?: string[];
+  lastError?: string | null;
+}
+
+export interface TauronWebviewDiagnosticsEventRecord {
+  name?: string;
+  detail?: string | null;
+  unixMs?: number | null;
+}
+
+export interface TauronWebviewDiagnosticsSession {
+  version?: number;
+  runtime?: string;
+  platform?: string;
+  pid?: number;
+  processPath?: string | null;
+  webviewRuntimeInstalled?: boolean;
+  webviewRuntimeVersion?: string | null;
+  diagnosticsFilePath?: string | null;
+  sessionStartedAtUnixMs?: number;
+  updatedAtUnixMs?: number;
+  lastEvent?: string | null;
+  lastError?: string | null;
+  recentEvents?: TauronWebviewDiagnosticsEventRecord[];
+  webviews?: Record<string, TauronWebviewDiagnosticsWebviewRecord>;
+}
+
+export type GreeblefsAutomationStartupPhase =
+  | 'not-started'
+  | 'launching'
+  | 'cargo-compiling'
+  | 'frontend-dev-server-ready'
+  | 'runtime-initialized'
+  | 'webview-launching'
+  | 'webview-created'
+  | 'cdp-ready'
+  | 'bridge-ready'
+  | 'exited'
+  | 'failed';
 
 export interface GreeblefsAutomationStatus {
   repoRoot: string;
   statusFilePath: string;
   logFilePath: string;
+  tauronWebviewDiagnosticsFilePath: string;
   session: GreeblefsTauriDevSessionRecord | null;
   sessionFileExists: boolean;
   pidRunning: boolean;
   devUrlReachable: boolean;
   cdpReachable: boolean;
   cdpVersion: string | null;
+  tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null;
   attachMode: 'native-cdp' | 'browser-dev-url' | null;
   attachedPageUrl: string | null;
   bridgeReady: boolean;
+  startupPhase: GreeblefsAutomationStartupPhase;
+  startupHint: string | null;
+  recentLogActivity: string | null;
+  attachProbeDeferredReason: string | null;
   lastAttachError: string | null;
 }
 
@@ -138,6 +200,18 @@ function sleep(ms: number): Promise<void> {
 
 function buildIsoTimestamp(): string {
   return new Date().toISOString();
+}
+
+function parseIsoTimestampToUnixMs(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const unixMs = Date.parse(value);
+  return Number.isFinite(unixMs) ? unixMs : null;
+}
+
+function stripAnsiControlSequences(value: string): string {
+  return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, '');
 }
 
 async function pathExists(targetPath: string): Promise<boolean> {
@@ -244,6 +318,48 @@ function isSessionRunning(session: GreeblefsTauriDevSessionRecord | null): boole
   return Boolean(session?.running && session.pid && session.status !== 'exited' && session.status !== 'failed');
 }
 
+function isPublishedSessionNewerThanBaseline(
+  publishedSession: GreeblefsTauriDevSessionRecord | null,
+  baselineSession: GreeblefsTauriDevSessionRecord | null,
+): boolean {
+  if (!publishedSession) {
+    return false;
+  }
+  if (!baselineSession) {
+    return true;
+  }
+
+  if (publishedSession.pid && baselineSession.pid && publishedSession.pid !== baselineSession.pid) {
+    return true;
+  }
+
+  if (publishedSession.startedAt && publishedSession.startedAt !== baselineSession.startedAt) {
+    return true;
+  }
+
+  const publishedUpdatedAtUnixMs = parseIsoTimestampToUnixMs(publishedSession.updatedAt);
+  const baselineUpdatedAtUnixMs = parseIsoTimestampToUnixMs(baselineSession.updatedAt);
+  if (
+    publishedUpdatedAtUnixMs !== null
+    && baselineUpdatedAtUnixMs !== null
+    && publishedUpdatedAtUnixMs > baselineUpdatedAtUnixMs
+  ) {
+    return true;
+  }
+
+  const publishedLastOutputAtUnixMs = parseIsoTimestampToUnixMs(publishedSession.lastOutputAt ?? null);
+  const baselineLastOutputAtUnixMs = parseIsoTimestampToUnixMs(baselineSession.lastOutputAt ?? null);
+  if (
+    publishedLastOutputAtUnixMs !== null
+    && baselineLastOutputAtUnixMs !== null
+    && publishedLastOutputAtUnixMs > baselineLastOutputAtUnixMs
+  ) {
+    return true;
+  }
+
+  return !baselineSession.running && publishedSession.running;
+}
+
 export class GreeblefsAutomationRuntime {
   private browser: Browser | null = null;
   private page: Page | null = null;
@@ -261,8 +377,20 @@ export class GreeblefsAutomationRuntime {
     return tauriDevStatusPath;
   }
 
+  getTauronWebviewDiagnosticsPath(): string {
+    return tauronWebviewDiagnosticsPath;
+  }
+
   async readTauriDevSession(): Promise<GreeblefsTauriDevSessionRecord | null> {
     return readJsonFile<GreeblefsTauriDevSessionRecord>(tauriDevStatusPath);
+  }
+
+  async readTauronWebviewDiagnostics(
+    session: GreeblefsTauriDevSessionRecord | null = null,
+  ): Promise<TauronWebviewDiagnosticsSession | null> {
+    const diagnosticsFilePath = session?.tauronWebviewDiagnosticsPath?.trim()
+      || tauronWebviewDiagnosticsPath;
+    return readJsonFile<TauronWebviewDiagnosticsSession>(diagnosticsFilePath);
   }
 
   async isPidRunning(pid: number | null | undefined): Promise<boolean> {
@@ -283,14 +411,30 @@ export class GreeblefsAutomationRuntime {
     const pidRunning = await this.isPidRunning(session?.pid);
     const devUrl = session?.frontendDevUrl?.trim() || null;
     const devUrlReachable = devUrl ? await this.checkUrlReachable(devUrl) : false;
-    const cdpVersionPayload = session?.webviewDebugPort
+    const logTail = await this.readDevLogTail(80);
+    const tauronWebviewDiagnostics = await this.readTauronWebviewDiagnostics(session);
+    const resolvedDiagnosticsRemoteDebuggingPort = this.getRemoteDebuggingPortFromDiagnostics(
+      tauronWebviewDiagnostics,
+    );
+    const resolvedWebviewDebugPort = session?.webviewDebugPort?.trim()
+      || resolvedDiagnosticsRemoteDebuggingPort
+      || null;
+    const cdpVersionPayload = resolvedWebviewDebugPort
       ? await fetchJson<{ Browser?: string; ProtocolVersion?: string }>(
-          `http://127.0.0.1:${session.webviewDebugPort}/json/version`,
+          `http://127.0.0.1:${resolvedWebviewDebugPort}/json/version`,
         )
       : null;
     let bridgeReady = false;
     let attachedPageUrl: string | null = null;
-    if (options.includeAttachProbe) {
+    let attachProbeDeferredReason: string | null = null;
+    let reportedAttachError: string | null = this.lastAttachError;
+    const recentLogActivity = this.getRecentLogActivity(logTail.lines);
+    const shouldAttemptAttachProbe = options.includeAttachProbe
+      ? this.shouldAttemptAttachProbe({
+          cdpReachable: Boolean(cdpVersionPayload),
+        })
+      : false;
+    if (options.includeAttachProbe && shouldAttemptAttachProbe) {
       try {
         const page = await this.ensureAppPage();
         await page.waitForFunction(() => Boolean((window as Window & {
@@ -298,9 +442,23 @@ export class GreeblefsAutomationRuntime {
         }).__GREEBLEFS_DEV_MCP__), undefined, { timeout: 5000 });
         bridgeReady = true;
         attachedPageUrl = page.url();
+        this.lastAttachError = null;
+        reportedAttachError = null;
       } catch (error) {
         this.lastAttachError = error instanceof Error ? error.message : String(error);
+        reportedAttachError = this.lastAttachError;
       }
+    } else if (options.includeAttachProbe) {
+      attachProbeDeferredReason = this.buildAttachProbeDeferredReason({
+        sessionFileExists,
+        session,
+        pidRunning,
+        devUrlReachable,
+        cdpReachable: Boolean(cdpVersionPayload),
+        tauronWebviewDiagnostics,
+        recentLogActivity,
+      });
+      reportedAttachError = null;
     } else if (this.page && !this.page.isClosed()) {
       attachedPageUrl = this.page.url();
       try {
@@ -311,21 +469,39 @@ export class GreeblefsAutomationRuntime {
         bridgeReady = false;
       }
     }
+    const startupState = this.deriveStartupState({
+      sessionFileExists,
+      session,
+      pidRunning,
+      devUrlReachable,
+      cdpReachable: Boolean(cdpVersionPayload),
+      bridgeReady,
+      tauronWebviewDiagnostics,
+      recentLogActivity,
+    });
 
     return {
       repoRoot: normalizeWindowsPathForJson(repoRoot),
       statusFilePath: normalizeWindowsPathForJson(tauriDevStatusPath),
       logFilePath: normalizeWindowsPathForJson(tauriDevLogPath),
+      tauronWebviewDiagnosticsFilePath: normalizeWindowsPathForJson(
+        session?.tauronWebviewDiagnosticsPath?.trim() || tauronWebviewDiagnosticsPath,
+      ),
       session,
       sessionFileExists,
       pidRunning,
       devUrlReachable,
       cdpReachable: Boolean(cdpVersionPayload),
       cdpVersion: cdpVersionPayload?.Browser ?? cdpVersionPayload?.ProtocolVersion ?? null,
+      tauronWebviewDiagnostics,
       attachMode: this.attachMode,
       attachedPageUrl,
       bridgeReady,
-      lastAttachError: this.lastAttachError,
+      startupPhase: startupState.phase,
+      startupHint: startupState.hint,
+      recentLogActivity,
+      attachProbeDeferredReason,
+      lastAttachError: reportedAttachError,
     };
   }
 
@@ -334,6 +510,7 @@ export class GreeblefsAutomationRuntime {
     if (existingStatus.pidRunning && existingStatus.session?.running) {
       return existingStatus;
     }
+    const baselineSession = existingStatus.session;
 
     const bunCommand = process.platform === 'win32' ? 'bun.exe' : 'bun';
     const child = spawn(bunCommand, ['run', 'tauri', 'dev'], {
@@ -348,7 +525,15 @@ export class GreeblefsAutomationRuntime {
     const startDeadline = Date.now() + 30_000;
     while (Date.now() < startDeadline) {
       const nextStatus = await this.getStatus();
-      if (nextStatus.pidRunning && nextStatus.session?.running) {
+      const publishedFreshSession = isPublishedSessionNewerThanBaseline(
+        nextStatus.session,
+        baselineSession,
+      );
+      if (
+        nextStatus.pidRunning
+        && nextStatus.session?.running
+        && publishedFreshSession
+      ) {
         return nextStatus;
       }
       await sleep(500);
@@ -464,9 +649,13 @@ export class GreeblefsAutomationRuntime {
 
   async ensureAppPage(options: BrowserAttachmentOptions = {}): Promise<Page> {
     const session = await this.readTauriDevSession();
+    const tauronWebviewDiagnostics = await this.readTauronWebviewDiagnostics(session);
+    const resolvedWebviewDebugPort = session?.webviewDebugPort?.trim()
+      || this.getRemoteDebuggingPortFromDiagnostics(tauronWebviewDiagnostics)
+      || null;
     const sessionFingerprint = [
       session?.pid ?? 'none',
-      session?.webviewDebugPort ?? 'none',
+      resolvedWebviewDebugPort ?? 'none',
       session?.frontendDevUrl ?? 'none',
     ].join(':');
     const preferNative = options.preferNative !== false;
@@ -483,11 +672,11 @@ export class GreeblefsAutomationRuntime {
 
     await this.closeBrowser();
 
-    if (preferNative && session?.webviewDebugPort) {
+    if (preferNative && resolvedWebviewDebugPort) {
       try {
-        const cdpEndpoint = `http://127.0.0.1:${session.webviewDebugPort}`;
+        const cdpEndpoint = `http://127.0.0.1:${resolvedWebviewDebugPort}`;
         this.browser = await chromium.connectOverCDP(cdpEndpoint);
-        this.page = await this.resolveBrowserPage(this.browser, session.frontendDevUrl ?? undefined);
+        this.page = await this.resolveBrowserPage(this.browser, session?.frontendDevUrl ?? undefined);
         this.attachMode = 'native-cdp';
         this.attachFingerprint = sessionFingerprint;
         this.lastAttachError = null;
@@ -523,6 +712,181 @@ export class GreeblefsAutomationRuntime {
       // The fallback browser does not have Tauri, so bridge readiness is best-effort only.
     }
     return this.page;
+  }
+
+  private getRemoteDebuggingPortFromDiagnostics(
+    diagnostics: TauronWebviewDiagnosticsSession | null,
+  ): string | null {
+    const webviews = diagnostics?.webviews && typeof diagnostics.webviews === 'object'
+      ? Object.values(diagnostics.webviews)
+      : [];
+    for (const webview of webviews) {
+      if (typeof webview?.remoteDebuggingPort === 'number' && Number.isFinite(webview.remoteDebuggingPort)) {
+        return String(webview.remoteDebuggingPort);
+      }
+    }
+    return null;
+  }
+
+  private shouldAttemptAttachProbe(options: { cdpReachable: boolean }): boolean {
+    if (this.page && !this.page.isClosed()) {
+      return true;
+    }
+    return options.cdpReachable;
+  }
+
+  private deriveStartupState(input: {
+    sessionFileExists: boolean;
+    session: GreeblefsTauriDevSessionRecord | null;
+    pidRunning: boolean;
+    devUrlReachable: boolean;
+    cdpReachable: boolean;
+    bridgeReady: boolean;
+    tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null;
+    recentLogActivity: string | null;
+  }): { phase: GreeblefsAutomationStartupPhase; hint: string | null } {
+    const {
+      sessionFileExists,
+      session,
+      pidRunning,
+      devUrlReachable,
+      cdpReachable,
+      bridgeReady,
+      tauronWebviewDiagnostics,
+      recentLogActivity,
+    } = input;
+    const frameworkLastError = tauronWebviewDiagnostics?.lastError?.trim() || null;
+    const webviewRecords = tauronWebviewDiagnostics?.webviews && typeof tauronWebviewDiagnostics.webviews === 'object'
+      ? Object.values(tauronWebviewDiagnostics.webviews)
+      : [];
+    const hasCreatedWebview = webviewRecords.some((record) => record?.status === 'created');
+    const hasLaunchingWebview = webviewRecords.some((record) => record?.status === 'launching');
+
+    if (!sessionFileExists || !session) {
+      return {
+        phase: 'not-started',
+        hint: 'No tauri dev session file has been published yet.',
+      };
+    }
+
+    if (session.status === 'failed') {
+      return {
+        phase: 'failed',
+        hint: session.error?.trim() || frameworkLastError || 'The tauri dev launcher reported a failure.',
+      };
+    }
+
+    if (!pidRunning && (session.status === 'exited' || session.status === 'terminated')) {
+      return {
+        phase: 'exited',
+        hint: frameworkLastError || `The tauri dev process is no longer running (status=${session.status}).`,
+      };
+    }
+
+    if (bridgeReady) {
+      return {
+        phase: 'bridge-ready',
+        hint: 'The real app page is attached and the in-app automation bridge is live.',
+      };
+    }
+
+    if (cdpReachable) {
+      return {
+        phase: 'cdp-ready',
+        hint: 'The WebView2 CDP endpoint is reachable and ready for browser attachment.',
+      };
+    }
+
+    if (hasCreatedWebview || tauronWebviewDiagnostics?.lastEvent === 'webview-create-success') {
+      return {
+        phase: 'webview-created',
+        hint: 'The desktop WebView exists, but the CDP endpoint is not reachable yet.',
+      };
+    }
+
+    if (hasLaunchingWebview || tauronWebviewDiagnostics?.lastEvent === 'webview-create-start') {
+      return {
+        phase: 'webview-launching',
+        hint: 'Tauron has started creating the first desktop WebView.',
+      };
+    }
+
+    if (tauronWebviewDiagnostics?.lastEvent === 'runtime-initialized') {
+      return {
+        phase: 'runtime-initialized',
+        hint: 'The tauron runtime initialized before the first desktop WebView was created.',
+      };
+    }
+
+    if (recentLogActivity === 'cargo-compiling') {
+      return {
+        phase: 'cargo-compiling',
+        hint: 'Cargo is still compiling the desktop app, so no real window exists yet.',
+      };
+    }
+
+    if (devUrlReachable) {
+      return {
+        phase: 'frontend-dev-server-ready',
+        hint: 'The frontend dev server is up, but the desktop runtime has not published a WebView session yet.',
+      };
+    }
+
+    if (pidRunning) {
+      return {
+        phase: 'launching',
+        hint: 'The tauri dev process is running, but the frontend and desktop runtime are still starting.',
+      };
+    }
+
+    return {
+      phase: 'not-started',
+      hint: 'The tauri dev session is not active.',
+    };
+  }
+
+  private buildAttachProbeDeferredReason(input: {
+    sessionFileExists: boolean;
+    session: GreeblefsTauriDevSessionRecord | null;
+    pidRunning: boolean;
+    devUrlReachable: boolean;
+    cdpReachable: boolean;
+    tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null;
+    recentLogActivity: string | null;
+  }): string {
+    const startupState = this.deriveStartupState({
+      ...input,
+      bridgeReady: false,
+    });
+    return `Attach probing was deferred while startupPhase=${startupState.phase}: ${startupState.hint ?? 'the app is not ready for a reliable attach attempt yet.'}`;
+  }
+
+  private getRecentLogActivity(lines: string[]): string | null {
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const normalizedLine = stripAnsiControlSequences(lines[index] ?? '').trim();
+      if (!normalizedLine) {
+        continue;
+      }
+      if (/\bCompiling\b|\bBuilding\b/.test(normalizedLine)) {
+        return 'cargo-compiling';
+      }
+      if (/tauron\.webview2\./.test(normalizedLine)) {
+        return 'tauron-webview2-runtime';
+      }
+      if (/Running DevCommand/i.test(normalizedLine) || /cargo run /i.test(normalizedLine)) {
+        return 'desktop-dev-command-running';
+      }
+      if (/Local:\s+http/i.test(normalizedLine) || /http:\/\/localhost:1420/i.test(normalizedLine)) {
+        return 'frontend-dev-server-ready';
+      }
+      if (/Finished `dev` profile/i.test(normalizedLine) || /greeblefs\.exe/i.test(normalizedLine)) {
+        return 'desktop-binary-launching';
+      }
+      if (/error[:\]]/i.test(normalizedLine)) {
+        return 'error';
+      }
+    }
+    return null;
   }
 
   async getBridgeSnapshot(options: Record<string, unknown> = {}): Promise<unknown> {

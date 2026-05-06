@@ -1,3 +1,34 @@
+# 2026-05-06 - Tauron WebView2 Native Attach Truth And MCP Startup Phases
+
+- Extended the tauron fork so the desktop runtime itself now publishes MCP-usable WebView2 truth instead of leaving agents to infer startup from logs or localhost probes.
+  - `D:/tauron/crates/tauri-runtime-wry/src/windows_webview2_devtools.rs` now publishes top-level runtime/bootstrap diagnostics to `MCP/.state/tauron-webview2-session.json`.
+  - The session now includes `webviewRuntimeInstalled`, `webviewRuntimeVersion`, top-level `lastError`, and a bounded `recentEvents` history.
+  - The tauron runtime records the important lifecycle edges agents actually need: `runtime-initialized`, `webview-create-start`, `webview-create-success`, `webview-create-failure`, and `webview-dropped`.
+  - `D:/tauron/crates/tauri-runtime-wry/src/lib.rs` now publishes the runtime bootstrap before the first WebView exists, so agents can tell the difference between "Cargo is still compiling" and "the desktop runtime is alive but has not created a WebView yet."
+- The MCP runtime now understands startup as a real phase model instead of a binary "running/not running" guess.
+  - `MCP/greeblefs-dev-mcp/src/runtime/greeblefsAutomationRuntime.ts` now derives `startupPhase` from the wrapper session file, tauron diagnostics, CDP reachability, bridge availability, and recent log activity.
+  - Current phases: `not-started`, `launching`, `cargo-compiling`, `frontend-dev-server-ready`, `runtime-initialized`, `webview-launching`, `webview-created`, `cdp-ready`, `bridge-ready`, `exited`, and `failed`.
+  - Attach probing is now deferred until there is a meaningful target, which prevents false-negative "attach failed" noise while Cargo is still compiling or before the first WebView exists.
+  - `MCP/greeblefs-dev-mcp/src/index.ts` surfaces that state directly in `mcp:doctor` under `startup.phase`, `startup.hint`, `startup.recentLogActivity`, and `startup.attachProbeDeferredReason`.
+- Native attach is working again on this Windows host.
+  - `bun run mcp:doctor` now reports `attachMode: "native-cdp"`, `bridgeReady: true`, and `startupPhase: "bridge-ready"` against the live `bun run tauri dev` session.
+  - Fresh tauron diagnostics on this machine showed `webviewRuntimeInstalled: true`, `webviewRuntimeVersion: "147.0.3912.98"`, and `recentEvents` of `runtime-initialized -> webview-create-start -> webview-create-success`.
+  - Live bridge proof on the fresh session showed `rootRendered: true`, `domNodes: 81`, `errors: 0`, and a real native window titled `GreebleFS`.
+- The Windows desktop fallback still matters and got one robustness fix.
+  - `MCP/greeblefs-dev-mcp/src/runtime/windowsDesktopWindowCapture.ts` now returns `[]` instead of throwing a JSON parse failure when no matching desktop windows exist yet.
+  - Keep `app_list_native_windows` and `ui_native_window_screenshot` in the playbook for pre-WebView startup, secondary debugging, or future CDP regressions.
+- Durable rules:
+  - Treat `MCP/.state/tauri-dev-session.json` and `MCP/.state/tauron-webview2-session.json` as complementary truth sources.
+    - `tauri-dev-session.json` is the wrapper/dev-server/log truth.
+    - `tauron-webview2-session.json` is the desktop runtime/WebView/CDP truth.
+  - Check both files before changing attach logic or claiming the app is not running.
+  - `app_start_tauri_dev` now waits for a genuinely fresh published session after stop/start loops instead of trusting a stale status file generation.
+- Validation:
+  - Passed: `cargo check -p tauri-runtime-wry` in `D:/tauron`
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `bun run mcp:doctor`
+  - Passed: direct bridge snapshot proof with `rootRendered: true`, `domNodes: 81`, `errors: 0`
+
 # 2026-05-06 - Explorer Actions Pane Runtime Compression Pass
 
 - Compressed the runtime `ExplorerActionsPane` into a tool-first action browser instead of a descriptive side panel.
@@ -117,11 +148,9 @@
 - Durable runtime decision:
   - The MCP package now runs automation with `node --import tsx`, not Bun.
   - Bun remains fine for install and TypeScript validation, but Playwright/CDP attachment stalled under Bun on this Windows machine and worked under plain Node.
-- Current Windows limitation:
-  - On this host, `bun run tauri dev` successfully builds and launches `target/debug/greeblefs.exe`, but the configured WebView2 debug port `9222` still refuses CDP connections.
-  - Because of that, MCP currently falls back to `browser-dev-url` attach for browser-side inspection and to native desktop-window screenshots for real-window evidence.
-  - In browser fallback mode, bridge status is still available, but host-only calls such as `getHostApiSchema` are intentionally reported as unavailable because the page is not a real Tauri webview.
-  - The browser fallback screenshot currently lands on a blank white page in this workspace, which strongly suggests the shell expects Tauri-only runtime seams before it fully renders in a plain browser.
+- Initial Windows limitation at rollout time:
+  - The first MCP rollout could only use `browser-dev-url` attach plus native desktop-window screenshots because the WebView2 debug port still refused CDP connections on this host.
+  - That limitation is now resolved by the later tauron runtime bootstrap/native attach work documented above, but the fallback tools remain part of the intended recovery path if native attach regresses again.
 - Validation gathered:
   - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
   - Passed: `bun run mcp:doctor`
@@ -134,7 +163,7 @@
   - If host bridge calls are unavailable but `bridgeReady` is true, check whether the attachment mode is `browser-dev-url`; that means the fallback browser attached, not the real Tauri webview.
   - Use `app_list_native_windows` plus `ui_native_window_screenshot` when the real app window must be inspected but WebView/CDP attach is unavailable.
 - Next recommended step:
-  - Fix or replace the Windows native attach path so the MCP server can reach a real Tauri webview again. The best next candidates are either: (1) root-cause the WebView2 `--remote-debugging-port` refusal in `tauri dev`, or (2) add a dedicated native-side automation bridge / WebDriver lane that does not depend on WebView2 CDP.
+  - Keep the tauron diagnostics session broad enough that future native-window or multi-WebView work can publish per-window labels and attach hints without forcing agents back to raw process guessing.
 
 # 2026-05-06 - Explorer Side-Assignable Activity Lanes And Side-Dock Terminal
 
@@ -7367,3 +7396,39 @@ Created `reference/src/ALIEN_CODE.md` as a curated map of the above with a bias 
 Created `reference/src/REPO_MAP.md` as an exhaustive, folder-structured inventory of the entire `reference/src` tree. The map lists every file with size, direct include/import data where applicable, and a heuristic semantic summary so future agents can quickly find candidate reference files without rescanning the tree.
 
 The existing `reference/src/README.md` now links to the exhaustive map. Keep using `README.md` and `ALIEN_CODE.md` as the curated high-signal companions, and use `REPO_MAP.md` when you need full coverage or want to hunt for a specific filename/folder.
+
+## 2026-05-06 - Windows NSIS Installer Now Supports A Separate Portable `/usr` Root
+
+- The Windows installer lane now treats the writable managed-content root as a first-class install decision instead of assuming only `usr/plugins` needs relocation. Installed GreebleFS builds can now keep the application binaries in one location and the full writable `/usr` tree in another for portable or shared-content setups.
+- Durable implementation shape:
+  - `src-tauri/windows/greeblefs-installer.nsi` is now the source of truth for the Windows installer UX. It adds a dedicated page after the install-directory page for the writable `/usr` root, supports `/USRDIR=...` for passive installs, previews the child lanes that will live there, persists the choice in the registry, and writes `greeblefs-install-profile.toml` beside the installed executable.
+  - `src-tauri/src/usr.rs` now resolves managed content in this order:
+    - explicit `GREEBLEFS_MANAGED_CONTENT_ROOT` / `OVERLAYTERM_MANAGED_CONTENT_ROOT`
+    - installer profile beside the installed exe
+    - app-local-data fallback `<app_local_data>/usr`
+    The bundled read-only `/usr` root remains separate and still resolves from env overrides, then `resource_dir/usr`, then the repo `usr/` tree in dev.
+  - `greeblefs-install-profile.toml` uses `managedContentRoot` as the canonical portable `/usr` pointer. `pluginsDirectory` remains supported only as a compatibility fallback that derives the parent writable root.
+  - `scripts/platform/install-windows-local.ps1` no longer does the old direct binary-copy install. It now builds the real branded NSIS installer, supports `-Interactive`, `-InstallDirectory`, and `-UsrRootDirectory`, and then delegates installation to the installer executable so the local helper and the ship bundle stay on the same code path.
+  - `simulate-new-user-flow.bat` now defaults to the interactive installer path and keeps `install-only` as the passive install lane.
+  - `scripts/platform/generate-windows-installer-art.ps1` generates the branded header/sidebar BMP assets consumed by `src-tauri/tauri.conf.json` and the custom NSIS template.
+  - `scripts/run-platform-tauri.mjs`, `vite.mobile.config.ts`, and `scripts/run-export-bindings.mjs` now keep the Windows release/mobile bundle path shippable:
+    - bindings generation uses an isolated Cargo target dir
+    - release builds stage the mobile bundle under `src-tauri/target/release-support/dist-mobile`
+    - the runtime Tauri config rewrites the mobile resource source path to stay relative to `src-tauri`
+    - this avoids the earlier failure where Tauri stripped the drive prefix from an absolute Windows resource path and emitted `resource path '/Users/.../dist-mobile' doesn't exist`
+  - `src-tauri/src/lib.rs` must keep `usr` test-visible. The `installer_profile_*` tests in `src-tauri/src/usr.rs` were initially dead because `pub mod usr` was gated behind `#[cfg(not(test))]`; that gate has to stay removed so installer-profile coverage remains real.
+- Durable product notes:
+  - The installed app now has two `/usr` concepts:
+    - bundled read-only `/usr` in app resources for shipped defaults
+    - writable managed `/usr` chosen by the installer for plugins, profiles, themes, wallpapers, and the rest of the live managed-content tree
+  - If a future agent changes the Windows installer UI, update the passive CLI contract at the same time. The interactive page, `/USRDIR=...` handling, installer profile writing, and PowerShell helper must stay in sync.
+  - If Windows release builds start failing in `tauri-build` around `dist-mobile`, inspect the generated resource source path first. Cross-drive absolute resource sources are the failure mode; repo-drive-relative staging is the intended fix.
+- Validation:
+  - passed: `bun run release:windows:bundle`
+  - produced: `src-tauri/target/release/bundle/nsis/GreebleFS_0.1.0_x64-setup.exe`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml installer_profile --lib`
+  - passed: `node --check scripts/run-platform-tauri.mjs`
+  - passed earlier in this lane: PowerShell parser checks for `scripts/platform/install-windows-local.ps1` and `scripts/platform/generate-windows-installer-art.ps1`
+  - not run: a full live install/uninstall smoke pass on this host, because the local Windows helper intentionally tears down the current per-user install/state roots and is safer to prove on a disposable profile or VM
+- Recommended next step:
+  - Run `.\simulate-new-user-flow.bat` on a disposable Windows user profile or VM and confirm the interactive page writes the expected external `/usr` root into `greeblefs-install-profile.toml`, then smoke-launch the installed app against that external managed-content tree.

@@ -94,7 +94,11 @@ $records = @(${processQuery} | ForEach-Object {
         startTime = if ($_.StartTime) { $_.StartTime.ToString('o') } else { $null }
       }
     })
-$records | ConvertTo-Json -Depth 4 -Compress
+if ($records.Count -eq 0) {
+  '[]'
+} else {
+  $records | ConvertTo-Json -Depth 4 -Compress
+}
 `;
   const raw = await runPowerShellCommand(command);
   return normalizeJsonArray(JSON.parse(raw) as WindowsDesktopWindowRecord[] | WindowsDesktopWindowRecord);
