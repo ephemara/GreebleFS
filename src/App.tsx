@@ -1110,6 +1110,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,
+    openPackagesFolder,
     refreshFolderPlugins,
     setPluginEnabled,
     createPluginApi,
@@ -5113,6 +5114,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
             error={folderPluginsError}
             onRefreshPlugins={() => refreshFolderPlugins(true)}
             onOpenPluginsFolder={openPluginsFolder}
+            onOpenPackagesFolder={openPackagesFolder}
             onSetPluginEnabled={(plugin, enabled) => {
               setPluginEnabled(plugin.enablementKey ?? plugin.id, enabled);
             }}
@@ -5179,6 +5181,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       openHomePacksFolder,
       openInteractionMotionPacksFolder,
       openMenuPacksFolder,
+      openPackagesFolder,
       openShellRenderersFolder,
       openShadersFolder,
       openThemeEnginesFolder,

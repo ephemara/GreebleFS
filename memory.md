@@ -1,3 +1,28 @@
+# 2026-05-06 - Plugin Dependency Graph And Shared UI Package Lane
+
+- Implemented the V1 Slate-like dependency lane for GreebleFS package plugins.
+  - `usr/manifest.json` now defines shared-root `usr/packages`, and `.gitignore` explicitly unignores `usr/packages/**` so first-party dependency packages can ship even though the repo has a broad `packages/` ignore.
+  - `src/config/pluginPackages.ts` now scans both `usr/plugins` and `usr/packages`, parses `packageKind`, `[exports.modules]`, and `[[dependencies]]`, builds a dependency graph, supports `*`, exact, and caret version checks, detects missing/disabled/incompatible/cyclic required deps, and blocks affected plugins before their source executes.
+  - `src/components/pluginRuntime.tsx` now accepts host-provided dependency modules as allowed bare imports; undeclared bare imports still fail in the sandbox.
+  - `src/runtime/useFolderPluginRuntime.ts` now opens both plugin and package folders and watches the shared `/usr` parent so package edits refresh the catalog without waiting for fallback polling.
+- Added the first reusable library package at `usr/packages/greeblefs-ui`.
+  - The package exports `@greeblefs/ui` from `src/index.tsx` and re-exports existing explorer workflow primitives plus compact shared surfaces, toolbars, split layouts, selects, icon buttons, and Greeble-prefixed aliases.
+  - `usr/plugins/greeblefs-action-forge/extension.toml` now declares a required `greeblefs-ui` dependency imported as `@greeblefs/ui`.
+  - `Action Forge` now imports lifecycle APIs from `overlayterm-plugin` and visual workflow primitives from `@greeblefs/ui`, making it the first acceptance case for declared frontend module dependencies.
+- Plugins Manager now surfaces dependency graph status.
+  - Blocked plugins render as metadata records with dependency diagnostics instead of throwing during panel mount.
+  - The inspector shows dependency status, module exports, blocked reasons, package-folder repair affordances, and can re-enable an installed disabled dependency when that package record is present.
+- Durable rules:
+  - Keep `overlayterm-plugin` as the lifecycle/API bridge and `@greeblefs/ui` as the shared visual primitive library.
+  - Do not add a bare dependency import to a plugin source unless its manifest declares the dependency and `importAs` target.
+  - Library packages should use `packageKind = "library"` and `[exports.modules]`; they should not mount panels unless they explicitly declare an entry.
+  - If package files fail to appear in `git status`, check the broad `packages/` ignore before assuming discovery is broken.
+- Validation:
+  - Passed: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/pluginWatchPaths.test.ts src/test/pluginRuntime.test.ts src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx esbuild usr/packages/greeblefs-ui/src/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --outfile=.tmp-greeblefs-ui-check.js`
+  - Passed: `bunx esbuild usr/plugins/greeblefs-action-forge/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --external:@greeblefs/ui --external:lucide-react --outfile=.tmp-action-forge-check.js`
+  - Existing repo-wide blockers remain: `bunx tsc --noEmit --pretty false` still reports unrelated pre-existing errors in `src/App.tsx`, image-cutout/storage/generated-contract areas, tests, and vendored TipTap sources; `bun run test:ui-literals` still reports an existing global baseline mismatch and did not flag the files touched for this plugin dependency pass.
+
 # 2026-05-06 - Tauron Transport 2.0 Phase 1 Cutover
 
 - Completed the first broad transport cutover from app-owned Tauri workarounds to framework-owned tauron transport across both `D:/tauron` and `D:/GreebleFS`.

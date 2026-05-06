@@ -6,6 +6,7 @@ import type { OverlayPluginPreviewLaneContribution } from '../config/pluginContr
 import { pluginSystemConfig } from '../config/plugins';
 import { joinPlatformPath } from '../config/platform';
 import { normalizeExplorerPreviewWorkbenchChromeMetadata } from '../config/previewWorkbenchChrome';
+import { useSettingsStore } from '../store/settingsStore';
 
 function makeAppearance() {
   return {
@@ -239,8 +240,9 @@ describe('PluginsManager', () => {
       />,
     );
 
+    const expectedZoom = useSettingsStore.getState().settings.appearance.appZoom;
     await waitFor(() => {
-      expect(screen.getByText('workspace:Alpha:zoom:1')).toBeInTheDocument();
+      expect(screen.getByText(`workspace:Alpha:zoom:${expectedZoom}`)).toBeInTheDocument();
     });
     expect(screen.getByText('runtime warning')).toBeInTheDocument();
     expect(screen.getAllByText(/Package plugin/i).length).toBeGreaterThan(0);
@@ -258,6 +260,85 @@ describe('PluginsManager', () => {
       expect(screen.getByText(/Beta failed to load/i)).toBeInTheDocument();
       expect(screen.getByText('broken export')).toBeInTheDocument();
     });
+  });
+
+  it('surfaces dependency status for blocked package plugins', async () => {
+    const plugin = {
+      id: 'action-forge',
+      name: 'Action Forge',
+      filePath: resolve(pluginSystemConfig.pluginsDirectory, 'greeblefs-action-forge/extension.toml'),
+      pluginRoot: pluginSystemConfig.pluginsDirectory,
+      pluginDirectory: joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'greeblefs-action-forge'),
+      backendDirectory: joinPlatformPath(
+        joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'greeblefs-action-forge'),
+        pluginSystemConfig.backendDirectoryName,
+      ),
+      modified: 3,
+      enabled: true,
+      defaultOpen: false,
+      keepMounted: false,
+      component: null,
+      error: null,
+      diagnostics: {
+        sourceKind: 'package-plugin',
+        sourceLabel: 'Action Forge',
+        manifestPath: 'plugins/greeblefs-action-forge/extension.toml',
+        category: 'First-party Automation',
+        tags: ['actions'],
+        testFiles: [],
+        warnings: [],
+        blockedReason: 'GreebleFS UI is installed but disabled.',
+        dependencies: [
+          {
+            id: 'greeblefs-ui',
+            packageName: 'GreebleFS UI',
+            importAs: '@greeblefs/ui',
+            required: true,
+            requestedVersion: '^1.0.0',
+            installedVersion: '1.0.0',
+            status: 'disabled',
+            message: 'GreebleFS UI is installed but disabled.',
+          },
+        ],
+        moduleExports: [],
+        capabilities: {
+          panel: true,
+          themes: 0,
+          shaders: 0,
+          fonts: 0,
+          commands: 0,
+          actions: 0,
+          explorerActions: 0,
+          contextMenuItems: 0,
+          previewLanes: 0,
+          settingsSlots: 0,
+        },
+      },
+    } as never;
+    const onOpenPackagesFolder = vi.fn(() => Promise.resolve());
+
+    render(
+      <PluginsManager
+        appearance={makeAppearance()}
+        plugins={[plugin]}
+        isLoading={false}
+        error={null}
+        onRefreshPlugins={() => undefined}
+        onOpenPluginsFolder={() => Promise.resolve()}
+        onOpenPackagesFolder={onOpenPackagesFolder}
+        onSetPluginEnabled={() => undefined}
+        createPluginApi={() => ({}) as never}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Action Forge is waiting on dependencies/i)).toBeInTheDocument();
+    });
+    expect(screen.getAllByText('Dependency blocked').length).toBeGreaterThan(0);
+    expect(screen.getByText('GreebleFS UI')).toBeInTheDocument();
+    expect(screen.getByText('@greeblefs/ui • ^1.0.0 • required')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Open packages folder/i }));
+    expect(onOpenPackagesFolder).toHaveBeenCalledTimes(1);
   });
 
   it('collapses plugin rail categories and inspector sections', async () => {

@@ -10,6 +10,14 @@
       "profileMode": "shared-root"
     },
     {
+      "id": "packages",
+      "relativeDirectory": "packages",
+      "envVarSuffix": "PACKAGES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
+    },
+    {
       "id": "themes",
       "relativeDirectory": "themes",
       "envVarSuffix": "THEMES",

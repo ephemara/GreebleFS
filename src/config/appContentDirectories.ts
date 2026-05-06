@@ -47,6 +47,19 @@ const shippedManagedDirectoryMetadata = {
     keywords: ["plugin", "panel", "runtime module", "command"],
     order: 10,
   },
+  packages: {
+    label: "Plugin Packages",
+    description:
+      "Drop shared plugin dependency packages and reusable module libraries here.",
+    keywords: [
+      "package",
+      "dependency",
+      "plugin library",
+      "shared module",
+      "ui kit",
+    ],
+    order: 12,
+  },
   themes: {
     label: "Themes",
     description:

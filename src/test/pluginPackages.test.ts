@@ -192,6 +192,258 @@ describe('plugin package discovery', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('loads declared module dependencies from usr packages and catalogs library packages', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+      const pluginsRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/');
+      const packagesRoot = pluginSystemConfig.packagesDirectory.replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginsRoot) {
+        return [
+          {
+            name: 'dependency-consumer',
+            path: `${pluginsRoot}/dependency-consumer`,
+            is_dir: true,
+            extension: '',
+            modified: 20,
+          },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === packagesRoot) {
+        return [
+          {
+            name: 'greeblefs-ui',
+            path: `${packagesRoot}/greeblefs-ui`,
+            is_dir: true,
+            extension: '',
+            modified: 10,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${packagesRoot}/greeblefs-ui/extension.toml`) {
+        return `
+          id = "greeblefs-ui"
+          version = "1.0.0"
+          name = "GreebleFS UI"
+          packageKind = "library"
+          category = "First-party Libraries"
+
+          [exports.modules]
+          "@greeblefs/ui" = "src/index.tsx"
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${pluginsRoot}/dependency-consumer/extension.toml`) {
+        return `
+          id = "dependency-consumer"
+          version = "1.0.0"
+          name = "Dependency Consumer"
+          entry = "index.tsx"
+
+          [[dependencies]]
+          id = "greeblefs-ui"
+          version = "^1.0.0"
+          importAs = "@greeblefs/ui"
+          required = true
+        `;
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === `${packagesRoot}/greeblefs-ui/src`) {
+        return [
+          {
+            name: 'index.tsx',
+            path: `${packagesRoot}/greeblefs-ui/src/index.tsx`,
+            is_dir: false,
+            extension: 'tsx',
+            modified: 11,
+          },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === `${pluginsRoot}/dependency-consumer`) {
+        return [
+          {
+            name: 'index.tsx',
+            path: `${pluginsRoot}/dependency-consumer/index.tsx`,
+            is_dir: false,
+            extension: 'tsx',
+            modified: 21,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${packagesRoot}/greeblefs-ui/src/index.tsx`) {
+        return `
+          import React from 'react';
+          export function SharedBadge({ label }) {
+            return React.createElement('strong', null, label);
+          }
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${pluginsRoot}/dependency-consumer/index.tsx`) {
+        return `
+          import React from 'react';
+          import { definePlugin } from 'overlayterm-plugin';
+          import { SharedBadge } from '@greeblefs/ui';
+
+          export default definePlugin({
+            component: function DependencyConsumer() {
+              return React.createElement('div', null, React.createElement(SharedBadge, { label: 'dependency-ready' }));
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_list_dir') {
+        return [];
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+
+    expect(result.warnings).toEqual([]);
+    expect(result.plugins.map(plugin => plugin.id)).toEqual([
+      'dependency-consumer',
+      'greeblefs-ui',
+    ]);
+    expect(result.plugins.find(plugin => plugin.id === 'greeblefs-ui')?.diagnostics).toMatchObject({
+      sourceKind: 'library-package',
+      packageKind: 'library',
+      moduleExports: ['@greeblefs/ui'],
+    });
+    const consumer = result.plugins.find(plugin => plugin.id === 'dependency-consumer')!;
+    expect(consumer.diagnostics.dependencies?.[0]).toMatchObject({
+      id: 'greeblefs-ui',
+      importAs: '@greeblefs/ui',
+      status: 'satisfied',
+    });
+    expect(renderToStaticMarkup(React.createElement(consumer.component as React.ComponentType))).toContain('dependency-ready');
+  });
+
+  it('blocks package plugins when required dependencies are missing disabled incompatible or cyclic', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+      const pluginsRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/');
+      const packagesRoot = pluginSystemConfig.packagesDirectory.replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginsRoot) {
+        return [
+          { name: 'missing-consumer', path: `${pluginsRoot}/missing-consumer`, is_dir: true, extension: '', modified: 10 },
+          { name: 'disabled-consumer', path: `${pluginsRoot}/disabled-consumer`, is_dir: true, extension: '', modified: 11 },
+          { name: 'version-consumer', path: `${pluginsRoot}/version-consumer`, is_dir: true, extension: '', modified: 12 },
+          { name: 'cycle-a', path: `${pluginsRoot}/cycle-a`, is_dir: true, extension: '', modified: 13 },
+          { name: 'cycle-b', path: `${pluginsRoot}/cycle-b`, is_dir: true, extension: '', modified: 14 },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === packagesRoot) {
+        return [
+          { name: 'disabled-lib', path: `${packagesRoot}/disabled-lib`, is_dir: true, extension: '', modified: 20 },
+          { name: 'old-lib', path: `${packagesRoot}/old-lib`, is_dir: true, extension: '', modified: 21 },
+        ];
+      }
+
+      const manifests: Record<string, string> = {
+        [`${pluginsRoot}/missing-consumer/extension.toml`]: `
+          id = "missing-consumer"
+          name = "Missing Consumer"
+          entry = "index.tsx"
+          [[dependencies]]
+          id = "missing-lib"
+          version = "^1.0.0"
+          importAs = "@missing/lib"
+        `,
+        [`${pluginsRoot}/disabled-consumer/extension.toml`]: `
+          id = "disabled-consumer"
+          name = "Disabled Consumer"
+          entry = "index.tsx"
+          [[dependencies]]
+          id = "disabled-lib"
+          version = "^1.0.0"
+          importAs = "@disabled/lib"
+        `,
+        [`${pluginsRoot}/version-consumer/extension.toml`]: `
+          id = "version-consumer"
+          name = "Version Consumer"
+          entry = "index.tsx"
+          [[dependencies]]
+          id = "old-lib"
+          version = "^2.0.0"
+          importAs = "@old/lib"
+        `,
+        [`${pluginsRoot}/cycle-a/extension.toml`]: `
+          id = "cycle-a"
+          name = "Cycle A"
+          entry = "index.tsx"
+          [[dependencies]]
+          id = "cycle-b"
+          version = "*"
+        `,
+        [`${pluginsRoot}/cycle-b/extension.toml`]: `
+          id = "cycle-b"
+          name = "Cycle B"
+          entry = "index.tsx"
+          [[dependencies]]
+          id = "cycle-a"
+          version = "*"
+        `,
+        [`${packagesRoot}/disabled-lib/extension.toml`]: `
+          id = "disabled-lib"
+          version = "1.0.0"
+          name = "Disabled Lib"
+          packageKind = "library"
+          [exports.modules]
+          "@disabled/lib" = "src/index.ts"
+        `,
+        [`${packagesRoot}/old-lib/extension.toml`]: `
+          id = "old-lib"
+          version = "1.0.0"
+          name = "Old Lib"
+          packageKind = "library"
+          [exports.modules]
+          "@old/lib" = "src/index.ts"
+        `,
+      };
+
+      if (command === 'fs_read_text_file' && manifests[normalizedPath]) {
+        return manifests[normalizedPath];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath.endsWith('/index.tsx')) {
+        throw new Error(`blocked package source should not load: ${normalizedPath}`);
+      }
+
+      if (command === 'fs_list_dir') {
+        return [];
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(
+      () => createMockOverlayPluginApi(),
+      {
+        disabledPluginIds: new Set(['disabled-lib']),
+      },
+    );
+
+    const byId = new Map(result.plugins.map(plugin => [plugin.id, plugin]));
+    expect(byId.get('missing-consumer')?.diagnostics.dependencies?.[0]?.status).toBe('missing');
+    expect(byId.get('disabled-consumer')?.diagnostics.dependencies?.[0]?.status).toBe('disabled');
+    expect(byId.get('version-consumer')?.diagnostics.dependencies?.[0]?.status).toBe('incompatible');
+    expect(byId.get('cycle-a')?.diagnostics.blockedReason).toContain('cycle');
+    expect(byId.get('cycle-b')?.diagnostics.blockedReason).toContain('cycle');
+    expect(byId.get('disabled-lib')?.enabled).toBe(false);
+    expect([...byId.values()].filter(plugin => plugin.id.endsWith('consumer') || plugin.id.startsWith('cycle-')).every(plugin => plugin.component == null)).toBe(true);
+  });
+
   it('loads legacy plugins and manifest-based packages with contributions', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;

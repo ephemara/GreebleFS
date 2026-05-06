@@ -464,7 +464,31 @@ export type BoundOverlayPluginWorkflowProps = Omit<
 export type BoundOverlayPluginWorkflowComponent =
   React.ComponentType<BoundOverlayPluginWorkflowProps>;
 
-export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
+export type OverlayPluginSourceKind =
+  | 'file-plugin'
+  | 'package-plugin'
+  | 'library-package';
+
+export type OverlayPluginPackageKind = 'plugin' | 'library' | 'runtime';
+
+export type OverlayPluginDependencyStatus =
+  | 'satisfied'
+  | 'missing'
+  | 'disabled'
+  | 'incompatible'
+  | 'cyclic'
+  | 'blocked';
+
+export interface OverlayPluginDependencyDiagnostic {
+  id: string;
+  importAs?: string;
+  required: boolean;
+  requestedVersion?: string;
+  installedVersion?: string;
+  packageName?: string;
+  status: OverlayPluginDependencyStatus;
+  message: string;
+}
 
 export interface OverlayPluginCapabilitySummary {
   panel: boolean;
@@ -484,10 +508,14 @@ export interface OverlayPluginDiagnostics {
   sourceKind: OverlayPluginSourceKind;
   sourceLabel: string;
   manifestPath?: string;
+  packageKind?: OverlayPluginPackageKind;
   category: string;
   tags: string[];
   testFiles: OverlayPluginTestFile[];
   warnings: string[];
+  dependencies?: OverlayPluginDependencyDiagnostic[];
+  moduleExports?: string[];
+  blockedReason?: string | null;
   capabilities: OverlayPluginCapabilitySummary;
 }
 
@@ -527,6 +555,7 @@ export interface LoadPluginFromSourceOptions {
   >;
   diagnostics?: Partial<OverlayPluginDiagnostics>;
   resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+  allowedModules?: Record<string, unknown>;
 }
 
 export function definePlugin(
@@ -612,10 +641,14 @@ export async function loadPluginFromSource(
     sourceKind: options?.diagnostics?.sourceKind ?? 'file-plugin',
     sourceLabel: options?.diagnostics?.sourceLabel ?? context.filePath,
     manifestPath: options?.diagnostics?.manifestPath,
+    packageKind: options?.diagnostics?.packageKind,
     category: options?.diagnostics?.category ?? 'General',
     tags: options?.diagnostics?.tags ?? [],
     testFiles: options?.diagnostics?.testFiles ?? [],
     warnings: options?.diagnostics?.warnings ?? [],
+    dependencies: options?.diagnostics?.dependencies,
+    moduleExports: options?.diagnostics?.moduleExports,
+    blockedReason: options?.diagnostics?.blockedReason ?? null,
     capabilities: {
       panel: options?.diagnostics?.capabilities?.panel ?? true,
       themes: options?.diagnostics?.capabilities?.themes ?? 0,
@@ -638,7 +671,10 @@ export async function loadPluginFromSource(
       source,
       options?.resolveRelativeModuleSource,
     );
-    const exported = executePluginModuleGraph(transpiledGraph);
+    const exported = executePluginModuleGraph(
+      transpiledGraph,
+      options?.allowedModules,
+    );
     const normalized = normalizePluginExport(exported, context);
 
     const plugin: LoadedOverlayPlugin = {
@@ -692,6 +728,7 @@ export async function loadPluginPreviewLaneFromSource(
   entry: PluginFileEntry,
   options?: {
     resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+    allowedModules?: Record<string, unknown>;
   },
 ): Promise<React.ComponentType<OverlayPluginPreviewLaneProps>> {
   const transpiledGraph = await transpilePluginGraph(
@@ -699,7 +736,10 @@ export async function loadPluginPreviewLaneFromSource(
     source,
     options?.resolveRelativeModuleSource,
   );
-  const exported = executePluginModuleGraph(transpiledGraph);
+  const exported = executePluginModuleGraph(
+    transpiledGraph,
+    options?.allowedModules,
+  );
   return normalizePreviewLaneExport(exported).component;
 }
 
@@ -708,6 +748,7 @@ export async function loadPluginSettingsSlotFromSource(
   entry: PluginFileEntry,
   options?: {
     resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+    allowedModules?: Record<string, unknown>;
   },
 ): Promise<React.ComponentType<OverlayPluginSettingsSlotProps>> {
   const transpiledGraph = await transpilePluginGraph(
@@ -715,7 +756,10 @@ export async function loadPluginSettingsSlotFromSource(
     source,
     options?.resolveRelativeModuleSource,
   );
-  const exported = executePluginModuleGraph(transpiledGraph);
+  const exported = executePluginModuleGraph(
+    transpiledGraph,
+    options?.allowedModules,
+  );
   return normalizeSettingsSlotExport(exported).component;
 }
 
@@ -724,6 +768,7 @@ export async function loadPluginWorkflowFromSource(
   entry: PluginFileEntry,
   options?: {
     resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+    allowedModules?: Record<string, unknown>;
   },
 ): Promise<OverlayPluginWorkflowDefinition> {
   const transpiledGraph = await transpilePluginGraph(
@@ -731,8 +776,27 @@ export async function loadPluginWorkflowFromSource(
     source,
     options?.resolveRelativeModuleSource,
   );
-  const exported = executePluginModuleGraph(transpiledGraph);
+  const exported = executePluginModuleGraph(
+    transpiledGraph,
+    options?.allowedModules,
+  );
   return normalizeWorkflowExport(exported);
+}
+
+export async function loadPluginModuleFromSource(
+  source: string,
+  entry: PluginFileEntry,
+  options?: {
+    resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
+    allowedModules?: Record<string, unknown>;
+  },
+): Promise<unknown> {
+  const transpiledGraph = await transpilePluginGraph(
+    entry.path,
+    source,
+    options?.resolveRelativeModuleSource,
+  );
+  return executePluginModuleGraph(transpiledGraph, options?.allowedModules);
 }
 
 async function transpilePluginGraph(
@@ -748,8 +812,12 @@ async function transpilePluginGraph(
   });
 }
 
-function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
+function executePluginModuleGraph(
+  graph: RuntimeModuleGraph,
+  dependencyAllowedModules: Record<string, unknown> = {},
+): unknown {
   const allowedModules: Record<string, unknown> = {
+    ...dependencyAllowedModules,
     react: React,
     'lucide-react': LucideReact,
     '@tauri-apps/api/core': TauriCore,

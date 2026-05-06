@@ -115,6 +115,8 @@ public/icons/folder_scripts.svg
 src/repomix-output.xml
 .telemetry/
 packages/
+!usr/packages/
+!usr/packages/**
 src/generated/tauri.ts
 src/generated/tauri.ts
 .windsurf/skills/.other/fp/FPilot.exe_hlil.txt

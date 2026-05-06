@@ -66,10 +66,27 @@ export function isIgnoredPluginWatchPath(path: string): boolean {
   ));
 }
 
+export function isPluginManagedWatchPath(path: string): boolean {
+  const normalizedPath = path.replace(/\\/g, '/').toLowerCase();
+  const managedRoots = [
+    pluginSystemConfig.pluginsDirectory,
+    pluginSystemConfig.packagesDirectory,
+  ].map(root => root.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase());
+
+  if (managedRoots.some(root => normalizedPath === root || normalizedPath.startsWith(`${root}/`))) {
+    return true;
+  }
+
+  const segments = normalizePluginWatchPathSegments(path);
+  return segments.includes('plugins') || segments.includes('packages');
+}
+
 export function shouldRefreshForPluginWatchPaths(paths: string[]): boolean {
   if (paths.length === 0) {
     return true;
   }
 
-  return paths.some(path => !isIgnoredPluginWatchPath(path));
+  return paths.some(path => (
+    isPluginManagedWatchPath(path) && !isIgnoredPluginWatchPath(path)
+  ));
 }

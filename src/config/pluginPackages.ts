@@ -49,11 +49,14 @@ import {
   type OverlayPluginApi,
   type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
+  type OverlayPluginDependencyDiagnostic,
+  type OverlayPluginPackageKind,
   type OverlayPluginPreviewLaneProps,
   type OverlayPluginSettingsSlotProps,
   type OverlayPluginWorkflowDefinition,
   type OverlayPluginTestFile,
   type PluginFileEntry,
+  loadPluginModuleFromSource,
   loadPluginPreviewLaneFromSource,
   loadPluginSettingsSlotFromSource,
   loadPluginWorkflowFromSource,
@@ -212,6 +215,17 @@ interface PluginPackageTestFileManifest {
   kind?: 'file' | 'directory';
 }
 
+interface PluginPackageDependencyManifest {
+  id: string;
+  version?: string;
+  importAs?: string;
+  required: boolean;
+}
+
+interface PluginPackageExportsManifest {
+  modules: Record<string, string>;
+}
+
 interface PluginPackageManifest {
   version?: number | string;
   id?: string;
@@ -219,6 +233,7 @@ interface PluginPackageManifest {
   displayName?: string;
   description?: string;
   apiVersion?: string;
+  packageKind?: OverlayPluginPackageKind;
   entry?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
@@ -230,6 +245,8 @@ interface PluginPackageManifest {
   runtimes?: Array<Record<string, unknown>>;
   artifacts?: Array<Record<string, unknown>>;
   debugSources?: string[];
+  exports?: PluginPackageExportsManifest;
+  dependencies?: PluginPackageDependencyManifest[];
   contributions?: {
     themes?: string[];
     shaders?: string[];
@@ -245,11 +262,29 @@ interface PluginPackageManifest {
 }
 
 interface PluginPackageRecord {
+  rootKind: 'plugins' | 'packages';
   directoryName: string;
   directoryPath: string;
   manifestPath: string;
   manifest: PluginPackageManifest;
   modified: number;
+}
+
+interface PluginPackageDependencyGraphEntry {
+  record: PluginPackageRecord;
+  id: string;
+  name: string;
+  version: string;
+  packageKind: OverlayPluginPackageKind;
+  dependencies: OverlayPluginDependencyDiagnostic[];
+  blocked: boolean;
+  blockedReason: string | null;
+}
+
+interface PluginPackageDependencyRuntime {
+  graph: Map<string, PluginPackageDependencyGraphEntry>;
+  recordsById: Map<string, PluginPackageRecord>;
+  moduleExportCache: Map<string, Promise<unknown>>;
 }
 
 export interface OverlayPluginDiscoveryOptions {
@@ -304,6 +339,51 @@ function asStringRecord(value: unknown): Record<string, string> {
       .filter(([, entry]) => typeof entry === 'string' && entry.trim().length > 0)
       .map(([key, entry]) => [key, String(entry).trim()]),
   );
+}
+
+function asPackageKind(value: unknown): OverlayPluginPackageKind {
+  if (value === 'library' || value === 'runtime') {
+    return value;
+  }
+  return 'plugin';
+}
+
+function asPackageExportsManifest(value: unknown): PluginPackageExportsManifest | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+
+  const modules = asStringRecord(asRecord(record.modules) ?? record.modules);
+  return Object.keys(modules).length > 0
+    ? { modules }
+    : undefined;
+}
+
+function asDependencyManifestArray(value: unknown): PluginPackageDependencyManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const id = asString(record.id);
+    if (!id) {
+      return [];
+    }
+
+    const required = record.required === false ? false : true;
+    return [{
+      id,
+      version: asString(record.version) || undefined,
+      importAs: asString(record.importAs) || undefined,
+      required,
+    }];
+  });
 }
 
 function asFontManifestArray(value: unknown): PluginPackageFontManifest[] {
@@ -936,6 +1016,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
     displayName: asString(source.displayName),
     description: asString(source.description),
     apiVersion: asString(source.apiVersion),
+    packageKind: asPackageKind(source.packageKind),
     entry: asString(source.entry),
     defaultOpen: asBoolean(source.defaultOpen),
     keepMounted: asBoolean(source.keepMounted),
@@ -951,6 +1032,8 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       ? source.artifacts.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
       : undefined,
     debugSources: asStringArray(source.debugSources),
+    exports: asPackageExportsManifest(source.exports),
+    dependencies: asDependencyManifestArray(source.dependencies),
     contributions: {
       themes: asStringArray(contributions?.themes),
       shaders: asStringArray(contributions?.shaders),
@@ -1102,6 +1185,30 @@ function derivePackageName(record: PluginPackageRecord): string {
   );
 }
 
+function derivePackageVersion(record: PluginPackageRecord): string {
+  return String(record.manifest.version ?? '1').trim() || '1';
+}
+
+function derivePackageKind(record: PluginPackageRecord): OverlayPluginPackageKind {
+  return record.manifest.packageKind ?? 'plugin';
+}
+
+function getPackageRootDirectory(record: PluginPackageRecord): string {
+  return record.rootKind === 'packages'
+    ? pluginSystemConfig.packagesDirectory
+    : pluginSystemConfig.pluginsDirectory;
+}
+
+function getPackageSourceKind(record: PluginPackageRecord) {
+  return derivePackageKind(record) === 'library'
+    ? 'library-package' as const
+    : 'package-plugin' as const;
+}
+
+function getPackageModuleExportSpecifiers(record: PluginPackageRecord): string[] {
+  return Object.keys(record.manifest.exports?.modules ?? {}).sort();
+}
+
 function estimatePackageManifestCapabilities(
   record: PluginPackageRecord,
 ): OverlayPluginCapabilitySummary {
@@ -1163,6 +1270,7 @@ function createDisabledLegacyPlugin(entry: FileEntry): LoadedOverlayPlugin {
 
 function createDisabledPackagePlugin(
   record: PluginPackageRecord,
+  dependencyEntry?: PluginPackageDependencyGraphEntry,
 ): LoadedOverlayPlugin {
   const packageId = derivePackageId(record);
   const packageName = derivePackageName(record);
@@ -1175,7 +1283,7 @@ function createDisabledPackagePlugin(
     name: packageName,
     description: record.manifest.description,
     filePath: record.manifestPath,
-    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginRoot: getPackageRootDirectory(record),
     pluginDirectory: record.directoryPath,
     backendDirectory: packageBackendDirectory,
     enablementKey: packageId,
@@ -1186,14 +1294,70 @@ function createDisabledPackagePlugin(
     component: null,
     error: null,
     diagnostics: {
-      sourceKind: 'package-plugin',
+      sourceKind: getPackageSourceKind(record),
       sourceLabel: packageName,
       manifestPath: record.manifestPath,
+      packageKind: derivePackageKind(record),
       category: record.manifest.category || 'General',
       tags: record.manifest.tags ?? [],
       testFiles: resolvePackageTestFiles(record),
       warnings: [],
+      dependencies: dependencyEntry?.dependencies,
+      moduleExports: getPackageModuleExportSpecifiers(record),
+      blockedReason: dependencyEntry?.blockedReason ?? null,
       capabilities: estimatePackageManifestCapabilities(record),
+    },
+  };
+}
+
+function createMetadataOnlyPackagePlugin(
+  record: PluginPackageRecord,
+  options: {
+    dependencyEntry?: PluginPackageDependencyGraphEntry;
+    warnings?: string[];
+    capabilities?: OverlayPluginCapabilitySummary;
+    blockedReason?: string | null;
+  } = {},
+): LoadedOverlayPlugin {
+  const packageId = derivePackageId(record);
+  const packageName = derivePackageName(record);
+  const packageBackendDirectory = joinPlatformPath(
+    record.directoryPath,
+    pluginSystemConfig.backendDirectoryName,
+  );
+  const dependencyEntry = options.dependencyEntry;
+  const blockedReason =
+    options.blockedReason ?? dependencyEntry?.blockedReason ?? null;
+
+  return {
+    id: packageId,
+    name: packageName,
+    description: record.manifest.description,
+    filePath: record.manifestPath,
+    pluginRoot: getPackageRootDirectory(record),
+    pluginDirectory: record.directoryPath,
+    backendDirectory: packageBackendDirectory,
+    enablementKey: packageId,
+    modified: record.modified,
+    enabled: true,
+    defaultOpen: false,
+    keepMounted: false,
+    component: null,
+    error: null,
+    diagnostics: {
+      sourceKind: getPackageSourceKind(record),
+      sourceLabel: packageName,
+      manifestPath: record.manifestPath,
+      packageKind: derivePackageKind(record),
+      category: record.manifest.category || 'General',
+      tags: record.manifest.tags ?? [],
+      testFiles: resolvePackageTestFiles(record),
+      warnings: options.warnings ?? [],
+      dependencies: dependencyEntry?.dependencies,
+      moduleExports: getPackageModuleExportSpecifiers(record),
+      blockedReason,
+      capabilities:
+        options.capabilities ?? estimatePackageManifestCapabilities(record),
     },
   };
 }
@@ -1266,6 +1430,14 @@ async function listDirectory(path: string): Promise<FileEntry[]> {
   return commands.fsListDir(path, false).then(unwrapTauriResult);
 }
 
+async function listDirectoryOptional(path: string): Promise<FileEntry[]> {
+  try {
+    return await listDirectory(path);
+  } catch {
+    return [];
+  }
+}
+
 async function resolveRelativeFileEntry(baseDirectory: string, relativePath: string): Promise<FileEntry | null> {
   if (!isSafeRelativePath(relativePath)) {
     return null;
@@ -1285,6 +1457,10 @@ async function resolveRelativeFileEntry(baseDirectory: string, relativePath: str
 }
 
 async function resolvePackagePanelEntry(record: PluginPackageRecord): Promise<FileEntry | null> {
+  if (derivePackageKind(record) === 'library' && !record.manifest.entry) {
+    return null;
+  }
+
   const candidates = record.manifest.entry
     ? [record.manifest.entry]
     : [...pluginSystemConfig.packageEntryCandidates];
@@ -1348,6 +1524,372 @@ function createPluginRelativeModuleSourceResolver(
   };
 }
 
+interface ParsedVersion {
+  major: number;
+  minor: number;
+  patch: number;
+  valid: boolean;
+}
+
+function parseLooseVersion(value: string | undefined): ParsedVersion {
+  const raw = (value ?? '').trim();
+  const match = raw.match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/i);
+  if (!match) {
+    return { major: 0, minor: 0, patch: 0, valid: false };
+  }
+
+  return {
+    major: Number(match[1] ?? 0),
+    minor: Number(match[2] ?? 0),
+    patch: Number(match[3] ?? 0),
+    valid: true,
+  };
+}
+
+function compareLooseVersions(left: ParsedVersion, right: ParsedVersion): number {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+  if (left.minor !== right.minor) {
+    return left.minor - right.minor;
+  }
+  return left.patch - right.patch;
+}
+
+function satisfiesPackageVersionRange(
+  installedVersion: string,
+  requestedVersion: string | undefined,
+): boolean {
+  const requested = requestedVersion?.trim();
+  if (!requested || requested === '*') {
+    return true;
+  }
+
+  if (requested.startsWith('^')) {
+    const lowerBound = parseLooseVersion(requested.slice(1));
+    const installed = parseLooseVersion(installedVersion);
+    if (!lowerBound.valid || !installed.valid) {
+      return installedVersion === requested.slice(1);
+    }
+    if (compareLooseVersions(installed, lowerBound) < 0) {
+      return false;
+    }
+    return lowerBound.major > 0
+      ? installed.major === lowerBound.major
+      : installed.major === 0 && installed.minor === lowerBound.minor;
+  }
+
+  const installed = parseLooseVersion(installedVersion);
+  const exact = parseLooseVersion(requested);
+  if (installed.valid && exact.valid) {
+    return compareLooseVersions(installed, exact) === 0;
+  }
+  return installedVersion === requested;
+}
+
+function detectRequiredDependencyCycleIds(
+  recordsById: ReadonlyMap<string, PluginPackageRecord>,
+): Set<string> {
+  const cyclicIds = new Set<string>();
+  const stateById = new Map<string, 'visiting' | 'visited'>();
+  const stack: string[] = [];
+
+  const visit = (packageId: string) => {
+    const state = stateById.get(packageId);
+    if (state === 'visited') {
+      return;
+    }
+    if (state === 'visiting') {
+      const cycleStart = stack.indexOf(packageId);
+      const cycleMembers = cycleStart >= 0 ? stack.slice(cycleStart) : [packageId];
+      cycleMembers.forEach(id => cyclicIds.add(id));
+      return;
+    }
+
+    const record = recordsById.get(packageId);
+    if (!record) {
+      return;
+    }
+
+    stateById.set(packageId, 'visiting');
+    stack.push(packageId);
+    for (const dependency of record.manifest.dependencies ?? []) {
+      if (dependency.required !== false && recordsById.has(dependency.id)) {
+        visit(dependency.id);
+      }
+    }
+    stack.pop();
+    stateById.set(packageId, 'visited');
+  };
+
+  recordsById.forEach((_record, packageId) => visit(packageId));
+  return cyclicIds;
+}
+
+function createDependencyDiagnostic(
+  dependency: PluginPackageDependencyManifest,
+  recordsById: ReadonlyMap<string, PluginPackageRecord>,
+  disabledPluginIds: ReadonlySet<string>,
+  cyclicIds: ReadonlySet<string>,
+  ownerId: string,
+): OverlayPluginDependencyDiagnostic {
+  const dependencyRecord = recordsById.get(dependency.id);
+  const requestedVersion = dependency.version;
+  const required = dependency.required !== false;
+
+  if (!dependencyRecord) {
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      status: 'missing',
+      message: `${dependency.id} is not installed in usr/plugins or usr/packages.`,
+    };
+  }
+
+  const dependencyName = derivePackageName(dependencyRecord);
+  const installedVersion = derivePackageVersion(dependencyRecord);
+  if (isPluginDisabled(disabledPluginIds, dependency.id)) {
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      installedVersion,
+      packageName: dependencyName,
+      status: 'disabled',
+      message: `${dependencyName} is installed but disabled.`,
+    };
+  }
+
+  if (!satisfiesPackageVersionRange(installedVersion, requestedVersion)) {
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      installedVersion,
+      packageName: dependencyName,
+      status: 'incompatible',
+      message: `${dependencyName} is ${installedVersion}; ${requestedVersion || '*'} is required.`,
+    };
+  }
+
+  if (
+    dependency.importAs &&
+    !(dependency.importAs in (dependencyRecord.manifest.exports?.modules ?? {}))
+  ) {
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      installedVersion,
+      packageName: dependencyName,
+      status: 'incompatible',
+      message: `${dependencyName} does not export ${dependency.importAs}.`,
+    };
+  }
+
+  if (cyclicIds.has(ownerId) && cyclicIds.has(dependency.id)) {
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      installedVersion,
+      packageName: dependencyName,
+      status: 'cyclic',
+      message: `${dependencyName} participates in a required dependency cycle.`,
+    };
+  }
+
+  return {
+    id: dependency.id,
+    importAs: dependency.importAs,
+    required,
+    requestedVersion,
+    installedVersion,
+    packageName: dependencyName,
+    status: 'satisfied',
+    message: `${dependencyName} ${installedVersion} is available.`,
+  };
+}
+
+function createPackageDependencyRuntime(
+  records: PluginPackageRecord[],
+  disabledPluginIds: ReadonlySet<string>,
+): { runtime: PluginPackageDependencyRuntime; warnings: string[] } {
+  const warnings: string[] = [];
+  const recordsById = new Map<string, PluginPackageRecord>();
+  for (const record of records) {
+    const packageId = derivePackageId(record);
+    if (recordsById.has(packageId)) {
+      warnings.push(
+        `${derivePackageName(record)}: duplicate package id ${packageId} was ignored`,
+      );
+      continue;
+    }
+    recordsById.set(packageId, record);
+  }
+
+  const cyclicIds = detectRequiredDependencyCycleIds(recordsById);
+  const graph = new Map<string, PluginPackageDependencyGraphEntry>();
+  recordsById.forEach((record, packageId) => {
+    const dependencies = (record.manifest.dependencies ?? []).map(dependency =>
+      createDependencyDiagnostic(
+        dependency,
+        recordsById,
+        disabledPluginIds,
+        cyclicIds,
+        packageId,
+      ),
+    );
+    graph.set(packageId, {
+      record,
+      id: packageId,
+      name: derivePackageName(record),
+      version: derivePackageVersion(record),
+      packageKind: derivePackageKind(record),
+      dependencies,
+      blocked: false,
+      blockedReason: null,
+    });
+  });
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    graph.forEach((entry) => {
+      const blockers: string[] = [];
+      entry.dependencies.forEach((dependency) => {
+        if (!dependency.required) {
+          return;
+        }
+        if (dependency.status === 'satisfied') {
+          const dependencyEntry = graph.get(dependency.id);
+          if (dependencyEntry?.blocked) {
+            dependency.status = 'blocked';
+            dependency.message = `${dependency.packageName ?? dependency.id} is blocked: ${dependencyEntry.blockedReason}`;
+            changed = true;
+          }
+        }
+        if (dependency.status !== 'satisfied') {
+          blockers.push(dependency.message);
+        }
+      });
+
+      if (cyclicIds.has(entry.id)) {
+        blockers.push(`${entry.name} participates in a required dependency cycle.`);
+      }
+
+      const blockedReason = blockers[0] ?? null;
+      const blocked = blockedReason != null;
+      if (entry.blocked !== blocked || entry.blockedReason !== blockedReason) {
+        entry.blocked = blocked;
+        entry.blockedReason = blockedReason;
+        changed = true;
+      }
+    });
+  }
+
+  return {
+    runtime: {
+      graph,
+      recordsById,
+      moduleExportCache: new Map(),
+    },
+    warnings,
+  };
+}
+
+async function loadPackageModuleExport(
+  record: PluginPackageRecord,
+  importSpecifier: string,
+  dependencyRuntime: PluginPackageDependencyRuntime,
+  importStack: string[] = [],
+): Promise<unknown> {
+  const packageId = derivePackageId(record);
+  const cacheKey = `${packageId}::${importSpecifier}`;
+  const cached = dependencyRuntime.moduleExportCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const promise = (async () => {
+    if (importStack.includes(cacheKey)) {
+      throw new Error(`Dependency module cycle while loading ${importSpecifier}.`);
+    }
+
+    const modulePath = record.manifest.exports?.modules?.[importSpecifier];
+    if (!modulePath || !isSafeRelativePath(modulePath)) {
+      throw new Error(`${derivePackageName(record)} does not export ${importSpecifier}.`);
+    }
+
+    const entry = await resolveRelativeFileEntry(record.directoryPath, modulePath);
+    if (
+      !entry ||
+      !pluginSystemConfig.frontendExtensions.includes(entry.extension as never)
+    ) {
+      throw new Error(`${derivePackageName(record)} export ${importSpecifier} could not be resolved.`);
+    }
+
+    const allowedModules = await resolvePackageDependencyAllowedModules(
+      record,
+      dependencyRuntime,
+      [...importStack, cacheKey],
+    );
+    const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
+    return loadPluginModuleFromSource(source, entry as PluginFileEntry, {
+      resolveRelativeModuleSource: createPluginRelativeModuleSourceResolver(record.directoryPath),
+      allowedModules,
+    });
+  })();
+
+  dependencyRuntime.moduleExportCache.set(cacheKey, promise);
+  return promise;
+}
+
+async function resolvePackageDependencyAllowedModules(
+  record: PluginPackageRecord,
+  dependencyRuntime: PluginPackageDependencyRuntime,
+  importStack: string[] = [],
+): Promise<Record<string, unknown>> {
+  const ownerEntry = dependencyRuntime.graph.get(derivePackageId(record));
+  const allowedModules: Record<string, unknown> = {};
+
+  for (const dependency of record.manifest.dependencies ?? []) {
+    const dependencyDiagnostic = ownerEntry?.dependencies.find(
+      diagnostic =>
+        diagnostic.id === dependency.id &&
+        diagnostic.importAs === dependency.importAs,
+    );
+    if (dependencyDiagnostic?.status !== 'satisfied') {
+      continue;
+    }
+
+    const dependencyRecord = dependencyRuntime.recordsById.get(dependency.id);
+    if (!dependencyRecord) {
+      continue;
+    }
+
+    const exportSpecifiers = dependency.importAs
+      ? [dependency.importAs]
+      : getPackageModuleExportSpecifiers(dependencyRecord);
+    for (const importSpecifier of exportSpecifiers) {
+      allowedModules[importSpecifier] = await loadPackageModuleExport(
+        dependencyRecord,
+        importSpecifier,
+        dependencyRuntime,
+        importStack,
+      );
+    }
+  }
+
+  return allowedModules;
+}
+
 async function resolveThemeDirectories(record: PluginPackageRecord): Promise<Array<{ name: string; path: string }>> {
   const explicitThemeDirectories = record.manifest.contributions?.themes ?? [];
   if (explicitThemeDirectories.length > 0) {
@@ -1393,6 +1935,7 @@ async function loadPluginPackage(
   record: PluginPackageRecord,
   hostApiFactory: (context: OverlayPluginContext) => OverlayPluginApi,
   disabledPluginIds: ReadonlySet<string>,
+  dependencyRuntime: PluginPackageDependencyRuntime,
 ): Promise<OverlayPluginDiscoveryResult> {
   const result: OverlayPluginDiscoveryResult = {
     plugins: [],
@@ -1416,8 +1959,22 @@ async function loadPluginPackage(
   const packageTags = record.manifest.tags ?? [];
   const packageTestFiles = resolvePackageTestFiles(record);
   const packageWarnings: string[] = [];
+  const packageDependencyEntry = dependencyRuntime.graph.get(packageId);
   if (isPluginDisabled(disabledPluginIds, packageId)) {
-    result.plugins.push(createDisabledPackagePlugin(record));
+    result.plugins.push(createDisabledPackagePlugin(record, packageDependencyEntry));
+    return result;
+  }
+
+  if (packageDependencyEntry?.blocked) {
+    result.plugins.push(
+      createMetadataOnlyPackagePlugin(record, {
+        dependencyEntry: packageDependencyEntry,
+        blockedReason: packageDependencyEntry.blockedReason,
+      }),
+    );
+    result.warnings.push(
+      `${packageName}: blocked by dependency: ${packageDependencyEntry.blockedReason}`,
+    );
     return result;
   }
 
@@ -1429,12 +1986,16 @@ async function loadPluginPackage(
     id: packageId,
     name: packageName,
     filePath: record.manifestPath,
-    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginRoot: getPackageRootDirectory(record),
     pluginDirectory: record.directoryPath,
     backendDirectory: packageBackendDirectory,
     enablementKey: packageId,
   };
 
+  const dependencyAllowedModules = await resolvePackageDependencyAllowedModules(
+    record,
+    dependencyRuntime,
+  );
   const panelEntry = await resolvePackagePanelEntry(record);
   const panelRuntime = resolvePackagePanelRuntime(record);
   let packagePlugin: LoadedOverlayPlugin | null = null;
@@ -1451,7 +2012,7 @@ async function loadPluginPackage(
           id: packageId,
           name: packageName,
           filePath: panelEntry.path,
-          pluginRoot: pluginSystemConfig.pluginsDirectory,
+          pluginRoot: getPackageRootDirectory(record),
           pluginDirectory: record.directoryPath,
           backendDirectory: packageBackendDirectory,
           enablementKey: packageId,
@@ -1464,14 +2025,19 @@ async function loadPluginPackage(
           keepMounted: record.manifest.keepMounted,
         },
         diagnostics: {
-          sourceKind: 'package-plugin',
+          sourceKind: getPackageSourceKind(record),
           sourceLabel: packageName,
           manifestPath: record.manifestPath,
+          packageKind: derivePackageKind(record),
           category: packageCategory,
           tags: packageTags,
           testFiles: packageTestFiles,
+          dependencies: packageDependencyEntry?.dependencies,
+          moduleExports: getPackageModuleExportSpecifiers(record),
+          blockedReason: null,
         },
         resolveRelativeModuleSource: createPluginRelativeModuleSourceResolver(record.directoryPath),
+        allowedModules: dependencyAllowedModules,
       });
     } catch (error) {
       packageWarnings.push(String(error));
@@ -1487,13 +2053,17 @@ async function loadPluginPackage(
       keepMounted: record.manifest.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
       error: null,
       diagnostics: {
-        sourceKind: 'package-plugin',
+        sourceKind: getPackageSourceKind(record),
         sourceLabel: packageName,
         manifestPath: record.manifestPath,
+        packageKind: derivePackageKind(record),
         category: packageCategory,
         tags: packageTags,
         testFiles: packageTestFiles,
         warnings: [],
+        dependencies: packageDependencyEntry?.dependencies,
+        moduleExports: getPackageModuleExportSpecifiers(record),
+        blockedReason: null,
         capabilities: {
           panel: true,
           themes: 0,
@@ -1773,6 +2343,7 @@ async function loadPluginPackage(
                 rendererEntry as PluginFileEntry,
                 {
                   resolveRelativeModuleSource: previewModuleResolver,
+                  allowedModules: dependencyAllowedModules,
                 },
               );
               previewRendererCache.set(normalizedRendererEntry, rendererComponent);
@@ -1907,6 +2478,7 @@ async function loadPluginPackage(
               rendererEntry as PluginFileEntry,
               {
                 resolveRelativeModuleSource: workflowModuleResolver,
+                allowedModules: dependencyAllowedModules,
               },
             );
             workflowDefinitionCache.set(
@@ -2027,6 +2599,7 @@ async function loadPluginPackage(
                     rendererEntry as PluginFileEntry,
                     {
                       resolveRelativeModuleSource: settingsModuleResolver,
+                      allowedModules: dependencyAllowedModules,
                     },
                   );
                   settingsRendererCache.set(
@@ -2103,28 +2676,43 @@ async function loadPluginPackage(
     ),
   );
 
+  const capabilities: OverlayPluginCapabilitySummary = {
+    panel: packagePlugin != null,
+    mobilePanes: record.manifest.contributions?.mobilePanes?.length ?? 0,
+    themes: result.themePackages.length,
+    shaders: result.shaders.length,
+    fonts: result.fonts.length,
+    commands: result.commands.length,
+    actions: result.actions.length,
+    explorerActions: result.explorerActions.length,
+    contextMenuItems: result.contextMenuItems.length,
+    previewLanes: result.previewLanes.length,
+    settingsSlots: result.settingsSlots.length,
+  };
   if (packagePlugin) {
-    const capabilities: OverlayPluginCapabilitySummary = {
-      panel: true,
-      mobilePanes: record.manifest.contributions?.mobilePanes?.length ?? 0,
-      themes: result.themePackages.length,
-      shaders: result.shaders.length,
-      fonts: result.fonts.length,
-      commands: result.commands.length,
-      actions: result.actions.length,
-      explorerActions: result.explorerActions.length,
-      contextMenuItems: result.contextMenuItems.length,
-      previewLanes: result.previewLanes.length,
-      settingsSlots: result.settingsSlots.length,
-    };
     result.plugins.push({
       ...packagePlugin,
       diagnostics: {
         ...packagePlugin.diagnostics,
         warnings: packageWarnings,
+        dependencies: packageDependencyEntry?.dependencies,
+        moduleExports: getPackageModuleExportSpecifiers(record),
+        blockedReason: null,
         capabilities,
       },
     });
+  } else if (
+    derivePackageKind(record) === 'library' ||
+    record.rootKind === 'packages' ||
+    getPackageModuleExportSpecifiers(record).length > 0
+  ) {
+    result.plugins.push(
+      createMetadataOnlyPackagePlugin(record, {
+        dependencyEntry: packageDependencyEntry,
+        warnings: packageWarnings,
+        capabilities,
+      }),
+    );
   }
   result.warnings.push(...packageWarnings.map(warning => `${packageName}: ${warning}`));
 
@@ -2157,10 +2745,14 @@ export async function discoverOverlayPlugins(
 
   const disabledPluginIds = normalizeDisabledPluginIdSet(options.disabledPluginIds);
   const rootEntries = await listDirectory(pluginSystemConfig.pluginsDirectory);
+  const packageRootEntries = await listDirectoryOptional(pluginSystemConfig.packagesDirectory);
   const legacyFiles = rootEntries
     .filter(entry => !entry.is_dir && pluginSystemConfig.frontendExtensions.includes(entry.extension as never))
     .sort((left, right) => left.name.localeCompare(right.name));
-  const packageDirectories = rootEntries
+  const pluginPackageDirectories = rootEntries
+    .filter(entry => entry.is_dir)
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const dependencyPackageDirectories = packageRootEntries
     .filter(entry => entry.is_dir)
     .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -2179,6 +2771,43 @@ export async function discoverOverlayPlugins(
     workflows: [],
     warnings: [],
   };
+
+  const packageRecords: PluginPackageRecord[] = [];
+  for (const directory of pluginPackageDirectories) {
+    const manifest = await readPluginManifest(directory.path);
+    if (!manifest) {
+      continue;
+    }
+    packageRecords.push({
+      rootKind: 'plugins',
+      directoryName: directory.name,
+      directoryPath: directory.path,
+      manifestPath: manifest.manifestPath,
+      manifest: manifest.manifest,
+      modified: directory.modified,
+    });
+  }
+
+  for (const directory of dependencyPackageDirectories) {
+    const manifest = await readPluginManifest(directory.path);
+    if (!manifest) {
+      continue;
+    }
+    packageRecords.push({
+      rootKind: 'packages',
+      directoryName: directory.name,
+      directoryPath: directory.path,
+      manifestPath: manifest.manifestPath,
+      manifest: manifest.manifest,
+      modified: directory.modified,
+    });
+  }
+
+  const dependencyRuntimeResult = createPackageDependencyRuntime(
+    packageRecords,
+    disabledPluginIds,
+  );
+  aggregate.warnings.push(...dependencyRuntimeResult.warnings);
 
   const legacyPluginResults = await Promise.allSettled(legacyFiles.map(async entry => {
     const enablementKey = deriveIdFromName(entry.name, 'plugin');
@@ -2205,20 +2834,14 @@ export async function discoverOverlayPlugins(
     aggregate.warnings.push(`${legacyName}: ${String(result.reason)}`);
   });
 
-  for (const directory of packageDirectories) {
-    const manifest = await readPluginManifest(directory.path);
-    if (!manifest) {
-      continue;
-    }
-
+  for (const record of dependencyRuntimeResult.runtime.recordsById.values()) {
     try {
-      const packageResult = await loadPluginPackage({
-        directoryName: directory.name,
-        directoryPath: directory.path,
-        manifestPath: manifest.manifestPath,
-        manifest: manifest.manifest,
-        modified: directory.modified,
-      }, hostApiFactory, disabledPluginIds);
+      const packageResult = await loadPluginPackage(
+        record,
+        hostApiFactory,
+        disabledPluginIds,
+        dependencyRuntimeResult.runtime,
+      );
       aggregate.plugins.push(...packageResult.plugins);
       aggregate.themePackages.push(...packageResult.themePackages);
       aggregate.shaders.push(...packageResult.shaders);
@@ -2233,7 +2856,7 @@ export async function discoverOverlayPlugins(
       aggregate.workflows.push(...packageResult.workflows);
       aggregate.warnings.push(...packageResult.warnings);
     } catch (error) {
-      aggregate.warnings.push(`${directory.name}: ${String(error)}`);
+      aggregate.warnings.push(`${record.directoryName}: ${String(error)}`);
     }
   }
 

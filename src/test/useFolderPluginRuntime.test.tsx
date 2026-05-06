@@ -282,8 +282,9 @@ describe('useFolderPluginRuntime', () => {
     });
 
     await waitFor(() => {
+      const sharedUsrRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/').replace(/\/plugins$/, '');
       expect(commands.pluginWatchDirectory).toHaveBeenCalledWith(
-        pluginSystemConfig.pluginsDirectory,
+        sharedUsrRoot,
         [...pluginSystemConfig.ignoredWatchDirectoryNames],
       );
     });
@@ -318,7 +319,7 @@ describe('useFolderPluginRuntime', () => {
 
     watchListener?.({
       payload: {
-        paths: ['plugins/example-plugin.tsx'],
+        paths: ['usr/packages/greeblefs-ui/src/index.tsx'],
       },
     });
 

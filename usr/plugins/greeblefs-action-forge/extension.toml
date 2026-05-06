@@ -12,3 +12,9 @@ tags = ["first-party", "actions", "automation", "authoring"]
 fsRead = true
 fsWrite = true
 launchIntents = ["open-explorer"]
+
+[[dependencies]]
+id = "greeblefs-ui"
+version = "^1.0.0"
+importAs = "@greeblefs/ui"
+required = true

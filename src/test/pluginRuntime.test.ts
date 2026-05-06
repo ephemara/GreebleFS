@@ -9,6 +9,7 @@ import {
   derivePluginId,
   derivePluginName,
   isFrontendPluginFile,
+  loadPluginModuleFromSource,
   loadPluginPreviewLaneFromSource,
   loadPluginWorkflowFromSource,
   loadPluginFromSource,
@@ -265,6 +266,80 @@ describe('pluginRuntime helpers', () => {
     expect(() =>
       renderToStaticMarkup(React.createElement(loaded.component as React.ComponentType)),
     ).not.toThrow();
+  });
+
+  it('allows plugins to import declared dependency modules', async () => {
+    const uiExports = await loadPluginModuleFromSource(
+      `
+        import React from 'react';
+
+        export function SharedBadge({ label }) {
+          return React.createElement('strong', null, label);
+        }
+      `,
+      {
+        name: 'index.tsx',
+        path: 'packages/greeblefs-ui/src/index.tsx',
+        is_dir: false,
+        modified: 9,
+        extension: 'tsx',
+      },
+    );
+
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { definePlugin } from 'overlayterm-plugin';
+        import { SharedBadge } from '@greeblefs/ui';
+
+        export default definePlugin({
+          name: 'Dependency Consumer',
+          component: function DependencyConsumer() {
+            return React.createElement('div', null, React.createElement(SharedBadge, { label: 'shared-ready' }));
+          },
+        });
+      `,
+      {
+        name: 'consumer.tsx',
+        path: 'plugins/consumer.tsx',
+        is_dir: false,
+        modified: 10,
+        extension: 'tsx',
+      },
+      () => createMockOverlayPluginApi(),
+      {
+        allowedModules: {
+          '@greeblefs/ui': uiExports,
+        },
+      },
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(renderToStaticMarkup(React.createElement(loaded.component as React.ComponentType))).toContain('shared-ready');
+  });
+
+  it('rejects undeclared dependency imports', async () => {
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { SharedBadge } from '@greeblefs/ui';
+
+        export default function MissingDependency() {
+          return React.createElement(SharedBadge, { label: 'missing' });
+        }
+      `,
+      {
+        name: 'missing-dependency.tsx',
+        path: 'plugins/missing-dependency.tsx',
+        is_dir: false,
+        modified: 11,
+        extension: 'tsx',
+      },
+      () => createMockOverlayPluginApi(),
+    );
+
+    expect(loaded.component).toBeNull();
+    expect(loaded.error).toContain('Unsupported import "@greeblefs/ui"');
   });
 
   it('loads the drawable canvas plugin from disk through the runtime transpiler', async () => {

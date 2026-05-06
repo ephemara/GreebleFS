@@ -78,6 +78,7 @@ export interface PluginsManagerProps {
   error: string | null;
   onRefreshPlugins: () => Promise<void> | void;
   onOpenPluginsFolder: () => Promise<void>;
+  onOpenPackagesFolder?: () => Promise<void>;
   onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
 }
@@ -98,6 +99,7 @@ export function PluginsManager({
   error,
   onRefreshPlugins,
   onOpenPluginsFolder,
+  onOpenPackagesFolder,
   onSetPluginEnabled,
   createPluginApi,
 }: PluginsManagerProps) {
@@ -359,6 +361,8 @@ export function PluginsManager({
                     label={
                       selectedPlugin.enabled === false
                         ? 'Disabled'
+                        : selectedPlugin.diagnostics.blockedReason
+                          ? 'Dependency blocked'
                         : selectedPlugin.error
                           ? 'Load error'
                           : selectedPlugin.component
@@ -368,6 +372,8 @@ export function PluginsManager({
                     accent={
                       selectedPlugin.enabled === false
                         ? MUTED
+                        : selectedPlugin.diagnostics.blockedReason
+                          ? 'var(--overlay-warning)'
                         : selectedPlugin.error
                           ? 'var(--overlay-warning)'
                           : accent
@@ -418,8 +424,10 @@ export function PluginsManager({
 
             <PluginInspector
               plugin={selectedPlugin}
+              plugins={plugins}
               previewLanes={selectedPluginPreviewLanes}
               accent={accent}
+              onOpenPackagesFolder={onOpenPackagesFolder ?? onOpenPluginsFolder}
               onSetPluginEnabled={onSetPluginEnabled}
             />
           </div>
@@ -841,13 +849,17 @@ function PluginWorkbenchPreviewTestHost({
 
 function PluginInspector({
   plugin,
+  plugins,
   previewLanes,
   accent,
+  onOpenPackagesFolder,
   onSetPluginEnabled,
 }: {
   plugin: LoadedOverlayPlugin;
+  plugins: LoadedOverlayPlugin[];
   previewLanes: OverlayPluginPreviewLaneContribution[];
   accent: string;
+  onOpenPackagesFolder: () => Promise<void>;
   onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
 }) {
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -907,6 +919,22 @@ function PluginInspector({
               <PluginBadge key={`${plugin.id}-${tag}`} label={tag} accent="var(--overlay-text-muted)" />
             ))}
           </div>
+        </InspectorBlock>
+
+        <InspectorBlock
+          id="dependencies"
+          title="Dependencies"
+          icon={<Puzzle size={12} />}
+          collapsed={collapsedSectionIds.has('dependencies')}
+          onToggleCollapsed={toggleSectionCollapsed}
+        >
+          <PluginDependencyInspector
+            plugin={plugin}
+            plugins={plugins}
+            accent={accent}
+            onOpenPackagesFolder={onOpenPackagesFolder}
+            onSetPluginEnabled={onSetPluginEnabled}
+          />
         </InspectorBlock>
 
         <InspectorBlock
@@ -976,6 +1004,94 @@ function PluginInspector({
   );
 }
 
+function PluginDependencyInspector({
+  plugin,
+  plugins,
+  accent,
+  onOpenPackagesFolder,
+  onSetPluginEnabled,
+}: {
+  plugin: LoadedOverlayPlugin;
+  plugins: LoadedOverlayPlugin[];
+  accent: string;
+  onOpenPackagesFolder: () => Promise<void>;
+  onSetPluginEnabled: (plugin: LoadedOverlayPlugin, enabled: boolean) => void;
+}) {
+  const dependencies = plugin.diagnostics.dependencies ?? [];
+  const moduleExports = plugin.diagnostics.moduleExports ?? [];
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      {plugin.diagnostics.blockedReason ? (
+        <div style={{ ...inspectorRowStyle, color: 'var(--overlay-warning)' }}>
+          {plugin.diagnostics.blockedReason}
+        </div>
+      ) : null}
+      {moduleExports.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {moduleExports.map(moduleExport => (
+            <PluginBadge key={`${plugin.id}-${moduleExport}`} label={moduleExport} accent={accent} />
+          ))}
+        </div>
+      ) : null}
+      {dependencies.length === 0 ? (
+        <div style={inspectorMutedTextStyle}>No declared package dependencies.</div>
+      ) : (
+        dependencies.map(dependency => {
+          const dependencyPlugin = plugins.find(candidate =>
+            candidate.id === dependency.id || candidate.enablementKey === dependency.id,
+          );
+          const canEnableDependency = dependency.status === 'disabled' && dependencyPlugin != null;
+          const canOpenPackageFolder = dependency.status !== 'satisfied';
+          return (
+            <div key={`${plugin.id}-${dependency.id}-${dependency.importAs ?? 'package'}`} style={inspectorRowStyle}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ fontWeight: 700 }}>{dependency.packageName ?? dependency.id}</div>
+                <PluginBadge
+                  label={dependency.status}
+                  accent={dependency.status === 'satisfied' ? accent : 'var(--overlay-warning)'}
+                />
+              </div>
+              <div style={{ ...inspectorMutedTextStyle, marginTop: 4 }}>
+                {dependency.importAs ? `${dependency.importAs} • ` : ''}
+                {dependency.requestedVersion ?? '*'} • {dependency.required ? 'required' : 'optional'}
+              </div>
+              <div style={{ ...inspectorMutedTextStyle, marginTop: 4 }}>
+                {dependency.message}
+              </div>
+              {canEnableDependency || canOpenPackageFolder ? (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  {canEnableDependency ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (dependencyPlugin) {
+                          onSetPluginEnabled(dependencyPlugin, true);
+                        }
+                      }}
+                      style={dependencyRepairButtonStyle(accent)}
+                    >
+                      Enable dependency
+                    </button>
+                  ) : null}
+                  {canOpenPackageFolder ? (
+                    <button
+                      type="button"
+                      onClick={() => void onOpenPackagesFolder()}
+                      style={dependencyRepairButtonStyle('var(--overlay-text-muted)')}
+                    >
+                      Open packages folder
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 export function FolderPluginRenderer({
   plugin,
   appearance,
@@ -986,6 +1102,9 @@ export function FolderPluginRenderer({
   const PluginComponent = plugin.component;
   if (plugin.enabled === false) {
     return <PluginDisabledPanel plugin={plugin} />;
+  }
+  if (plugin.diagnostics.blockedReason) {
+    return <PluginDependencyBlockedPanel plugin={plugin} />;
   }
   if (plugin.error || !PluginComponent) {
     return plugin.error
@@ -1237,6 +1356,29 @@ function PluginMetadataOnlyPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
   );
 }
 
+function PluginDependencyBlockedPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
+  return (
+    <div
+      style={{
+        margin: 12,
+        borderRadius: 8,
+        border: '1px solid color-mix(in srgb, var(--overlay-warning) 45%, transparent)',
+        background: 'color-mix(in srgb, var(--overlay-warning) 14%, transparent)',
+        padding: 14,
+        color: TEXT,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700 }}>
+        <Puzzle size={15} style={{ color: 'var(--overlay-warning)' }} />
+        {plugin.name} is waiting on dependencies
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, lineHeight: 1.5, color: MUTED }}>
+        {plugin.diagnostics.blockedReason}
+      </div>
+    </div>
+  );
+}
+
 function PluginErrorPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
   return (
     <div
@@ -1377,7 +1519,25 @@ function pluginEnablementIconButtonStyle(
   };
 }
 
+function dependencyRepairButtonStyle(accent: string): React.CSSProperties {
+  return {
+    border: `1px solid ${accent}`,
+    borderRadius: 6,
+    background: 'var(--overlay-workbench-settings-badge-bg)',
+    color: TEXT,
+    cursor: 'pointer',
+    fontSize: 9,
+    fontWeight: 750,
+    letterSpacing: '0.08em',
+    padding: '5px 7px',
+    textTransform: 'uppercase',
+  };
+}
+
 function getPluginSourceSummary(plugin: LoadedOverlayPlugin): string {
+  if (plugin.diagnostics.sourceKind === 'library-package') {
+    return `Library package • ${plugin.diagnostics.sourceLabel}`;
+  }
   return plugin.diagnostics.sourceKind === 'package-plugin'
     ? `Package plugin • ${plugin.diagnostics.sourceLabel}`
     : 'File plugin';
@@ -1385,6 +1545,12 @@ function getPluginSourceSummary(plugin: LoadedOverlayPlugin): string {
 
 function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
   const labels: string[] = [];
+  if ((plugin.diagnostics.moduleExports ?? []).length > 0) {
+    labels.push(`Exports ${plugin.diagnostics.moduleExports?.length ?? 0}`);
+  }
+  if ((plugin.diagnostics.dependencies ?? []).length > 0) {
+    labels.push(`Deps ${plugin.diagnostics.dependencies?.length ?? 0}`);
+  }
   if (plugin.diagnostics.capabilities.themes > 0) {
     labels.push(`Themes ${plugin.diagnostics.capabilities.themes}`);
   }

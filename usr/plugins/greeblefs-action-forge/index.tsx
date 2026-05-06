@@ -12,6 +12,9 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import {
+  definePlugin,
+} from 'overlayterm-plugin';
+import {
   ExplorerWorkflowButton,
   ExplorerWorkflowEmptyState,
   ExplorerWorkflowFieldGrid,
@@ -19,8 +22,7 @@ import {
   ExplorerWorkflowMetaStrip,
   ExplorerWorkflowSection,
   ExplorerWorkflowStatusNotice,
-  definePlugin,
-} from 'overlayterm-plugin';
+} from '@greeblefs/ui';
 
 import {
   ACTION_FORGE_CONTEXT_LABELS,

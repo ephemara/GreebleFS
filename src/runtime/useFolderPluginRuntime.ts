@@ -67,6 +67,7 @@ export interface UseFolderPluginRuntimeResult {
   folderPluginsError: string | null;
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
+  openPackagesFolder: () => Promise<void>;
   refreshFolderPlugins: (force?: boolean) => Promise<void>;
   setPluginEnabled: (pluginId: string, enabled: boolean) => void;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
@@ -131,6 +132,23 @@ export function useFolderPluginRuntime(
     await ensureDir(pluginSystemConfig.pluginsDirectory);
     await explorerBackend.openExplorerPath(pluginSystemConfig.pluginsDirectory);
   }, []);
+
+  const openPackagesFolder = useCallback(async () => {
+    await ensureDir(pluginSystemConfig.packagesDirectory);
+    await explorerBackend.openExplorerPath(pluginSystemConfig.packagesDirectory);
+  }, []);
+
+  const resolvePluginWatchDirectory = useCallback(() => {
+    const separator = getPlatformPathSeparator(runtimePlatform);
+    const pluginsParent = getParentPath(pluginSystemConfig.pluginsDirectory, separator);
+    const packagesParent = getParentPath(pluginSystemConfig.packagesDirectory, separator);
+    const normalizedPluginsParent = pluginsParent?.replace(/\\/g, '/').toLowerCase();
+    const normalizedPackagesParent = packagesParent?.replace(/\\/g, '/').toLowerCase();
+
+    return normalizedPluginsParent && normalizedPluginsParent === normalizedPackagesParent
+      ? pluginsParent
+      : pluginSystemConfig.pluginsDirectory;
+  }, [runtimePlatform]);
 
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
     const appLocalData = TauriFs.BaseDirectory.AppLocalData;
@@ -472,6 +490,9 @@ export function useFolderPluginRuntime(
     const startPluginWatcher = async () => {
       try {
         await ensureDir(pluginSystemConfig.pluginsDirectory);
+        await ensureDir(pluginSystemConfig.packagesDirectory);
+        const pluginWatchDirectory = resolvePluginWatchDirectory();
+        await ensureDir(pluginWatchDirectory);
         const unlistenPluginWatchPromise = listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {
           if (!shouldRefreshForPluginWatchPaths(event.payload.paths)) {
             return;
@@ -488,7 +509,7 @@ export function useFolderPluginRuntime(
 
         pluginWatchCleanupRequired = true;
         unwrapTauriResult(await commands.pluginWatchDirectory(
-          pluginSystemConfig.pluginsDirectory,
+          pluginWatchDirectory,
           [...pluginSystemConfig.ignoredWatchDirectoryNames],
         ));
 
@@ -521,7 +542,7 @@ export function useFolderPluginRuntime(
       unlistenPlugins?.();
       void cleanupPluginWatcher();
     };
-  }, [liveReloadEnabled, schedulePluginRefresh]);
+  }, [liveReloadEnabled, resolvePluginWatchDirectory, schedulePluginRefresh]);
 
   return {
     folderPlugins,
@@ -540,6 +561,7 @@ export function useFolderPluginRuntime(
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,
+    openPackagesFolder,
     refreshFolderPlugins,
     setPluginEnabled,
     createPluginApi,

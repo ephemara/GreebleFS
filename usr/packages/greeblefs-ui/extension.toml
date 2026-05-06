@@ -1,0 +1,10 @@
+id = "greeblefs-ui"
+version = "1.0.0"
+name = "GreebleFS UI"
+description = "First-party shared React primitives for theme-aware GreebleFS plugins."
+packageKind = "library"
+category = "First-party Libraries"
+tags = ["first-party", "ui", "dependencies", "theme"]
+
+[exports.modules]
+"@greeblefs/ui" = "src/index.tsx"
