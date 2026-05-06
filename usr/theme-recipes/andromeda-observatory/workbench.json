@@ -29,8 +29,8 @@
     "controlRadius": 18,
     "panelRadius": 28,
     "shellInset": 14,
-    "commandPaletteWidth": 900,
-    "commandPaletteTopInset": 66,
+    "commandPaletteWidth": 780,
+    "commandPaletteTopInset": 58,
     "pagePadding": 16,
     "panelGap": 12
   },

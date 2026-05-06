@@ -320,6 +320,7 @@ import {
   useExplorerTaskProgressFeed,
   useExplorerTaskSnapshots,
 } from './store/explorerTaskStore';
+import { useCommandPaletteStore } from './store/commandPaletteStore';
 import { useGlobalSearchStore } from './store/globalSearchStore';
 import {
   startMobileShareSession,
@@ -1051,6 +1052,23 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     explorerSessions: state.sessions,
     explorerRailNodes: state.rail.nodes,
     requestOpenInExplorer: state.requestOpenInExplorer,
+  })));
+  const {
+    lastQuickFilterId: commandPaletteLastQuickFilterId,
+    pinnedActionIds: commandPalettePinnedActionIds,
+    recentActionIds: commandPaletteRecentActionIds,
+    pruneActionIds: pruneCommandPaletteActionIds,
+    recordActionUsage: recordCommandPaletteActionUsage,
+    setLastQuickFilterId: setCommandPaletteQuickFilterId,
+    togglePinnedActionId: toggleCommandPalettePinnedActionId,
+  } = useCommandPaletteStore(useShallow(state => ({
+    lastQuickFilterId: state.lastQuickFilterId,
+    pinnedActionIds: state.pinnedActionIds,
+    recentActionIds: state.recentActionIds,
+    pruneActionIds: state.pruneActionIds,
+    recordActionUsage: state.recordActionUsage,
+    setLastQuickFilterId: state.setLastQuickFilterId,
+    togglePinnedActionId: state.togglePinnedActionId,
   })));
   const {
     openPaletteSession: openGlobalSearchPaletteSession,
@@ -6427,6 +6445,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Open Settings',
         subtitle: 'Jump to the settings overview.',
         group: 'App',
+        kind: 'command',
         keywords: ['preferences', 'config', 'appearance', 'overview'],
         badge: 'App',
         onSelect: handleOpenSettings,
@@ -6436,6 +6455,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Open Task Center',
         subtitle: 'Open the dedicated file operations window.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'tasks', 'operations', 'transfers', 'history'],
         badge: 'Tasks',
         onSelect: () => {
@@ -6448,6 +6468,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Retry Failed Explorer Tasks',
         subtitle: 'Re-run retryable failed or cancelled explorer operations.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'tasks', 'retry', 'failed'],
         badge: 'Retry',
         onSelect: () => {
@@ -6460,8 +6481,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Explorer: Customize Layout UI',
         subtitle: 'Open the ZBrush-style explorer chrome authoring mode.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'customize', 'layout', 'zbrush', 'chrome', 'buttons'],
         badge: 'Customize',
+        shortcutLabel: formatHotkeyLabel(keybindings.toggleExplorerCustomize),
         onSelect: () => {
           handleActivatePanel('explorer');
           dispatchExplorerLayoutCommand('greeblefs:open-explorer-customize');
@@ -6472,8 +6495,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Explorer: Open Layout Switcher',
         subtitle: 'Choose, save, or reset the active explorer layout without a hardcoded top-bar button.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'layout', 'switcher', 'canonical', 'reset', 'preset'],
         badge: 'Layouts',
+        shortcutLabel: formatHotkeyLabel(keybindings.openExplorerLayoutSwitcher),
         onSelect: () => {
           handleActivatePanel('explorer');
           dispatchExplorerLayoutCommand('greeblefs:open-explorer-layout-switcher');
@@ -6484,6 +6509,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Explorer: Reset Layout UI To Canonical',
         subtitle: 'Clear layout customization state and restore canonical explorer chrome.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'layout', 'reset', 'canonical', 'customize'],
         badge: 'Reset',
         onSelect: () => {
@@ -6496,6 +6522,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Explorer: Save Current Layout',
         subtitle: 'Persist the active explorer layout package and chrome snapshot.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'layout', 'save', 'customize', 'chrome'],
         badge: 'Save',
         onSelect: () => {
@@ -6508,6 +6535,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Clear Completed Explorer Tasks',
         subtitle: 'Remove completed explorer tasks from recent history.',
         group: 'Explorer',
+        kind: 'command',
         keywords: ['explorer', 'tasks', 'clear', 'history', 'completed'],
         badge: 'Clear',
         onSelect: () => {
@@ -6520,6 +6548,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Refresh Plugins',
         subtitle: 'Rescan legacy and package plugins, then reload their contributions.',
         group: 'App',
+        kind: 'command',
         keywords: ['plugins', 'reload', 'rescan'],
         badge: 'Refresh',
         onSelect: () => refreshFolderPlugins(true),
@@ -6529,6 +6558,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Refresh Themes',
         subtitle: 'Reload theme packages and theme contributions.',
         group: 'App',
+        kind: 'command',
         keywords: ['themes', 'reload'],
         badge: 'Refresh',
         onSelect: refreshThemePackages,
@@ -6538,6 +6568,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Refresh Shaders',
         subtitle: 'Reload authored shaders and plugin shader contributions.',
         group: 'App',
+        kind: 'command',
         keywords: ['shaders', 'reload'],
         badge: 'Refresh',
         onSelect: () => refreshAuthoredShaders(true),
@@ -6547,6 +6578,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Refresh Animations',
         subtitle: 'Reload authored animations.',
         group: 'App',
+        kind: 'command',
         keywords: ['animations', 'reload'],
         badge: 'Refresh',
         onSelect: () => refreshAuthoredAnimations(true),
@@ -6556,6 +6588,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Refresh Wallpapers',
         subtitle: 'Reload imported and authored wallpapers.',
         group: 'App',
+        kind: 'command',
         keywords: ['wallpapers', 'backgrounds', 'reload'],
         badge: 'Refresh',
         onSelect: () => refreshAuthoredWallpapers(true),
@@ -6567,10 +6600,12 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           ? 'Serve the mobile PWA for the current explorer folder over the configured tailnet path.'
           : 'Serve the mobile PWA for the current explorer folder over the LAN share tunnel.',
         group: 'Mobile',
+        kind: 'command',
         keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'remote', 'tailscale', 'tailnet'],
         badge: mobileSharePhase === 'running'
           ? 'Live'
           : mobileSettings.remoteAccessMode === 'tailscale' ? 'Tailnet' : 'Mobile',
+        shortcutLabel: formatHotkeyLabel(keybindings.mobileShareToggle),
         onSelect: handleStartMobileShare,
       },
       {
@@ -6578,8 +6613,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Stop Mobile Share',
         subtitle: 'Shut down the active mobile PWA share server.',
         group: 'Mobile',
+        kind: 'command',
         keywords: ['mobile', 'pwa', 'ios', 'iphone', 'share', 'lan', 'stop'],
         badge: 'Mobile',
+        shortcutLabel: formatHotkeyLabel(keybindings.mobileShareToggle),
         onSelect: handleStopMobileShare,
       },
       {
@@ -6587,6 +6624,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: 'Cycle Layout',
         subtitle: `Switch from ${activeLayoutProfile.label} to the next layout profile.`,
         group: 'Layout',
+        kind: 'command',
         keywords: ['layout', 'profiles', 'dock'],
         badge: 'Layout',
         onSelect: handleCycleLayout,
@@ -6598,8 +6636,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           ? 'Pin the shell back to a monitor edge and restore dock behavior.'
           : 'Open the shell as a regular desktop window.',
         group: 'Layout',
+        kind: 'command',
         keywords: ['dock', 'window', 'mode', 'overlay', 'app'],
         badge: windowMode === 'windowed' ? 'Dock' : 'App',
+        shortcutLabel: formatHotkeyLabel(keybindings.windowModeToggle),
         onSelect: handleToggleWindowMode,
       },
       {
@@ -6609,8 +6649,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           ? 'Restore the shell top bar and return to the normal chrome pass.'
           : 'Hide the shell top bar and foreground the explorer for a cleaner browsing surface.',
         group: 'Layout',
+        kind: 'command',
         keywords: ['zen', 'focus', 'chrome', 'top bar', 'immersive', 'explorer'],
         badge: zenFocusMode ? 'Zen On' : 'Zen Off',
+        shortcutLabel: formatHotkeyLabel(keybindings.zenFocusModeToggle),
         onSelect: handleToggleZenFocusMode,
       },
       ...(windowMode === 'overlay'
@@ -6629,6 +6671,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
                   ? 'Restore the dock shell as a draggable freeform window.'
                   : `Anchor the dock shell to the ${placement === 'top-edge' ? 'top' : 'bottom'} edge.`,
               group: 'Layout',
+              kind: 'command',
               keywords: ['dock', 'placement', 'float', 'floating', 'top', 'bottom', 'edge'],
               badge: dockPlacementMode === placement ? 'Active' : 'Dock',
               onSelect: () => handleSetDockPlacementMode(placement),
@@ -6644,6 +6687,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: `Open ${section.label} Settings`,
         subtitle: section.overviewSummary,
         group: 'Settings',
+        kind: 'command',
         keywords: [
           section.key,
           section.label,
@@ -6660,6 +6704,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       title: `Open ${entry.label} Folder`,
       subtitle: entry.description,
       group: 'Content',
+      kind: 'command',
       keywords: [entry.id, entry.label, entry.description, ...entry.keywords],
       badge: 'Folder',
       onSelect: () => void openManagedContentDirectory(entry.id as ManagedContentDirectoryId),
@@ -6672,6 +6717,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: `Open ${panel.label}`,
         subtitle: panel.description,
         group: panel.kind === 'folder-plugin' ? 'Plugin Panels' : 'Panels',
+        kind: panel.kind === 'folder-plugin' ? 'plugin' : 'panel',
         keywords: [panel.id, panel.label, panel.description],
         badge: panel.kind === 'folder-plugin' ? 'Plugin' : 'Panel',
         onSelect: () => handleActivatePanel(panel.id),
@@ -6682,6 +6728,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       title: command.name,
       subtitle: command.description || command.command,
       group: 'Plugin Commands',
+      kind: 'plugin',
       keywords: [command.pluginName, command.command, command.description ?? ''],
       badge: command.pluginName,
       onSelect: () => dispatchTerminalCommand(command.command, command.runOnSelect),
@@ -6693,6 +6740,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         title: result.name,
         subtitle: result.path,
         group: result.isDir ? 'Folders' : 'Files',
+        kind: 'file',
         keywords: [
           'global search',
           result.path,
@@ -6715,6 +6763,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         ? 'Stop the active machine-wide filename indexing pass.'
         : 'Index local drive roots so the command palette can jump to files instantly.',
       group: 'Search',
+      kind: 'command',
       keywords: ['global search', 'files', 'index', 'scan', 'reindex', 'palette'],
       badge: 'Search',
       onSelect: () => (
@@ -6750,6 +6799,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     handleSetDockPlacementMode,
     handleToggleZenFocusMode,
     handleToggleWindowMode,
+    keybindings.mobileShareToggle,
+    keybindings.openExplorerLayoutSwitcher,
+    keybindings.toggleExplorerCustomize,
+    keybindings.windowModeToggle,
+    keybindings.zenFocusModeToggle,
     dockPlacementMode,
     overlayAnchor,
     openManagedContentDirectory,
@@ -6768,6 +6822,30 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     windowMode,
     zenFocusMode,
   ]);
+
+  const persistentCommandPaletteActionIds = useMemo(
+    () => commandPaletteActions
+      .filter((action) => action.kind !== 'file')
+      .map((action) => action.id),
+    [commandPaletteActions],
+  );
+
+  useEffect(() => {
+    pruneCommandPaletteActionIds(persistentCommandPaletteActionIds);
+  }, [persistentCommandPaletteActionIds, pruneCommandPaletteActionIds]);
+
+  const interactiveCommandPaletteActions = useMemo<OverlayCommandPaletteAction[]>(
+    () => commandPaletteActions.map((action) => ({
+      ...action,
+      onSelect: () => {
+        if (action.kind !== 'file') {
+          recordCommandPaletteActionUsage(action.id);
+        }
+        return action.onSelect();
+      },
+    })),
+    [commandPaletteActions, recordCommandPaletteActionUsage],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -7895,11 +7973,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           isOpen={isCommandPaletteOpen}
           appearance={resolvedAppearance}
           blurEnabled={effectiveShellBlurEnabled}
-          actions={commandPaletteActions}
+          actions={interactiveCommandPaletteActions}
           shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
           queryPlaceholder={globalSearchPaletteConfig.commandPalettePlaceholder}
           statusMessage={commandPaletteStatusMessage}
+          pinnedActionIds={commandPalettePinnedActionIds}
+          recentActionIds={commandPaletteRecentActionIds}
+          defaultQuickFilterId={commandPaletteLastQuickFilterId}
           onQueryChange={setCommandPaletteQuery}
+          onQuickFilterChange={setCommandPaletteQuickFilterId}
+          onTogglePinnedAction={toggleCommandPalettePinnedActionId}
           onClose={handleCloseCommandPalette}
         />
       </div>

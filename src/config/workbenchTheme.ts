@@ -143,8 +143,8 @@ const defaultMetrics: Required<OverlayWorkbenchThemeMetrics> = {
   controlRadius: 6,
   panelRadius: 14,
   shellInset: 0,
-  commandPaletteWidth: 760,
-  commandPaletteTopInset: 56,
+  commandPaletteWidth: 720,
+  commandPaletteTopInset: 52,
   pagePadding: 12,
   panelGap: 10,
 };
@@ -484,8 +484,8 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
           controlRadius: 999,
           panelRadius: 24,
           shellInset: 12,
-          commandPaletteWidth: 820,
-          commandPaletteTopInset: 40,
+          commandPaletteWidth: 780,
+          commandPaletteTopInset: 36,
           pagePadding: 14,
           panelGap: 12,
         },
@@ -547,8 +547,8 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
           controlRadius: 18,
           panelRadius: 28,
           shellInset: 10,
-          commandPaletteWidth: 780,
-          commandPaletteTopInset: 46,
+          commandPaletteWidth: 752,
+          commandPaletteTopInset: 42,
           pagePadding: 14,
           panelGap: 12,
         },
@@ -740,11 +740,11 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
       ? Math.round(panelSpacing * 0.5)
       : 0;
   let commandPaletteWidth = layoutPrimitive?.kind === 'grid'
-    ? 840
+    ? 780
     : layoutPrimitive?.kind === 'freeform'
-      ? 800
+      ? 760
       : layoutPrimitive?.kind === 'split'
-        ? 780
+        ? 744
         : defaultMetrics.commandPaletteWidth;
   let commandPaletteTopInset = defaultMetrics.commandPaletteTopInset + shellInset + Math.max(densityMetricDelta, 0);
   let pagePadding = panelSpacing + (presentation?.density === 'immersive' ? 4 : presentation?.density === 'compact' ? -1 : 1);
@@ -752,7 +752,7 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
 
   if (navigationPattern?.kind === 'palette') {
     commandPaletteStyle = presentation?.chromeStyle === 'ornate' ? 'glass' : 'floating';
-    commandPaletteWidth += 48;
+    commandPaletteWidth += 24;
   }
 
   switch (layoutPrimitive?.kind) {
@@ -785,7 +785,7 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
       controlRadius = 999;
       panelRadius = clampNumber(Math.max(panelRadius, 24), 8, 48);
       shellInset = Math.max(shellInset, 12);
-      commandPaletteWidth = Math.max(commandPaletteWidth, 820);
+      commandPaletteWidth = Math.max(commandPaletteWidth, 780);
       break;
     case 'ios-springboard':
       topBarStyle = 'minimal';
@@ -796,7 +796,7 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
       controlRadius = Math.max(controlRadius, 18);
       panelRadius = clampNumber(Math.max(panelRadius, 24), 8, 48);
       shellInset = Math.max(shellInset, panelSpacing);
-      commandPaletteWidth = Math.max(commandPaletteWidth, 800);
+      commandPaletteWidth = Math.max(commandPaletteWidth, 760);
       break;
     case 'wii-channels':
       topBarStyle = 'minimal';
