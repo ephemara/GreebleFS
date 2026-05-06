@@ -96,7 +96,6 @@ import {
 } from '../config/pluginContributions';
 import {
   useSettingsStore,
-  type IntegratedTerminalHost,
 } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -135,7 +134,6 @@ import {
   type TerminalRendererMode,
 } from './terminal/TerminalViewportFx';
 import { shouldLoadTerminalWebglRenderer } from './terminal/terminalRendererSupport';
-import GoPtyTerminalPane from './terminal/GoPtyTerminalPane';
 import {
   getTerminalPaneHostEntry,
   registerTerminalPaneHostEntry,
@@ -398,7 +396,6 @@ export interface TerminalOverlayCommandRequest {
 
 interface XTermEntry { xterm: XTerm; fitAddon: FitAddon; unlisten: () => void; }
 const xtermRegistry = new Map<string, XTermEntry>();
-let goPtyTerminalHostDegradedForSession = false;
 
 function getTerminalPaneDomKey(tabId: string, nodeId: string): string {
   return `${tabId}::${nodeId}`;
@@ -1646,21 +1643,6 @@ export function TerminalOverlay({
     updateTerminal: state.updateTerminal,
   })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
-  const resolvedSpawnShell = useMemo(
-    () =>
-      resolveIntegratedTerminalSpawnShellCommand({
-        profile: settings.shellProfile,
-        shellPath: settings.shellPath,
-        shellArgs: settings.shellArgs,
-        platform: runtimePlatform,
-      }),
-    [
-      runtimePlatform,
-      settings.shellArgs,
-      settings.shellPath,
-      settings.shellProfile,
-    ],
-  );
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
       activeThemeId: appearanceSettings.activeThemeId,
@@ -1737,9 +1719,6 @@ export function TerminalOverlay({
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
   const [paneRestartEpochById, setPaneRestartEpochById] = useState<Record<string, number>>({});
-  const [goTerminalHostDegraded, setGoTerminalHostDegraded] = useState(
-    goPtyTerminalHostDegradedForSession,
-  );
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
   const [paneViewportMetricsById, setPaneViewportMetricsById] = useState<Record<string, TerminalPaneViewportMetrics>>({});
   const paneTelemetryRef = useRef<Record<string, TerminalPaneTelemetry>>({
@@ -1828,11 +1807,6 @@ export function TerminalOverlay({
   const activePaneId = activeTab?.activePaneId ?? activeTabPaneIds[0] ?? initialPaneIdRef.current;
   const activePane = paneSessions[activePaneId] ?? null;
   const totalPaneCount = tabs.reduce((sum, tab) => sum + countTerminalPanes(tab.layout), 0);
-  const selectedTerminalHost: IntegratedTerminalHost = settings.integratedHost;
-  const effectiveTerminalHost: IntegratedTerminalHost =
-    selectedTerminalHost === 'go-pty-panel' && !goTerminalHostDegraded
-      ? 'go-pty-panel'
-      : 'xterm';
 
   const findTabForPane = useCallback((paneId: string) => (
     tabs.find(tab => (paneIdsByTab.get(tab.id) ?? []).includes(paneId)) ?? null
@@ -1866,18 +1840,6 @@ export function TerminalOverlay({
       ? next.slice(next.length - 200_000)
       : next;
   }, []);
-
-  const requestGoTerminalFallback = useCallback((reason: string) => {
-    if (goPtyTerminalHostDegradedForSession) {
-      return;
-    }
-    console.error('[terminal-host] Go PTY falling back to xterm', { reason });
-    goPtyTerminalHostDegradedForSession = true;
-    setGoTerminalHostDegraded(true);
-    setTransientActionMessage(
-      `Go PTY terminal fell back to xterm${reason ? `: ${reason}` : ''}`,
-    );
-  }, [setTransientActionMessage]);
 
   const updatePaneTelemetry = useCallback((paneId: string, updater: (current: TerminalPaneTelemetry) => TerminalPaneTelemetry) => {
     paneTelemetryRef.current[paneId] = updater(paneTelemetryRef.current[paneId] ?? createPaneTelemetry());
@@ -2736,40 +2698,21 @@ export function TerminalOverlay({
 
           <div className="relative flex-1 min-h-0 min-w-0" onMouseDown={() => focusPane(tabId, paneId)}>
             {hasMountedRef.current && (
-              effectiveTerminalHost === 'go-pty-panel' ? (
-                <GoPtyTerminalPane
-                  key={`${paneId}:go:${paneRestartEpochById[paneId] ?? 0}`}
-                  id={paneId}
-                  visible={tabId === activeTabId}
-                  active={isActivePane && tabId === activeTabId}
-                  bootReady={bootReady}
-                  theme={theme}
-                  workingDirectory={normalizedWorkingDirectory}
-                  shellCommand={resolvedSpawnShell}
-                  onReady={markTerminalReady}
-                  onFocus={handlePaneFocus}
-                  onData={handleTerminalInput}
-                  onOutput={handleTerminalOutput}
-                  onResize={handlePaneResize}
-                  onFallbackRequested={requestGoTerminalFallback}
-                />
-              ) : (
-                <XTermPane
-                  key={`${paneId}:xterm:${paneRestartEpochById[paneId] ?? 0}`}
-                  id={paneId}
-                  visible={tabId === activeTabId}
-                  active={isActivePane && tabId === activeTabId}
-                  bootReady={bootReady}
-                  theme={theme}
-                  workbenchTheme={appearance.workbenchTheme}
-                  workingDirectory={normalizedWorkingDirectory}
-                  onReady={markTerminalReady}
-                  onFocus={handlePaneFocus}
-                  onData={handleTerminalInput}
-                  onOutput={handleTerminalOutput}
-                  onResize={handlePaneResize}
-                />
-              )
+              <XTermPane
+                key={`${paneId}:xterm:${paneRestartEpochById[paneId] ?? 0}`}
+                id={paneId}
+                visible={tabId === activeTabId}
+                active={isActivePane && tabId === activeTabId}
+                bootReady={bootReady}
+                theme={theme}
+                workbenchTheme={appearance.workbenchTheme}
+                workingDirectory={normalizedWorkingDirectory}
+                onReady={markTerminalReady}
+                onFocus={handlePaneFocus}
+                onData={handleTerminalInput}
+                onOutput={handleTerminalOutput}
+                onResize={handlePaneResize}
+              />
             )}
           </div>
         </div>
@@ -2780,7 +2723,6 @@ export function TerminalOverlay({
     activeTab,
     activeTabId,
     bootReady,
-    effectiveTerminalHost,
     appearance.workbenchTheme,
     appearance.theme.palette.success,
     closePane,
@@ -2797,8 +2739,6 @@ export function TerminalOverlay({
     paneRestartEpochById,
     paneSessions,
     normalizedWorkingDirectory,
-    requestGoTerminalFallback,
-    resolvedSpawnShell,
     restartPane,
     splitActivePane,
     setPaneSurfaceElement,

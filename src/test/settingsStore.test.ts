@@ -78,6 +78,17 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.integratedHost).toBe(defaultSettings.terminal.integratedHost);
   });
 
+  it('coerces dormant go terminal host settings back to xterm', () => {
+    const importedTerminalSettings = {
+      integratedHost: 'go-pty-panel',
+    } as NonNullable<Parameters<typeof mergeSettingsWithDefaults>[0]>['terminal'];
+    const mergedSettings = mergeSettingsWithDefaults({
+      terminal: importedTerminalSettings,
+    });
+
+    expect(mergedSettings.terminal.integratedHost).toBe('xterm');
+  });
+
   it('has the correct default python settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.python.preferredInterpreterPath).toBe('');

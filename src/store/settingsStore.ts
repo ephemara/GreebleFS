@@ -260,6 +260,9 @@ export interface DockSettings {
   previewSplitMode: DockPreviewSplitMode;
 }
 
+// Keep the dormant Go host id in the type so legacy settings payloads and the
+// preserved Go/Wasm terminal code can still compile, but the live app now
+// normalizes every integrated host selection back to xterm.
 export type IntegratedTerminalHost = 'go-pty-panel' | 'xterm';
 
 export interface PythonSettings {
@@ -541,13 +544,10 @@ export function presentationWindowModeToTerminalMode(
 }
 
 export function normalizeIntegratedTerminalHost(
-  value: unknown,
-  fallback: IntegratedTerminalHost = defaultIntegratedTerminalHost,
+  _value: unknown,
+  _fallback: IntegratedTerminalHost = defaultIntegratedTerminalHost,
 ): IntegratedTerminalHost {
-  if (value === 'go-pty-panel' || value === 'xterm') {
-    return value;
-  }
-  return fallback;
+  return 'xterm';
 }
 
 export function normalizeDockThemeMode(value: unknown): DockThemeMode {

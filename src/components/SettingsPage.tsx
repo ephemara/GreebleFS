@@ -383,7 +383,6 @@ import {
 import {
   useSettingsStore,
   resolveSystemPresentationState,
-  type IntegratedTerminalHost,
   type PresentationWindowMode,
   type TerminalWindowMode,
 } from "../store/settingsStore";
@@ -14420,29 +14419,6 @@ export function SettingsPage({
                     }
                   />
                 </label>
-              </div>
-
-              <div className="space-y-1.5 md:col-span-2">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                  Integrated Terminal Host
-                </label>
-                <select
-                  aria-label="Integrated Terminal Host"
-                  value={settings.terminal.integratedHost}
-                  onChange={(event) =>
-                    updateTerminal({
-                      integratedHost: event.target.value as IntegratedTerminalHost,
-                    })
-                  }
-                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                  style={settingsSelectStyle}
-                >
-                  <option value="go-pty-panel">Go PTY Panel</option>
-                  <option value="xterm">Xterm</option>
-                </select>
-                <p className="text-[11px] opacity-40">
-                  Windows defaults to xterm for startup stability; Go PTY Panel remains available and still falls back to xterm automatically if the runtime cannot boot.
-                </p>
               </div>
 
               <div className="space-y-1.5 md:col-span-2">

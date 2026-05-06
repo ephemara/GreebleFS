@@ -39,8 +39,12 @@
   - Treat xterm as the only supported integrated terminal host until a future terminal-host revival is explicitly approved and re-wired across platform defaults, store normalization, Settings, and `TerminalOverlay`.
   - If legacy settings, tests, or imported profiles still mention `go-pty-panel`, coerce them to `xterm` instead of resurfacing the selector or reactivating the dormant host path.
 - Validation:
-  - Passed: `bunx vitest run src/test/platform.test.ts src/test/settingsStore.test.ts src/test/terminalOverlay.test.tsx --reporter=dot`
-  - Passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - Passed: `bunx vitest run src/test/platform.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/settingsStore.test.ts -t "coerces dormant go terminal host settings back to xterm" --reporter=dot`
+  - Passed: `bunx vitest run src/test/terminalOverlay.test.tsx -t "copies the active terminal buffer to the clipboard|replays retained xterm output without releasing terminal-owned streams on teardown|clears and restarts the active terminal session|spawns and restarts preview-scoped panes with namespaced ids and working directories" --reporter=dot`
+  - Passed: filtered touched-file TypeScript sweep via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "platform\\.ts|settingsStore\\.ts|TerminalOverlay\\.tsx|SettingsPage\\.tsx|platform\\.test\\.ts|settingsStore\\.test\\.ts"` returned no matches for touched files.
+- Residual repo noise:
+  - The broader `src/test/settingsStore.test.ts` and `src/test/terminalOverlay.test.tsx` files still contain unrelated failing assertions around shipped sidebar/session defaults, so use targeted selectors for the xterm-only host change until those older expectations are cleaned up.
 
 # 2026-05-05 - Modular Native System Tray Menu
 

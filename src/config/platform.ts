@@ -1,5 +1,5 @@
 export type RuntimePlatform = 'windows' | 'macos' | 'linux' | 'unknown';
-export type DefaultIntegratedTerminalHost = 'go-pty-panel' | 'xterm';
+export type DefaultIntegratedTerminalHost = 'xterm';
 
 export type IntegratedTerminalProfile =
   | 'auto'
@@ -230,9 +230,9 @@ export function getDefaultIntegratedTerminalProfile(
 }
 
 export function getDefaultIntegratedTerminalHost(
-  platform = detectClientPlatform(),
+  _platform = detectClientPlatform(),
 ): DefaultIntegratedTerminalHost {
-  return platform === 'windows' ? 'xterm' : 'go-pty-panel';
+  return 'xterm';
 }
 
 export function getIntegratedTerminalProfileOptions(
