@@ -103,4 +103,62 @@ describe("extensionHostApi events", () => {
       { releaseOnUnsubscribe: false },
     );
   });
+
+  it("routes high-level file operations through declared extension-host methods", async () => {
+    vi.mocked(commands.extensionHostCall).mockImplementation(async (request) => ({
+      status: "ok",
+      data: {
+        methodId: request.methodId,
+        resultJson: request.methodId === "files.stat"
+          ? JSON.stringify({
+            path: "C:/work/item.txt",
+            exists: true,
+            isDirectory: false,
+            size: 12,
+            modifiedMs: null,
+            extension: "txt",
+          })
+          : request.methodId === "files.read_text"
+            ? JSON.stringify("{\"ready\":true}")
+            : "null",
+      },
+    }));
+
+    const client = createExtensionHostClient({ callerPluginId: "file-plugin" });
+
+    await client.files.createDirectory("C:/work/new-folder");
+    await client.files.writeText("C:/work/item.txt", "hello");
+    await client.files.writeJson("C:/work/state.json", { ready: true });
+    await client.files.delete("C:/work/old", { recursive: true });
+    await client.files.deleteMany(["C:/work/a", "C:/work/b"]);
+    await client.files.rename("C:/work/old.txt", "C:/work/new.txt");
+    await client.files.move("C:/work/src", "C:/work/dst");
+    await client.files.copy("C:/work/src", "C:/work/copy");
+    await client.files.trash(["C:/work/trash-me"]);
+
+    expect(await client.files.exists("C:/work/item.txt")).toBe(true);
+    await expect(client.files.readJson("C:/work/state.json")).resolves.toEqual({ ready: true });
+
+    expect(vi.mocked(commands.extensionHostCall).mock.calls.map(([request]) => request.methodId)).toEqual([
+      "files.create_directory",
+      "files.write_text",
+      "files.write_text",
+      "files.delete",
+      "files.delete_many",
+      "files.rename",
+      "files.move",
+      "files.copy",
+      "files.trash",
+      "files.stat",
+      "files.read_text",
+    ]);
+    expect(commands.extensionHostCall).toHaveBeenCalledWith(expect.objectContaining({
+      callerPluginId: "file-plugin",
+      methodId: "files.delete",
+      payloadJson: JSON.stringify({
+        path: "C:/work/old",
+        recursive: true,
+      }),
+    }));
+  });
 });

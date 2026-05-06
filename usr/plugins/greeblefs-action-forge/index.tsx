@@ -23,6 +23,9 @@ import {
   ExplorerWorkflowSection,
   ExplorerWorkflowStatusNotice,
 } from '@greeblefs/ui';
+import {
+  createFileOperations,
+} from '@greeblefs/plugin-tools';
 
 import {
   ACTION_FORGE_CONTEXT_LABELS,
@@ -88,17 +91,17 @@ function readTomlStringField(sourceText, fieldName) {
   return match?.[1]?.trim() || '';
 }
 
-async function statPath(api, path) {
+async function statPath(fileOps, path) {
   try {
-    return await api.host.files.stat(path);
+    return await fileOps.stat(path);
   } catch {
     return { exists: false, isDirectory: false, path, size: 0, modifiedMs: null, extension: null };
   }
 }
 
-async function listDirectoryEntries(api, path) {
+async function listDirectoryEntries(fileOps, path) {
   try {
-    const listing = await api.host.files.listDirectory(path, false);
+    const listing = await fileOps.listDirectory(path, false);
     return Array.isArray(listing.entries)
       ? listing.entries.map(normalizeDirectoryEntry).filter(Boolean)
       : [];
@@ -107,20 +110,20 @@ async function listDirectoryEntries(api, path) {
   }
 }
 
-async function loadPackSummary(api, packEntry) {
+async function loadPackSummary(fileOps, packEntry) {
   const manifestPath = joinPath(packEntry.path, 'action-pack.toml');
   const readmePath = joinPath(packEntry.path, 'README.md');
   const actionsPath = joinPath(packEntry.path, 'actions');
   const [manifestStat, readmeStat, actionEntries] = await Promise.all([
-    statPath(api, manifestPath),
-    statPath(api, readmePath),
-    listDirectoryEntries(api, actionsPath),
+    statPath(fileOps, manifestPath),
+    statPath(fileOps, readmePath),
+    listDirectoryEntries(fileOps, actionsPath),
   ]);
   let name = titleCaseSlug(packEntry.name);
   let description = '';
   if (manifestStat.exists) {
     try {
-      const manifestText = await api.host.files.readText(manifestPath);
+      const manifestText = await fileOps.readText(manifestPath);
       name = readTomlStringField(manifestText, 'name') || name;
       description = readTomlStringField(manifestText, 'description') || '';
     } catch {
@@ -172,6 +175,7 @@ function ActionForgePanel({ plugin, api }) {
   const [packIdTouched, setPackIdTouched] = React.useState(false);
   const [actionIdTouched, setActionIdTouched] = React.useState(false);
   const [copiedPreviewLabel, setCopiedPreviewLabel] = React.useState('');
+  const fileOps = React.useMemo(() => createFileOperations(api), [api]);
 
   const actionsRoot = React.useMemo(
     () => resolveActionsRoot(plugin.pluginDirectory),
@@ -288,10 +292,10 @@ function ActionForgePanel({ plugin, api }) {
   const refreshPacks = React.useCallback(async () => {
     setLoadingPacks(true);
     try {
-      const packEntries = (await listDirectoryEntries(api, actionsRoot))
+      const packEntries = (await listDirectoryEntries(fileOps, actionsRoot))
         .filter((entry) => entry.isDirectory);
       const nextPacks = await Promise.all(
-        packEntries.map((packEntry) => loadPackSummary(api, packEntry)),
+        packEntries.map((packEntry) => loadPackSummary(fileOps, packEntry)),
       );
       nextPacks.sort((left, right) => left.name.localeCompare(right.name));
       setPacks(nextPacks);
@@ -312,7 +316,7 @@ function ActionForgePanel({ plugin, api }) {
     } finally {
       setLoadingPacks(false);
     }
-  }, [actionsRoot, api]);
+  }, [actionsRoot, fileOps]);
 
   React.useEffect(() => {
     void refreshPacks();
@@ -328,7 +332,7 @@ function ActionForgePanel({ plugin, api }) {
     }
     setStatus({ kind: 'saving', message: 'Writing pack and action files…' });
     try {
-      const existingAction = await statPath(api, blueprint.actionPath);
+      const existingAction = await statPath(fileOps, blueprint.actionPath);
       if (existingAction.exists && !draft.overwriteExisting) {
         setStatus({
           kind: 'error',
@@ -338,7 +342,7 @@ function ActionForgePanel({ plugin, api }) {
       }
 
       for (const file of blueprint.files) {
-        await api.host.files.writeText(file.path, file.content);
+        await fileOps.writeText(file.path, file.content);
       }
 
       await refreshPacks();

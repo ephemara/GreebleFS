@@ -1535,11 +1535,14 @@ function dependencyRepairButtonStyle(accent: string): React.CSSProperties {
 }
 
 function getPluginSourceSummary(plugin: LoadedOverlayPlugin): string {
+  const visibility = plugin.diagnostics.sourceVisibility
+    ? ` • ${plugin.diagnostics.sourceVisibility} source`
+    : '';
   if (plugin.diagnostics.sourceKind === 'library-package') {
-    return `Library package • ${plugin.diagnostics.sourceLabel}`;
+    return `Library package • ${plugin.diagnostics.sourceLabel}${visibility}`;
   }
   return plugin.diagnostics.sourceKind === 'package-plugin'
-    ? `Package plugin • ${plugin.diagnostics.sourceLabel}`
+    ? `Package plugin • ${plugin.diagnostics.sourceLabel}${visibility}`
     : 'File plugin';
 }
 

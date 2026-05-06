@@ -327,11 +327,21 @@ export interface ExtensionHostClient {
   files: {
     readText: (path: string) => Promise<string>;
     writeText: (path: string, content: string) => Promise<void>;
+    readJson: <TValue = unknown>(path: string, fallback?: TValue) => Promise<TValue>;
+    writeJson: (path: string, value: unknown, space?: number) => Promise<void>;
     listDirectory: (
       path: string,
       showHidden?: boolean,
     ) => Promise<ExtensionHostExplorerLocationListing>;
     stat: (path: string) => Promise<ExtensionHostFileStat>;
+    exists: (path: string) => Promise<boolean>;
+    createDirectory: (path: string) => Promise<void>;
+    delete: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+    deleteMany: (paths: string[]) => Promise<void>;
+    rename: (oldPath: string, newPath: string) => Promise<void>;
+    move: (src: string, dst: string) => Promise<void>;
+    copy: (src: string, dst: string) => Promise<void>;
+    trash: (paths: string[]) => Promise<unknown>;
     watch: (
       request: ExtensionHostFileWatchRequest,
     ) => Promise<ExtensionHostFileWatchHandle>;
@@ -500,6 +510,22 @@ export function createExtensionHostClient(
           content,
         });
       },
+      readJson: async (path, fallback) => {
+        try {
+          return JSON.parse(await call<string, { path: string }>('files.read_text', { path }));
+        } catch (error) {
+          if (fallback !== undefined) {
+            return fallback;
+          }
+          throw error;
+        }
+      },
+      writeJson: async (path, value, space = 2) => {
+        await call<null, { path: string; content: string }>('files.write_text', {
+          path,
+          content: JSON.stringify(value, null, space) ?? 'null',
+        });
+      },
       listDirectory: (path, showHidden = false) =>
         call<
           ExtensionHostExplorerLocationListing,
@@ -509,6 +535,32 @@ export function createExtensionHostClient(
           showHidden,
         }),
       stat: (path) => call<ExtensionHostFileStat, { path: string }>('files.stat', { path }),
+      exists: async (path) => (await call<ExtensionHostFileStat, { path: string }>('files.stat', { path })).exists,
+      createDirectory: async (path) => {
+        await call<null, { path: string }>('files.create_directory', { path });
+      },
+      delete: async (path, options = {}) => {
+        await call<null, { path: string; recursive: boolean }>('files.delete', {
+          path,
+          recursive: options.recursive === true,
+        });
+      },
+      deleteMany: async (paths) => {
+        await call<null, { paths: string[] }>('files.delete_many', { paths });
+      },
+      rename: async (oldPath, newPath) => {
+        await call<null, { oldPath: string; newPath: string }>('files.rename', {
+          oldPath,
+          newPath,
+        });
+      },
+      move: async (src, dst) => {
+        await call<null, { src: string; dst: string }>('files.move', { src, dst });
+      },
+      copy: async (src, dst) => {
+        await call<null, { src: string; dst: string }>('files.copy', { src, dst });
+      },
+      trash: (paths) => call<unknown, { paths: string[] }>('files.trash', { paths }),
       watch: (request) =>
         call<ExtensionHostFileWatchHandle, ExtensionHostFileWatchRequest>(
           'files.watch',

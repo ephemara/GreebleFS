@@ -173,6 +173,48 @@ pub fn build_extension_host_api_schema() -> ExtensionHostApiSchema {
                 &["fsWrite"],
             ),
             build_method_descriptor(
+                "files.create_directory",
+                "files",
+                "Create one directory path through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.delete",
+                "files",
+                "Delete one filesystem entry through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.delete_many",
+                "files",
+                "Delete multiple filesystem entries through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.rename",
+                "files",
+                "Rename one filesystem entry through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.move",
+                "files",
+                "Move one filesystem entry through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.copy",
+                "files",
+                "Copy one filesystem entry through the host filesystem lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
+                "files.trash",
+                "files",
+                "Move one or more filesystem entries into the GreebleFS trash lane.",
+                &["fsWrite"],
+            ),
+            build_method_descriptor(
                 "files.list_directory",
                 "files",
                 "List one explorer-aware directory or virtual location.",
@@ -1419,6 +1461,8 @@ mod tests {
         assert!(method_ids.contains(&"host.get_api_schema"));
         assert!(method_ids.contains(&"index.search"));
         assert!(method_ids.contains(&"semantic.search"));
+        assert!(method_ids.contains(&"files.create_directory"));
+        assert!(method_ids.contains(&"files.trash"));
         assert!(method_ids.contains(&"tasks.run_command"));
         assert!(method_ids.contains(&"terminal.spawn"));
 

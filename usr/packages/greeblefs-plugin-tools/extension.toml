@@ -1,0 +1,13 @@
+id = "greeblefs-plugin-tools"
+version = "1.0.0"
+name = "GreebleFS Plugin Tools"
+description = "First-party helpers for plugin file operations, JSON state, path plans, and host-safe utility flows."
+packageKind = "library"
+category = "First-party Libraries"
+tags = ["first-party", "tools", "file-ops", "dependencies", "authoring"]
+
+[source]
+visibility = "open"
+
+[exports.modules]
+"@greeblefs/plugin-tools" = "src/index.ts"

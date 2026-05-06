@@ -326,6 +326,183 @@ describe('plugin package discovery', () => {
     expect(renderToStaticMarkup(React.createElement(consumer.component as React.ComponentType))).toContain('dependency-ready');
   });
 
+  it('allows declared source imports from open plugin packages in usr/plugins', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+      const pluginsRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/');
+      const packagesRoot = pluginSystemConfig.packagesDirectory.replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginsRoot) {
+        return [
+          { name: 'open-toolkit', path: `${pluginsRoot}/open-toolkit`, is_dir: true, extension: '', modified: 10 },
+          { name: 'toolkit-consumer', path: `${pluginsRoot}/toolkit-consumer`, is_dir: true, extension: '', modified: 20 },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === packagesRoot) {
+        return [];
+      }
+
+      const manifests: Record<string, string> = {
+        [`${pluginsRoot}/open-toolkit/extension.toml`]: `
+          id = "open-toolkit"
+          version = "1.0.0"
+          name = "Open Toolkit"
+
+          [source]
+          visibility = "open"
+
+          [exports.modules]
+          "@open/toolkit" = "src/index.tsx"
+        `,
+        [`${pluginsRoot}/toolkit-consumer/extension.toml`]: `
+          id = "toolkit-consumer"
+          version = "1.0.0"
+          name = "Toolkit Consumer"
+          entry = "index.tsx"
+
+          [[dependencies]]
+          id = "open-toolkit"
+          version = "^1.0.0"
+          importAs = "@open/toolkit"
+          required = true
+        `,
+      };
+
+      if (command === 'fs_read_text_file' && manifests[normalizedPath]) {
+        return manifests[normalizedPath];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === `${pluginsRoot}/open-toolkit/src`) {
+        return [
+          { name: 'index.tsx', path: `${pluginsRoot}/open-toolkit/src/index.tsx`, is_dir: false, extension: 'tsx', modified: 11 },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === `${pluginsRoot}/toolkit-consumer`) {
+        return [
+          { name: 'index.tsx', path: `${pluginsRoot}/toolkit-consumer/index.tsx`, is_dir: false, extension: 'tsx', modified: 21 },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${pluginsRoot}/open-toolkit/src/index.tsx`) {
+        return `
+          import React from 'react';
+          export function OpenToolkitBadge() {
+            return React.createElement('b', null, 'open-plugin-import');
+          }
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === `${pluginsRoot}/toolkit-consumer/index.tsx`) {
+        return `
+          import React from 'react';
+          import { definePlugin } from 'overlayterm-plugin';
+          import { OpenToolkitBadge } from '@open/toolkit';
+
+          export default definePlugin({
+            component: function ToolkitConsumer() {
+              return React.createElement('div', null, React.createElement(OpenToolkitBadge));
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_list_dir') {
+        return [];
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+    const consumer = result.plugins.find(plugin => plugin.id === 'toolkit-consumer')!;
+    const provider = result.plugins.find(plugin => plugin.id === 'open-toolkit')!;
+
+    expect(result.warnings).toEqual([]);
+    expect(provider.diagnostics).toMatchObject({
+      sourceKind: 'package-plugin',
+      sourceVisibility: 'open',
+      moduleExports: ['@open/toolkit'],
+    });
+    expect(consumer.diagnostics.dependencies?.[0]).toMatchObject({
+      id: 'open-toolkit',
+      importAs: '@open/toolkit',
+      status: 'satisfied',
+    });
+    expect(renderToStaticMarkup(React.createElement(consumer.component as React.ComponentType))).toContain('open-plugin-import');
+  });
+
+  it('blocks source imports from private plugin packages in usr/plugins', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+      const pluginsRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/');
+      const packagesRoot = pluginSystemConfig.packagesDirectory.replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginsRoot) {
+        return [
+          { name: 'private-toolkit', path: `${pluginsRoot}/private-toolkit`, is_dir: true, extension: '', modified: 10 },
+          { name: 'private-consumer', path: `${pluginsRoot}/private-consumer`, is_dir: true, extension: '', modified: 20 },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === packagesRoot) {
+        return [];
+      }
+
+      const manifests: Record<string, string> = {
+        [`${pluginsRoot}/private-toolkit/extension.toml`]: `
+          id = "private-toolkit"
+          version = "1.0.0"
+          name = "Private Toolkit"
+
+          [exports.modules]
+          "@private/toolkit" = "src/index.tsx"
+        `,
+        [`${pluginsRoot}/private-consumer/extension.toml`]: `
+          id = "private-consumer"
+          version = "1.0.0"
+          name = "Private Consumer"
+          entry = "index.tsx"
+
+          [[dependencies]]
+          id = "private-toolkit"
+          version = "^1.0.0"
+          importAs = "@private/toolkit"
+          required = true
+        `,
+      };
+
+      if (command === 'fs_read_text_file' && manifests[normalizedPath]) {
+        return manifests[normalizedPath];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath.endsWith('/index.tsx')) {
+        throw new Error(`private dependency source should not load: ${normalizedPath}`);
+      }
+
+      if (command === 'fs_list_dir') {
+        return [];
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+    const byId = new Map(result.plugins.map(plugin => [plugin.id, plugin]));
+
+    expect(byId.get('private-toolkit')?.diagnostics.sourceVisibility).toBe('private');
+    expect(byId.get('private-consumer')?.component).toBeNull();
+    expect(byId.get('private-consumer')?.diagnostics.dependencies?.[0]).toMatchObject({
+      id: 'private-toolkit',
+      importAs: '@private/toolkit',
+      status: 'incompatible',
+    });
+    expect(byId.get('private-consumer')?.diagnostics.blockedReason).toContain('does not expose source modules');
+  });
+
   it('blocks package plugins when required dependencies are missing disabled incompatible or cyclic', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;

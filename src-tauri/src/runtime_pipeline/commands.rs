@@ -23,9 +23,11 @@ use crate::cloud_commands::{cloud_list_dir, cloud_open_file, CloudRuntimeState};
 use crate::explorer_identity::{
     build_content_revision, build_virtual_identity, ExplorerIdentityManager,
 };
+use crate::explorer_pro_commands::fs_trash;
 use crate::fs_commands::{
-    fs_list_archive_dir, fs_list_dir, fs_open_file, fs_read_text_file, fs_write_file, git_exec,
-    FileEntry, FsWriteFileContent,
+    fs_copy, fs_create_dir, fs_delete, fs_delete_many, fs_list_archive_dir, fs_list_dir, fs_move,
+    fs_open_file, fs_read_text_file, fs_rename, fs_write_file, git_exec, FileEntry,
+    FsWriteFileContent,
 };
 use crate::global_search::{GlobalSearchIndexQueryRequest, GlobalSearchScanSettings};
 use crate::native_task_graph::NativeTaskGraphManager;
@@ -242,6 +244,46 @@ struct ExtensionHostListDirectoryRequest {
     path: String,
     #[serde(default)]
     show_hidden: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostCreateDirectoryRequest {
+    path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostDeleteRequest {
+    path: String,
+    #[serde(default)]
+    recursive: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostDeleteManyRequest {
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostRenameRequest {
+    old_path: String,
+    new_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostTransferRequest {
+    src: String,
+    dst: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtensionHostTrashRequest {
+    paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -1520,6 +1562,98 @@ async fn dispatch_extension_host_call(
             fs_write_file(payload.path, FsWriteFileContent::Text(payload.content)).await?;
             Ok("null".to_string())
         }
+        "files.create_directory" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostCreateDirectoryRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            fs_create_dir(payload.path).await?;
+            Ok("null".to_string())
+        }
+        "files.delete" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostDeleteRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            fs_delete(payload.path, payload.recursive).await?;
+            Ok("null".to_string())
+        }
+        "files.delete_many" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostDeleteManyRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            fs_delete_many(payload.paths).await?;
+            Ok("null".to_string())
+        }
+        "files.rename" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostRenameRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let identity_manager = app.state::<ExplorerIdentityManager>();
+            fs_rename(
+                app.clone(),
+                identity_manager,
+                payload.old_path,
+                payload.new_path,
+            )
+            .await?;
+            Ok("null".to_string())
+        }
+        "files.move" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostTransferRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let identity_manager = app.state::<ExplorerIdentityManager>();
+            fs_move(app.clone(), identity_manager, payload.src, payload.dst).await?;
+            Ok("null".to_string())
+        }
+        "files.copy" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostTransferRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            fs_copy(payload.src, payload.dst).await?;
+            Ok("null".to_string())
+        }
+        "files.trash" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_write,
+                "fsWrite",
+            )?;
+            let payload: ExtensionHostTrashRequest =
+                decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
+            let record = fs_trash(app.clone(), payload.paths).await?;
+            encode_runtime_host_bridge_result(&record)
+        }
         "files.list_directory" | "explorer.list_location" => {
             ensure_extension_host_permission(
                 caller_label,
@@ -1552,6 +1686,12 @@ async fn dispatch_extension_host_call(
             encode_runtime_host_bridge_result(&stat)
         }
         "files.watch" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_watch,
+                "fsWatch",
+            )?;
             let payload: ExtensionHostFileWatchRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             let handle =
@@ -1559,6 +1699,12 @@ async fn dispatch_extension_host_call(
             encode_runtime_host_bridge_result(&handle)
         }
         "files.unwatch" => {
+            ensure_extension_host_permission(
+                caller_label,
+                caller_permissions,
+                |permissions| permissions.fs_watch,
+                "fsWatch",
+            )?;
             let payload: ExtensionHostFileUnwatchRequest =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
             let watch_manager = app.state::<RuntimeFileWatchManager>();

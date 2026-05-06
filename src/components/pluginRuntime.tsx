@@ -132,6 +132,7 @@ export interface OverlayPluginApi {
   workflows: OverlayPluginWorkflowApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
+  openPackagesFolder: () => Promise<void>;
   openPanel: (panelId: string, payload?: Record<string, string>) => void;
   openWindowedPanel: (panelId: string, payload?: Record<string, string>) => void;
   dockWindowedPanel: (panelId: string, payload?: Record<string, string>) => void;
@@ -470,6 +471,7 @@ export type OverlayPluginSourceKind =
   | 'library-package';
 
 export type OverlayPluginPackageKind = 'plugin' | 'library' | 'runtime';
+export type OverlayPluginSourceVisibility = 'open' | 'hybrid' | 'compiled' | 'private';
 
 export type OverlayPluginDependencyStatus =
   | 'satisfied'
@@ -509,6 +511,7 @@ export interface OverlayPluginDiagnostics {
   sourceLabel: string;
   manifestPath?: string;
   packageKind?: OverlayPluginPackageKind;
+  sourceVisibility?: OverlayPluginSourceVisibility;
   category: string;
   tags: string[];
   testFiles: OverlayPluginTestFile[];
@@ -642,6 +645,7 @@ export async function loadPluginFromSource(
     sourceLabel: options?.diagnostics?.sourceLabel ?? context.filePath,
     manifestPath: options?.diagnostics?.manifestPath,
     packageKind: options?.diagnostics?.packageKind,
+    sourceVisibility: options?.diagnostics?.sourceVisibility,
     category: options?.diagnostics?.category ?? 'General',
     tags: options?.diagnostics?.tags ?? [],
     testFiles: options?.diagnostics?.testFiles ?? [],

@@ -186,6 +186,7 @@ vi.mock('../runtime/useFolderPluginRuntime', () => ({
     folderPluginsError: null,
     folderPluginsLoading: false,
     openPluginsFolder: vi.fn(async () => {}),
+    openPackagesFolder: vi.fn(async () => {}),
     refreshFolderPlugins: vi.fn(async () => {}),
     createPluginApi: vi.fn(() => ({})),
   }),

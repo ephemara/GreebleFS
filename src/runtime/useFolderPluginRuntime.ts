@@ -254,6 +254,7 @@ export function useFolderPluginRuntime(
         await refreshFolderPluginsRef.current(true);
       },
       openPluginsFolder,
+      openPackagesFolder,
       openPanel: (panelId, payload = {}) => {
         requestPluginPanelOpen(panelId, payload, {
           source: 'plugin-runtime',
@@ -277,7 +278,7 @@ export function useFolderPluginRuntime(
     });
 
     return createBoundPluginApi(null);
-  }, [openPluginsFolder, runtimePlatform]);
+  }, [openPackagesFolder, openPluginsFolder, runtimePlatform]);
 
   const refreshFolderPlugins = useCallback(async (force = false) => {
     if (!isTauri()) {

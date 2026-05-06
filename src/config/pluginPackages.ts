@@ -52,6 +52,7 @@ import {
   type OverlayPluginDependencyDiagnostic,
   type OverlayPluginPackageKind,
   type OverlayPluginPreviewLaneProps,
+  type OverlayPluginSourceVisibility,
   type OverlayPluginSettingsSlotProps,
   type OverlayPluginWorkflowDefinition,
   type OverlayPluginTestFile,
@@ -234,6 +235,7 @@ interface PluginPackageManifest {
   description?: string;
   apiVersion?: string;
   packageKind?: OverlayPluginPackageKind;
+  sourceVisibility?: OverlayPluginSourceVisibility;
   entry?: string;
   defaultOpen?: boolean;
   keepMounted?: boolean;
@@ -346,6 +348,19 @@ function asPackageKind(value: unknown): OverlayPluginPackageKind {
     return value;
   }
   return 'plugin';
+}
+
+function asPackageSourceVisibility(value: unknown): OverlayPluginSourceVisibility | undefined {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (
+    normalized === 'open' ||
+    normalized === 'hybrid' ||
+    normalized === 'compiled' ||
+    normalized === 'private'
+  ) {
+    return normalized;
+  }
+  return undefined;
 }
 
 function asPackageExportsManifest(value: unknown): PluginPackageExportsManifest | undefined {
@@ -1006,6 +1021,8 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
   }
 
   const contributions = asRecord(source.contributions);
+  const sourceMetadata = asRecord(source.source);
+  const distributionMetadata = asRecord(source.distribution);
   return {
     version:
       typeof source.version === 'number' || typeof source.version === 'string'
@@ -1017,6 +1034,11 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
     description: asString(source.description),
     apiVersion: asString(source.apiVersion),
     packageKind: asPackageKind(source.packageKind),
+    sourceVisibility: asPackageSourceVisibility(
+      source.sourceVisibility ??
+      sourceMetadata?.visibility ??
+      distributionMetadata?.sourceVisibility,
+    ),
     entry: asString(source.entry),
     defaultOpen: asBoolean(source.defaultOpen),
     keepMounted: asBoolean(source.keepMounted),
@@ -1193,6 +1215,13 @@ function derivePackageKind(record: PluginPackageRecord): OverlayPluginPackageKin
   return record.manifest.packageKind ?? 'plugin';
 }
 
+function derivePackageSourceVisibility(record: PluginPackageRecord): OverlayPluginSourceVisibility {
+  if (record.manifest.sourceVisibility) {
+    return record.manifest.sourceVisibility;
+  }
+  return record.rootKind === 'packages' ? 'open' : 'private';
+}
+
 function getPackageRootDirectory(record: PluginPackageRecord): string {
   return record.rootKind === 'packages'
     ? pluginSystemConfig.packagesDirectory
@@ -1207,6 +1236,14 @@ function getPackageSourceKind(record: PluginPackageRecord) {
 
 function getPackageModuleExportSpecifiers(record: PluginPackageRecord): string[] {
   return Object.keys(record.manifest.exports?.modules ?? {}).sort();
+}
+
+function canPackageExposeSourceModules(record: PluginPackageRecord): boolean {
+  if (record.rootKind === 'packages') {
+    return true;
+  }
+  const visibility = derivePackageSourceVisibility(record);
+  return visibility === 'open' || visibility === 'hybrid';
 }
 
 function estimatePackageManifestCapabilities(
@@ -1298,6 +1335,7 @@ function createDisabledPackagePlugin(
       sourceLabel: packageName,
       manifestPath: record.manifestPath,
       packageKind: derivePackageKind(record),
+      sourceVisibility: derivePackageSourceVisibility(record),
       category: record.manifest.category || 'General',
       tags: record.manifest.tags ?? [],
       testFiles: resolvePackageTestFiles(record),
@@ -1349,6 +1387,7 @@ function createMetadataOnlyPackagePlugin(
       sourceLabel: packageName,
       manifestPath: record.manifestPath,
       packageKind: derivePackageKind(record),
+      sourceVisibility: derivePackageSourceVisibility(record),
       category: record.manifest.category || 'General',
       tags: record.manifest.tags ?? [],
       testFiles: resolvePackageTestFiles(record),
@@ -1676,6 +1715,20 @@ function createDependencyDiagnostic(
     };
   }
 
+  if (dependency.importAs && !canPackageExposeSourceModules(dependencyRecord)) {
+    const visibility = derivePackageSourceVisibility(dependencyRecord);
+    return {
+      id: dependency.id,
+      importAs: dependency.importAs,
+      required,
+      requestedVersion,
+      installedVersion,
+      packageName: dependencyName,
+      status: 'incompatible',
+      message: `${dependencyName} is ${visibility}-source and does not expose source modules for cross-plugin imports.`,
+    };
+  }
+
   if (
     dependency.importAs &&
     !(dependency.importAs in (dependencyRecord.manifest.exports?.modules ?? {}))
@@ -1820,6 +1873,11 @@ async function loadPackageModuleExport(
   const promise = (async () => {
     if (importStack.includes(cacheKey)) {
       throw new Error(`Dependency module cycle while loading ${importSpecifier}.`);
+    }
+
+    if (!canPackageExposeSourceModules(record)) {
+      const visibility = derivePackageSourceVisibility(record);
+      throw new Error(`${derivePackageName(record)} is ${visibility}-source and cannot be imported as source.`);
     }
 
     const modulePath = record.manifest.exports?.modules?.[importSpecifier];
@@ -2029,6 +2087,7 @@ async function loadPluginPackage(
           sourceLabel: packageName,
           manifestPath: record.manifestPath,
           packageKind: derivePackageKind(record),
+          sourceVisibility: derivePackageSourceVisibility(record),
           category: packageCategory,
           tags: packageTags,
           testFiles: packageTestFiles,
@@ -2057,6 +2116,7 @@ async function loadPluginPackage(
         sourceLabel: packageName,
         manifestPath: record.manifestPath,
         packageKind: derivePackageKind(record),
+        sourceVisibility: derivePackageSourceVisibility(record),
         category: packageCategory,
         tags: packageTags,
         testFiles: packageTestFiles,

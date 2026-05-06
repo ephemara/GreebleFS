@@ -18,3 +18,9 @@ id = "greeblefs-ui"
 version = "^1.0.0"
 importAs = "@greeblefs/ui"
 required = true
+
+[[dependencies]]
+id = "greeblefs-plugin-tools"
+version = "^1.0.0"
+importAs = "@greeblefs/plugin-tools"
+required = true

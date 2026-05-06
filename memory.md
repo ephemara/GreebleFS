@@ -19,6 +19,32 @@
 - Validation:
   - Passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot --testTimeout=30000`
 
+# 2026-05-06 - Plugin UI Kit, Plugin Tools, And Source-Gated Cross-Plugin Imports
+
+- Expanded the V1 plugin dependency ecosystem into a fuller authoring platform.
+  - `usr/packages/greeblefs-ui` is now `1.1.0` and exports a compact theme-aware UI kit beyond workflow aliases: surfaces, panels, cards, hero/metric strips, stack/inline/grid/split layouts, command bars, dense form controls, tabs, badges/tags/pills, notices, progress, skeletons, code blocks, key-value lists, tables, drop zones, file-path rows, and toast stacks.
+  - Added `usr/packages/greeblefs-plugin-tools` exporting `@greeblefs/plugin-tools` with reusable file operations, JSON helpers, plugin storage stores, path helpers, write plans, and error formatting.
+  - `Action Forge` now declares both `@greeblefs/ui` and `@greeblefs/plugin-tools` and uses the shared file-operation wrapper instead of direct host file calls for its action-pack reads/writes.
+- Cross-plugin imports are now allowed from `usr/plugins` only when the provider opts into source sharing.
+  - Manifest source visibility accepts `[source] visibility = "open" | "hybrid" | "compiled" | "private"` plus compatible top-level fields.
+  - `usr/packages` libraries remain source-importable by default; `usr/plugins` providers default to private.
+  - A consumer with `importAs` is blocked before execution if the dependency is private/compiled, missing, disabled, incompatible, cyclic, or transitively blocked.
+- The extension-host file API is now a real plugin authoring surface.
+  - `src/runtime/extensionHostApi.ts` exposes read/write/readJson/writeJson/list/stat/exists/createDirectory/delete/deleteMany/rename/move/copy/trash/watch/unwatch.
+  - `src-tauri/src/runtime_pipeline/commands.rs` routes the new mutating calls to existing Explorer/native file commands behind `fsWrite`, while watch/unwatch are gated behind `fsWatch`.
+  - `src-tauri/src/runtime_pipeline/extension_host.rs` advertises the new methods in the host schema.
+- Durable rules:
+  - Prefer `@greeblefs/ui` for plugin visual grammar and `@greeblefs/plugin-tools` for plugin file/state boilerplate.
+  - Do not let a plugin under `usr/plugins` act as an importable source library unless it explicitly marks source visibility `open` or `hybrid`.
+  - If adding host file methods, update both TS wrapper and Rust schema/dispatcher in one pass, then add `extensionHostApi.test.ts` coverage.
+- Validation:
+  - Passed: `bunx esbuild usr/packages/greeblefs-ui/src/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --outfile=.tmp-greeblefs-ui-check.js`
+  - Passed: `bunx esbuild usr/packages/greeblefs-plugin-tools/src/index.ts --bundle --platform=browser --format=esm --outfile=.tmp-greeblefs-plugin-tools-check.js`
+  - Passed: `bunx esbuild usr/plugins/greeblefs-action-forge/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --external:@greeblefs/ui --external:@greeblefs/plugin-tools --external:lucide-react --outfile=.tmp-action-forge-check.js`
+  - Passed: `bunx vitest run src/test/extensionHostApi.test.ts src/test/pluginPackages.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/pluginRuntime.test.ts src/test/pluginPackages.test.ts src/test/pluginsManager.test.tsx src/test/pluginWatchPaths.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/extensionHostApi.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check -p greeblefs --tests` (with existing workspace warnings).
+
 # 2026-05-06 - Explorer Context Menus Rejoined Theme Presentation
 
 - Explorer context-menu rendering now has a dedicated theme-token contract under `--overlay-explorer-context-menu-*`, with defaults emitted from `src/config/explorerTheme.ts` and fallbacks to the older popup tokens. Future theme recipes can tune context-menu background, border, shadow, density metrics, item hover/active colors, icon opacity, disabled opacity, and typography without patching JSX.
