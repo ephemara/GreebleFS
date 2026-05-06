@@ -20,6 +20,10 @@ import {
   EXPLORER_WORKSPACE_AXIS_RATIO_BOUNDS,
   clampExplorerWorkspaceAxisRatio,
 } from "../config/explorerWorkspaceLayouts";
+import {
+  defaultExplorerActivityLaneOrderBySide,
+  defaultExplorerActivityLanePlacementById,
+} from "../config/explorerActivityRail";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -191,6 +195,173 @@ describe("explorerStore persistence", () => {
       search: "materials",
       sourcesVisible: false,
     });
+  });
+
+  it("migrates legacy dock widths into side-owned widths and seeds default lane placement metadata", () => {
+    const {
+      leftActivityDockWidth: _legacyLeftActivityDockWidth,
+      rightActivityDockWidth: _legacyRightActivityDockWidth,
+      activityLanePlacementById: _legacyActivityLanePlacementById,
+      activityLaneOrderBySide: _legacyActivityLaneOrderBySide,
+      ...legacySessionBase
+    } = defaultExplorerSession;
+    const secondaryInstanceId = "secondary";
+    const legacyPrimarySession = {
+      ...legacySessionBase,
+      currentPath: "C:\\primary",
+      sidebarWidth: 222,
+      previewWidth: 360,
+      actionsWidth: 240,
+      previewEnabled: true,
+      sourcesVisible: false,
+      actionsVisible: true,
+      activeActivityLane: "search",
+      activityPaneVisible: true,
+      openActivityLaneIds: [
+        "search",
+        "preview",
+        "customize",
+        "terminal",
+        "search",
+      ],
+    };
+    const legacySecondarySession = {
+      ...legacySessionBase,
+      currentPath: "C:\\secondary",
+      sidebarWidth: 196,
+      previewWidth: null,
+      actionsWidth: 310,
+      previewEnabled: false,
+      sourcesVisible: true,
+      actionsVisible: false,
+      activeActivityLane: "files",
+      activityPaneVisible: true,
+      openActivityLaneIds: ["files", "terminal", "files"],
+    };
+
+    window.localStorage.setItem(
+      EXPLORER_STATE_STORAGE_KEY,
+      JSON.stringify({
+        version: EXPLORER_STATE_VERSION - 1,
+        session: legacyPrimarySession,
+        sessions: {
+          [PRIMARY_EXPLORER_INSTANCE_ID]: legacyPrimarySession,
+          [secondaryInstanceId]: legacySecondarySession,
+        },
+        workspace: defaultExplorerWorkspace,
+        rail: createDefaultExplorerRailSnapshot(),
+      }),
+    );
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.session).toMatchObject({
+      currentPath: "C:\\primary",
+      sidebarWidth: 222,
+      previewWidth: 360,
+      actionsWidth: 240,
+      leftActivityDockWidth: 222,
+      rightActivityDockWidth: 600,
+      openActivityLaneIds: ["search", "preview", "customize", "terminal"],
+      sourcesVisible: false,
+      actionsVisible: true,
+      activeActivityLane: "search",
+      activityPaneVisible: true,
+      activityLanePlacementById: defaultExplorerActivityLanePlacementById,
+      activityLaneOrderBySide: defaultExplorerActivityLaneOrderBySide,
+    });
+    expect(hydrated.sessions[secondaryInstanceId]).toMatchObject({
+      currentPath: "C:\\secondary",
+      sidebarWidth: 196,
+      previewWidth: 310,
+      actionsWidth: 310,
+      leftActivityDockWidth: 196,
+      rightActivityDockWidth: 310,
+      openActivityLaneIds: ["files", "terminal"],
+      sourcesVisible: true,
+      actionsVisible: false,
+      activeActivityLane: "files",
+      activityPaneVisible: true,
+      activityLanePlacementById: defaultExplorerActivityLanePlacementById,
+      activityLaneOrderBySide: defaultExplorerActivityLaneOrderBySide,
+    });
+  });
+
+  it("normalizes persisted lane placement and side ordering for the dynamic rail shape", () => {
+    const persistedPlacementById = {
+      preview: "left",
+      terminal: "right",
+      actions: "left",
+    };
+    const persistedOrderBySide = {
+      left: ["preview", "files", "actions", "terminal", "files"],
+      right: ["customize", "search", "terminal"],
+    };
+
+    window.localStorage.setItem(
+      EXPLORER_STATE_STORAGE_KEY,
+      JSON.stringify({
+        version: EXPLORER_STATE_VERSION,
+        session: {
+          ...defaultExplorerSession,
+          openActivityLaneIds: [
+            "preview",
+            "terminal",
+            "terminal",
+            "customize",
+            "bogus",
+          ],
+          previewEnabled: true,
+          actionsVisible: false,
+          sourcesVisible: false,
+          activeActivityLane: "semantic",
+          activityPaneVisible: true,
+          activityLanePlacementById: persistedPlacementById,
+          activityLaneOrderBySide: persistedOrderBySide,
+        },
+        sessions: {
+          [PRIMARY_EXPLORER_INSTANCE_ID]: {
+            ...defaultExplorerSession,
+            openActivityLaneIds: [
+              "preview",
+              "terminal",
+              "terminal",
+              "customize",
+              "bogus",
+            ],
+            previewEnabled: true,
+            actionsVisible: false,
+            sourcesVisible: false,
+            activeActivityLane: "semantic",
+            activityPaneVisible: true,
+            activityLanePlacementById: persistedPlacementById,
+            activityLaneOrderBySide: persistedOrderBySide,
+          },
+        },
+        workspace: defaultExplorerWorkspace,
+        rail: createDefaultExplorerRailSnapshot(),
+      }),
+    );
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.session.activityLanePlacementById).toEqual({
+      ...defaultExplorerActivityLanePlacementById,
+      preview: "left",
+      terminal: "right",
+      actions: "left",
+    });
+    expect(hydrated.session.activityLaneOrderBySide).toEqual({
+      left: ["preview", "files", "actions", "search", "semantic", "tasks"],
+      right: ["customize", "terminal"],
+    });
+    expect(hydrated.session.openActivityLaneIds).toEqual([
+      "preview",
+      "terminal",
+      "customize",
+    ]);
+    expect(hydrated.session.sourcesVisible).toBe(false);
+    expect(hydrated.session.actionsVisible).toBe(true);
+    expect(hydrated.session.activityPaneVisible).toBe(true);
+    expect(hydrated.session.activeActivityLane).toBe("terminal");
   });
 
   it("hydrates legacy sources rail state and re-persists without the removed field", () => {

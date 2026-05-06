@@ -8,13 +8,14 @@ import {
   Sparkles,
   TerminalSquare,
 } from "@/components/AppIcons";
-import type { ComponentType, CSSProperties } from "react";
-import { useCallback } from "react";
+import type { ComponentType, CSSProperties, DragEvent } from "react";
+import { useCallback, useState } from "react";
 
 import { useInteractionMotionController } from "../../animation/interactionMotion";
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import {
   explorerActivityLaneDefinitions,
+  explorerActivityLaneIds,
   type ExplorerActivityLaneDefinition,
   type ExplorerActivityLaneId,
   type ExplorerActivityRailSide,
@@ -44,6 +45,7 @@ export function ExplorerActivityRail({
   appearance,
   laneDefinitions = explorerActivityLaneDefinitions,
   laneBadges = {},
+  onMoveLane,
   onSelectLane,
   railSide = "left",
   tone,
@@ -53,11 +55,22 @@ export function ExplorerActivityRail({
   appearance?: Pick<ResolvedOverlayAppearance, "baseTheme"> | null;
   laneDefinitions?: readonly ExplorerActivityLaneDefinition[];
   laneBadges?: Partial<Record<ExplorerActivityLaneId, number | string | null>>;
+  onMoveLane?: (
+    laneId: ExplorerActivityLaneId,
+    targetSide: ExplorerActivityRailSide,
+    targetIndex: number,
+  ) => void;
   onSelectLane: (laneId: ExplorerActivityLaneId) => void;
   railSide?: ExplorerActivityRailSide;
   tone: ExplorerPaneTone;
 }) {
   const interactionMotion = useInteractionMotionController(appearance);
+  const [draggedLaneId, setDraggedLaneId] = useState<ExplorerActivityLaneId | null>(
+    null,
+  );
+  const [dragOverTargetIndex, setDragOverTargetIndex] = useState<number | null>(
+    null,
+  );
   const bindActivityRailMotion = useCallback(
     (active: boolean, motionStepIndex: number) =>
       interactionMotion.bindSurface({
@@ -72,6 +85,91 @@ export function ExplorerActivityRail({
     (laneId: ExplorerActivityLaneId) =>
       activeLaneIds?.has(laneId) ?? laneId === activeLaneId,
     [activeLaneId, activeLaneIds],
+  );
+  const resolveDraggedLaneId = useCallback(
+    (event: DragEvent<HTMLElement>): ExplorerActivityLaneId | null => {
+      const explicitDraggedLaneId = draggedLaneId;
+      if (explicitDraggedLaneId) {
+        return explicitDraggedLaneId;
+      }
+      const transferredLaneId = event.dataTransfer.getData(
+        "application/x-greeblefs-explorer-activity-lane",
+      );
+      return explorerActivityLaneIds.includes(
+        transferredLaneId as ExplorerActivityLaneId,
+      )
+        ? (transferredLaneId as ExplorerActivityLaneId)
+        : null;
+    },
+    [draggedLaneId],
+  );
+  const resolveMoveTargetIndex = useCallback(
+    (laneId: ExplorerActivityLaneId, rawTargetIndex: number): number => {
+      const sourceIndex = laneDefinitions.findIndex((lane) => lane.id === laneId);
+      if (sourceIndex >= 0 && sourceIndex < rawTargetIndex) {
+        return rawTargetIndex - 1;
+      }
+      return rawTargetIndex;
+    },
+    [laneDefinitions],
+  );
+  const handleLaneDragStart = useCallback(
+    (laneId: ExplorerActivityLaneId) => (event: DragEvent<HTMLButtonElement>) => {
+      if (!onMoveLane) {
+        return;
+      }
+      setDraggedLaneId(laneId);
+      setDragOverTargetIndex(null);
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData(
+        "application/x-greeblefs-explorer-activity-lane",
+        laneId,
+      );
+    },
+    [onMoveLane],
+  );
+  const handleLaneDragEnd = useCallback(() => {
+    setDraggedLaneId(null);
+    setDragOverTargetIndex(null);
+  }, []);
+  const handleRailDragOver = useCallback(
+    (targetIndex: number) => (event: DragEvent<HTMLElement>) => {
+      if (!onMoveLane || !resolveDraggedLaneId(event)) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDragOverTargetIndex(targetIndex);
+    },
+    [onMoveLane, resolveDraggedLaneId],
+  );
+  const handleRailDragLeave = useCallback(
+    (targetIndex: number) => () => {
+      setDragOverTargetIndex((current) =>
+        current === targetIndex ? null : current,
+      );
+    },
+    [],
+  );
+  const handleRailDrop = useCallback(
+    (rawTargetIndex: number) => (event: DragEvent<HTMLElement>) => {
+      if (!onMoveLane) {
+        return;
+      }
+      const laneId = resolveDraggedLaneId(event);
+      if (!laneId) {
+        return;
+      }
+      event.preventDefault();
+      onMoveLane(
+        laneId,
+        railSide,
+        resolveMoveTargetIndex(laneId, rawTargetIndex),
+      );
+      setDraggedLaneId(null);
+      setDragOverTargetIndex(null);
+    },
+    [onMoveLane, railSide, resolveDraggedLaneId, resolveMoveTargetIndex],
   );
 
   return (
@@ -107,6 +205,9 @@ export function ExplorerActivityRail({
             : "inset -1px 0 0 rgba(255,255,255,0.025)",
         boxSizing: "border-box",
       }}
+      onDragOver={handleRailDragOver(laneDefinitions.length)}
+      onDragLeave={handleRailDragLeave(laneDefinitions.length)}
+      onDrop={handleRailDrop(laneDefinitions.length)}
     >
       {laneDefinitions.map((lane, index) => {
         const Icon = activityLaneIconComponents[lane.iconName];
@@ -115,26 +216,53 @@ export function ExplorerActivityRail({
         const motionBinding = bindActivityRailMotion(active, index);
         const indicatorSide = railSide === "right" ? "right" : "left";
         const badgeSide = railSide === "right" ? "left" : "right";
-        const isBottomLane = lane.utilityPane === "bottom";
+        const showDropIndicator = dragOverTargetIndex === index;
+        const isDraggedLane = lane.id === draggedLaneId;
 
         return (
           <div
             key={lane.id}
+            onDragOver={handleRailDragOver(index)}
+            onDragLeave={handleRailDragLeave(index)}
+            onDrop={handleRailDrop(index)}
             style={{
               position: "relative",
-              marginTop: isBottomLane ? "auto" : undefined,
+              width: "100%",
+              display: "flex",
+              justifyContent: "center",
             }}
           >
+            {showDropIndicator ? (
+              <span
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  left: 6,
+                  right: 6,
+                  top: -4,
+                  height: 2,
+                  borderRadius: 999,
+                  background: tone.accent,
+                  boxShadow: `0 0 12px ${tone.accent}`,
+                }}
+              />
+            ) : null}
             <button
               type="button"
               aria-label={lane.label}
               aria-pressed={active}
               data-overlay-explorer-activity-lane={lane.id}
+              data-overlay-explorer-activity-lane-dragging={
+                isDraggedLane ? "true" : "false"
+              }
               data-overlay-explorer-activity-lane-active={
                 active ? "true" : "false"
               }
               title={lane.label}
               onClick={() => onSelectLane(lane.id)}
+              draggable={Boolean(onMoveLane)}
+              onDragStart={handleLaneDragStart(lane.id)}
+              onDragEnd={handleLaneDragEnd}
               {...motionBinding.motionDataAttributes}
               onPointerEnter={motionBinding.onPointerEnter}
               onPointerLeave={motionBinding.onPointerLeave}
@@ -156,6 +284,7 @@ export function ExplorerActivityRail({
                 cursor: "pointer",
                 padding: 0,
                 position: "relative",
+                opacity: isDraggedLane ? 0.48 : 1,
                 boxShadow: active
                   ? `0 0 0 1px color-mix(in srgb, ${tone.accent} 18%, transparent), 0 12px 28px color-mix(in srgb, ${tone.accent} 20%, transparent)`
                   : "0 1px 0 rgba(255,255,255,0.035)",
@@ -218,6 +347,19 @@ export function ExplorerActivityRail({
           </div>
         );
       })}
+      {dragOverTargetIndex === laneDefinitions.length ? (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 26,
+            height: 2,
+            borderRadius: 999,
+            background: tone.accent,
+            boxShadow: `0 0 12px ${tone.accent}`,
+            marginTop: 2,
+          }}
+        />
+      ) : null}
     </nav>
   );
 }

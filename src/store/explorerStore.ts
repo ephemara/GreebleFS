@@ -38,9 +38,15 @@ import {
   type ExplorerSearchModeValue,
 } from "../config/semanticSearch";
 import {
+  defaultExplorerActivityLaneOrderBySide,
+  defaultExplorerActivityLanePlacementById,
   defaultExplorerActivityLaneId,
+  normalizeExplorerActivityLaneOrderBySide,
   normalizeExplorerActivityLaneId,
+  normalizeExplorerActivityLanePlacementById,
   type ExplorerActivityLaneId,
+  type ExplorerActivityLaneOrderBySide,
+  type ExplorerActivityLanePlacementById,
 } from "../config/explorerActivityRail";
 import {
   CONSTELLATION_DEFAULT_LENS,
@@ -51,7 +57,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = "overlayterm-explorer-state-v3";
 export const EXPLORER_STATE_BACKUP_KEY = "overlayterm-explorer-state-v3.backup";
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = "fs-bookmarks-v2";
-export const EXPLORER_STATE_VERSION = 11;
+export const EXPLORER_STATE_VERSION = 12;
 export const PRIMARY_EXPLORER_INSTANCE_ID = "primary";
 export const PRIMARY_EXPLORER_TAB_ID = "workspace-tab-primary";
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -104,6 +110,8 @@ export interface ExplorerSessionSnapshot {
   sidebarWidth: number | null;
   previewWidth: number | null;
   actionsWidth: number | null;
+  leftActivityDockWidth: number | null;
+  rightActivityDockWidth: number | null;
   previewEnabled: boolean;
   previewLocked: boolean;
   previewJumpToFolderEnabled: boolean;
@@ -116,6 +124,9 @@ export interface ExplorerSessionSnapshot {
   actionsVisible: boolean;
   activeActivityLane: ExplorerActivityLaneId;
   activityPaneVisible: boolean;
+  openActivityLaneIds: ExplorerActivityLaneId[];
+  activityLanePlacementById: ExplorerActivityLanePlacementById;
+  activityLaneOrderBySide: ExplorerActivityLaneOrderBySide;
   constellation: ExplorerConstellationSessionSnapshot;
 }
 
@@ -236,6 +247,8 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   sidebarWidth: null,
   previewWidth: null,
   actionsWidth: null,
+  leftActivityDockWidth: null,
+  rightActivityDockWidth: null,
   previewEnabled: true,
   previewLocked: false,
   previewJumpToFolderEnabled: true,
@@ -248,6 +261,9 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   actionsVisible: false,
   activeActivityLane: defaultExplorerActivityLaneId,
   activityPaneVisible: true,
+  openActivityLaneIds: ["files", "preview"],
+  activityLanePlacementById: defaultExplorerActivityLanePlacementById,
+  activityLaneOrderBySide: defaultExplorerActivityLaneOrderBySide,
   constellation: {
     activeLens: CONSTELLATION_DEFAULT_LENS,
     routeModeEnabled: false,
@@ -261,12 +277,311 @@ const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
   hasBackup: false,
 };
 
+const explorerActivityPaneCompatibilityLaneIds = new Set<ExplorerActivityLaneId>([
+  "files",
+  "search",
+  "semantic",
+  "tasks",
+  "terminal",
+]);
+
+const explorerActionsHostLaneIdSet = new Set<ExplorerActivityLaneId>([
+  "actions",
+  "customize",
+]);
+
+const explorerLegacyOpenActivityLaneIds = new Set<ExplorerActivityLaneId>([
+  "files",
+  "search",
+  "semantic",
+  "tasks",
+]);
+
+function uniqueExplorerActivityLaneIds(
+  laneIds: readonly ExplorerActivityLaneId[],
+): ExplorerActivityLaneId[] {
+  const seen = new Set<ExplorerActivityLaneId>();
+  const normalizedLaneIds: ExplorerActivityLaneId[] = [];
+  for (const laneId of laneIds) {
+    if (seen.has(laneId)) {
+      continue;
+    }
+    seen.add(laneId);
+    normalizedLaneIds.push(laneId);
+  }
+  return normalizedLaneIds;
+}
+
+function setExplorerActivityLaneOpen(
+  laneIds: readonly ExplorerActivityLaneId[],
+  laneId: ExplorerActivityLaneId,
+  open: boolean,
+): ExplorerActivityLaneId[] {
+  if (open) {
+    return uniqueExplorerActivityLaneIds([...laneIds, laneId]);
+  }
+  return laneIds.filter((candidateLaneId) => candidateLaneId !== laneId);
+}
+
+function replaceExplorerActionsHostLane(
+  laneIds: readonly ExplorerActivityLaneId[],
+  nextLaneId: "actions" | "customize" | null,
+): ExplorerActivityLaneId[] {
+  const filteredLaneIds = laneIds.filter(
+    (laneId) => !explorerActionsHostLaneIdSet.has(laneId),
+  );
+  return nextLaneId == null ? filteredLaneIds : [...filteredLaneIds, nextLaneId];
+}
+
+function normalizeExplorerOpenActivityLaneIds(
+  value: unknown,
+  options: {
+    previewEnabled: boolean;
+    actionsVisible: boolean;
+    legacySourcesVisible: boolean;
+    legacyActivityPaneVisible: boolean;
+    legacyActiveActivityLane: ExplorerActivityLaneId;
+  },
+): ExplorerActivityLaneId[] {
+  const normalizedLaneIds: ExplorerActivityLaneId[] = [];
+  const seen = new Set<ExplorerActivityLaneId>();
+  const pushLaneId = (laneId: ExplorerActivityLaneId) => {
+    if (seen.has(laneId)) {
+      return;
+    }
+    seen.add(laneId);
+    normalizedLaneIds.push(laneId);
+  };
+  const parseExplorerActivityLaneId = (
+    laneIdValue: unknown,
+  ): ExplorerActivityLaneId | null => {
+    const normalizedLaneId = normalizeExplorerActivityLaneId(laneIdValue);
+    return normalizedLaneId === laneIdValue ? normalizedLaneId : null;
+  };
+  const hasExplicitLaneArray = Array.isArray(value);
+
+  if (hasExplicitLaneArray) {
+    for (const laneIdValue of value) {
+      const laneId = parseExplorerActivityLaneId(laneIdValue);
+      if (!laneId) {
+        continue;
+      }
+      pushLaneId(laneId);
+    }
+  } else {
+    if (options.legacySourcesVisible && options.legacyActivityPaneVisible) {
+      pushLaneId("files");
+    }
+    if (
+      options.legacyActivityPaneVisible &&
+      options.legacyActiveActivityLane !== "files" &&
+      explorerLegacyOpenActivityLaneIds.has(options.legacyActiveActivityLane)
+    ) {
+      pushLaneId(options.legacyActiveActivityLane);
+    }
+  }
+
+  if (options.previewEnabled && !seen.has("preview")) {
+    pushLaneId("preview");
+  }
+
+  if (
+    options.actionsVisible &&
+    !seen.has("actions") &&
+    !seen.has("customize")
+  ) {
+    pushLaneId("actions");
+  }
+
+  return normalizedLaneIds;
+}
+
+function resolveExplorerCompatibilitySourcesVisible(
+  openActivityLaneIds: readonly ExplorerActivityLaneId[],
+): boolean {
+  return openActivityLaneIds.includes("files");
+}
+
+function resolveExplorerCompatibilityActionsVisible(
+  openActivityLaneIds: readonly ExplorerActivityLaneId[],
+): boolean {
+  return (
+    openActivityLaneIds.includes("actions") ||
+    openActivityLaneIds.includes("customize")
+  );
+}
+
+function resolveExplorerCompatibilityActivityPaneVisible(
+  openActivityLaneIds: readonly ExplorerActivityLaneId[],
+): boolean {
+  return openActivityLaneIds.some((laneId) =>
+    explorerActivityPaneCompatibilityLaneIds.has(laneId),
+  );
+}
+
+function resolveExplorerCompatibilityActiveActivityLane(
+  openActivityLaneIds: readonly ExplorerActivityLaneId[],
+  fallbackLaneId: ExplorerActivityLaneId,
+): ExplorerActivityLaneId {
+  if (openActivityLaneIds.includes(fallbackLaneId)) {
+    return fallbackLaneId;
+  }
+  return (
+    openActivityLaneIds.find((laneId) =>
+      explorerActivityPaneCompatibilityLaneIds.has(laneId),
+    ) ??
+    openActivityLaneIds[0] ??
+    fallbackLaneId
+  );
+}
+
+function hasExplorerSessionUpdateField(
+  updates: Partial<ExplorerSessionSnapshot>,
+  key: keyof ExplorerSessionSnapshot,
+): boolean {
+  return Object.prototype.hasOwnProperty.call(updates, key);
+}
+
+function applyExplorerSessionCompatibilityUpdates(
+  current: ExplorerSessionSnapshot,
+  updates: Partial<ExplorerSessionSnapshot>,
+): ExplorerSessionSnapshot {
+  let nextOpenActivityLaneIds = Array.isArray(updates.openActivityLaneIds)
+    ? [...updates.openActivityLaneIds]
+    : [...current.openActivityLaneIds];
+
+  if (
+    hasExplorerSessionUpdateField(updates, "previewEnabled") &&
+    typeof updates.previewEnabled === "boolean"
+  ) {
+    nextOpenActivityLaneIds = setExplorerActivityLaneOpen(
+      nextOpenActivityLaneIds,
+      "preview",
+      updates.previewEnabled,
+    );
+  }
+
+  if (
+    hasExplorerSessionUpdateField(updates, "sourcesVisible") &&
+    typeof updates.sourcesVisible === "boolean"
+  ) {
+    nextOpenActivityLaneIds = setExplorerActivityLaneOpen(
+      nextOpenActivityLaneIds,
+      "files",
+      updates.sourcesVisible,
+    );
+  }
+
+  if (
+    hasExplorerSessionUpdateField(updates, "actionsVisible") &&
+    typeof updates.actionsVisible === "boolean"
+  ) {
+    const explicitOpenLaneIds = Array.isArray(updates.openActivityLaneIds)
+      ? updates.openActivityLaneIds
+      : null;
+    const preferredActionsHostLane =
+      explicitOpenLaneIds?.includes("customize") ||
+      current.openActivityLaneIds.includes("customize")
+        ? "customize"
+        : "actions";
+    nextOpenActivityLaneIds = replaceExplorerActionsHostLane(
+      nextOpenActivityLaneIds,
+      updates.actionsVisible ? preferredActionsHostLane : null,
+    );
+  }
+
+  if (
+    hasExplorerSessionUpdateField(updates, "activityPaneVisible") &&
+    typeof updates.activityPaneVisible === "boolean"
+  ) {
+    if (!updates.activityPaneVisible) {
+      nextOpenActivityLaneIds = nextOpenActivityLaneIds.filter(
+        (laneId) => !explorerActivityPaneCompatibilityLaneIds.has(laneId),
+      );
+    } else {
+      const preferredLaneId = hasExplorerSessionUpdateField(
+        updates,
+        "activeActivityLane",
+      )
+        ? normalizeExplorerActivityLaneId(updates.activeActivityLane)
+        : current.activeActivityLane;
+      const fallbackLaneId = explorerActivityPaneCompatibilityLaneIds.has(
+        preferredLaneId,
+      )
+        ? preferredLaneId
+        : "files";
+      nextOpenActivityLaneIds = setExplorerActivityLaneOpen(
+        nextOpenActivityLaneIds,
+        fallbackLaneId,
+        true,
+      );
+    }
+  }
+
+  if (hasExplorerSessionUpdateField(updates, "activeActivityLane")) {
+    const nextActiveLaneId = normalizeExplorerActivityLaneId(
+      updates.activeActivityLane,
+    );
+    if (
+      explorerActivityPaneCompatibilityLaneIds.has(nextActiveLaneId) &&
+      updates.activityPaneVisible !== false
+    ) {
+      nextOpenActivityLaneIds = setExplorerActivityLaneOpen(
+        nextOpenActivityLaneIds,
+        nextActiveLaneId,
+        true,
+      );
+    }
+  }
+
+  return {
+    ...current,
+    ...updates,
+    openActivityLaneIds: nextOpenActivityLaneIds,
+  };
+}
+
+function deriveLegacyLeftActivityDockWidth(
+  source: Record<string, unknown> | null,
+): number | null {
+  return (
+    normalizeOptionalNumber(source?.leftActivityDockWidth) ??
+    normalizeOptionalNumber(source?.sidebarWidth)
+  );
+}
+
+function deriveLegacyRightActivityDockWidth(
+  source: Record<string, unknown> | null,
+): number | null {
+  const explicitRightWidth = normalizeOptionalNumber(
+    source?.rightActivityDockWidth,
+  );
+  if (explicitRightWidth != null) {
+    return explicitRightWidth;
+  }
+
+  const previewWidth = normalizeOptionalNumber(source?.previewWidth);
+  const actionsWidth = normalizeOptionalNumber(source?.actionsWidth);
+  if (previewWidth != null && actionsWidth != null) {
+    return previewWidth === actionsWidth
+      ? previewWidth
+      : previewWidth + actionsWidth;
+  }
+  return previewWidth ?? actionsWidth ?? null;
+}
+
 function cloneExplorerSessionSnapshot(
   session: ExplorerSessionSnapshot,
 ): ExplorerSessionSnapshot {
   return {
     ...session,
     history: [...session.history],
+    openActivityLaneIds: [...session.openActivityLaneIds],
+    activityLanePlacementById: { ...session.activityLanePlacementById },
+    activityLaneOrderBySide: {
+      left: [...session.activityLaneOrderBySide.left],
+      right: [...session.activityLaneOrderBySide.right],
+    },
     constellation: {
       ...session.constellation,
       pinnedPaths: [...session.constellation.pinnedPaths],
@@ -490,26 +805,78 @@ export function normalizeExplorerSessionSnapshot(
           (entry, index, collection) => collection.indexOf(entry) === index,
         )
     : [...defaultExplorerSession.constellation.pinnedPaths];
+  const leftActivityDockWidth = deriveLegacyLeftActivityDockWidth(source);
+  const rightActivityDockWidth = deriveLegacyRightActivityDockWidth(source);
+  const previewEnabled =
+    typeof source?.previewEnabled === "boolean"
+      ? source.previewEnabled
+      : defaultExplorerSession.previewEnabled;
+  const previewLocked =
+    typeof source?.previewLocked === "boolean"
+      ? source.previewLocked
+      : defaultExplorerSession.previewLocked;
+  const previewJumpToFolderEnabled =
+    typeof source?.previewJumpToFolderEnabled === "boolean"
+      ? source.previewJumpToFolderEnabled
+      : defaultExplorerSession.previewJumpToFolderEnabled;
+  const legacyActionsVisible =
+    typeof source?.actionsVisible === "boolean"
+      ? source.actionsVisible
+      : defaultExplorerSession.actionsVisible;
+  const legacyActiveActivityLane = normalizeExplorerActivityLaneId(
+    source?.activeActivityLane,
+  );
+  const legacyActivityPaneVisible =
+    typeof source?.activityPaneVisible === "boolean"
+      ? source.activityPaneVisible
+      : defaultExplorerSession.activityPaneVisible;
+  const activityLanePlacementById = normalizeExplorerActivityLanePlacementById(
+    source?.activityLanePlacementById,
+  );
+  const activityLaneOrderBySide = normalizeExplorerActivityLaneOrderBySide(
+    source?.activityLaneOrderBySide,
+    activityLanePlacementById,
+  );
+  const openActivityLaneIds = normalizeExplorerOpenActivityLaneIds(
+    source?.openActivityLaneIds,
+    {
+      previewEnabled,
+      actionsVisible: legacyActionsVisible,
+      legacySourcesVisible,
+      legacyActivityPaneVisible,
+      legacyActiveActivityLane,
+    },
+  );
+  const sourcesVisible = resolveExplorerCompatibilitySourcesVisible(
+    openActivityLaneIds,
+  );
+  const actionsVisible = resolveExplorerCompatibilityActionsVisible(
+    openActivityLaneIds,
+  );
+  const activityPaneVisible = resolveExplorerCompatibilityActivityPaneVisible(
+    openActivityLaneIds,
+  );
+  const activeActivityLane = resolveExplorerCompatibilityActiveActivityLane(
+    openActivityLaneIds,
+    legacyActiveActivityLane,
+  );
+
   return {
     currentPath:
       typeof source?.currentPath === "string" ? source.currentPath : "",
     history,
     historyIdx: Math.max(-1, Math.min(history.length - 1, historyIdxValue)),
-    sidebarWidth: normalizeOptionalNumber(source?.sidebarWidth),
-    previewWidth: normalizeOptionalNumber(source?.previewWidth),
-    actionsWidth: normalizeOptionalNumber(source?.actionsWidth),
-    previewEnabled:
-      typeof source?.previewEnabled === "boolean"
-        ? source.previewEnabled
-        : defaultExplorerSession.previewEnabled,
-    previewLocked:
-      typeof source?.previewLocked === "boolean"
-        ? source.previewLocked
-        : defaultExplorerSession.previewLocked,
-    previewJumpToFolderEnabled:
-      typeof source?.previewJumpToFolderEnabled === "boolean"
-        ? source.previewJumpToFolderEnabled
-        : defaultExplorerSession.previewJumpToFolderEnabled,
+    sidebarWidth:
+      normalizeOptionalNumber(source?.sidebarWidth) ?? leftActivityDockWidth,
+    previewWidth:
+      normalizeOptionalNumber(source?.previewWidth) ?? rightActivityDockWidth,
+    actionsWidth:
+      normalizeOptionalNumber(source?.actionsWidth) ?? rightActivityDockWidth,
+    leftActivityDockWidth,
+    rightActivityDockWidth,
+    previewEnabled,
+    previewLocked,
+    previewJumpToFolderEnabled,
     previewSplitMode: source?.previewSplitMode === "pane" ? "pane" : "inline",
     shellLayoutId: normalizedShellLayoutId,
     search: typeof source?.search === "string" ? source.search : "",
@@ -521,21 +888,13 @@ export function normalizeExplorerSessionSnapshot(
     ),
     documentViewMode:
       source?.documentViewMode === "preview" ? "preview" : "edit",
-    sourcesVisible:
-      typeof source?.sourcesVisible === "boolean"
-        ? source.sourcesVisible
-        : legacySourcesVisible,
-    actionsVisible:
-      typeof source?.actionsVisible === "boolean"
-        ? source.actionsVisible
-        : defaultExplorerSession.actionsVisible,
-    activeActivityLane: normalizeExplorerActivityLaneId(
-      source?.activeActivityLane,
-    ),
-    activityPaneVisible:
-      typeof source?.activityPaneVisible === "boolean"
-        ? source.activityPaneVisible
-        : defaultExplorerSession.activityPaneVisible,
+    sourcesVisible,
+    actionsVisible,
+    activeActivityLane,
+    activityPaneVisible,
+    openActivityLaneIds,
+    activityLanePlacementById,
+    activityLaneOrderBySide,
     constellation: {
       activeLens: normalizeConstellationLensId(rawConstellation?.activeLens),
       routeModeEnabled:
@@ -1269,9 +1628,12 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       const current =
         get().sessions[PRIMARY_EXPLORER_INSTANCE_ID] ??
         cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSessionSeed = applyExplorerSessionCompatibilityUpdates(
+        current,
+        updates,
+      );
       const nextSession = normalizeExplorerSessionSnapshot({
-        ...current,
-        ...updates,
+        ...nextSessionSeed,
       });
       set((state) => ({
         sessions: {
@@ -1292,9 +1654,12 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       const current =
         get().sessions[normalizedInstanceId] ??
         cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSessionSeed = applyExplorerSessionCompatibilityUpdates(
+        current,
+        updates,
+      );
       const nextSession = normalizeExplorerSessionSnapshot({
-        ...current,
-        ...updates,
+        ...nextSessionSeed,
       });
       set((state) => ({
         sessions: {

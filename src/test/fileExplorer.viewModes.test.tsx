@@ -967,6 +967,7 @@ function renderExplorer(
     actions?: LoadedExplorerAction[];
     appearance?: ReturnType<typeof resolveOverlayAppearance>;
     chromeControlSurface?: "toolbar" | "topbar";
+    dockPreviewPolicy?: { enabled: boolean; splitMode: "inline" | "pane" };
     layoutMode?: "full" | "dock";
     pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
     workspacePaneCount?: 1 | 2 | 3 | 4;
@@ -990,6 +991,7 @@ function renderExplorer(
         appearance={appearance}
         actions={options.actions}
         chromeControlSurface={options.chromeControlSurface}
+        dockPreviewPolicy={options.dockPreviewPolicy}
         layoutMode={options.layoutMode}
         pluginPreviewLanes={options.pluginPreviewLanes}
         workspacePaneCount={options.workspacePaneCount}
@@ -1217,37 +1219,134 @@ function getToolbarPreviewToggleButton() {
   return within(control).getByRole("button");
 }
 
-function getPreviewResizeHandle() {
-  const handle = getPreviewPane().querySelector(
-    '[data-overlay-explorer-preview-resize-handle="true"]',
+function getExplorerActivityRail(side: "left" | "right") {
+  const rail = document.querySelector(
+    `[data-overlay-explorer-activity-rail-side="${side}"]`,
+  ) as HTMLElement | null;
+  if (!rail) {
+    throw new Error(`Explorer ${side} activity rail not found`);
+  }
+  return rail;
+}
+
+function getExplorerActivityDock(side: "left" | "right") {
+  const dock = document.querySelector(
+    `[data-overlay-explorer-activity-dock-side="${side}"]`,
+  ) as HTMLElement | null;
+  if (!dock) {
+    throw new Error(`Explorer ${side} activity dock not found`);
+  }
+  return dock;
+}
+
+function getExplorerActivityDockLaneElements(side: "left" | "right") {
+  return Array.from(
+    getExplorerActivityDock(side).querySelectorAll(
+      "[data-overlay-explorer-activity-dock-lane]",
+    ),
+  ) as HTMLElement[];
+}
+
+function getExplorerActivityDockLaneIds(side: "left" | "right") {
+  return getExplorerActivityDockLaneElements(side)
+    .map((element) =>
+      element.getAttribute("data-overlay-explorer-activity-dock-lane"),
+    )
+    .filter((laneId): laneId is string => laneId != null);
+}
+
+function getExplorerActivityDockResizeHandle(side: "left" | "right") {
+  const handle = getExplorerActivityDock(side).querySelector(
+    "[data-resizable-pane-handle]",
   ) as HTMLElement | null;
   if (!handle) {
-    throw new Error("Preview resize handle not found");
+    throw new Error(`Explorer ${side} activity dock resize handle not found`);
   }
   return handle;
 }
 
+function getMockTerminalByNamespace(namespace: string) {
+  const terminal = screen
+    .getAllByTestId("mock-preview-terminal")
+    .find(
+      (element) => element.getAttribute("data-terminal-namespace") === namespace,
+    ) as HTMLElement | undefined;
+  if (!terminal) {
+    throw new Error(`Mock terminal ${namespace} not found`);
+  }
+  return terminal;
+}
+
+function getRenderedMockTerminalNamespaces() {
+  return screen.getAllByTestId("mock-preview-terminal").map((element) => {
+    const namespace = element.getAttribute("data-terminal-namespace");
+    if (!namespace) {
+      throw new Error("Mock terminal namespace missing");
+    }
+    return namespace;
+  });
+}
+
+function dragExplorerActivityRailLane(args: {
+  sourceSide: "left" | "right";
+  laneLabel: string;
+  targetSide: "left" | "right";
+  targetBeforeLaneLabel?: string;
+}) {
+  const dataTransfer = createDataTransfer();
+  const sourceButton = within(getExplorerActivityRail(args.sourceSide)).getByRole(
+    "button",
+    { name: args.laneLabel },
+  );
+  const target = args.targetBeforeLaneLabel
+    ? within(getExplorerActivityRail(args.targetSide))
+        .getByRole("button", { name: args.targetBeforeLaneLabel })
+        .parentElement
+    : getExplorerActivityRail(args.targetSide);
+  if (!target) {
+    throw new Error("Explorer activity rail drop target not found");
+  }
+
+  fireEvent.dragStart(sourceButton, { dataTransfer });
+  fireEvent.dragOver(target, { dataTransfer });
+  fireEvent.drop(target, { dataTransfer });
+  fireEvent.dragEnd(sourceButton, { dataTransfer });
+}
+
+function withHeldCtrlKey<T>(run: () => T): T {
+  fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
+  try {
+    return run();
+  } finally {
+    fireEvent.keyUp(window, { key: "Control" });
+  }
+}
+
 function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   const viewport = getExplorerViewport(anchorText);
-  const wheelEvent = new WheelEvent("wheel", {
-    bubbles: true,
-    cancelable: true,
-    ctrlKey: true,
-    deltaY,
+  return withHeldCtrlKey(() => {
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY,
+    });
+    viewport.dispatchEvent(wheelEvent);
+    return wheelEvent;
   });
-  viewport.dispatchEvent(wheelEvent);
-  return wheelEvent;
 }
 
 function dispatchLayoutWheelOnElement(element: Element, deltaY: number) {
-  const wheelEvent = new WheelEvent("wheel", {
-    bubbles: true,
-    cancelable: true,
-    ctrlKey: true,
-    deltaY,
+  return withHeldCtrlKey(() => {
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY,
+    });
+    element.dispatchEvent(wheelEvent);
+    return wheelEvent;
   });
-  element.dispatchEvent(wheelEvent);
-  return wheelEvent;
 }
 
 function dispatchLayoutWheelOnFileArea(deltaY: number) {
@@ -1257,14 +1356,16 @@ function dispatchLayoutWheelOnFileArea(deltaY: number) {
   if (!fileArea) {
     throw new Error("Explorer file area not found");
   }
-  const wheelEvent = new WheelEvent("wheel", {
-    bubbles: true,
-    cancelable: true,
-    ctrlKey: true,
-    deltaY,
+  return withHeldCtrlKey(() => {
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      deltaY,
+    });
+    fileArea.dispatchEvent(wheelEvent);
+    return wheelEvent;
   });
-  fileArea.dispatchEvent(wheelEvent);
-  return wheelEvent;
 }
 
 function dispatchConstellationWheel(
@@ -1274,16 +1375,19 @@ function dispatchConstellationWheel(
   const field = screen.getByRole("group", {
     name: /constellation field/i,
   });
-  const wheelEvent = createEvent.wheel(field, {
-    bubbles: true,
-    cancelable: true,
-    clientX: 320,
-    clientY: 220,
-    deltaY,
-    ...options,
+  return withHeldCtrlKey(() => {
+    const wheelEvent = createEvent.wheel(field, {
+      bubbles: true,
+      cancelable: true,
+      clientX: 320,
+      clientY: 220,
+      ctrlKey: true,
+      deltaY,
+      ...options,
+    });
+    fireEvent(field, wheelEvent);
+    return wheelEvent;
   });
-  fireEvent(field, wheelEvent);
-  return wheelEvent;
 }
 
 async function advanceLayoutZoomCommit() {
@@ -2350,7 +2454,7 @@ describe("FileExplorer view modes", () => {
     renderExplorer();
     await screen.findByText("notes.txt");
 
-    fireEvent.click(screen.getByRole("button", { name: /^preview$/i }));
+    fireEvent.click(getToolbarPreviewToggleButton());
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.previewEnabled).toBe(false);
@@ -2419,13 +2523,14 @@ describe("FileExplorer view modes", () => {
         "data-overlay-explorer-preview-surface-mode",
         "terminal",
       );
-      expect(getExplorerEmbeddedTerminalLayer()).toHaveAttribute(
-        "data-overlay-explorer-terminal-placement",
-        "preview",
+      expect(queryExplorerEmbeddedTerminalLayer()).toBeNull();
+      expect(screen.getByTestId("mock-preview-terminal")).toHaveAttribute(
+        "data-terminal-namespace",
+        "preview-primary",
       );
       expect(previewTerminalMockState.lastProps?.pendingCommandRequest).toEqual(
         expect.objectContaining({
-          id: expect.stringContaining("explorer-terminal-primary:"),
+          id: expect.stringContaining("preview-primary:"),
           run: true,
         }),
       );
@@ -2876,6 +2981,218 @@ describe("FileExplorer view modes", () => {
     });
   });
 
+  it("opens the side-dock terminal from the activity rail", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual([
+        "files",
+        "terminal",
+      ]);
+      expect(
+        getMockTerminalByNamespace("explorer-side-terminal-primary"),
+      ).toHaveAttribute("data-working-directory", REPO_ROOT);
+    });
+  });
+
+  it("keeps preview, bottom, and side-dock explorer terminals as separate sessions", async () => {
+    renderExplorer();
+    await screen.findByText("index.html");
+
+    fireEvent.click(screen.getByText("index.html"));
+    await screen.findByRole("button", { name: /copy path/i });
+
+    fireEvent.click(getPreviewTerminalToggleButton());
+    await waitFor(() => {
+      expect(getMockTerminalByNamespace("preview-primary")).toBeTruthy();
+    });
+
+    fireEvent.click(getBottomTerminalToggleButton());
+    await waitFor(() => {
+      expect(
+        getMockTerminalByNamespace("explorer-terminal-primary"),
+      ).toBeTruthy();
+    });
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Terminal",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getRenderedMockTerminalNamespaces().sort()).toEqual([
+        "explorer-side-terminal-primary",
+        "explorer-terminal-primary",
+        "preview-primary",
+      ]);
+      expect(screen.getAllByTestId("mock-preview-terminal")).toHaveLength(3);
+    });
+  });
+
+  it("reuses the destination side width when the terminal lane moves to that rail", async () => {
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    fireEvent.click(screen.getByText("preview.png"));
+    expect(
+      await screen.findByTestId("mock-explorer-image-editor"),
+    ).toHaveTextContent("preview.png");
+
+    fireEvent.click(getPreviewSplitToggleButton());
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
+    });
+
+    fireEvent.pointerDown(getExplorerActivityDockResizeHandle("right"), {
+      button: 0,
+      clientX: 600,
+      pointerId: 10,
+    });
+    fireEvent.pointerMove(window, { clientX: 520, pointerId: 10 });
+    fireEvent.pointerUp(window, { clientX: 520, pointerId: 10 });
+
+    let resizedRightWidth = useExplorerStore.getState().session.rightActivityDockWidth;
+    await waitFor(() => {
+      resizedRightWidth = useExplorerStore.getState().session.rightActivityDockWidth;
+      expect(resizedRightWidth).not.toBeNull();
+      expect(resizedRightWidth).toBeGreaterThan(0);
+    });
+
+    dragExplorerActivityRailLane({
+      sourceSide: "left",
+      laneLabel: "Terminal",
+      targetSide: "right",
+      targetBeforeLaneLabel: "Actions",
+    });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.activityLanePlacementById.terminal).toBe(
+        "right",
+      );
+      expect(useExplorerStore.getState().session.rightActivityDockWidth).toBe(
+        resizedRightWidth,
+      );
+      expect(getExplorerActivityDockLaneIds("right")).toEqual([
+        "preview",
+        "terminal",
+      ]);
+    });
+  });
+
+  it("keeps side-terminal cwd sync working after the terminal lane moves between rails", async () => {
+    const alphaEntries = [
+      {
+        name: "inside-alpha.txt",
+        path: `${REPO_ROOT}\\\\alpha\\\\inside-alpha.txt`,
+        is_dir: false,
+        size: 64,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === previewTerminalMockState.reportedAlphaCwd
+        ) {
+          return alphaEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Terminal",
+      }),
+    );
+    await waitFor(() => {
+      expect(getMockTerminalByNamespace("explorer-side-terminal-primary")).toBeTruthy();
+    });
+
+    dragExplorerActivityRailLane({
+      sourceSide: "left",
+      laneLabel: "Terminal",
+      targetSide: "right",
+      targetBeforeLaneLabel: "Actions",
+    });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.activityLanePlacementById.terminal).toBe(
+        "right",
+      );
+      expect(getExplorerActivityDockLaneIds("right")).toContain("terminal");
+    });
+
+    fireEvent.click(
+      within(
+        getMockTerminalByNamespace("explorer-side-terminal-primary"),
+      ).getByRole("button", { name: "Report Alpha Cwd" }),
+    );
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.currentPath).toBe(
+        previewTerminalMockState.reportedAlphaCwd,
+      );
+      expect(screen.getByText("inside-alpha.txt")).toBeInTheDocument();
+      expect(
+        getMockTerminalByNamespace("explorer-side-terminal-primary"),
+      ).toHaveAttribute(
+        "data-working-directory",
+        previewTerminalMockState.reportedAlphaCwd,
+      );
+    });
+  });
+
+  it("renders multiple lanes on one side in rail order with equal inner splits", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Terminal",
+      }),
+    );
+    fireEvent.click(
+      within(getExplorerActivityRail("left")).getByRole("button", {
+        name: "Search",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(getExplorerActivityDockLaneIds("left")).toEqual([
+        "files",
+        "search",
+        "terminal",
+      ]);
+      expect(getExplorerActivityDockLaneElements("left")).toHaveLength(3);
+    });
+
+    for (const laneElement of getExplorerActivityDockLaneElements("left")) {
+      expect(laneElement.getAttribute("style")).toContain("flex: 1 1 0%");
+    }
+  });
+
   it("toggles the preview terminal from the explorer hotkey", async () => {
     renderExplorer();
     await screen.findByText("notes.txt");
@@ -3234,7 +3551,7 @@ describe("FileExplorer view modes", () => {
     expect(getActiveWorkspaceLayoutMode()).toBe("single");
   });
 
-  it("preserves preview width drag resize behavior while split mode is active", async () => {
+  it("preserves right activity dock resize behavior while preview split mode is active", async () => {
     renderExplorer();
     await screen.findByText("preview.png");
 
@@ -3248,38 +3565,53 @@ describe("FileExplorer view modes", () => {
       expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
     });
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewWidth).not.toBeNull();
+      expect(
+        useExplorerStore.getState().session.rightActivityDockWidth,
+      ).not.toBeNull();
     });
 
-    const initialWidth = useExplorerStore.getState().session.previewWidth ?? 0;
+    const initialWidth =
+      useExplorerStore.getState().session.rightActivityDockWidth ?? 0;
 
-    fireEvent.mouseDown(getPreviewResizeHandle(), { clientX: 600 });
-    fireEvent.mouseMove(window, { clientX: 520 });
-    fireEvent.mouseUp(window);
+    fireEvent.pointerDown(getExplorerActivityDockResizeHandle("right"), {
+      button: 0,
+      clientX: 600,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(window, { clientX: 520, pointerId: 1 });
+    fireEvent.pointerUp(window, { clientX: 520, pointerId: 1 });
 
     let resizedWidth = initialWidth;
     await waitFor(() => {
-      resizedWidth = useExplorerStore.getState().session.previewWidth ?? 0;
+      resizedWidth =
+        useExplorerStore.getState().session.rightActivityDockWidth ?? 0;
       expect(resizedWidth).toBeGreaterThan(initialWidth);
     });
 
-    fireEvent.mouseDown(getPreviewResizeHandle(), { clientX: 900 });
-    fireEvent.mouseMove(window, { clientX: -900 });
-    fireEvent.mouseUp(window);
+    fireEvent.pointerDown(getExplorerActivityDockResizeHandle("right"), {
+      button: 0,
+      clientX: 900,
+      pointerId: 2,
+    });
+    fireEvent.pointerMove(window, { clientX: -900, pointerId: 2 });
+    fireEvent.pointerUp(window, { clientX: -900, pointerId: 2 });
 
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewWidth).toBe(
+      expect(useExplorerStore.getState().session.rightActivityDockWidth).toBe(
         EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
       );
     });
-    resizedWidth = useExplorerStore.getState().session.previewWidth ?? 0;
+    resizedWidth =
+      useExplorerStore.getState().session.rightActivityDockWidth ?? 0;
 
     fireEvent.click(screen.getByText("anthem.mp3"));
 
     expect(
       await screen.findByTestId("mock-explorer-audio-workbench"),
     ).toHaveTextContent("anthem.mp3");
-    expect(useExplorerStore.getState().session.previewWidth).toBe(resizedWidth);
+    expect(useExplorerStore.getState().session.rightActivityDockWidth).toBe(
+      resizedWidth,
+    );
     expect(getPreviewPane()).toHaveAttribute(
       "data-overlay-explorer-preview-split-mode",
       "pane",
@@ -3697,13 +4029,17 @@ const value = 1;
   });
 
   it("keeps inline previews closed in dock mode", async () => {
-    renderExplorer({ layoutMode: "dock" });
+    renderExplorer({
+      layoutMode: "dock",
+      dockPreviewPolicy: { enabled: false, splitMode: "pane" },
+    });
     await screen.findByText("notes.txt");
 
     fireEvent.click(screen.getByText("notes.txt"));
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /copy path/i })).toBeNull();
+      expect(queryPreviewPane()).toBeNull();
     });
     expect(
       vi
@@ -3712,7 +4048,7 @@ const value = 1;
     ).toBe(false);
   });
 
-  it("closes an open inline preview when switching into dock mode and keeps it closed on return", async () => {
+  it("hides an open inline preview while dock preview is disabled and restores it on return", async () => {
     const { appearance, rerender } = renderExplorer();
     await screen.findByText("notes.txt");
 
@@ -3730,6 +4066,7 @@ const value = 1;
           textMuted: appearance.theme.palette.textMuted,
         }}
         appearance={appearance}
+        dockPreviewPolicy={{ enabled: false, splitMode: "pane" }}
         layoutMode="dock"
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
@@ -3738,6 +4075,7 @@ const value = 1;
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /copy path/i })).toBeNull();
+      expect(queryPreviewPane()).toBeNull();
     });
 
     rerender(
@@ -3757,9 +4095,8 @@ const value = 1;
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /copy path/i })).toBeNull();
-    });
+    expect(await screen.findByRole("button", { name: /copy path/i })).toBeTruthy();
+    expect(getPreviewPane()).toBeTruthy();
   });
 
   it("ignores stale directory responses after a newer refresh updates the explorer state", async () => {

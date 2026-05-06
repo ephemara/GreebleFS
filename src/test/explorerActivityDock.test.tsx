@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -83,7 +83,10 @@ import { ExplorerSearchLane } from '../components/explorer/ExplorerSearchLane';
 import { ExplorerSemanticLane } from '../components/explorer/ExplorerSemanticLane';
 import type { ExplorerPaneTone } from '../components/explorer/ExplorerPanePrimitives';
 import {
+  defaultExplorerActivityLaneOrderBySide,
+  defaultExplorerActivityLanePlacementById,
   getExplorerActivityLaneDefinitionsForRailSide,
+  moveExplorerActivityLane,
   type ExplorerActivityLaneId,
 } from '../config/explorerActivityRail';
 
@@ -93,6 +96,18 @@ const tone: ExplorerPaneTone = {
   muted: 'rgba(255,255,255,0.62)',
   text: '#ffffff',
 };
+
+function createDataTransfer() {
+  const store = new Map<string, string>();
+  return {
+    dropEffect: 'move',
+    effectAllowed: 'all',
+    getData: vi.fn((format: string) => store.get(format) ?? ''),
+    setData: vi.fn((format: string, value: string) => {
+      store.set(format, value);
+    }),
+  };
+}
 
 describe('Explorer activity dock surfaces', () => {
   beforeEach(() => {
@@ -146,6 +161,159 @@ describe('Explorer activity dock surfaces', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
 
     expect(onSelectLane).toHaveBeenCalledWith('actions');
+  });
+
+  it('moves lanes between the left and right rails when icons are dragged across sides', () => {
+    const onMoveLane = vi.fn();
+    render(
+      <>
+        <ExplorerActivityRail
+          laneDefinitions={getExplorerActivityLaneDefinitionsForRailSide('left')}
+          onMoveLane={onMoveLane}
+          onSelectLane={vi.fn()}
+          railSide="left"
+          tone={tone}
+        />
+        <ExplorerActivityRail
+          laneDefinitions={getExplorerActivityLaneDefinitionsForRailSide('right')}
+          onMoveLane={onMoveLane}
+          onSelectLane={vi.fn()}
+          railSide="right"
+          tone={tone}
+        />
+      </>,
+    );
+
+    const leftRail = screen.getByRole('navigation', {
+      name: 'Explorer left activity rail',
+    });
+    const rightRail = screen.getByRole('navigation', {
+      name: 'Explorer right activity rail',
+    });
+
+    const leftToRightTransfer = createDataTransfer();
+    const leftTerminalButton = within(leftRail).getByRole('button', {
+      name: 'Terminal',
+    });
+    const rightActionsTarget = within(rightRail)
+      .getByRole('button', { name: 'Actions' })
+      .parentElement;
+    if (!rightActionsTarget) {
+      throw new Error('Expected right rail actions target');
+    }
+    fireEvent.dragStart(leftTerminalButton, { dataTransfer: leftToRightTransfer });
+    fireEvent.dragOver(rightActionsTarget, { dataTransfer: leftToRightTransfer });
+    fireEvent.drop(rightActionsTarget, { dataTransfer: leftToRightTransfer });
+    fireEvent.dragEnd(leftTerminalButton, { dataTransfer: leftToRightTransfer });
+
+    expect(onMoveLane).toHaveBeenCalledWith('terminal', 'right', 1);
+
+    const rightToLeftTransfer = createDataTransfer();
+    const rightPreviewButton = within(rightRail).getByRole('button', {
+      name: 'Preview',
+    });
+    const leftSearchTarget = within(leftRail)
+      .getByRole('button', { name: 'Search' })
+      .parentElement;
+    if (!leftSearchTarget) {
+      throw new Error('Expected left rail search target');
+    }
+    fireEvent.dragStart(rightPreviewButton, { dataTransfer: rightToLeftTransfer });
+    fireEvent.dragOver(leftSearchTarget, { dataTransfer: rightToLeftTransfer });
+    fireEvent.drop(leftSearchTarget, { dataTransfer: rightToLeftTransfer });
+    fireEvent.dragEnd(rightPreviewButton, { dataTransfer: rightToLeftTransfer });
+
+    expect(onMoveLane).toHaveBeenCalledWith('preview', 'left', 1);
+  });
+
+  it('reorders icons within the same rail when lanes are dragged', () => {
+    const onMoveLane = vi.fn();
+    render(
+      <ExplorerActivityRail
+        laneDefinitions={getExplorerActivityLaneDefinitionsForRailSide('left')}
+        onMoveLane={onMoveLane}
+        onSelectLane={vi.fn()}
+        railSide="left"
+        tone={tone}
+      />,
+    );
+
+    const leftRail = screen.getByRole('navigation', {
+      name: 'Explorer left activity rail',
+    });
+    const dataTransfer = createDataTransfer();
+    const terminalButton = within(leftRail).getByRole('button', {
+      name: 'Terminal',
+    });
+    const searchTarget = within(leftRail)
+      .getByRole('button', { name: 'Search' })
+      .parentElement;
+    if (!searchTarget) {
+      throw new Error('Expected left rail search target');
+    }
+
+    fireEvent.dragStart(terminalButton, { dataTransfer });
+    fireEvent.dragOver(searchTarget, { dataTransfer });
+    fireEvent.drop(searchTarget, { dataTransfer });
+    fireEvent.dragEnd(terminalButton, { dataTransfer });
+
+    expect(onMoveLane).toHaveBeenCalledWith('terminal', 'left', 1);
+  });
+
+  it('derives active highlighting from dynamic lane placement instead of hardcoded sides', () => {
+    const previewMovedLeft = moveExplorerActivityLane({
+      laneId: 'preview',
+      targetSide: 'left',
+      targetIndex: 1,
+      placementById: defaultExplorerActivityLanePlacementById,
+      orderBySide: defaultExplorerActivityLaneOrderBySide,
+    });
+    const terminalMovedRight = moveExplorerActivityLane({
+      laneId: 'terminal',
+      targetSide: 'right',
+      targetIndex: 1,
+      placementById: previewMovedLeft.placementById,
+      orderBySide: previewMovedLeft.orderBySide,
+    });
+    const leftLaneDefinitions = getExplorerActivityLaneDefinitionsForRailSide(
+      'left',
+      terminalMovedRight.placementById,
+      terminalMovedRight.orderBySide,
+    );
+    const rightLaneDefinitions = getExplorerActivityLaneDefinitionsForRailSide(
+      'right',
+      terminalMovedRight.placementById,
+      terminalMovedRight.orderBySide,
+    );
+
+    expect(leftLaneDefinitions.map((lane) => lane.id)).toEqual([
+      'files',
+      'preview',
+      'search',
+      'semantic',
+      'tasks',
+    ]);
+    expect(rightLaneDefinitions.map((lane) => lane.id)).toEqual([
+      'actions',
+      'terminal',
+      'customize',
+    ]);
+
+    render(
+      <ExplorerActivityRail
+        activeLaneIds={new Set<ExplorerActivityLaneId>(['preview'])}
+        laneDefinitions={leftLaneDefinitions}
+        onSelectLane={vi.fn()}
+        railSide="left"
+        tone={tone}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Preview' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.queryByRole('button', { name: 'Terminal' })).toBeNull();
   });
 
   it('keeps flexlayout dock state behind an adapter callback', () => {

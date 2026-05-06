@@ -1,3 +1,38 @@
+# 2026-05-06 - Explorer Side-Assignable Activity Lanes And Side-Dock Terminal
+
+- Refactored the Explorer activity-rail system so lane placement is no longer hardcoded in config.
+  - `src/config/explorerActivityRail.ts` now defines a stable lane catalog, default placement/order metadata, normalization helpers, and `moveExplorerActivityLane(...)` for cross-rail moves and same-rail reordering.
+  - `ExplorerActivityLaneDefinition` is placement-agnostic at rest; lane side is resolved from persisted session state instead of being baked into the definition.
+- `src/store/explorerStore.ts` now persists the full side-owned lane model.
+  - `ExplorerSessionSnapshot` gained `leftActivityDockWidth`, `rightActivityDockWidth`, `activityLanePlacementById`, and `activityLaneOrderBySide`.
+  - `EXPLORER_STATE_VERSION` moved to `12`.
+  - Session normalization now migrates legacy `sidebarWidth` / `previewWidth` / `actionsWidth` into side-owned dock widths and seeds default lane placement/order when older payloads do not have the new fields.
+  - `updateSession(...)` and `updateSessionForInstance(...)` now funnel compatibility writes like `previewEnabled`, `sourcesVisible`, `actionsVisible`, `activityPaneVisible`, and `activeActivityLane` back through `openActivityLaneIds` so older callers stay synchronized with the new open-lane source of truth.
+- `src/components/FileExplorer.tsx` now renders left/right activity docks from persisted placement state instead of hardcoded left/right branches.
+  - Each side owns one outer dock width and can host multiple simultaneously open lanes.
+  - Multiple open lanes on the same side render as sibling panes in that side dock, ordered by the rail order for that side, with equal default inner splits.
+  - Moving a lane across rails reuses the destination side width instead of carrying a lane-owned width.
+- Explorer terminal surfaces are now intentionally distinct:
+  - preview-embedded terminal namespace: `preview-<instance>`
+  - bottom drawer terminal namespace: `explorer-terminal-<instance>`
+  - side-dock terminal namespace: `explorer-side-terminal-<instance>`
+  - Keep them separate. Preview, drawer, and side-dock terminals are not interchangeable views over one shared session.
+- `src/components/explorer/ExplorerActivityRail.tsx` now supports drag-and-drop rail icons.
+  - Drag within a rail reorders that side's icon order and pane order.
+  - Drag across rails updates placement/order state and immediately spawns the lane on the destination side.
+- Durable rules:
+  - Do not reintroduce hardcoded side splits such as `explorerActivityRailDefinitionsBySide`. The lane catalog is stable; placement belongs to session state.
+  - Treat dock width as side-owned, not lane-owned. If a lane moves between rails, it should reuse the destination side's last width.
+  - If compatibility booleans such as `previewEnabled` or `actionsVisible` are still written anywhere, keep their behavior synchronized through `openActivityLaneIds`.
+  - When adding a new Explorer activity lane, wire it through the catalog plus persisted placement/order normalization, then ensure rail drag/drop and multi-open side rendering still behave correctly.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerStore.test.ts --reporter=verbose`
+  - Passed: `bunx vitest run src/test/explorerActivityDock.test.tsx --reporter=verbose`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "honors the preview toggle before opening previewable files|opens executable scripts in an editor-first preview with edit left of the run workflow tab|keeps inline previews closed in dock mode|hides an open inline preview while dock preview is disabled and restores it on return|preserves right activity dock resize behavior while preview split mode is active" --reporter=verbose --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens the side-dock terminal from the activity rail|keeps preview, bottom, and side-dock explorer terminals as separate sessions|reuses the destination side width when the terminal lane moves to that rail|keeps side-terminal cwd sync working after the terminal lane moves between rails|renders multiple lanes on one side in rail order with equal inner splits" --reporter=verbose --testTimeout=30000`
+- Next recommended step:
+  - Add a small shared test helper around Explorer activity-lane session fixtures so future migration tests do not have to hand-author legacy placement/order payloads inline.
+
 # 2026-05-05 - Explorer Windows Actions Native Shell Import
 
 - Added a first-class Explorer `Windows Actions` resolver submenu so GreebleFS can import and execute the user's current Windows context-menu actions instead of hand-authoring a partial duplicate list.

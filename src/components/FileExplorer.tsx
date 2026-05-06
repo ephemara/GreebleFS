@@ -33061,7 +33061,7 @@ export function FileExplorer({
                   key={laneId}
                   data-overlay-explorer-activity-dock-lane={laneId}
                   style={{
-                    flex: "1 1 0",
+                    flex: "1 1 0%",
                     minHeight: 0,
                     minWidth: 0,
                     display: "flex",

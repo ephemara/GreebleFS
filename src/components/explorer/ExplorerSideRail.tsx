@@ -394,12 +394,23 @@ export function ExplorerSideRail({
       ),
     [drives],
   );
-  const localDrivePaths = useMemo(
+  const rawLocalDrivePaths = useMemo(
     () =>
       localDrives
         .map((drive) => normalizeLocalTreePath(drive.path))
         .filter(Boolean),
     [localDrives],
+  );
+  const localDrivePathsSignature = useMemo(
+    () =>
+      rawLocalDrivePaths
+        .map((path) => getLocalPathComparisonKey(path))
+        .join("\u0000"),
+    [rawLocalDrivePaths],
+  );
+  const localDrivePaths = useMemo(
+    () => rawLocalDrivePaths,
+    [localDrivePathsSignature],
   );
   const activeLocalDrivePath = useMemo(
     () => resolveMostSpecificLocalDrivePath(currentPath, localDrivePaths),
@@ -426,6 +437,19 @@ export function ExplorerSideRail({
       setFolderChildrenByPath((current) => {
         const resolvedNextState =
           typeof nextState === "function" ? nextState(current) : nextState;
+        if (resolvedNextState === current) {
+          return current;
+        }
+        const currentKeys = Object.keys(current);
+        const nextKeys = Object.keys(resolvedNextState);
+        if (
+          currentKeys.length === nextKeys.length &&
+          currentKeys.every(
+            (key) => resolvedNextState[key] === current[key],
+          )
+        ) {
+          return current;
+        }
         folderChildrenByPathRef.current = resolvedNextState;
         return resolvedNextState;
       });
@@ -518,13 +542,16 @@ export function ExplorerSideRail({
   }, [localDrivePaths, showHiddenFiles, updateFolderChildrenByPath]);
 
   useEffect(() => {
-    setExpandedFolderPaths((current) =>
-      current.filter((path) => {
+    setExpandedFolderPaths((current) => {
+      const nextExpandedFolderPaths = current.filter((path) => {
         return (
           resolveMostSpecificLocalDrivePath(path, localDrivePaths) !== null
         );
-      }),
-    );
+      });
+      return nextExpandedFolderPaths.length === current.length
+        ? current
+        : nextExpandedFolderPaths;
+    });
   }, [localDrivePaths]);
 
   const currentPathAncestors = useMemo(() => {
