@@ -1,3 +1,24 @@
+# 2026-05-06 - Pilot Dark Context Menu Fallback Repair
+
+- Follow-up to the Explorer context-menu theming repair: Pilot Dark settings were intact (`activeThemeId = "pilot-dark"`) and context-menu override maps were empty, so the broken blue/giant menu was a renderer fallback bug rather than `/usr` corruption.
+- `ExplorerContextMenu` now carries optional `themeStyle` variables on the portal root. `FileExplorer` passes the resolved app appearance vars plus Explorer vars so the menu remains on the active theme even if the portal briefly falls back outside the Explorer root.
+- Context-menu layout/color tokens now have hard CSS fallbacks. Missing `--overlay-explorer-context-menu-*` variables can no longer invalidate min/max width, padding, font size, max height, shadow, text color, or separators. The emergency menu background fallback is Pilot Dark black (`rgb(22, 22, 22)`) instead of slate blue.
+- Long command shortcut ids such as `explorerOpenSelection` are width-contained with a capped shortcut column and ellipsis, so a metadata string cannot stretch the whole menu across the viewport.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerContextMenuRenderer.test.tsx src/test/explorerMenuRuntime.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "hides and restores activity rail lanes through the contextual rail menu" --reporter=dot --testTimeout=30000`
+  - `bun run test:ui-literals` remains red on the existing global baseline; filtering the audit output for the touched files returned no matches.
+  - `bunx tsc --noEmit --pretty false -p tsconfig.json` remains red on existing repo-wide TypeScript issues, including the known dirty `src/components/FileExplorer.tsx` layout-zoom diagnostic. No context-menu-specific diagnostics were observed.
+
+# 2026-05-06 - Compact Folder And Archive Preview Workbench Headers
+
+- Tightened the shared folder/archive preview workbench density without changing collection behavior.
+  - `ExplorerFolderPreview` and `ExplorerArchivePreview` now use a compact left-aligned summary header instead of the taller centered hero block, so file rows start materially sooner in the pane.
+  - `ExplorerCollectionPreviewSurface` now uses a denser section toolbar (`Folder Contents` / `Archive Root`), with smaller pills/buttons and a right-aligned mode cluster/count so the header stops burning vertical space.
+- Durable rule: for explorer collection workbenches, keep the preview shell file-first. Summary chrome should stay informational and compact; avoid reintroducing tall centered hero blocks above the actual listing.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx --reporter=dot --testTimeout=30000`
+
 # 2026-05-06 - Explorer Context Menus Rejoined Theme Presentation
 
 - Explorer context-menu rendering now has a dedicated theme-token contract under `--overlay-explorer-context-menu-*`, with defaults emitted from `src/config/explorerTheme.ts` and fallbacks to the older popup tokens. Future theme recipes can tune context-menu background, border, shadow, density metrics, item hover/active colors, icon opacity, disabled opacity, and typography without patching JSX.

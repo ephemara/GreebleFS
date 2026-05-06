@@ -23091,6 +23091,13 @@ export function FileExplorer({
     }),
     [explorerTheme.cssVars, uiFont],
   );
+  const explorerContextMenuThemeStyle = useMemo<CSSProperties>(
+    () => ({
+      ...((appearance?.cssVars ?? {}) as CSSProperties),
+      ...(explorerTheme.cssVars as CSSProperties),
+    }),
+    [appearance?.cssVars, explorerTheme.cssVars],
+  );
   const explorerContentRowStyle = useMemo<CSSProperties>(
     () => ({
       flex: 1,
@@ -34503,6 +34510,7 @@ export function FileExplorer({
         x={ctxMenu.x}
         y={ctxMenu.y}
         nodes={resolvedContextMenu?.nodes ?? []}
+        themeStyle={explorerContextMenuThemeStyle}
         presentation={resolvedContextMenu?.presentation}
         density={resolvedContextMenu?.presentation.density}
         showDescriptions={resolvedContextMenu?.presentation.showDescriptions}

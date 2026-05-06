@@ -1,4 +1,5 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
+import type { CSSProperties } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS } from '../config/explorerContextMenu';
@@ -204,6 +205,11 @@ describe('ExplorerContextMenu', () => {
         y={24}
         nodes={[createCommandNode()]}
         portalRoot={portalRoot}
+        themeStyle={
+          {
+            '--overlay-bg-menu': '#161616',
+          } as CSSProperties
+        }
         presentation={{
           renderer: 'hud',
           fallbackRenderer: 'classic',
@@ -230,9 +236,56 @@ describe('ExplorerContextMenu', () => {
     expect(overlayRoot?.dataset.overlayExplorerContextMenuDensity).toBe('compact');
     expect(overlayRoot?.dataset.overlayExplorerContextMenuMaterial).toBe('glass');
     expect(overlayRoot?.dataset.overlayExplorerContextMenuBackdrop).toBe('blur');
+    expect(overlayRoot?.style.getPropertyValue('--overlay-bg-menu')).toBe(
+      '#161616',
+    );
     expect(rootPanel?.style.background).toContain('--overlay-explorer-context-menu-bg');
     expect(rootPanel?.style.minWidth).toBe(
-      'var(--overlay-explorer-context-menu-compact-min-width)',
+      'var(--overlay-explorer-context-menu-compact-min-width, 13rem)',
+    );
+  });
+
+  it('keeps Pilot Dark fallback color and compact width when theme vars do not inherit', () => {
+    render(
+      <ExplorerContextMenu
+        visible
+        x={24}
+        y={24}
+        nodes={[
+          createCommandNode({
+            shortcutId: 'explorerOpenSelection',
+          }),
+        ]}
+        presentation={{
+          density: 'balanced',
+          showDescriptions: false,
+        }}
+        onClose={() => {}}
+        renderIcon={() => null}
+      />,
+    );
+
+    const rootPanel = document.querySelector<HTMLElement>(
+      '[data-overlay-explorer-context-menu-panel="root"]',
+    );
+    const commandButton = document.querySelector<HTMLButtonElement>(
+      '[data-overlay-explorer-context-menu-node="command.open"]',
+    );
+    const shortcutSlot = commandButton?.lastElementChild;
+    const shortcutText = shortcutSlot?.firstElementChild;
+
+    expect(rootPanel?.style.background).toContain('rgb(22, 22, 22)');
+    expect(rootPanel?.style.maxWidth).toBe(
+      'var(--overlay-explorer-context-menu-balanced-max-width, 18.75rem)',
+    );
+    expect(commandButton?.style.gridTemplateColumns).toBe(
+      'var(--overlay-explorer-context-menu-grid-template-columns, 16px minmax(0, 1fr) fit-content(8.5rem))',
+    );
+    expect((shortcutSlot as HTMLElement | null)?.style.maxWidth).toBe(
+      'var(--overlay-explorer-context-menu-shortcut-max-width, 8.5rem)',
+    );
+    expect((shortcutText as HTMLElement | null)?.style.textOverflow).toBe(
+      'ellipsis',
     );
   });
 });

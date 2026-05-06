@@ -19,6 +19,7 @@ interface ExplorerContextMenuProps {
   y: number;
   nodes: OverlayContextMenuNode[];
   portalRoot?: HTMLElement | null;
+  themeStyle?: React.CSSProperties;
   presentation?: OverlayContextMenuPresentationOptions | null;
   density?: 'compact' | 'balanced' | 'touch';
   showDescriptions?: boolean;
@@ -48,39 +49,76 @@ interface MenuPanelProps {
 
 const contextMenuPanelMetricVariablesByDensity = {
   compact: {
-    minWidth: 'var(--overlay-explorer-context-menu-compact-min-width)',
-    maxWidth: 'var(--overlay-explorer-context-menu-compact-max-width)',
-    padding: 'var(--overlay-explorer-context-menu-compact-padding)',
+    minWidth: 'var(--overlay-explorer-context-menu-compact-min-width, 13rem)',
+    maxWidth: 'var(--overlay-explorer-context-menu-compact-max-width, 17rem)',
+    padding: 'var(--overlay-explorer-context-menu-compact-padding, 0.125rem 0)',
   },
   balanced: {
-    minWidth: 'var(--overlay-explorer-context-menu-balanced-min-width)',
-    maxWidth: 'var(--overlay-explorer-context-menu-balanced-max-width)',
-    padding: 'var(--overlay-explorer-context-menu-balanced-padding)',
+    minWidth: 'var(--overlay-explorer-context-menu-balanced-min-width, 14.25rem)',
+    maxWidth: 'var(--overlay-explorer-context-menu-balanced-max-width, 18.75rem)',
+    padding: 'var(--overlay-explorer-context-menu-balanced-padding, 0.25rem 0)',
   },
   touch: {
-    minWidth: 'var(--overlay-explorer-context-menu-touch-min-width)',
-    maxWidth: 'var(--overlay-explorer-context-menu-touch-max-width)',
-    padding: 'var(--overlay-explorer-context-menu-touch-padding)',
+    minWidth: 'var(--overlay-explorer-context-menu-touch-min-width, 15.5rem)',
+    maxWidth: 'var(--overlay-explorer-context-menu-touch-max-width, 21rem)',
+    padding: 'var(--overlay-explorer-context-menu-touch-padding, 0.375rem 0)',
   },
 } as const;
 
 const contextMenuItemMetricVariablesByDensity = {
   compact: {
-    gap: 'var(--overlay-explorer-context-menu-compact-item-gap)',
-    padding: 'var(--overlay-explorer-context-menu-compact-item-padding)',
-    fontSize: 'var(--overlay-explorer-context-menu-compact-font-size)',
+    gap: 'var(--overlay-explorer-context-menu-compact-item-gap, 0.5rem)',
+    padding: 'var(--overlay-explorer-context-menu-compact-item-padding, 0.375rem 0.625rem)',
+    fontSize: 'var(--overlay-explorer-context-menu-compact-font-size, 0.6875rem)',
   },
   balanced: {
-    gap: 'var(--overlay-explorer-context-menu-balanced-item-gap)',
-    padding: 'var(--overlay-explorer-context-menu-balanced-item-padding)',
-    fontSize: 'var(--overlay-explorer-context-menu-balanced-font-size)',
+    gap: 'var(--overlay-explorer-context-menu-balanced-item-gap, 0.625rem)',
+    padding: 'var(--overlay-explorer-context-menu-balanced-item-padding, 0.4375rem 0.75rem)',
+    fontSize: 'var(--overlay-explorer-context-menu-balanced-font-size, 0.75rem)',
   },
   touch: {
-    gap: 'var(--overlay-explorer-context-menu-touch-item-gap)',
-    padding: 'var(--overlay-explorer-context-menu-touch-item-padding)',
-    fontSize: 'var(--overlay-explorer-context-menu-touch-font-size)',
+    gap: 'var(--overlay-explorer-context-menu-touch-item-gap, 0.75rem)',
+    padding: 'var(--overlay-explorer-context-menu-touch-item-padding, 0.625rem 0.875rem)',
+    fontSize: 'var(--overlay-explorer-context-menu-touch-font-size, 0.75rem)',
   },
 } as const;
+
+const contextMenuGridTemplateColumns =
+  'var(--overlay-explorer-context-menu-grid-template-columns, 16px minmax(0, 1fr) fit-content(8.5rem))';
+const contextMenuShortcutMaxWidth =
+  'var(--overlay-explorer-context-menu-shortcut-max-width, 8.5rem)';
+const contextMenuShortcutGap =
+  'var(--overlay-explorer-context-menu-shortcut-gap, 0.5rem)';
+const contextMenuMaxHeight =
+  'var(--overlay-explorer-context-menu-max-height, min(70vh, 40rem))';
+const contextMenuShadow =
+  'var(--overlay-explorer-context-menu-shadow, var(--overlay-explorer-popup-shadow-lg, none))';
+const contextMenuSeparatorMargin =
+  'var(--overlay-explorer-context-menu-separator-margin, 0.25rem 0)';
+const contextMenuSeparatorColor =
+  'var(--overlay-explorer-context-menu-separator, var(--overlay-border, rgba(255, 255, 255, 0.1)))';
+const contextMenuItemTextColor =
+  'var(--overlay-explorer-context-menu-item-text, var(--overlay-text-primary, inherit))';
+const contextMenuMutedTextColor =
+  'var(--overlay-explorer-context-menu-item-muted, var(--overlay-text-muted, currentColor))';
+const contextMenuActiveBackground =
+  'var(--overlay-explorer-context-menu-item-active-bg, var(--overlay-bg-card-hover, rgba(255, 255, 255, 0.08)))';
+const contextMenuDangerBackground =
+  'var(--overlay-explorer-context-menu-item-danger-bg, rgba(232, 170, 170, 0.14))';
+const contextMenuDangerText =
+  'var(--overlay-explorer-context-menu-danger-text, var(--overlay-danger, currentColor))';
+const contextMenuIconOpacity =
+  'var(--overlay-explorer-context-menu-icon-opacity, 0.78)';
+const contextMenuDisabledOpacity =
+  'var(--overlay-explorer-context-menu-disabled-opacity, 0.55)';
+const contextMenuDescriptionFontSize =
+  'var(--overlay-explorer-context-menu-description-font-size, 0.625rem)';
+const contextMenuDescriptionLineHeight =
+  'var(--overlay-explorer-context-menu-description-line-height, 1.2)';
+const contextMenuShortcutFontSize =
+  'var(--overlay-explorer-context-menu-shortcut-font-size, 0.625rem)';
+const contextMenuSubmenuInactiveOpacity =
+  'var(--overlay-explorer-context-menu-submenu-indicator-opacity, 0.7)';
 
 function getPathKey(path: string[]): string {
   return path.length > 0 ? path.join('/') : 'root';
@@ -203,14 +241,14 @@ function MenuPanel({
             materialStyle: presentation.materialStyle,
             minWidth: panelMetrics.minWidth,
             maxWidth: panelMetrics.maxWidth,
-            maxHeight: 'var(--overlay-explorer-context-menu-max-height)',
+            maxHeight: contextMenuMaxHeight,
             padding: panelMetrics.padding,
           }),
           position: 'fixed',
           left: position.left,
           top: position.top,
           zIndex: 10000 + path.length,
-          boxShadow: 'var(--overlay-explorer-context-menu-shadow)',
+          boxShadow: contextMenuShadow,
         }}
       >
         {nodes.map((node, index) => {
@@ -220,8 +258,8 @@ function MenuPanel({
                 key={node.id}
                 style={{
                   height: 1,
-                  margin: 'var(--overlay-explorer-context-menu-separator-margin)',
-                  background: 'var(--overlay-explorer-context-menu-separator)',
+                  margin: contextMenuSeparatorMargin,
+                  background: contextMenuSeparatorColor,
                 }}
               />
             );
@@ -261,34 +299,33 @@ function MenuPanel({
               }}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '16px minmax(0, 1fr) auto',
+                gridTemplateColumns: contextMenuGridTemplateColumns,
                 alignItems: 'center',
                 gap: itemMetrics.gap,
                 width: '100%',
+                minWidth: 0,
                 padding: itemMetrics.padding,
                 border: 'none',
                 background: active
                   ? node.tone === 'danger'
-                    ? 'var(--overlay-explorer-context-menu-item-danger-bg)'
-                    : 'var(--overlay-explorer-context-menu-item-active-bg)'
+                    ? contextMenuDangerBackground
+                    : contextMenuActiveBackground
                   : 'transparent',
                 color:
                   node.tone === 'danger'
-                    ? 'var(--overlay-explorer-context-menu-danger-text)'
-                    : 'var(--overlay-explorer-context-menu-item-text)',
+                    ? contextMenuDangerText
+                    : contextMenuItemTextColor,
                 cursor: disabled ? 'default' : 'pointer',
                 fontSize: itemMetrics.fontSize,
                 textAlign: 'left',
-                opacity: disabled
-                  ? 'var(--overlay-explorer-context-menu-disabled-opacity)'
-                  : 1,
+                opacity: disabled ? contextMenuDisabledOpacity : 1,
               }}
             >
               <span
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  opacity: 'var(--overlay-explorer-context-menu-icon-opacity)',
+                  opacity: contextMenuIconOpacity,
                 }}
               >
                 {iconRenderer(node.iconName)}
@@ -301,13 +338,24 @@ function MenuPanel({
                   gap: 2,
                 }}
               >
-                <span>{node.label}</span>
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {node.label}
+                </span>
                 {showDescriptions && node.kind === 'command' && node.description ? (
                   <span
                     style={{
-                      color: 'var(--overlay-explorer-context-menu-item-muted)',
-                      fontSize: 'var(--overlay-explorer-context-menu-description-font-size)',
-                      lineHeight: 'var(--overlay-explorer-context-menu-description-line-height)',
+                      color: contextMenuMutedTextColor,
+                      display: 'block',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      fontSize: contextMenuDescriptionFontSize,
+                      lineHeight: contextMenuDescriptionLineHeight,
                     }}
                   >
                     {node.description}
@@ -318,16 +366,38 @@ function MenuPanel({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
-                  color: 'var(--overlay-explorer-context-menu-item-muted)',
-                  fontSize: 'var(--overlay-explorer-context-menu-shortcut-font-size)',
+                  justifyContent: 'flex-end',
+                  gap: contextMenuShortcutGap,
+                  minWidth: 0,
+                  maxWidth: contextMenuShortcutMaxWidth,
+                  overflow: 'hidden',
+                  color: contextMenuMutedTextColor,
+                  fontSize: contextMenuShortcutFontSize,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {node.kind === 'command' && node.shortcutId ? (
-                  <span>{node.shortcutId}</span>
+                  <span
+                    style={{
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {node.shortcutId}
+                  </span>
                 ) : null}
                 {node.kind === 'submenu' ? (
-                  <span style={{ opacity: submenuOpen ? 1 : 0.7 }}>▶</span>
+                  <span
+                    style={{
+                      opacity: submenuOpen
+                        ? 1
+                        : contextMenuSubmenuInactiveOpacity,
+                    }}
+                  >
+                    ▶
+                  </span>
                 ) : null}
               </span>
             </button>
@@ -366,6 +436,7 @@ export function ExplorerContextMenu({
   y,
   nodes,
   portalRoot,
+  themeStyle,
   presentation,
   density = 'balanced',
   showDescriptions = true,
@@ -539,6 +610,7 @@ export function ExplorerContextMenu({
       }
       onKeyDown={handleKeyDown}
       style={{
+        ...themeStyle,
         position: 'fixed',
         inset: 0,
         zIndex: 'var(--overlay-explorer-floating-context-layer, 9998)',

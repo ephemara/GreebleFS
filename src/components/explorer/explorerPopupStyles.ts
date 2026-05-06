@@ -23,7 +23,7 @@ export function resolveExplorerPopupSurfaceStyle(
   const popupBackground =
     tone === "preview"
       ? "var(--overlay-explorer-preview-header-bg, var(--overlay-explorer-popup-bg, var(--overlay-bg-panel, rgb(15, 23, 42))))"
-      : "var(--overlay-explorer-context-menu-bg, var(--overlay-explorer-popup-bg, var(--overlay-bg-menu, var(--overlay-bg-panel, rgb(15, 23, 42)))))";
+      : "var(--overlay-explorer-context-menu-bg, var(--overlay-explorer-popup-bg, var(--overlay-bg-menu, rgb(22, 22, 22))))";
   const popupShadow =
     tone === "preview"
       ? "var(--overlay-explorer-popup-shadow-lg)"
@@ -32,16 +32,18 @@ export function resolveExplorerPopupSurfaceStyle(
   return {
     minWidth: options.minWidth,
     maxWidth: options.maxWidth,
-    maxHeight: options.maxHeight ?? "var(--overlay-explorer-popup-max-height)",
+    maxHeight:
+      options.maxHeight ??
+      "var(--overlay-explorer-popup-max-height, min(27.5rem, calc(100vh - 1.5rem)))",
     overflowX: "hidden",
     overflowY: options.overflowY ?? "auto",
     isolation: "isolate",
     backgroundClip: "padding-box",
-    borderRadius: "var(--overlay-explorer-panel-radius)",
+    borderRadius: "var(--overlay-explorer-panel-radius, 8px)",
     border: `var(--overlay-explorer-popup-border-width, 1px) solid ${popupBorder}`,
     background: popupBackground,
     boxShadow: popupShadow,
-    color: "var(--overlay-text-primary)",
+    color: "var(--overlay-text-primary, #f5f5f5)",
     padding: options.padding ?? 8,
   };
 }

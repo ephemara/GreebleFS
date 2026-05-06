@@ -1075,6 +1075,11 @@ export function resolveExplorerThemeRecipe(
     '--overlay-explorer-context-menu-description-font-size': '0.625rem',
     '--overlay-explorer-context-menu-description-line-height': '1.2',
     '--overlay-explorer-context-menu-shortcut-font-size': '0.625rem',
+    '--overlay-explorer-context-menu-shortcut-gap': '0.5rem',
+    '--overlay-explorer-context-menu-shortcut-max-width': '8.5rem',
+    '--overlay-explorer-context-menu-grid-template-columns':
+      '16px minmax(0, 1fr) fit-content(var(--overlay-explorer-context-menu-shortcut-max-width))',
+    '--overlay-explorer-context-menu-submenu-indicator-opacity': '0.7',
     '--overlay-explorer-context-menu-compact-min-width': '13rem',
     '--overlay-explorer-context-menu-compact-max-width': '17rem',
     '--overlay-explorer-context-menu-compact-padding': '0.125rem 0',
