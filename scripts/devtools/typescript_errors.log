@@ -1,0 +1,7 @@
+src/components/ExplorerArchivePreview.tsx(1,8): error TS6133: 'React' is declared but its value is never read.
+src/components/ExplorerArchivePreview.tsx(238,26): error TS18047: 'contents' is possibly 'null'.
+src/components/FileExplorer.tsx(72,3): error TS2724: '"../config/explorerArchives"' has no exported member named 'resolveExplorerArchiveFormatDescriptor'. Did you mean 'ExplorerArchiveFormatDescriptor'?
+src/components/FileExplorer.tsx(3036,20): error TS2304: Cannot find name 'handleArchiveAction'.
+src/test/explorerAudioWorkbench.test.tsx(47,5): error TS2739: Type '{ deckId: "a"; loadedPath: string; loadedName: string; durationSeconds: number; currentTimeSeconds: number; gainLinear: number; rate: number; isPlaying: false; isLoading: false; isBuffering: false; peakMeterLinear: number; rmsMeterLinear: number; loopRegion: { ...; }; error: null; }' is missing the following properties from type 'AudioDeckState': activePluginPath, vstParameters
+src/test/explorerAudioWorkbench.test.tsx(67,5): error TS2739: Type '{ deckId: "b"; loadedPath: string; loadedName: string; durationSeconds: number; currentTimeSeconds: number; gainLinear: number; rate: number; isPlaying: false; isLoading: false; isBuffering: false; peakMeterLinear: number; rmsMeterLinear: number; loopRegion: { ...; }; error: null; }' is missing the following properties from type 'AudioDeckState': activePluginPath, vstParameters
+error: "tsc" exited with code 2

@@ -182,13 +182,13 @@ GreebleFS supports runtime-discovered content:
 
 ```bash
 # Linux
-./install.sh
+bun run release:linux:install
 
 # macOS
 brew install greeblefs
 
 # Windows
-.\install.ps1
+bun run release:windows:install
 ```
 
 ### Development

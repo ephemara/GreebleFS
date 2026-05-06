@@ -1,3 +1,31 @@
+# 2026-05-05 - Root Folder Cleanup And Script Relocation
+
+- Cleaned the repo root so the only markdown files left at top level are `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md`.
+- Moved platform entrypoints into `scripts/platform/`:
+  - `install-linux-local.sh`
+  - `install-windows-local.ps1`
+  - `reset-local-settings.sh`
+  - `sync-installed-telemetry.sh`
+- Added package-level Windows install commands in `package.json` so root wrappers are no longer needed:
+  - `bun run release:windows:install`
+  - `bun run release:windows:install:launch`
+  - `bun run release:windows:uninstall`
+- Moved the reference scrubber workflow into `scripts/reference-tools/` and updated `reference_scrub.py` so it finds the repo root plus `reference_scrub_profiles.toml` from the new location instead of assuming it lives at the repo root.
+- Moved loose one-off helpers into stable buckets instead of leaving them in root:
+  - audio tooling under `scripts/audio/`
+  - ad hoc parsers and salvage helpers under `scripts/devtools/`
+- Archived former root docs under `docs/archive/root/` and moved generated repomix bundles plus XML exports under `docs/research/repomix/`. Deleted the low-signal root identity docs `GEMINI.md`, `IDENTITY.md`, and `SOUL.md` instead of preserving them elsewhere.
+- Updated `ARCHITECTURE.md`, `docs/GreebleFS/00-README.md`, and the archived root README to point at the new script paths and to document the “minimal root” contract.
+- Validation:
+  - Passed: `Get-ChildItem -Force -Name *.md` now returns only `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md`.
+  - Passed: `bash -n scripts/platform/install-linux-local.sh scripts/platform/reset-local-settings.sh scripts/platform/sync-installed-telemetry.sh`
+  - Passed: `python -m py_compile scripts/reference-tools/reference_scrub.py scripts/reference-tools/reference_scrub_vscode.py scripts/reference-tools/reference_scrub_zed.py`
+  - Passed: PowerShell parser check for `scripts/platform/install-windows-local.ps1`
+- Durable rule:
+  - Do not reintroduce loose markdown docs or one-off tooling at the repo root.
+  - Root operational docs stay limited to `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md`.
+  - New durable docs go under `docs/**`, generated repomix research under `docs/research/repomix/`, and helper scripts under the appropriate `scripts/*` subfolder.
+
 # 2026-05-03 - Explorer Activity Rail Split Navigation Pass
 
 - Split the Explorer activity rail into authored left/right rail definitions through `explorerActivityRailDefinitionsBySide` in `src/config/explorerActivityRail.ts`. Left rail lanes now cover Files/Search/Semantic/Tasks plus the bottom Terminal toggle; right rail lanes cover Preview/Actions/Customize.

@@ -34,10 +34,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Frontend bootstrap. It now asks the host-owned secondary-window manager for the current window descriptor, rendering `App` for the main shell, `src/windows/PickerWindowApp.tsx` / `src/windows/FileOperationsWindowApp.tsx` for dedicated picker/task surfaces, and `App` with a `secondaryWindowDescriptor` prop for native workbench-surface windows.
 - `vite.mobile.config.ts`, `src-mobile/main.tsx`, `src-mobile/App.tsx`, `src-mobile/mobileApi.ts`, and `src-mobile/mobileStore.ts`
   The browser-safe mobile/PWA surface. This is a separate Vite entrypoint that builds `dist-mobile/` for Axum to serve over LAN/mobile sharing; it must stay free of Tauri-only runtime assumptions and talks to the desktop host through HTTP endpoints instead of direct `invoke()` calls. The mobile shell has built-in `Explorer`, `Search`, `Transfers`, and `Settings` tabs, plus host-discovered plugin tabs from `usr/plugins/**/extension.toml` `contributions.mobilePanes`. Mobile panes can be static manifest sections/actions or browser-safe renderer modules loaded from plugin assets with pane-local styles. Its browser-safe Zustand store owns mobile-only path memory, transfer state, and layout overrides while desktop-owned theme/icon resources, plugin catalogs, and read-only plugin settings snapshots arrive over HTTP instead of being duplicated in the phone bundle.
-- `install.sh`
-  Root Linux local-install wrapper. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
-- `install.ps1`
-  Root Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
+- `scripts/platform/install-linux-local.sh`
+  Linux local-install entrypoint. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
+- `scripts/platform/install-windows-local.ps1`
+  Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `src/App.tsx`
   Overlay window shell, theme/runtime discovery, panel orchestration, and shell-level utilities such as the command-palette launchers for the mobile share server. The command palette now also hosts indexed global file search plus scan/rebuild controls, using host-owned stores/runtime seams instead of letting the explorer or an imported search package own shell truth. Root overlay animation progress no longer lives here; `App.tsx` now assembles the shell scene and changes only coarse overlay phase/direction, while command-palette global-search queries are deferred before they hit the backend path. It is also the activation-policy layer for native workbench tear-off: plugin panel requests, IDE externalized-surface restore/hide flows, and dedicated native panel-window rendering all route here instead of creating a second panel state model.
 - `src/components/OverlayShellScene.tsx`
@@ -779,13 +779,19 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Vendored Tiptap source packages used by the notes workspace. Resolution is wired through `tsconfig.json`, `vite.config.ts`, `vitest.config.ts`, and `vitest.browser.config.ts`, while the upstream ProseMirror runtime packages still live in the app dependency graph.
 - `queue/`
   Repo-local intake lane for user-owned code folders that may donate systems into GreebleFS. `queue/staging/` is the active review lane, `queue/vault/` is the deferred/rejected lane, and `queue/queue.py` is the first-pass analyzer for repo fit, novelty, dependencies, semantic/path connections, and sanitize/scrub findings before agents start manual assimilation work.
+- `docs/archive/root/`
+  Archived former root markdown docs. Keep the repo root limited to `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md` rather than reintroducing planning or narrative docs at the top level.
+- `docs/research/repomix/`
+  Generated repomix bundles and XML exports. These are large research artifacts and should stay out of the repo root.
 - `reference/`
-  Repo-local reference-code intake lane for flattened third-party explorer/editor repos that agents should study without directory-traversal sprawl. The tracked workflow lives at the repo root:
+  Repo-local reference-code intake lane for flattened third-party explorer/editor repos that agents should study without directory-traversal sprawl. The tracked workflow lives under `scripts/reference-tools/`:
   - `reference_scrub.py` is the profile-driven destructive scrubber for any direct child of `reference/`
   - `reference_scrub_profiles.toml` is the source of truth for per-repo keep/drop/hoist/collapse rules plus the generic fallback
   - `reference_scrub_vscode.py` and `reference_scrub_zed.py` are thin wrappers for the two largest reference repos
   - each scrubbed reference repo gets a root `reference-scrub-manifest.json` plus compressed `repomap.md`
   The scrubber hard-fails on path traversal, absolute/outside targets, and symlink entries, stages the rewrite under `reference/.<repo>.reference-scrub-staging`, and only ever replaces a direct child inside `reference/`
+- `scripts/devtools/`
+  Ad hoc parsers, salvage helpers, and one-off diagnostics that are still worth keeping in the repo but should not live at the top level.
 - `shaders/`
   Authored shader modules.
 - `src-tauri/`
@@ -838,13 +844,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot`
 - `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "image" --reporter=dot`
 - `python3 -m unittest discover -s tests_python -p 'test_*.py' -v`
-- `python3 reference_scrub.py --all --skip-repomix`
-- `python3 reference_scrub.py --all --apply`
-- `python3 reference_scrub_vscode.py --apply`
-- `python3 reference_scrub_zed.py --apply`
-- `bash ./install.sh`
-- `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
-- `bash ./install.sh --launch`
+- `python3 scripts/reference-tools/reference_scrub.py --all --skip-repomix`
+- `python3 scripts/reference-tools/reference_scrub.py --all --apply`
+- `python3 scripts/reference-tools/reference_scrub_vscode.py --apply`
+- `python3 scripts/reference-tools/reference_scrub_zed.py --apply`
+- `bash ./scripts/platform/install-linux-local.sh`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\platform\install-windows-local.ps1`
+- `bun run release:windows:install`
 - `bun run release:linux:install`
 
 ## Common Errors / Lessons Learned
@@ -880,7 +886,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Keep Vite/Vitest watcher ignore lists covering the repo-root Rust `target/` tree, not just `src-tauri/target*`. After `cargo test` or `export-bindings`, browser runs can hit Linux `ENOSPC` watcher limits if the root `target/` artifacts are still inside the watch graph.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
 - Vendored Tauri plugin source belongs under `crates/tauri-plugins/`, not `usr/plugins/` or `src-tauri/src/`. Keep source staged with `tauri-plugin-source-index.toml` and per-plugin integration notes; when a plugin becomes active, wire it deliberately through root Cargo workspace membership, a `src-tauri/Cargo.toml` path dependency, `src-tauri/src/lib.rs` registration, and `src-tauri/capabilities/default.json` permissions.
-- The reference scrubber is intentionally destructive. Future agents should not manually flatten `reference/*` by hand and should not point the scrubber at anything outside `reference/`; use `python3 reference_scrub.py --repo <name>` or the wrapper scripts so the safety checks and repomap generation stay intact.
+- The reference scrubber is intentionally destructive. Future agents should not manually flatten `reference/*` by hand and should not point the scrubber at anything outside `reference/`; use `python3 scripts/reference-tools/reference_scrub.py --repo <name>` or the wrapper scripts so the safety checks and repomap generation stay intact.
 - Packaged frontend plugins are no longer single-file only. `src/components/pluginRuntime.tsx` now executes a package-local module graph, so plugin entries may import sibling helpers with relative paths, but those imports must remain inside the plugin root and still cannot pull arbitrary npm dependencies.
 - Packaged preview lanes now ride the same plugin package system as actions/context menus instead of a separate extension stack.
   - `src/config/pluginPackages.ts` is the only place that should turn manifest `contributions.previewLanes` into bound React lane components plus runtime ids.
@@ -947,7 +953,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Shell containment and adaptive effects are complementary, not interchangeable. `contain: layout paint style` / `isolation: isolate` help localize browser layout and paint work, but transparent undecorated windows with blur, wallpapers, and shaders still pay an OS compositor tax. If shell FPS drops, inspect `src/config/workbenchPerformance.ts` and the active wallpaper/shader/theme-effect stack before adding more visual layers.
 - The adaptive shell-effects policy may disable blur, shaders, and decorative theme visuals, but it should not hide the selected wallpaper/theme wallpaper base layer. If a wallpaper shows on first paint and then disappears, inspect `src/config/workbenchPerformance.ts` before debugging the asset loader.
 - Command-palette typing should stay ahead of indexed search. `App.tsx` now uses the live query for local palette UI but defers the backend-facing global-search query. Do not route every keystroke straight into synchronous or eagerly blocking search work again.
-- The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/greeblefs`.
+- The local Linux installer now avoids the old Node/Tauri wrapper path. `scripts/platform/install-linux-local.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/greeblefs`.
 - Do not keep `build.devUrl` in the base `src-tauri/tauri.conf.json` for release-capable paths. In this workspace, a direct `cargo build --release` will otherwise compile a binary that keeps trying to boot from `http://localhost:1420`. `scripts/run-platform-tauri.mjs` now injects `devUrl` only for the `tauri dev` command.
 - This repo is a Cargo workspace, so release binaries land under the workspace-level `target/` directory, not `src-tauri/target/`. Linux install scripts should resolve `cargo metadata` `target_directory` before copying binaries, or they can silently reinstall a stale executable from an old path or from the wrong binary name.
 - The local Linux installer now also seeds the managed content directories into `~/.local/share/co.greeblefs.app/{plugins,themes,shaders,animations}` so the installed release has writable runtime content without polluting the top level of `$HOME`.
@@ -961,7 +967,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - VST3 discovery must validate the current host binary format, not just the `.vst3` suffix. Linux and macOS can see bundle directories or foreign-platform plugin files side by side, so scan/load code should route through `crates/vst-host` path resolution before surfacing a plugin as host-ready.
 - Explorer image save flows should not assume `@tauri-apps/plugin-fs` is registered in the host. If a preview/editor lane needs a durable local write path, route it through `src/runtime/explorerBackend.ts` or provide an explicit fallback to `writeExplorerFile(...)`; otherwise frontend-only plugin calls can fail at runtime with `fs.write_file not allowed. Plugin not found`.
 - Explorer preview drafts and retry messaging should extend `src/components/explorer/explorerEditSession.ts`, not invent per-workbench local-storage keys or save-failure copy. Text, shader, spreadsheet, and PDF lanes now share the same draft-preservation posture.
-- The Windows `install.ps1` helper is intentionally destructive: it clears the current per-user install, managed state roots, and legacy `OverlayTerm` roots before reinstalling. If it fails during cleanup, make sure no `GreebleFS.exe` / `OverlayTerm.exe` process is still running and rerun with `-NoProfile -ExecutionPolicy Bypass`.
+- The Windows `scripts/platform/install-windows-local.ps1` helper is intentionally destructive: it clears the current per-user install, managed state roots, and legacy `OverlayTerm` roots before reinstalling. If it fails during cleanup, make sure no `GreebleFS.exe` / `OverlayTerm.exe` process is still running and rerun with `-NoProfile -ExecutionPolicy Bypass`.
 - Unknown small files still intentionally route through the editable-text heuristic in `src/config/filePreview.ts`; larger unknown files fall through to the unsupported fallback. If that heuristic changes, update the preview resolver and the unsupported-preview tests together so “unsupported” stays a deliberate product decision instead of an accident.
 - The side rail local folder tree must use the shared explorer directory cache in `src/components/explorer/explorerDirectoryCache.ts` rather than calling `fs_list_dir` blindly from component-local state. Otherwise the rail and the main explorer will drift on refresh and remount behavior.
 - The side rail local-tree refresh path is sensitive to effect cancellation. Do not make the ancestor-loading effect depend on a callback that closes over `folderChildrenByPath` or on a transient `shouldForceRefresh` boolean that flips during the same refresh pass; use a stable loader plus explicit refresh revision/state refs so forced subtree reloads can finish.
