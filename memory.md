@@ -24,6 +24,45 @@
 - Next recommended step:
   - If Explorer or context-menu flows should open specific assets in Greeble3D, add an explicit panel-request / payload / bridge seam on top of the iframe panel instead of replacing the portable mounting strategy.
 
+# 2026-05-05 - Integrated Terminal Host Locked To Xterm
+
+- The shipped shell no longer exposes or mounts the Go/Wasm integrated terminal host.
+  - `src/config/platform.ts` now returns `xterm` for every platform.
+  - `src/store/settingsStore.ts` keeps `settings.terminal.integratedHost` only as a compatibility field and normalizes every imported or persisted value back to `xterm`.
+  - `src/components/SettingsPage.tsx` removes the Integrated Terminal Host selector.
+  - `src/components/TerminalOverlay.tsx` now always mounts `XTermPane`; the Go-host render branch and session fallback path are gone from the live shell flow.
+- Retained but dormant code:
+  - `src/components/terminal/GoPtyTerminalPane.tsx`
+  - `src/components/GoPanelHost.tsx`
+  - `src-go/builtin-runtimes/go-pty-panel/`
+- Durable rule:
+  - Treat xterm as the only supported integrated terminal host until a future terminal-host revival is explicitly approved and re-wired across platform defaults, store normalization, Settings, and `TerminalOverlay`.
+  - If legacy settings, tests, or imported profiles still mention `go-pty-panel`, coerce them to `xterm` instead of resurfacing the selector or reactivating the dormant host path.
+- Validation:
+  - Passed: `bunx vitest run src/test/platform.test.ts src/test/settingsStore.test.ts src/test/terminalOverlay.test.tsx --reporter=dot`
+  - Passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
+# 2026-05-05 - Modular Native System Tray Menu
+
+- Extracted the inline tray/taskbar icon setup out of `src-tauri/src/lib.rs` into the new dedicated native host module `src-tauri/src/system_tray.rs`.
+- The new tray subsystem is deliberately data-driven:
+  - `MAIN_SYSTEM_TRAY_DEFINITION` owns the stable tray tooltip, left-click behavior, and the root menu item list.
+  - `SystemTrayMenuItemDefinition` now supports `Action`, `CheckAction`, `Separator`, and `Submenu`, so future right-click options can be added by editing the registry instead of expanding Tauri setup code.
+  - `SystemTrayActionItemDefinition` / `SystemTrayCheckActionItemDefinition` carry function-pointer handlers, which means adding a new option is usually just “write one handler, register one definition.”
+- Hardened the event seam while doing the extraction:
+  - menu ids are now namespaced (`tray.*`) because Tauri tray `on_menu_event` callbacks are global, not tray-local
+  - `lib.rs` now just calls `system_tray::build_main_system_tray(&app.handle())` during setup instead of owning menu construction inline
+- Validation:
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `git diff --check -- src-tauri/src/lib.rs src-tauri/src/system_tray.rs`
+- Important Windows test-harness note:
+  - a targeted `cargo test --manifest-path src-tauri/Cargo.toml main_system_tray_ids_are_namespaced_and_unique --lib` attempt hit the repo's sensitive Windows loader failure (`STATUS_ENTRYPOINT_NOT_FOUND` / `0xc0000139`) when the new tray module was briefly included in the `cfg(test)` lib graph
+  - the final implementation keeps `system_tray` behind the existing `cfg(not(test))` native-host boundary in `src-tauri/src/lib.rs`, matching the repo's durable Windows-safe testing contract
+- Durable rule:
+  - extend tray behavior in `src-tauri/src/system_tray.rs`, not by growing `src-tauri/src/lib.rs`
+  - keep tray ids namespaced and routed through the registry lookup; do not reintroduce generic ids like `toggle` or `quit` on a global menu event bus
+  - if a future tray option needs dynamic checked/enabled state, extend the tray definition layer instead of bypassing it with ad hoc Tauri item wiring
+
 # 2026-05-05 - Crates Folder Audit And Archive Cleanup
 
 - Audited `crates/` against `cargo metadata` from `src-tauri` instead of guessing from folder names.

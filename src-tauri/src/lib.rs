@@ -85,6 +85,8 @@ pub mod startup_commands;
 #[cfg(not(test))]
 pub mod storage_commands;
 #[cfg(not(test))]
+pub mod system_tray;
+#[cfg(not(test))]
 pub mod tailscale_commands;
 #[cfg(not(test))]
 pub mod telemetry;
@@ -131,17 +133,13 @@ use preview_streaming::PreviewStreamingManager;
 #[cfg(not(test))]
 use remote_storage_commands::RemoteStorageState;
 #[cfg(not(test))]
-use tauri::{
-    menu::{MenuBuilder, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
-};
+use tauri::{Emitter, Manager};
 #[cfg(not(test))]
 use telemetry::{finish_native_span, start_native_span, TelemetryManager};
 #[cfg(not(test))]
 use terminal::TerminalManager;
 #[cfg(not(test))]
-use window_commands::{TrayVisibilityState, MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
+use window_commands::{TrayVisibilityState, MAIN_WINDOW_LABEL};
 
 #[cfg(not(test))]
 #[derive(serde::Deserialize)]
@@ -331,13 +329,6 @@ fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 }
 
 #[cfg(not(test))]
-fn toggle_overlay(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        let _ = win.emit("overlay://toggle-request", ());
-    }
-}
-
-#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_graphics::apply_linux_graphics_startup_configuration();
@@ -436,43 +427,7 @@ pub fn run() {
                 }
             }
 
-            // ── System Tray ──
-            let tray_icon = app.default_window_icon().cloned();
-
-            let toggle_item =
-                MenuItem::with_id(app, "toggle", "Toggle GreebleFS", true, None::<&str>)?;
-            let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit GreebleFS", true, None::<&str>)?;
-
-            let menu = MenuBuilder::new(app)
-                .items(&[&toggle_item, &separator, &quit_item])
-                .build()?;
-
-            let mut tray_builder = TrayIconBuilder::with_id(MAIN_TRAY_ICON_ID)
-                .menu(&menu)
-                .tooltip("GreebleFS")
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "toggle" => toggle_overlay(app),
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        toggle_overlay(tray.app_handle());
-                    }
-                });
-
-            if let Some(icon) = tray_icon {
-                tray_builder = tray_builder.icon(icon);
-            }
-
-            tray_builder.build(app)?;
+            system_tray::build_main_system_tray(&app.handle())?;
 
             finish_native_span(
                 &app.handle(),
