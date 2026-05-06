@@ -1,3 +1,46 @@
+# 2026-05-06 - Dev MCP And Tauri Automation Pipeline
+
+- Added a first-class dev automation subsystem under `MCP/greeblefs-dev-mcp/` for agent-driven app inspection and control during `bun run tauri dev`.
+- `scripts/run-platform-tauri.mjs` is now the canonical dev-session publisher for MCP.
+  - `tauri dev` injects `GREEBLEFS_MCP_ENABLED`, `VITE_GREEBLEFS_MCP_ENABLED`, the frontend dev URL, the WebView2 debug port, and the MCP log/status paths.
+  - Live session truth is written to `MCP/.state/tauri-dev-session.json`.
+  - Combined dev output is written to `MCP/.state/tauri-dev.log`.
+- Frontend dev-only bridge:
+  - `src/runtime/devMcpBridge.ts` now installs `window.__GREEBLEFS_DEV_MCP__` during dev/MCP sessions.
+  - It retains console/error history, reports bridge/render status, exposes semantic snapshots, visible DOM node bounds/colors/action ids, resolved theme variables, usr-profile/performance snapshots, and selected host/runtime calls.
+  - `src/main.tsx` now installs that bridge before app init and marks render completion after the root React render.
+- MCP server shape:
+  - `MCP/greeblefs-dev-mcp/src/index.ts` now exposes the public MCP server over stdio and localhost Streamable HTTP.
+  - `MCP/greeblefs-dev-mcp/src/smoke.ts` is the proof harness.
+  - `MCP/greeblefs-dev-mcp/src/runtime/greeblefsAutomationRuntime.ts` owns session detection, attach logic, workspace file/command tools, screenshots, UI actions, and bridge calls.
+  - `MCP/greeblefs-dev-mcp/src/runtime/windowsDesktopWindowCapture.ts` is the Windows-native fallback for listing and screenshotting live `greeblefs.exe` desktop windows.
+- Tooling now covers:
+  - app/session detection (`app_status`, `app_wait_ready`, `app_doctor`, `app_start_tauri_dev`, `app_stop_tauri_dev`, log tail)
+  - browser/UI attach (`app_attach`, `ui_snapshot`, `ui_screenshot`, `ui_accessibility_snapshot`, `ui_list_actions`, click/type/hover/press/select/drag, arbitrary page eval)
+  - workspace operations (`workspace_read_text`, `workspace_write_text`, `workspace_list_directory`, `workspace_stat`, `workspace_delete_path`, `workspace_run_command`)
+  - desktop fallback inspection (`app_list_native_windows`, `ui_native_window_screenshot`)
+- Durable runtime decision:
+  - The MCP package now runs automation with `node --import tsx`, not Bun.
+  - Bun remains fine for install and TypeScript validation, but Playwright/CDP attachment stalled under Bun on this Windows machine and worked under plain Node.
+- Current Windows limitation:
+  - On this host, `bun run tauri dev` successfully builds and launches `target/debug/greeblefs.exe`, but the configured WebView2 debug port `9222` still refuses CDP connections.
+  - Because of that, MCP currently falls back to `browser-dev-url` attach for browser-side inspection and to native desktop-window screenshots for real-window evidence.
+  - In browser fallback mode, bridge status is still available, but host-only calls such as `getHostApiSchema` are intentionally reported as unavailable because the page is not a real Tauri webview.
+  - The browser fallback screenshot currently lands on a blank white page in this workspace, which strongly suggests the shell expects Tauri-only runtime seams before it fully renders in a plain browser.
+- Validation gathered:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `bun run mcp:doctor`
+  - Passed: `bun run mcp:smoke`
+  - Passed: `bun run mcp:smoke` with screenshot output at `MCP/.state/screenshots/greeblefs-dev-mcp-smoke.png`
+  - Passed: direct Node runtime validation for `listNativeWindows()` and `captureNativeWindowScreenshot(...)`
+- Durable rules:
+  - Treat `MCP/.state/tauri-dev-session.json` and `MCP/.state/tauri-dev.log` as the truth source for whether the dev app is running. Do not guess only from `localhost:1420` or a stale process list.
+  - If MCP browser automation hangs, inspect whether someone switched the package scripts back to Bun runtime before touching app code.
+  - If host bridge calls are unavailable but `bridgeReady` is true, check whether the attachment mode is `browser-dev-url`; that means the fallback browser attached, not the real Tauri webview.
+  - Use `app_list_native_windows` plus `ui_native_window_screenshot` when the real app window must be inspected but WebView/CDP attach is unavailable.
+- Next recommended step:
+  - Fix or replace the Windows native attach path so the MCP server can reach a real Tauri webview again. The best next candidates are either: (1) root-cause the WebView2 `--remote-debugging-port` refusal in `tauri dev`, or (2) add a dedicated native-side automation bridge / WebDriver lane that does not depend on WebView2 CDP.
+
 # 2026-05-06 - Explorer Side-Assignable Activity Lanes And Side-Dock Terminal
 
 - Refactored the Explorer activity-rail system so lane placement is no longer hardcoded in config.
