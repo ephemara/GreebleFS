@@ -228,21 +228,6 @@
             "showLabel": false
           }
         },
-        "viewLayout": {
-          "explorerToolbar": {
-            "zone": "primaryEnd",
-            "order": 50
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 30,
-            "bandId": "primary",
-            "anchorX": 840,
-            "anchorY": 0,
-            "showIcon": true,
-            "showLabel": false
-          }
-        },
         "togglePreview": {
           "explorerToolbar": {
             "zone": "primaryEnd",
@@ -833,16 +818,6 @@
           "explorerTopbar": {
             "zone": "end",
             "order": 10
-          }
-        },
-        "viewLayout": {
-          "explorerToolbar": {
-            "zone": "secondaryEnd",
-            "order": 80
-          },
-          "explorerTopbar": {
-            "zone": "end",
-            "order": 30
           }
         },
         "togglePreview": {

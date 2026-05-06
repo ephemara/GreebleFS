@@ -1167,6 +1167,35 @@ async function openExplorerLayoutSwitcherCommand() {
   return screen.findByRole("dialog", { name: /explorer layout switcher/i });
 }
 
+function getStatusViewSwitcher() {
+  const control = getChromeControl("statusViewToggles");
+  if (!control) {
+    throw new Error("Status view switcher control not found");
+  }
+  return control as HTMLElement;
+}
+
+async function openStatusViewModeMenu() {
+  const [modeButton] = within(getStatusViewSwitcher()).getAllByRole("button");
+  fireEvent.click(modeButton);
+  return screen.findByRole("menu", { name: /explorer view mode menu/i });
+}
+
+async function openStatusDensityMenu() {
+  const buttons = within(getStatusViewSwitcher()).getAllByRole("button");
+  const densityButton = buttons[1];
+  if (!densityButton) {
+    throw new Error("Status density button not found");
+  }
+  fireEvent.click(densityButton);
+  return screen.findByRole("menu", { name: /explorer density menu/i });
+}
+
+async function selectStatusViewMode(name: RegExp | string) {
+  const menu = await openStatusViewModeMenu();
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+}
+
 async function openExplorerCustomizeCommand() {
   act(() => {
     window.dispatchEvent(
@@ -1817,17 +1846,16 @@ describe("FileExplorer view modes", () => {
     );
   });
 
-  it("lets the user pick columns from the explorer layout menu", async () => {
+  it("lets the user pick columns from the shared status-bar view menu", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: /explorer layout:/i }));
-    const layoutMenu = await screen.findByRole("menu", {
-      name: /explorer layout menu/i,
-    });
+    const layoutMenu = await openStatusViewModeMenu();
     expect(layoutMenu.closest("[data-overlay-explorer]")).not.toBeNull();
     expect(layoutMenu.style.background).toContain("--overlay-explorer-popup-bg");
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /columns/i }));
+    fireEvent.click(
+      within(layoutMenu).getByRole("menuitemradio", { name: /columns/i }),
+    );
 
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "columns",
@@ -1840,6 +1868,7 @@ describe("FileExplorer view modes", () => {
 
     expect(getChromeControl("customizeModeToggle")).toBeNull();
     expect(getChromeControl("shellLayout")).toBeNull();
+    expect(getChromeControl("viewLayout")).toBeNull();
     expect(
       screen.queryByRole("button", { name: /cycle explorer layouts/i }),
     ).toBeNull();
@@ -5655,7 +5684,7 @@ const value = 1;
     }
   });
 
-  it("renders the footer view switcher as a fixed five-button view host on the status bar edge", async () => {
+  it("renders the footer view switcher as a shared two-button mode and density host on the status bar edge", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
@@ -5669,9 +5698,6 @@ const value = 1;
       '[data-overlay-explorer-status-task-anchor="true"]',
     );
 
-    expect(
-      screen.queryByRole("button", { name: /experimental view modes:/i }),
-    ).toBeNull();
     expect(statusSurface).toHaveStyle({ width: "100%", minWidth: "0" });
     expect(
       statusSurface?.closest('[data-overlay-explorer-plane="main"]'),
@@ -5681,31 +5707,40 @@ const value = 1;
       top: "50%",
       transform: "translate(-50%, -50%)",
     });
-    expect(within(switcher).getAllByRole("button")).toHaveLength(5);
+    expect(within(switcher).getAllByRole("button")).toHaveLength(2);
+
+    const modeMenu = await openStatusViewModeMenu();
     expect(
-      within(switcher).getByRole("button", {
-        name: /switch explorer to icon view/i,
+      within(modeMenu).getByRole("menuitemradio", { name: /columns/i }),
+    ).toBeTruthy();
+    expect(
+      within(modeMenu).getByRole("menuitemradio", { name: /list/i }),
+    ).toBeTruthy();
+    expect(
+      within(modeMenu).getByRole("menuitemradio", {
+        name: /adaptive semantic grid/i,
       }),
     ).toBeTruthy();
     expect(
-      within(switcher).getByRole("button", {
-        name: /switch explorer to list view/i,
+      within(modeMenu).getByRole("menuitemradio", {
+        name: /constellation view/i,
       }),
     ).toBeTruthy();
     expect(
-      within(switcher).getByRole("button", {
-        name: /switch explorer to adaptive semantic grid/i,
+      within(modeMenu).getByRole("menuitemradio", {
+        name: /timeline surface/i,
       }),
     ).toBeTruthy();
+    fireEvent.click(
+      within(modeMenu).getByRole("menuitemradio", { name: /details/i }),
+    );
+
+    const densityMenu = await openStatusDensityMenu();
     expect(
-      within(switcher).getByRole("button", {
-        name: /switch explorer to constellation view/i,
-      }),
+      within(densityMenu).getByRole("menuitemradio", { name: /xl icons/i }),
     ).toBeTruthy();
     expect(
-      within(switcher).getByRole("button", {
-        name: /switch explorer to timeline surface/i,
-      }),
+      within(densityMenu).getByRole("menuitemradio", { name: /details/i }),
     ).toBeTruthy();
   });
 
@@ -5715,11 +5750,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to adaptive semantic grid/i,
-      }),
-    );
+    await selectStatusViewMode(/adaptive semantic grid/i);
 
     expect(
       useSettingsStore.getState().settings.explorer.experimentalViewMode,
@@ -5732,10 +5763,17 @@ const value = 1;
     );
     expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
-      screen.getByRole("button", {
-        name: /switch explorer to adaptive semantic grid/i,
+      within(getStatusViewSwitcher()).getByRole("button", {
+        name: /explorer view mode: adaptive semantic grid/i,
       }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toBeInTheDocument();
+    const densityMenu = await openStatusDensityMenu();
+    expect(
+      within(densityMenu).getByRole("menuitemradio", { name: /large icons/i }),
+    ).toBeTruthy();
+    expect(
+      within(densityMenu).queryByRole("menuitemradio", { name: /xl icons/i }),
+    ).toBeNull();
     expect(
       screen.queryByText(
         /larger semantic tiles that favor browsing and recognition\./i,
@@ -5747,11 +5785,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to adaptive semantic grid/i,
-      }),
-    );
+    await selectStatusViewMode(/adaptive semantic grid/i);
 
     const notesEntry = screen
       .getByText("notes.txt")
@@ -5774,11 +5808,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to adaptive semantic grid/i,
-      }),
-    );
+    await selectStatusViewMode(/adaptive semantic grid/i);
 
     const alphaEntry = screen
       .getByText("alpha")
@@ -5812,11 +5842,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to constellation view/i,
-      }),
-    );
+    await selectStatusViewMode(/constellation view/i);
 
     expect(
       useSettingsStore.getState().settings.explorer.experimentalViewMode,
@@ -5829,10 +5855,10 @@ const value = 1;
     );
     expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
-      screen.getByRole("button", {
-        name: /switch explorer to constellation view/i,
+      within(getStatusViewSwitcher()).getByRole("button", {
+        name: /explorer view mode: constellation view/i,
       }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("group", { name: /constellation field/i }),
     ).toBeTruthy();
@@ -5850,11 +5876,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to timeline surface/i,
-      }),
-    );
+    await selectStatusViewMode(/timeline surface/i);
 
     expect(
       useSettingsStore.getState().settings.explorer.experimentalViewMode,
@@ -5867,10 +5889,10 @@ const value = 1;
     );
     expect(screen.queryByText(/experimental:/i)).toBeNull();
     expect(
-      screen.getByRole("button", {
-        name: /switch explorer to timeline surface/i,
+      within(getStatusViewSwitcher()).getByRole("button", {
+        name: /explorer view mode: timeline surface/i,
       }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toBeInTheDocument();
     expect(
       screen.queryByText(
         /browse folders and files as time-banded activity surfaces\./i,
@@ -5987,11 +6009,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /switch explorer to list view/i,
-      }),
-    );
+    await selectStatusViewMode(/list/i);
 
     await waitFor(() => {
       expect(
@@ -6016,12 +6034,10 @@ const value = 1;
       useSettingsStore.getState().settings.appearance.appZoom;
     dispatchLayoutWheel("alpha", -120);
     const zoomHud = await screen.findByTestId("explorer-layout-zoom-hud");
+    const switcherButtons = within(getStatusViewSwitcher()).getAllByRole("button");
+    const densityButton = switcherButtons[1];
     expect(zoomHud.closest("[data-overlay-explorer]")).not.toBeNull();
-    expect(
-      screen
-        .getByRole("button", { name: /explorer layout:/i })
-        .parentElement?.contains(zoomHud),
-    ).toBe(false);
+    expect(densityButton?.parentElement?.contains(zoomHud)).toBe(false);
     expect(zoomHud.style.zIndex).toBe(
       "var(--overlay-explorer-floating-hud-layer, 9996)",
     );
@@ -6433,7 +6449,9 @@ const value = 1;
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /switch explorer to icon view/i }),
+      within(
+        await openStatusViewModeMenu(),
+      ).getByRole("menuitemradio", { name: /l icons/i }),
     );
     await waitFor(() => {
       expect(
@@ -6445,7 +6463,9 @@ const value = 1;
     });
 
     fireEvent.click(
-      screen.getByRole("button", { name: /switch explorer to list view/i }),
+      within(
+        await openStatusViewModeMenu(),
+      ).getByRole("menuitemradio", { name: /list/i }),
     );
     await waitFor(() => {
       expect(

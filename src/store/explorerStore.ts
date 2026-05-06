@@ -40,7 +40,9 @@ import {
 import {
   defaultExplorerActivityLaneOrderBySide,
   defaultExplorerActivityLanePlacementById,
+  defaultExplorerHiddenActivityLaneIds,
   defaultExplorerActivityLaneId,
+  normalizeExplorerHiddenActivityLaneIds,
   normalizeExplorerActivityLaneOrderBySide,
   normalizeExplorerActivityLaneId,
   normalizeExplorerActivityLanePlacementById,
@@ -57,7 +59,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = "overlayterm-explorer-state-v3";
 export const EXPLORER_STATE_BACKUP_KEY = "overlayterm-explorer-state-v3.backup";
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = "fs-bookmarks-v2";
-export const EXPLORER_STATE_VERSION = 12;
+export const EXPLORER_STATE_VERSION = 13;
 export const PRIMARY_EXPLORER_INSTANCE_ID = "primary";
 export const PRIMARY_EXPLORER_TAB_ID = "workspace-tab-primary";
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -125,6 +127,7 @@ export interface ExplorerSessionSnapshot {
   activeActivityLane: ExplorerActivityLaneId;
   activityPaneVisible: boolean;
   openActivityLaneIds: ExplorerActivityLaneId[];
+  hiddenActivityLaneIds: ExplorerActivityLaneId[];
   activityLanePlacementById: ExplorerActivityLanePlacementById;
   activityLaneOrderBySide: ExplorerActivityLaneOrderBySide;
   constellation: ExplorerConstellationSessionSnapshot;
@@ -262,6 +265,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   activeActivityLane: defaultExplorerActivityLaneId,
   activityPaneVisible: true,
   openActivityLaneIds: ["files", "preview"],
+  hiddenActivityLaneIds: defaultExplorerHiddenActivityLaneIds,
   activityLanePlacementById: defaultExplorerActivityLanePlacementById,
   activityLaneOrderBySide: defaultExplorerActivityLaneOrderBySide,
   constellation: {
@@ -534,10 +538,21 @@ function applyExplorerSessionCompatibilityUpdates(
     }
   }
 
+  const nextHiddenActivityLaneIds = hasExplorerSessionUpdateField(
+    updates,
+    "hiddenActivityLaneIds",
+  )
+    ? normalizeExplorerHiddenActivityLaneIds(
+        updates.hiddenActivityLaneIds,
+        current.hiddenActivityLaneIds,
+      )
+    : current.hiddenActivityLaneIds;
+
   return {
     ...current,
     ...updates,
     openActivityLaneIds: nextOpenActivityLaneIds,
+    hiddenActivityLaneIds: nextHiddenActivityLaneIds,
   };
 }
 
@@ -577,6 +592,7 @@ function cloneExplorerSessionSnapshot(
     ...session,
     history: [...session.history],
     openActivityLaneIds: [...session.openActivityLaneIds],
+    hiddenActivityLaneIds: [...session.hiddenActivityLaneIds],
     activityLanePlacementById: { ...session.activityLanePlacementById },
     activityLaneOrderBySide: {
       left: [...session.activityLaneOrderBySide.left],
@@ -837,6 +853,9 @@ export function normalizeExplorerSessionSnapshot(
     source?.activityLaneOrderBySide,
     activityLanePlacementById,
   );
+  const hiddenActivityLaneIds = normalizeExplorerHiddenActivityLaneIds(
+    source?.hiddenActivityLaneIds,
+  );
   const openActivityLaneIds = normalizeExplorerOpenActivityLaneIds(
     source?.openActivityLaneIds,
     {
@@ -893,6 +912,7 @@ export function normalizeExplorerSessionSnapshot(
     activeActivityLane,
     activityPaneVisible,
     openActivityLaneIds,
+    hiddenActivityLaneIds,
     activityLanePlacementById,
     activityLaneOrderBySide,
     constellation: {

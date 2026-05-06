@@ -107,6 +107,9 @@ export const defaultExplorerActivityLaneOrderBySide = {
   right: ["preview", "actions", "customize"],
 } satisfies ExplorerActivityLaneOrderBySide;
 
+export const defaultExplorerHiddenActivityLaneIds: ExplorerActivityLaneId[] =
+  [];
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value != null && typeof value === "object"
     ? (value as Record<string, unknown>)
@@ -202,10 +205,28 @@ export function normalizeExplorerActivityLaneOrderBySide(
   return normalized;
 }
 
+export function normalizeExplorerHiddenActivityLaneIds(
+  value: unknown,
+  fallback: readonly ExplorerActivityLaneId[] = defaultExplorerHiddenActivityLaneIds,
+): ExplorerActivityLaneId[] {
+  const source = Array.isArray(value) ? value : fallback;
+  const hiddenLaneIds: ExplorerActivityLaneId[] = [];
+  const seen = new Set<ExplorerActivityLaneId>();
+  for (const laneIdValue of source) {
+    if (!isExplorerActivityLaneId(laneIdValue) || seen.has(laneIdValue)) {
+      continue;
+    }
+    seen.add(laneIdValue);
+    hiddenLaneIds.push(laneIdValue);
+  }
+  return hiddenLaneIds;
+}
+
 export function getExplorerActivityLaneDefinitionsForRailSide(
   side: ExplorerActivityRailSide,
   placementById: ExplorerActivityLanePlacementById = defaultExplorerActivityLanePlacementById,
   orderBySide: ExplorerActivityLaneOrderBySide = defaultExplorerActivityLaneOrderBySide,
+  hiddenLaneIds: readonly ExplorerActivityLaneId[] = defaultExplorerHiddenActivityLaneIds,
 ): readonly ExplorerActivityLaneDefinition[] {
   const normalizedPlacement = normalizeExplorerActivityLanePlacementById(
     placementById,
@@ -214,7 +235,12 @@ export function getExplorerActivityLaneDefinitionsForRailSide(
     orderBySide,
     normalizedPlacement,
   );
-  return normalizedOrder[side].map(getExplorerActivityLaneDefinition);
+  const hiddenLaneIdSet = new Set(
+    normalizeExplorerHiddenActivityLaneIds(hiddenLaneIds),
+  );
+  return normalizedOrder[side]
+    .filter((laneId) => !hiddenLaneIdSet.has(laneId))
+    .map(getExplorerActivityLaneDefinition);
 }
 
 export function moveExplorerActivityLane(args: {

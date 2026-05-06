@@ -1,12 +1,24 @@
 import Editor from "@monaco-editor/react";
 import { AlertTriangle, Cpu, Eye, Layers3, Loader2 } from "@/components/AppIcons";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
 } from "react";
+import {
+  type OrbitCameraState,
+  type ShaderWorkbenchScene as UpgradedScene,
+  PREVIEW_UNIFORM_BYTES,
+  buildHostVertexModule as buildUpgradedHostVertexModule,
+  buildHostFragmentModule as buildUpgradedHostFragmentModule,
+  buildTextureDisplayModule as buildUpgradedTextureDisplayModule,
+  createPreviewUniformState as createUpgradedUniformState,
+  writePreviewUniformBuffer as writeUpgradedUniformBuffer,
+  meshForScene,
+} from "./shaderWorkbenchUpgrades";
 import { readExplorerEntryThumbnail } from "../runtime/explorerBackend";
 import {
   compileExplorerShaderPreviewDocument,
@@ -29,7 +41,7 @@ import {
 import type { EditorSettings } from "../store/settingsStore";
 
 type ExplorerDocumentViewMode = "preview" | "edit";
-type ShaderWorkbenchScene = "sphere" | "fullscreen";
+type ShaderWorkbenchScene = "sphere" | "fullscreen" | "torus" | "cube";
 
 type ExplorerShaderWorkbenchProps = {
   path: string;
@@ -64,6 +76,7 @@ type ExplorerShaderWorkbenchProps = {
     result: ExplorerShaderPreviewCompileOutput,
   ) => void;
   onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  onSceneChange?: (scene: ShaderWorkbenchScene) => void;
 };
 
 type ShaderPreviewCanvasStatus = {
@@ -145,6 +158,7 @@ const previewCanvasStyle: CSSProperties = {
   width: "100%",
   height: "100%",
   display: "block",
+  cursor: "grab",
 };
 
 const canvasOverlayStyle: CSSProperties = {
@@ -635,328 +649,178 @@ function ShaderPreviewCanvas({
     };
   }, [path]);
 
+  const cameraRef = useRef<OrbitCameraState>({
+    yaw: 0.6, pitch: 0.3, distance: 3.2, autoRotate: true,
+    mouseX: 0, mouseY: 0, dragging: false,
+  });
+  const [fpsDisplay, setFpsDisplay] = useState("--");
+
   useEffect(() => {
     let cancelled = false;
     let frameHandle = 0;
-    let lastRenderedTimestamp = 0;
+    let lastTs = 0;
+    let frameCount = 0;
+    let fpsAccum = 0;
+    let fpsFrames = 0;
+    let resizeObs: ResizeObserver | null = null;
     const canvas = canvasRef.current;
+    const cam = cameraRef.current;
+
+    // Orbit camera pointer handlers
+    const onDown = (e: PointerEvent) => { cam.dragging = true; cam.autoRotate = false; canvas?.setPointerCapture(e.pointerId); };
+    const onUp = (e: PointerEvent) => { cam.dragging = false; canvas?.releasePointerCapture(e.pointerId); };
+    const onMove = (e: PointerEvent) => {
+      if (canvas) { cam.mouseX = e.offsetX / canvas.clientWidth; cam.mouseY = 1 - e.offsetY / canvas.clientHeight; }
+      if (!cam.dragging) return;
+      cam.yaw += e.movementX * 0.008;
+      cam.pitch = Math.max(-1.4, Math.min(1.4, cam.pitch - e.movementY * 0.008));
+    };
+    const onWh = (e: WheelEvent) => { e.preventDefault(); cam.distance = Math.max(1.2, Math.min(12, cam.distance + e.deltaY * 0.005)); };
+    canvas?.addEventListener("pointerdown", onDown);
+    canvas?.addEventListener("pointerup", onUp);
+    canvas?.addEventListener("pointermove", onMove);
+    canvas?.addEventListener("wheel", onWh, { passive: false });
 
     async function run() {
-      if (!canvas) {
-        return;
-      }
+      if (!canvas) return;
       if (!normalizedWgsl || !selectedStage || !selectedEntryPoint) {
-        setStatus({
-          mode: "unavailable",
-          message: buildFallbackPosterMessage(
-            normalizedWgsl,
-            selectedStage,
-            selectedEntryPoint,
-          ),
-        });
+        setStatus({ mode: "unavailable", message: buildFallbackPosterMessage(normalizedWgsl, selectedStage, selectedEntryPoint) });
         return;
       }
       if (!isNavigatorWithGpu(window.navigator)) {
-        setStatus({
-          mode: "unavailable",
-          message:
-            "WebGPU is unavailable in this webview. The shader workbench is showing diagnostics and the cached poster instead.",
-        });
+        setStatus({ mode: "unavailable", message: "WebGPU is unavailable in this webview." });
         return;
       }
-
-      setStatus({
-        mode: "loading",
-        message: "Compiling shader preview pipeline…",
-      });
+      setStatus({ mode: "loading", message: "Compiling shader preview pipeline…" });
 
       try {
         const adapter = await window.navigator.gpu.requestAdapter();
-        if (!adapter) {
-          throw new Error("No WebGPU adapter is available.");
-        }
+        if (!adapter) throw new Error("No WebGPU adapter.");
         const device = await adapter.requestDevice();
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) { device.destroy(); return; }
 
-        const pixelRatio = Math.max(
-          1,
-          Math.min(window.devicePixelRatio || 1, previewProfile.previewPixelRatioCap),
-        );
-        const width = Math.max(1, Math.floor(canvas.clientWidth * pixelRatio));
-        const height = Math.max(1, Math.floor(canvas.clientHeight * pixelRatio));
-        canvas.width = width;
-        canvas.height = height;
+        const pr = Math.max(1, Math.min(window.devicePixelRatio || 1, previewProfile.previewPixelRatioCap));
+        let W = Math.max(1, Math.floor(canvas.clientWidth * pr));
+        let H = Math.max(1, Math.floor(canvas.clientHeight * pr));
+        canvas.width = W; canvas.height = H;
 
-        const context = canvas.getContext("webgpu");
-        if (!context) {
-          throw new Error("Failed to acquire a WebGPU canvas context.");
-        }
+        const ctx = canvas.getContext("webgpu");
+        if (!ctx) throw new Error("No WebGPU canvas context.");
+        const fmt = window.navigator.gpu.getPreferredCanvasFormat();
+        ctx.configure({ device, format: fmt, alphaMode: "premultiplied" });
 
-        const canvasFormat = window.navigator.gpu.getPreferredCanvasFormat();
-        context.configure({
-          device,
-          format: canvasFormat,
-          alphaMode: "premultiplied",
+        // MSAA + Depth
+        const sc = 4;
+        let msaaTex = device.createTexture({ size: { width: W, height: H }, format: fmt, sampleCount: sc, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+        let depTex = device.createTexture({ size: { width: W, height: H }, format: "depth24plus", sampleCount: sc, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+
+        // ResizeObserver
+        resizeObs = new ResizeObserver(() => {
+          const nw = Math.max(1, Math.floor(canvas.clientWidth * pr));
+          const nh = Math.max(1, Math.floor(canvas.clientHeight * pr));
+          if (nw === W && nh === H) return;
+          W = nw; H = nh; canvas.width = W; canvas.height = H;
+          ctx.configure({ device, format: fmt, alphaMode: "premultiplied" });
+          msaaTex.destroy(); depTex.destroy();
+          msaaTex = device.createTexture({ size: { width: W, height: H }, format: fmt, sampleCount: sc, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+          depTex = device.createTexture({ size: { width: W, height: H }, format: "depth24plus", sampleCount: sc, usage: GPUTextureUsage.RENDER_ATTACHMENT });
         });
+        resizeObs.observe(canvas);
 
-        const mesh =
-          selectedScene === "sphere"
-            ? createSphereMesh(
-                previewProfile.previewSphereSegments,
-                previewProfile.previewSphereRings,
-              )
-            : createPlaneMesh();
-        const vertexBuffer = device.createBuffer({
-          size: mesh.vertices.byteLength,
-          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-          mappedAtCreation: true,
-        });
-        new Float32Array(vertexBuffer.getMappedRange()).set(mesh.vertices);
-        vertexBuffer.unmap();
+        // Mesh (use upgrades module)
+        const mesh = meshForScene(selectedScene as UpgradedScene, previewProfile.previewSphereSegments, previewProfile.previewSphereRings);
+        const vBuf = device.createBuffer({ size: mesh.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST, mappedAtCreation: true });
+        new Float32Array(vBuf.getMappedRange()).set(mesh.vertices); vBuf.unmap();
+        const iBuf = device.createBuffer({ size: mesh.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST, mappedAtCreation: true });
+        new Uint16Array(iBuf.getMappedRange()).set(mesh.indices); iBuf.unmap();
 
-        const indexBuffer = device.createBuffer({
-          size: mesh.indices.byteLength,
-          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-          mappedAtCreation: true,
-        });
-        new Uint16Array(indexBuffer.getMappedRange()).set(mesh.indices);
-        indexBuffer.unmap();
+        // Uniform buffer (expanded)
+        const uBuf = device.createBuffer({ size: PREVIEW_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-        const uniformBuffer = device.createBuffer({
-          size: 20 * 4,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        // Shader modules (use upgraded host modules with N·L lighting)
+        const hvMod = device.createShaderModule({ code: buildUpgradedHostVertexModule() });
+        const hfMod = device.createShaderModule({ code: buildUpgradedHostFragmentModule() });
+        const tdMod = device.createShaderModule({ code: buildUpgradedTextureDisplayModule() });
+        const uMod = device.createShaderModule({ code: normalizedWgsl });
 
-        const hostVertexModule = device.createShaderModule({
-          code: buildHostVertexModule(),
-        });
-        const hostFragmentModule = device.createShaderModule({
-          code: buildHostFragmentModule(),
-        });
-        const textureDisplayModule = device.createShaderModule({
-          code: buildTextureDisplayModule(),
-        });
-        const userModule = device.createShaderModule({ code: normalizedWgsl });
+        let rPipe: GPURenderPipeline | null = null;
+        let cPipe: GPUComputePipeline | null = null;
+        let cBG: GPUBindGroup | null = null;
+        let cTex: GPUTexture | null = null;
+        let dBG: GPUBindGroup | null = null;
 
-        let renderPipeline: GPURenderPipeline | null = null;
-        let computePipeline: GPUComputePipeline | null = null;
-        let computeBindGroup: GPUBindGroup | null = null;
-        let computeTexture: GPUTexture | null = null;
-        let displayBindGroup: GPUBindGroup | null = null;
+        const needsMesh = selectedScene !== "fullscreen" || selectedStage === "vertex";
+        const depSt: GPUDepthStencilState = { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" };
 
         if (selectedStage === "compute") {
-          computeTexture = device.createTexture({
-            size: { width, height },
-            format: "rgba8unorm",
-            usage:
-              GPUTextureUsage.STORAGE_BINDING |
-              GPUTextureUsage.TEXTURE_BINDING |
-              GPUTextureUsage.RENDER_ATTACHMENT,
-          });
-          const computeBindGroupLayout = device.createBindGroupLayout({
-            entries: [
-              {
-                binding: 0,
-                visibility: GPUShaderStage.COMPUTE,
-                storageTexture: {
-                  access: "write-only",
-                  format: "rgba8unorm",
-                  viewDimension: "2d",
-                },
-              },
-              {
-                binding: 1,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: { type: "uniform" },
-              },
-            ],
-          });
-          computePipeline = await device.createComputePipelineAsync({
-            layout: device.createPipelineLayout({
-              bindGroupLayouts: [computeBindGroupLayout],
-            }),
-            compute: {
-              module: userModule,
-              entryPoint: selectedEntryPoint,
-            },
-          });
-          computeBindGroup = device.createBindGroup({
-            layout: computeBindGroupLayout,
-            entries: [
-              { binding: 0, resource: computeTexture.createView() },
-              { binding: 1, resource: { buffer: uniformBuffer } },
-            ],
-          });
-
-          const textureDisplayLayout = device.createBindGroupLayout({
-            entries: [
-              {
-                binding: 0,
-                visibility: GPUShaderStage.FRAGMENT,
-                texture: { sampleType: "float" },
-              },
-            ],
-          });
-          renderPipeline = await device.createRenderPipelineAsync({
-            layout: device.createPipelineLayout({
-              bindGroupLayouts: [textureDisplayLayout],
-            }),
-            vertex: {
-              module: textureDisplayModule,
-              entryPoint: "greeblefs_texture_vertex",
-            },
-            fragment: {
-              module: textureDisplayModule,
-              entryPoint: "greeblefs_texture_fragment",
-              targets: [{ format: canvasFormat }],
-            },
-            primitive: { topology: "triangle-list" },
-          });
-          displayBindGroup = device.createBindGroup({
-            layout: textureDisplayLayout,
-            entries: [{ binding: 0, resource: computeTexture.createView() }],
-          });
+          cTex = device.createTexture({ size: { width: W, height: H }, format: "rgba8unorm", usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
+          const cBGL = device.createBindGroupLayout({ entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, storageTexture: { access: "write-only", format: "rgba8unorm", viewDimension: "2d" } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+          ]});
+          cPipe = await device.createComputePipelineAsync({ layout: device.createPipelineLayout({ bindGroupLayouts: [cBGL] }), compute: { module: uMod, entryPoint: selectedEntryPoint } });
+          cBG = device.createBindGroup({ layout: cBGL, entries: [{ binding: 0, resource: cTex.createView() }, { binding: 1, resource: { buffer: uBuf } }] });
+          const tBGL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float" } }] });
+          rPipe = await device.createRenderPipelineAsync({ layout: device.createPipelineLayout({ bindGroupLayouts: [tBGL] }), vertex: { module: tdMod, entryPoint: "greeblefs_texture_vertex" }, fragment: { module: tdMod, entryPoint: "greeblefs_texture_fragment", targets: [{ format: fmt }] }, primitive: { topology: "triangle-list" }, multisample: { count: sc } });
+          dBG = device.createBindGroup({ layout: tBGL, entries: [{ binding: 0, resource: cTex.createView() }] });
         } else {
-          const renderBindGroupLayout = device.createBindGroupLayout({
-            entries: [
-              {
-                binding: 0,
-                visibility:
-                  GPUShaderStage.VERTEX |
-                  GPUShaderStage.FRAGMENT |
-                  GPUShaderStage.COMPUTE,
-                buffer: { type: "uniform" },
-              },
-            ],
+          const rBGL = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE, buffer: { type: "uniform" } }] });
+          rPipe = await device.createRenderPipelineAsync({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [rBGL] }),
+            vertex: { module: selectedStage === "vertex" ? uMod : hvMod, entryPoint: selectedStage === "vertex" ? selectedEntryPoint : "greeblefs_preview_host_vertex", buffers: [{ arrayStride: 32, attributes: [{ shaderLocation: 0, offset: 0, format: "float32x3" }, { shaderLocation: 1, offset: 12, format: "float32x3" }, { shaderLocation: 2, offset: 24, format: "float32x2" }] }] },
+            fragment: { module: selectedStage === "fragment" ? uMod : hfMod, entryPoint: selectedStage === "fragment" ? selectedEntryPoint : "greeblefs_preview_host_fragment", targets: [{ format: fmt }] },
+            primitive: { topology: "triangle-list", cullMode: needsMesh ? "back" : undefined },
+            depthStencil: needsMesh ? depSt : undefined,
+            multisample: { count: sc },
           });
-          renderPipeline = await device.createRenderPipelineAsync({
-            layout: device.createPipelineLayout({
-              bindGroupLayouts: [renderBindGroupLayout],
-            }),
-            vertex: {
-              module:
-                selectedStage === "vertex" ? userModule : hostVertexModule,
-              entryPoint:
-                selectedStage === "vertex"
-                  ? selectedEntryPoint
-                  : "greeblefs_preview_host_vertex",
-              buffers: [
-                {
-                  arrayStride: 8 * 4,
-                  attributes: [
-                    { shaderLocation: 0, offset: 0, format: "float32x3" },
-                    { shaderLocation: 1, offset: 3 * 4, format: "float32x3" },
-                    { shaderLocation: 2, offset: 6 * 4, format: "float32x2" },
-                  ],
-                },
-              ],
-            },
-            fragment: {
-              module:
-                selectedStage === "fragment" ? userModule : hostFragmentModule,
-              entryPoint:
-                selectedStage === "fragment"
-                  ? selectedEntryPoint
-                  : "greeblefs_preview_host_fragment",
-              targets: [{ format: canvasFormat }],
-            },
-            primitive: {
-              topology: "triangle-list",
-              cullMode: selectedScene === "sphere" ? "back" : undefined,
-            },
-          });
-          computeBindGroup = device.createBindGroup({
-            layout: renderBindGroupLayout,
-            entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
-          });
+          cBG = device.createBindGroup({ layout: rBGL, entries: [{ binding: 0, resource: { buffer: uBuf } }] });
         }
 
-        const targetFrameMs = 1000 / Math.max(previewProfile.previewFrameRate, 1);
-        setStatus({
-          mode: "ready",
-          message:
-            selectedStage === "compute"
-              ? "Compute preview rendered through the storage-texture host."
-              : "Live WebGPU preview is active.",
-        });
+        const tgtMs = 1000 / Math.max(previewProfile.previewFrameRate, 1);
+        setStatus({ mode: "ready", message: selectedStage === "compute" ? "Compute preview active." : "Live WebGPU preview is active." });
 
-        const renderFrame = (timestamp: number) => {
-          if (cancelled || !renderPipeline) {
-            return;
-          }
+        const renderFrame = (ts: number) => {
+          if (cancelled || !rPipe) return;
+          if (lastTs > 0 && ts - lastTs < tgtMs) { frameHandle = requestAnimationFrame(renderFrame); return; }
+          const dt = lastTs > 0 ? (ts - lastTs) / 1000 : 0.016;
+          lastTs = ts; frameCount++;
+          fpsAccum += dt; fpsFrames++;
+          if (fpsAccum >= 0.5) { setFpsDisplay(`${Math.round(fpsFrames / fpsAccum)}`); fpsAccum = 0; fpsFrames = 0; }
+          if (cam.autoRotate) cam.yaw += dt * 0.5;
 
-          if (lastRenderedTimestamp !== 0 && timestamp - lastRenderedTimestamp < targetFrameMs) {
-            frameHandle = window.requestAnimationFrame(renderFrame);
-            return;
-          }
-          lastRenderedTimestamp = timestamp;
+          const us = createUpgradedUniformState(W, H, W / Math.max(H, 1), selectedScene as UpgradedScene, ts / 1000, dt, frameCount, cam);
+          writeUpgradedUniformBuffer(device, uBuf, us, selectedScene as UpgradedScene);
 
-          const uniformState = createPreviewUniformState(
-            width / Math.max(height, 1),
-            selectedScene,
-            timestamp / 1000,
-          );
-          writePreviewUniformBuffer(device, uniformBuffer, uniformState, selectedScene);
+          const enc = device.createCommandEncoder();
+          if (cPipe && cBG && cTex) { const p = enc.beginComputePass(); p.setPipeline(cPipe); p.setBindGroup(0, cBG); p.dispatchWorkgroups(Math.ceil(W/8), Math.ceil(H/8)); p.end(); }
 
-          const encoder = device.createCommandEncoder();
-          if (computePipeline && computeBindGroup && computeTexture) {
-            const pass = encoder.beginComputePass();
-            pass.setPipeline(computePipeline);
-            pass.setBindGroup(0, computeBindGroup);
-            pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
-            pass.end();
-          }
-
-          const renderPass = encoder.beginRenderPass({
-            colorAttachments: [
-              {
-                view: context.getCurrentTexture().createView(),
-                clearValue: { r: 0.04, g: 0.05, b: 0.08, a: 1 },
-                loadOp: "clear",
-                storeOp: "store",
-              },
-            ],
-          });
-          renderPass.setPipeline(renderPipeline);
-          if (selectedStage === "compute") {
-            if (displayBindGroup) {
-              renderPass.setBindGroup(0, displayBindGroup);
-            }
-            renderPass.draw(6);
-          } else {
-            if (computeBindGroup) {
-              renderPass.setBindGroup(0, computeBindGroup);
-            }
-            renderPass.setVertexBuffer(0, vertexBuffer);
-            renderPass.setIndexBuffer(indexBuffer, "uint16");
-            renderPass.drawIndexed(mesh.indices.length);
-          }
-          renderPass.end();
-
-          device.queue.submit([encoder.finish()]);
-          frameHandle = window.requestAnimationFrame(renderFrame);
+          const msV = msaaTex.createView();
+          const rpDesc: GPURenderPassDescriptor = {
+            colorAttachments: [{ view: msV, resolveTarget: ctx.getCurrentTexture().createView(), clearValue: { r: 0.04, g: 0.05, b: 0.08, a: 1 }, loadOp: "clear", storeOp: "store" }],
+            ...(needsMesh && selectedStage !== "compute" ? { depthStencilAttachment: { view: depTex.createView(), depthClearValue: 1, depthLoadOp: "clear", depthStoreOp: "store" } } : {}),
+          };
+          const rp = enc.beginRenderPass(rpDesc);
+          rp.setPipeline(rPipe);
+          if (selectedStage === "compute") { if (dBG) rp.setBindGroup(0, dBG); rp.draw(6); }
+          else { if (cBG) rp.setBindGroup(0, cBG); rp.setVertexBuffer(0, vBuf); rp.setIndexBuffer(iBuf, "uint16"); rp.drawIndexed(mesh.indices.length); }
+          rp.end();
+          device.queue.submit([enc.finish()]);
+          frameHandle = requestAnimationFrame(renderFrame);
         };
-
-        frameHandle = window.requestAnimationFrame(renderFrame);
-      } catch (error) {
-        if (!cancelled) {
-          setStatus({
-            mode: "error",
-            message: String(error),
-          });
-        }
+        frameHandle = requestAnimationFrame(renderFrame);
+      } catch (e) {
+        if (!cancelled) setStatus({ mode: "error", message: String(e) });
       }
     }
-
     void run();
-
     return () => {
       cancelled = true;
-      if (frameHandle) {
-        window.cancelAnimationFrame(frameHandle);
-      }
+      if (frameHandle) cancelAnimationFrame(frameHandle);
+      resizeObs?.disconnect();
+      canvas?.removeEventListener("pointerdown", onDown);
+      canvas?.removeEventListener("pointerup", onUp);
+      canvas?.removeEventListener("pointermove", onMove);
+      canvas?.removeEventListener("wheel", onWh);
     };
   }, [normalizedWgsl, selectedEntryPoint, selectedScene, selectedStage, shaderPerformanceMode]);
 
@@ -989,10 +853,15 @@ function ShaderPreviewCanvas({
                 ? "Fallback"
                 : "Preview error"}
         </span>
-        <span style={statusPillStyle}>
-          <Cpu size={13} />
-          {selectedStage ?? "no-stage"}
-        </span>
+        <div style={{ display: "flex", gap: 6 }}>
+          {status.mode === "ready" ? (
+            <span style={statusPillStyle}>{fpsDisplay} FPS</span>
+          ) : null}
+          <span style={statusPillStyle}>
+            <Cpu size={13} />
+            {selectedStage ?? "no-stage"}
+          </span>
+        </div>
       </div>
       {status.mode === "ready" ? null : (
         <div
@@ -1073,6 +942,7 @@ export function ExplorerShaderWorkbench({
   onSelectionChange,
   onCompileResult,
   onRegisterCloseGuard,
+  onSceneChange,
 }: ExplorerShaderWorkbenchProps) {
   const compileRequestIdRef = useRef(0);
   const monacoRef = useRef<any>(null);
@@ -1220,6 +1090,19 @@ export function ExplorerShaderWorkbench({
             {format.toUpperCase()}
             {isReadOnly ? " · Read only" : ""}
           </span>
+          {onSceneChange ? (
+            <select
+              aria-label="Preview scene"
+              value={selectedScene}
+              onChange={(e) => onSceneChange(e.currentTarget.value as ShaderWorkbenchScene)}
+              style={pickerStyle}
+            >
+              <option value="sphere">Sphere</option>
+              <option value="torus">Torus</option>
+              <option value="cube">Cube</option>
+              <option value="fullscreen">Fullscreen</option>
+            </select>
+          ) : null}
         </div>
       </div>
 

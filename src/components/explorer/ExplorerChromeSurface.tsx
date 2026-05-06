@@ -22,11 +22,13 @@ import {
   getExplorerChromeResolvedSurfaceSignature,
   getExplorerChromeSurfaceDefinition,
 } from "../../config/explorerChromeLayouts";
+import { shouldAllowNativeContextMenu } from "../../runtime/documentInteractionGuards";
 import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
 import {
   useExplorerCustomizePointerSnapshot,
   type ExplorerCustomizePointerDropTarget,
 } from "./explorerCustomizePointerRuntime";
+import type { ExplorerChromeContextMenuRequest } from "./overlayContextMenuModel";
 
 export interface ExplorerChromeSurfaceLayoutDynamics {
   enabled: boolean;
@@ -50,6 +52,9 @@ interface ExplorerChromeSurfaceProps {
   renderControl: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => React.ReactNode;
+  onContextMenuRequest?: (
+    request: ExplorerChromeContextMenuRequest,
+  ) => void;
   layoutDynamics?: ExplorerChromeSurfaceLayoutDynamics;
   editMode?: {
     active: boolean;
@@ -112,6 +117,7 @@ export function ExplorerChromeSurface({
   dynamicCanvasMinHeightPx,
   excludedControlIds,
   renderControl,
+  onContextMenuRequest,
   layoutDynamics,
   editMode,
 }: ExplorerChromeSurfaceProps) {
@@ -493,6 +499,30 @@ export function ExplorerChromeSurface({
     return null;
   }
 
+  const emitContextMenuRequest = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (!onContextMenuRequest || shouldAllowNativeContextMenu(event.target)) {
+        return;
+      }
+      const targetElement =
+        event.target instanceof Element ? event.target : null;
+      const controlId =
+        targetElement?.closest<HTMLElement>("[data-overlay-explorer-control]")
+          ?.dataset.overlayExplorerControl ?? null;
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenuRequest({
+        event,
+        surfaceId: surface.surfaceId,
+        controlId:
+          typeof controlId === "string" && controlId.length > 0
+            ? (controlId as ExplorerChromeControlId)
+            : null,
+      });
+    },
+    [onContextMenuRequest, surface.surfaceId],
+  );
+
   if (useDynamicSurfaceLayout && layoutDynamics) {
     return (
       <div
@@ -504,6 +534,7 @@ export function ExplorerChromeSurface({
           position: "relative",
           ...style,
         }}
+        onContextMenu={emitContextMenuRequest}
       >
         <LayoutDynamicsCanvas
           surfaceId={surface.surfaceId}
@@ -621,6 +652,7 @@ export function ExplorerChromeSurface({
         position: "relative",
         ...style,
       }}
+      onContextMenu={emitContextMenuRequest}
     >
       {filteredSurface.rows.map((row) => {
         const rowHasControls = row.zones.some(

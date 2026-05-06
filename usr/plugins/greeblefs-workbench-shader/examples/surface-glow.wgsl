@@ -8,10 +8,16 @@
 
 struct PreviewUniforms {
   timeSeconds: f32,
-  aspect: f32,
+  deltaTime: f32,
   sceneMode: f32,
-  padding0: f32,
+  frameCount: f32,
+  resolution: vec2<f32>,
+  mouse: vec2<f32>,
+  aspect: f32,
+  cameraPosition: vec3<f32>,
+  _pad0: vec4<f32>,
   modelViewProjection: mat4x4<f32>,
+  modelMatrix: mat4x4<f32>,
 };
 
 @group(0) @binding(0)
@@ -21,6 +27,7 @@ struct VertexInput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
   @location(1) normal: vec3<f32>,
+  @location(2) worldPosition: vec3<f32>,
 };
 
 // ---- Hashing / noise primitives ----

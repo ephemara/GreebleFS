@@ -60,8 +60,6 @@ import {
   FolderPlus,
   HardDriveDownload,
   CopyPlus,
-  LayoutGrid,
-  List,
   MoreHorizontal,
   Save,
   Sliders,
@@ -121,6 +119,7 @@ import { getExplorerRailWidthBounds } from "../config/explorerRail";
 import {
   explorerExperimentalModes,
   getAdaptiveSemanticDensityPercent,
+  getAdaptiveSemanticDensityStopId,
   getAdaptiveSemanticDensityStop,
   getExplorerExperimentalDensityDescriptor,
   getExplorerExperimentalModeDefinition,
@@ -200,6 +199,7 @@ import {
   EXPLORER_LAYOUT_ZOOM_MIN,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
+  getExplorerGridZoomPercent,
   createExplorerLayoutZoomState,
   commitExplorerLayoutZoomState,
   explorerViewModes,
@@ -216,6 +216,7 @@ import {
   type ExplorerViewModeDefinition,
   type ExplorerViewPresentation,
 } from "../config/explorerViewModes";
+import { resolveExplorerChromeControlMetrics } from "../config/explorerChromeControlMetrics";
 import { getCommandHotkeyBinding, matchesKeybinding } from "../config/hotkeys";
 import {
   DEFAULT_NATIVE_ICON_SIZE,
@@ -343,9 +344,14 @@ import {
   type ExplorerPaneTone,
 } from "./explorer/ExplorerPanePrimitives";
 import { ExplorerCustomizeDragOverlay } from "./explorer/ExplorerCustomizeDragOverlay";
-import { ExplorerFloatingSurface } from "./explorer/ExplorerFloatingSurface";
 import { ExplorerPopupSurface } from "./explorer/ExplorerPopupSurface";
 import { ExplorerTaskCenterContent } from "./explorer/ExplorerTaskCenterContent";
+import {
+  ExplorerViewSwitcherControl,
+  type ExplorerViewSwitcherButtonDescriptor,
+  type ExplorerViewSwitcherOptionGroup,
+  type ExplorerViewSwitcherTransientHud,
+} from "./explorer/ExplorerViewSwitcherControl";
 import { ExplorerWorkflowModal } from "./explorer/ExplorerWorkflowModal";
 import {
   buildExplorerRuntimeMenu,
@@ -2178,42 +2184,6 @@ function reconcileExplorerThumbnailMap(args: {
 
 function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
   return toolbarChipButtonStyleForVariant(disabled, "regular");
-}
-
-function resolveExplorerChromeControlMetrics(
-  sizeVariant: ExplorerChromeSizeVariant = "regular",
-) {
-  if (sizeVariant === "compact") {
-    return {
-      fontSize: 9,
-      gap: 4,
-      iconSize: 11,
-      iconPadding: 4,
-      inlinePadding: 6,
-      blockPadding: 3,
-      minHeight: 26,
-    };
-  }
-  if (sizeVariant === "wide") {
-    return {
-      fontSize: 11,
-      gap: 7,
-      iconSize: 14,
-      iconPadding: 6,
-      inlinePadding: 10,
-      blockPadding: 5,
-      minHeight: 34,
-    };
-  }
-  return {
-    fontSize: 10,
-    gap: 6,
-    iconSize: 12,
-    iconPadding: 5,
-    inlinePadding: 8,
-    blockPadding: 4,
-    minHeight: 30,
-  };
 }
 
 function toolbarChipButtonStyleForVariant(
@@ -9383,8 +9353,9 @@ export function FileExplorer({
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showExplorerLayoutCommandMenu, setShowExplorerLayoutCommandMenu] =
     useState(false);
-  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showArchiveActionsMenu, setShowArchiveActionsMenu] = useState(false);
+  const [statusViewSwitcherModeMenuRequestKey, setStatusViewSwitcherModeMenuRequestKey] =
+    useState(0);
   const [rename, setRename] = useState<RenameState>({
     active: false,
     path: "",
@@ -9766,9 +9737,7 @@ export function FileExplorer({
   const explorerViewportScrollFrameRef = useRef<number | null>(null);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const explorerLayoutCommandMenuRef = useRef<HTMLDivElement>(null);
-  const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const archiveActionsMenuAnchorRef = useRef<HTMLDivElement>(null);
-  const explorerFooterViewSwitcherAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
@@ -10716,7 +10685,6 @@ export function FileExplorer({
     if (
       !showModeProfileMenu &&
       !showExplorerLayoutCommandMenu &&
-      !showLayoutMenu &&
       !showArchiveActionsMenu
     ) {
       return undefined;
@@ -10732,9 +10700,6 @@ export function FileExplorer({
       if (modeProfileMenuAnchorRef.current?.contains(targetNode)) {
         return;
       }
-      if (layoutMenuAnchorRef.current?.contains(targetNode)) {
-        return;
-      }
       if (archiveActionsMenuAnchorRef.current?.contains(targetNode)) {
         return;
       }
@@ -10747,7 +10712,6 @@ export function FileExplorer({
       }
       setShowExplorerLayoutCommandMenu(false);
       setShowModeProfileMenu(false);
-      setShowLayoutMenu(false);
       setShowArchiveActionsMenu(false);
     };
 
@@ -10756,7 +10720,6 @@ export function FileExplorer({
   }, [
     showArchiveActionsMenu,
     showExplorerLayoutCommandMenu,
-    showLayoutMenu,
     showModeProfileMenu,
   ]);
 
@@ -21441,7 +21404,6 @@ export function FileExplorer({
         return;
       }
       event.preventDefault();
-      setShowLayoutMenu(false);
       setShowModeProfileMenu(false);
       setShowExplorerLayoutCommandMenu(true);
     };
@@ -21639,13 +21601,6 @@ export function FileExplorer({
       themedViewMode,
     ],
   );
-  const selectedExperimentalModeDefinition = useMemo(
-    () =>
-      themedExperimentalViewMode === "off"
-        ? null
-        : getExplorerExperimentalModeDefinition(themedExperimentalViewMode),
-    [themedExperimentalViewMode],
-  );
   const effectiveViewMode = resolveEffectiveExplorerViewMode(
     liveWheelViewMode,
     {
@@ -21685,6 +21640,13 @@ export function FileExplorer({
             ?.label ?? effectiveViewModeDefinition.label)
         : effectiveViewModeDefinition.label,
     [effectiveExperimentalViewMode, effectiveViewModeDefinition.label],
+  );
+  const currentExperimentalModeDefinition = useMemo(
+    () =>
+      effectiveExperimentalViewMode === "off"
+        ? null
+        : getExplorerExperimentalModeDefinition(effectiveExperimentalViewMode),
+    [effectiveExperimentalViewMode],
   );
   const activeGridMetrics = useMemo(
     () =>
@@ -21962,22 +21924,6 @@ export function FileExplorer({
       themedViewMode,
     ],
   );
-  const zoomHudProgressPercent = useMemo(() => {
-    const activeLayoutZoom =
-      layoutZoomGestureActive && themedExperimentalViewMode === "off"
-        ? liveLayoutZoomState.layoutZoom
-        : currentGridZoomValue;
-    if (activeLayoutZoom == null) {
-      return null;
-    }
-
-    return getExplorerLayoutZoomHudProgress(activeLayoutZoom);
-  }, [
-    currentGridZoomValue,
-    layoutZoomGestureActive,
-    liveLayoutZoomState.layoutZoom,
-    themedExperimentalViewMode,
-  ]);
   const layoutZoomBadgeLabel = useMemo(() => {
     if (currentGridZoomValue == null) {
       return selectedViewModeDefinition.shortLabel;
@@ -22006,70 +21952,6 @@ export function FileExplorer({
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceDenseChrome;
   const usesConstellationCanvas =
     effectiveExperimentalViewMode === "constellation";
-  const explorerFooterViewSwitcherButtons = useMemo(() => {
-    const iconViewActive =
-      themedExperimentalViewMode === "off" &&
-      selectedViewModeDefinition.presentation === "grid";
-    const listViewActive =
-      themedExperimentalViewMode === "off" && themedViewMode === "list";
-
-    return [
-      {
-        id: "icon-view",
-        ariaLabel: "Switch explorer to icon view",
-        title: "Icon view",
-        active: iconViewActive,
-        onClick: () =>
-          updateExplorerSettings({
-            experimentalViewMode: "off",
-            viewMode: "icons-l",
-            gridZoom: getExplorerGridZoomAnchor("icons-l"),
-          }),
-        icon: <LayoutGrid size={13} />,
-      },
-      {
-        id: "list-view",
-        ariaLabel: "Switch explorer to list view",
-        title: "List view",
-        active: listViewActive,
-        onClick: () =>
-          updateExplorerSettings({
-            experimentalViewMode: "off",
-            viewMode: "list",
-          }),
-        icon: <List size={13} />,
-      },
-      ...explorerExperimentalModes.map((mode) => {
-        const active = themedExperimentalViewMode === mode.id;
-        return {
-          id: mode.id,
-          ariaLabel: `Switch explorer to ${mode.label}`,
-          title: mode.label,
-          active,
-          onClick: () => {
-            updateExplorerSettings({
-              experimentalViewMode: mode.id,
-            });
-            showExperimentalHud();
-          },
-          icon: (
-            <ExplorerExperimentalGlyph
-              accent={accent}
-              active={active}
-              mode={mode.id}
-            />
-          ),
-        };
-      }),
-    ];
-  }, [
-    accent,
-    selectedViewModeDefinition.presentation,
-    showExperimentalHud,
-    themedExperimentalViewMode,
-    themedViewMode,
-    updateExplorerSettings,
-  ]);
 
   const showZoomHud = useCallback(() => {
     setZoomHudVisible(true);
@@ -22089,6 +21971,313 @@ export function FileExplorer({
         : null,
     [experimentalDensity, themedExperimentalViewMode],
   );
+  const currentExperimentalDensityStopId = useMemo(
+    () => getAdaptiveSemanticDensityStopId(experimentalDensity),
+    [experimentalDensity],
+  );
+  const standardDensityHudProgressPercent = useMemo(() => {
+    if (effectiveExperimentalViewMode !== "off") {
+      return null;
+    }
+    const activeLayoutZoom =
+      layoutZoomGestureActive && themedExperimentalViewMode === "off"
+        ? liveLayoutZoomState.layoutZoom
+        : resolveExplorerLayoutZoomState(themedViewMode, gridZoom).layoutZoom;
+    return getExplorerLayoutZoomHudProgress(activeLayoutZoom);
+  }, [
+    effectiveExperimentalViewMode,
+    gridZoom,
+    layoutZoomGestureActive,
+    liveLayoutZoomState.layoutZoom,
+    themedExperimentalViewMode,
+    themedViewMode,
+  ]);
+  const activeViewSwitcherModeIcon = useMemo(
+    () =>
+      currentExperimentalModeDefinition ? (
+        <ExplorerExperimentalGlyph
+          accent={accent}
+          active
+          mode={currentExperimentalModeDefinition.id}
+        />
+      ) : (
+        <ExplorerLayoutGlyph
+          mode={effectiveViewModeDefinition}
+          accent={accent}
+          active
+        />
+      ),
+    [accent, currentExperimentalModeDefinition, effectiveViewModeDefinition],
+  );
+  const activeViewSwitcherModeLabel =
+    currentExperimentalModeDefinition?.label ?? effectiveViewModeDefinition.label;
+  const activeViewSwitcherModeShortLabel =
+    currentExperimentalModeDefinition?.shortLabel ?? layoutZoomBadgeLabel;
+  const selectStandardExplorerViewMode = useCallback(
+    (modeId: ExplorerViewMode) => {
+      updateExplorerSettings(
+        isExplorerGridMode(modeId)
+          ? {
+              experimentalViewMode: "off",
+              viewMode: modeId,
+              gridZoom: getExplorerGridZoomAnchor(modeId),
+            }
+          : {
+              experimentalViewMode: "off",
+              viewMode: modeId,
+            },
+      );
+      showZoomHud();
+    },
+    [showZoomHud, updateExplorerSettings],
+  );
+  const selectExperimentalExplorerViewMode = useCallback(
+    (modeId: Exclude<ExplorerExperimentalViewMode, "off">) => {
+      updateExplorerSettings({
+        experimentalViewMode: modeId,
+      });
+      showExperimentalHud();
+    },
+    [showExperimentalHud, updateExplorerSettings],
+  );
+  const explorerViewSwitcherModeGroups = useMemo<
+    ExplorerViewSwitcherOptionGroup[]
+  >(() => {
+    const standardOptions = explorerViewModes.map((mode) => {
+      const active =
+        effectiveExperimentalViewMode === "off" && effectiveViewMode === mode.id;
+      return {
+        id: mode.id,
+        label: mode.label,
+        description: mode.description,
+        active,
+        icon: (
+          <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
+        ),
+        onSelect: () => selectStandardExplorerViewMode(mode.id),
+      };
+    });
+    const experimentalOptions = explorerExperimentalModes
+      .filter((mode) => mode.available)
+      .map((mode) => {
+        const active = effectiveExperimentalViewMode === mode.id;
+        return {
+          id: mode.id,
+          label: mode.label,
+          description: mode.description,
+          active,
+          icon: (
+            <ExplorerExperimentalGlyph
+              accent={accent}
+              active={active}
+              mode={mode.id}
+            />
+          ),
+          onSelect: () => selectExperimentalExplorerViewMode(mode.id),
+        };
+      });
+    return [
+      {
+        id: "standard",
+        label: "Built-in Views",
+        options: standardOptions,
+      },
+      ...(experimentalOptions.length > 0
+        ? [
+            {
+              id: "experimental",
+              label: "Adaptive Views",
+              options: experimentalOptions,
+            },
+          ]
+        : []),
+    ];
+  }, [
+    accent,
+    effectiveExperimentalViewMode,
+    effectiveViewMode,
+    selectExperimentalExplorerViewMode,
+    selectStandardExplorerViewMode,
+  ]);
+  const explorerStandardDensityGroups = useMemo<
+    ExplorerViewSwitcherOptionGroup[]
+  >(
+    () => [
+      {
+        id: "standard-density",
+        label: "Density / Layout",
+        options: explorerViewModes.map((mode) => {
+          const active =
+            effectiveExperimentalViewMode === "off" &&
+            effectiveViewMode === mode.id;
+          return {
+            id: `density-${mode.id}`,
+            label: mode.label,
+            description: mode.description,
+            active,
+            icon: (
+              <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
+            ),
+            onSelect: () => selectStandardExplorerViewMode(mode.id),
+          };
+        }),
+      },
+    ],
+    [accent, effectiveExperimentalViewMode, effectiveViewMode, selectStandardExplorerViewMode],
+  );
+  const explorerExperimentalDensityGroups = useMemo<
+    ExplorerViewSwitcherOptionGroup[] | null
+  >(() => {
+    if (!currentExperimentalModeDefinition) {
+      return null;
+    }
+    return [
+      {
+        id: `density-${currentExperimentalModeDefinition.id}`,
+        label: currentExperimentalModeDefinition.densityAxisLabel,
+        options: adaptiveSemanticDensityStops.map((stop) => {
+          const descriptor =
+            currentExperimentalModeDefinition.id === "adaptive-semantic-grid"
+              ? stop
+              : getExplorerExperimentalDensityDescriptor(
+                  currentExperimentalModeDefinition.id,
+                  stop.density,
+                );
+          const active = currentExperimentalDensityStopId === stop.id;
+          return {
+            id: `${currentExperimentalModeDefinition.id}-${stop.id}`,
+            label: descriptor.label,
+            description: descriptor.description,
+            active,
+            icon: (
+              <ExplorerExperimentalGlyph
+                accent={accent}
+                active={active}
+                mode={currentExperimentalModeDefinition.id}
+              />
+            ),
+            onSelect: () => {
+              updateExplorerSettings({ experimentalDensity: stop.density });
+              showExperimentalHud();
+            },
+          };
+        }),
+      },
+    ];
+  }, [
+    accent,
+    currentExperimentalDensityStopId,
+    currentExperimentalModeDefinition,
+    showExperimentalHud,
+    updateExplorerSettings,
+  ]);
+  const toolbarViewSwitcherButton = useMemo<
+    ExplorerViewSwitcherButtonDescriptor
+  >(
+    () => ({
+      ariaLabel: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
+      title: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
+      label: activeViewSwitcherModeLabel,
+      shortLabel: activeViewSwitcherModeShortLabel,
+      icon: activeViewSwitcherModeIcon,
+    }),
+    [
+      activeViewSwitcherModeIcon,
+      activeViewSwitcherModeLabel,
+      activeViewSwitcherModeShortLabel,
+    ],
+  );
+  const statusViewSwitcherModeButton = useMemo<
+    ExplorerViewSwitcherButtonDescriptor
+  >(
+    () => ({
+      ariaLabel: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
+      title: `Explorer view mode: ${activeViewSwitcherModeLabel}`,
+      label: activeViewSwitcherModeLabel,
+      icon: activeViewSwitcherModeIcon,
+    }),
+    [activeViewSwitcherModeIcon, activeViewSwitcherModeLabel],
+  );
+  const statusViewSwitcherDensityButton = useMemo<
+    ExplorerViewSwitcherButtonDescriptor | null
+  >(() => {
+    if (currentExperimentalModeDefinition && experimentalDensityDescriptor) {
+      return {
+        ariaLabel: `${currentExperimentalModeDefinition.densityAxisLabel}: ${experimentalDensityDescriptor.label}`,
+        title: `${currentExperimentalModeDefinition.densityAxisLabel}: ${experimentalDensityDescriptor.label}`,
+        label: experimentalDensityDescriptor.shortLabel,
+      };
+    }
+    if (effectiveExperimentalViewMode !== "off") {
+      return null;
+    }
+    const gridZoomPercentLabel =
+      currentGridZoomValue != null
+        ? `${getExplorerGridZoomPercent(currentGridZoomValue)}%`
+        : null;
+    return {
+      ariaLabel: `Explorer density: ${gridZoomPercentLabel ?? selectedViewModeDefinition.label}`,
+      title: `Explorer density: ${gridZoomPercentLabel ?? selectedViewModeDefinition.label}`,
+      label: gridZoomPercentLabel ?? layoutZoomBadgeLabel,
+    };
+  }, [
+    currentExperimentalModeDefinition,
+    currentGridZoomValue,
+    effectiveExperimentalViewMode,
+    experimentalDensityDescriptor,
+    layoutZoomBadgeLabel,
+    selectedViewModeDefinition.label,
+  ]);
+  const statusViewSwitcherDensityGroups =
+    currentExperimentalModeDefinition != null
+      ? explorerExperimentalDensityGroups
+      : explorerStandardDensityGroups;
+  const statusViewSwitcherTransientHud = useMemo<
+    ExplorerViewSwitcherTransientHud | null
+  >(() => {
+    if (
+      currentExperimentalModeDefinition &&
+      experimentalHudVisible &&
+      experimentalDensityPercent != null
+    ) {
+      return {
+        visible: true,
+        label:
+          experimentalDensityDescriptor?.shortLabel ??
+          currentExperimentalModeDefinition.shortLabel,
+        valueLabel: `${experimentalDensityPercent}%`,
+        progressPercent: experimentalDensityPercent,
+        testId: "explorer-experimental-density-hud",
+      };
+    }
+    if (
+      effectiveExperimentalViewMode === "off" &&
+      zoomHudVisible &&
+      standardDensityHudProgressPercent != null
+    ) {
+      return {
+        visible: true,
+        label: layoutZoomBadgeLabel,
+        valueLabel:
+          currentGridZoomValue != null
+            ? `${getExplorerGridZoomPercent(currentGridZoomValue)}%`
+            : null,
+        progressPercent: standardDensityHudProgressPercent,
+        testId: "explorer-layout-zoom-hud",
+      };
+    }
+    return null;
+  }, [
+    currentExperimentalModeDefinition,
+    currentGridZoomValue,
+    effectiveExperimentalViewMode,
+    experimentalDensityDescriptor,
+    experimentalDensityPercent,
+    experimentalHudVisible,
+    layoutZoomBadgeLabel,
+    standardDensityHudProgressPercent,
+    zoomHudVisible,
+  ]);
   const constellationFieldLayout = useMemo(
     () =>
       effectiveExperimentalViewMode === "constellation"
@@ -23820,7 +24009,6 @@ export function FileExplorer({
               aria-haspopup="menu"
               aria-expanded={showArchiveActionsMenu}
               onClick={() => {
-                setShowLayoutMenu(false);
                 setShowModeProfileMenu(false);
                 setShowArchiveActionsMenu((current) => !current);
               }}
@@ -24692,7 +24880,6 @@ export function FileExplorer({
                 type="button"
                 aria-label={`Cycle explorer layouts. Current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label}`}
                 onClick={() => {
-                  setShowLayoutMenu(false);
                   setShowModeProfileMenu(false);
                   cycleExplorerLayout("next");
                 }}
@@ -24770,7 +24957,6 @@ export function FileExplorer({
                 aria-haspopup="menu"
                 aria-expanded={showModeProfileMenu}
                 onClick={() => {
-                  setShowLayoutMenu(false);
                   setShowModeProfileMenu((current) => !current);
                 }}
                 title={`Open explorer layout preset menu (current: ${resolvedExplorerLayout?.name ?? effectiveModeProfile.label})`}
@@ -25015,240 +25201,18 @@ export function FileExplorer({
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) =>
           !usesWorkspaceDenseChrome && isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
-          <div
-            ref={layoutMenuAnchorRef}
-            style={{ position: "relative" }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
-              aria-haspopup="menu"
-              aria-expanded={showLayoutMenu}
-              onClick={() => {
-                setShowModeProfileMenu(false);
-                setShowLayoutMenu((current) => !current);
-              }}
-              title={`Explorer layout: ${selectedViewModeDefinition.label}`}
-              style={{
-                ...toolbarToggleButtonStyle(showLayoutMenu),
-                color: showLayoutMenu ? EXP.text : EXP.muted,
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background =
-                  "var(--overlay-explorer-chip-active-bg)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = showLayoutMenu
-                  ? "var(--overlay-explorer-chip-active-bg)"
-                  : "var(--overlay-explorer-chip-bg)")
-              }
-            >
-              <ExplorerLayoutGlyph
-                mode={selectedViewModeDefinition}
-                accent={accent}
-                active={showLayoutMenu}
-              />
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  minWidth: 0,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {layoutZoomBadgeLabel}
-                </span>
-              </span>
-            </button>
-            <ExplorerFloatingSurface
-              anchorRef={layoutMenuAnchorRef}
-              open={zoomHudVisible && zoomHudProgressPercent != null}
-              surfaceGroup="explorer-hud"
-              zIndexCssVar="--overlay-explorer-floating-hud-layer"
-              zIndexFallback={9996}
-              data-testid="explorer-layout-zoom-hud"
-              style={{
-                minWidth: 148,
-                padding: "8px 10px",
-                borderRadius: 10,
-                border: `1px solid ${accent}55`,
-                background: "var(--overlay-explorer-popup-bg)",
-                boxShadow: "var(--overlay-explorer-popup-shadow)",
-                backdropFilter: resolveExplorerInnerBlurFilter(10),
-                WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
-                pointerEvents: "none",
-                ...BOUNDED_CHROME_CONTAINMENT_STYLE,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 10,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    color: EXP.text,
-                  }}
-                >
-                  {layoutZoomBadgeLabel}
-                </span>
-              </div>
-              <div
-                style={{
-                  marginTop: 8,
-                  height: 5,
-                  borderRadius: 999,
-                  background: "var(--overlay-explorer-popup-item-hover-bg)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${zoomHudProgressPercent ?? 0}%`,
-                    height: "100%",
-                    borderRadius: 999,
-                    background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                    transition: "width 0.14s ease",
-                  }}
-                />
-              </div>
-            </ExplorerFloatingSurface>
-            <ExplorerPopupSurface
-              anchorRef={layoutMenuAnchorRef}
-              open={showLayoutMenu}
-              surfaceGroup="explorer-menu"
-              role="menu"
-              aria-label="Explorer layout menu"
-              minWidth={260}
-              maxWidth="var(--overlay-explorer-view-menu-max-width)"
-              style={{
-                display: "grid",
-                gap: 8,
-              }}
-            >
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
-                >
-                  {explorerViewModes.map((mode) => {
-                    const active = themedViewMode === mode.id;
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={active}
-                        onClick={() => {
-                          updateExplorerSettings(
-                            isExplorerGridMode(mode.id)
-                              ? {
-                                  viewMode: mode.id,
-                                  gridZoom: getExplorerGridZoomAnchor(mode.id),
-                                }
-                              : { viewMode: mode.id },
-                          );
-                          showZoomHud();
-                          setShowLayoutMenu(false);
-                        }}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "18px minmax(0, 1fr)",
-                          gap: 10,
-                          alignItems: "start",
-                          width: "100%",
-                          border: "none",
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          background: active
-                            ? "var(--overlay-explorer-chip-active-bg)"
-                            : "transparent",
-                          color: active ? EXP.text : EXP.muted,
-                          cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!active) {
-                            e.currentTarget.style.background =
-                              "var(--overlay-explorer-chip-bg)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!active) {
-                            e.currentTarget.style.background = "transparent";
-                          }
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: "flex",
-                            justifyContent: "center",
-                            paddingTop: 1,
-                          }}
-                        >
-                          <ExplorerLayoutGlyph
-                            mode={mode}
-                            accent={accent}
-                            active={active}
-                          />
-                        </span>
-                        <span style={{ minWidth: 0 }}>
-                          <span
-                            style={{
-                              display: "block",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: active ? EXP.text : EXP.text,
-                            }}
-                          >
-                            {mode.label}
-                          </span>
-                          <span
-                            style={{
-                              display: "block",
-                              marginTop: 2,
-                              fontSize: 10,
-                              color: EXP.muted2,
-                              lineHeight: 1.35,
-                            }}
-                          >
-                            {mode.description}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    paddingTop: 8,
-                    borderTop:
-                      "1px solid var(--overlay-explorer-toolbar-border)",
-                    fontSize: 10,
-                    color: EXP.muted2,
-                  }}
-                >
-                  Ctrl/Cmd + wheel now zooms continuously through the icon grid
-                  and drops into compact list mode at the smallest boundary.
-                </div>
-            </ExplorerPopupSurface>
-          </div>
+        render: (placement) => (
+          <ExplorerViewSwitcherControl
+            variant="mode-only"
+            sizeVariant={placement.sizeVariant}
+            accent={accent}
+            text={EXP.text}
+            muted={EXP.muted}
+            muted2={EXP.muted2}
+            modeButton={toolbarViewSwitcherButton}
+            modeGroups={explorerViewSwitcherModeGroups}
+            modeMenuAriaLabel="Explorer layout menu"
+          />
         ),
       },
       {
@@ -25529,158 +25493,25 @@ export function FileExplorer({
         label: "Status View Toggles",
         surfaces: ["explorerStatusBar"],
         isVisible: () => !isCompactDock,
-        render: (placement) => {
-          const metrics = resolveExplorerChromeControlMetrics(
-            placement.sizeVariant,
-          );
-          const buttonSize = Math.max(metrics.minHeight - 4, 22);
-          const iconScale = Number((metrics.iconSize / 13).toFixed(3));
-          const footerViewSwitcherHostStyle: CSSProperties = {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: Math.max(metrics.gap - 2, 3),
-            padding: metrics.blockPadding,
-            borderRadius: 999,
-            border: "1px solid var(--overlay-explorer-chip-border)",
-            background: "rgba(255,255,255,0.03)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-          };
-
-          const buildFooterViewSwitcherButtonStyle = (
-            active: boolean,
-          ): CSSProperties => ({
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: buttonSize,
-            height: buttonSize,
-            borderRadius: 8,
-            border: `1px solid ${active ? `${accent}66` : "transparent"}`,
-            background: active
-              ? "var(--overlay-explorer-chip-active-bg)"
-              : "transparent",
-            color: active ? EXP.text : EXP.muted,
-            cursor: "pointer",
-            fontSize: metrics.fontSize,
-            transition:
-              "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
-          });
-
-          return (
-            <div
-              ref={explorerFooterViewSwitcherAnchorRef}
-              style={{ position: "relative" }}
-            >
-              {experimentalHudVisible &&
-                selectedExperimentalModeDefinition &&
-                experimentalDensityPercent != null && (
-                  <ExplorerFloatingSurface
-                    anchorRef={explorerFooterViewSwitcherAnchorRef}
-                    open
-                    side="top"
-                    surfaceGroup="explorer-hud"
-                    zIndexCssVar="--overlay-explorer-floating-hud-layer"
-                    zIndexFallback={9996}
-                    data-testid="explorer-experimental-density-hud"
-                    style={{
-                      minWidth: 168,
-                      padding: "8px 10px",
-                      borderRadius: 10,
-                      border: `1px solid ${accent}55`,
-                      background: "var(--overlay-explorer-popup-bg)",
-                      boxShadow: "var(--overlay-explorer-popup-shadow)",
-                      backdropFilter: resolveExplorerInnerBlurFilter(10),
-                      WebkitBackdropFilter: resolveExplorerInnerBlurFilter(10),
-                      pointerEvents: "none",
-                      ...BOUNDED_CHROME_CONTAINMENT_STYLE,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          color: EXP.text,
-                        }}
-                      >
-                        {experimentalDensityDescriptor?.shortLabel ??
-                          selectedExperimentalModeDefinition.shortLabel}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: accent,
-                        }}
-                      >
-                        {experimentalDensityPercent}%
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 8,
-                        height: 5,
-                        borderRadius: 999,
-                        background:
-                          "var(--overlay-explorer-popup-item-hover-bg)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${experimentalDensityPercent}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                          transition: "width 0.14s ease",
-                        }}
-                      />
-                    </div>
-                  </ExplorerFloatingSurface>
-                )}
-              <div
-                role="group"
-                aria-label="Explorer footer view switcher"
-                style={footerViewSwitcherHostStyle}
-              >
-                {explorerFooterViewSwitcherButtons.map((button) => (
-                  <button
-                    key={button.id}
-                    type="button"
-                    aria-label={button.ariaLabel}
-                    aria-pressed={button.active}
-                    title={button.title}
-                    onClick={button.onClick}
-                    data-overlay-explorer-view-switch={button.id}
-                    style={buildFooterViewSwitcherButtonStyle(button.active)}
-                  >
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        transform:
-                          iconScale === 1 ? "none" : `scale(${iconScale})`,
-                        transformOrigin: "center",
-                      }}
-                    >
-                      {button.icon}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          );
-        },
+        render: (placement) => (
+          <ExplorerViewSwitcherControl
+            variant="mode-and-density"
+            sizeVariant={placement.sizeVariant}
+            accent={accent}
+            text={EXP.text}
+            muted={EXP.muted}
+            muted2={EXP.muted2}
+            groupAriaLabel="Explorer footer view switcher"
+            modeMenuOpenRequestKey={statusViewSwitcherModeMenuRequestKey}
+            modeButton={statusViewSwitcherModeButton}
+            modeGroups={explorerViewSwitcherModeGroups}
+            modeMenuAriaLabel="Explorer view mode menu"
+            densityButton={statusViewSwitcherDensityButton}
+            densityGroups={statusViewSwitcherDensityGroups}
+            densityMenuAriaLabel="Explorer density menu"
+            transientHud={statusViewSwitcherTransientHud}
+          />
+        ),
       },
       {
         id: "terminalDrawerToggle",
@@ -25853,7 +25684,7 @@ export function FileExplorer({
       effectiveShellLayout,
       bottomTerminalVisible,
       explorerTerminalWorkingDirectory,
-      explorerFooterViewSwitcherButtons,
+      explorerViewSwitcherModeGroups,
       focusExplorerAddressBar,
       goBack,
       goForward,
@@ -25891,22 +25722,25 @@ export function FileExplorer({
       semanticSelectionCandidate,
       selected.size,
       selectedEntries,
-      selectedExperimentalModeDefinition,
       selectedSizeSummary,
       setAddressDraft,
       setAddressEditing,
       setSaveSearchState,
       setSearchMode,
       setShowArchiveActionsMenu,
-      setShowLayoutMenu,
       setShowModeProfileMenu,
       showExperimentalHud,
       showArchiveActionsMenu,
       showModeProfileMenu,
-      showLayoutMenu,
       showToolbarLocationStrips,
       showToolbarTextLabels,
       showZoomHud,
+      statusViewSwitcherModeMenuRequestKey,
+      statusViewSwitcherDensityButton,
+      statusViewSwitcherDensityGroups,
+      statusViewSwitcherModeButton,
+      statusViewSwitcherTransientHud,
+      toolbarViewSwitcherButton,
       openExplorerWorkflow,
       submitAddressDraft,
       triggerFindSimilarForPath,
@@ -26055,7 +25889,6 @@ export function FileExplorer({
           if (!currentPathIsArchiveVirtual) {
             return false;
           }
-          setShowLayoutMenu(false);
           setShowModeProfileMenu(false);
           setShowArchiveActionsMenu((current) => !current);
           return true;
@@ -26201,12 +26034,11 @@ export function FileExplorer({
           }
           return true;
         case "shellLayout":
-          setShowLayoutMenu(false);
           cycleExplorerLayout("next");
           return true;
         case "viewLayout":
           setShowModeProfileMenu(false);
-          setShowLayoutMenu((current) => !current);
+          setStatusViewSwitcherModeMenuRequestKey((current) => current + 1);
           return true;
         case "togglePreview":
           void togglePreviewEnabled();
@@ -26337,7 +26169,6 @@ export function FileExplorer({
       setPreviewSplitMode,
       setSaveSearchState,
       setShowArchiveActionsMenu,
-      setShowLayoutMenu,
       setShowModeProfileMenu,
       showHidden,
       openExplorerWorkflow,

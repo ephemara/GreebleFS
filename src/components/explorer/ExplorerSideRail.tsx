@@ -37,6 +37,10 @@ import {
   ExplorerChromeSurface,
   type ExplorerChromeSurfaceLayoutDynamics,
 } from "./ExplorerChromeSurface";
+import type {
+  ExplorerChromeContextMenuRequest,
+  ExplorerSideRailContextMenuRequest,
+} from "./overlayContextMenuModel";
 import {
   applyExplorerBookmarkImportPlan,
   buildExplorerBookmarkTree,
@@ -128,6 +132,12 @@ interface ExplorerSideRailProps {
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   railHeaderLayoutDynamics?: ExplorerChromeSurfaceLayoutDynamics;
+  onChromeContextMenuRequest?: (
+    request: ExplorerChromeContextMenuRequest,
+  ) => void;
+  onContextMenuRequest?: (
+    request: ExplorerSideRailContextMenuRequest,
+  ) => void;
   chromeEditMode?: {
     active: boolean;
     draggingControlId: ExplorerChromeControlId | null;
@@ -267,6 +277,8 @@ export function ExplorerSideRail({
   chromeLayoutId,
   chromeOverride,
   railHeaderLayoutDynamics,
+  onChromeContextMenuRequest,
+  onContextMenuRequest,
   chromeEditMode,
 }: ExplorerSideRailProps) {
   const railRootRef = useRef<HTMLDivElement>(null);
@@ -313,6 +325,24 @@ export function ExplorerSideRail({
         baseTransition: railItemTransition,
       }),
     [interactionMotion, railItemTransition],
+  );
+  const emitTagContextMenuRequest = useCallback(
+    (
+      event: React.MouseEvent<HTMLElement>,
+      tag: ExplorerTagMetadataSnapshot["tags"][number] | null,
+    ) => {
+      if (!onContextMenuRequest) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenuRequest({
+        kind: "tag-filter",
+        event,
+        tag,
+      });
+    },
+    [onContextMenuRequest],
   );
 
   const railViewMode = useMemo<ExplorerRailViewModeDefinition>(
@@ -1026,6 +1056,7 @@ export function ExplorerSideRail({
           getRowStyle={() => railHeaderRowStyle}
           getZoneStyle={getRailHeaderZoneStyle}
           renderControl={renderRailChromeControl}
+          onContextMenuRequest={onChromeContextMenuRequest}
           layoutDynamics={railHeaderLayoutDynamics}
           editMode={chromeEditMode}
         />
@@ -1677,6 +1708,9 @@ export function ExplorerSideRail({
                   <button
                     type="button"
                     onClick={() => onClearTagFilters?.()}
+                    onContextMenu={(event) => {
+                      emitTagContextMenuRequest(event, null);
+                    }}
                     {...allTagsMotion.motionDataAttributes}
                     onPointerEnter={allTagsMotion.onPointerEnter}
                     onPointerLeave={allTagsMotion.onPointerLeave}
@@ -1700,6 +1734,9 @@ export function ExplorerSideRail({
                     key={tag.id}
                     type="button"
                     onClick={() => onToggleTagFilter?.(tag.id)}
+                    onContextMenu={(event) => {
+                      emitTagContextMenuRequest(event, tag);
+                    }}
                     {...tagMotion.motionDataAttributes}
                     onPointerEnter={tagMotion.onPointerEnter}
                     onPointerLeave={tagMotion.onPointerLeave}

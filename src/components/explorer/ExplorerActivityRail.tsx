@@ -8,7 +8,12 @@ import {
   Sparkles,
   TerminalSquare,
 } from "@/components/AppIcons";
-import type { ComponentType, CSSProperties, DragEvent } from "react";
+import type {
+  ComponentType,
+  CSSProperties,
+  DragEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import { useCallback, useState } from "react";
 
 import { useInteractionMotionController } from "../../animation/interactionMotion";
@@ -21,6 +26,7 @@ import {
   type ExplorerActivityRailSide,
 } from "../../config/explorerActivityRail";
 import type { ExplorerPaneTone } from "./ExplorerPanePrimitives";
+import type { ExplorerActivityRailContextMenuRequest } from "./overlayContextMenuModel";
 
 const activityLaneIconComponents: Record<
   ExplorerActivityLaneDefinition["iconName"],
@@ -46,6 +52,7 @@ export function ExplorerActivityRail({
   laneDefinitions = explorerActivityLaneDefinitions,
   laneBadges = {},
   onMoveLane,
+  onContextMenuRequest,
   onSelectLane,
   railSide = "left",
   tone,
@@ -59,6 +66,9 @@ export function ExplorerActivityRail({
     laneId: ExplorerActivityLaneId,
     targetSide: ExplorerActivityRailSide,
     targetIndex: number,
+  ) => void;
+  onContextMenuRequest?: (
+    request: ExplorerActivityRailContextMenuRequest,
   ) => void;
   onSelectLane: (laneId: ExplorerActivityLaneId) => void;
   railSide?: ExplorerActivityRailSide;
@@ -171,6 +181,26 @@ export function ExplorerActivityRail({
     },
     [onMoveLane, railSide, resolveDraggedLaneId, resolveMoveTargetIndex],
   );
+  const emitContextMenuRequest = useCallback(
+    (
+      event: ReactMouseEvent<HTMLElement>,
+      laneId: ExplorerActivityLaneId | null,
+      laneDefinition: ExplorerActivityLaneDefinition | null,
+    ) => {
+      if (!onContextMenuRequest) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenuRequest({
+        event,
+        railSide,
+        laneId,
+        laneDefinition,
+      });
+    },
+    [onContextMenuRequest, railSide],
+  );
 
   return (
     <nav
@@ -204,6 +234,9 @@ export function ExplorerActivityRail({
             ? "inset 1px 0 0 rgba(255,255,255,0.025)"
             : "inset -1px 0 0 rgba(255,255,255,0.025)",
         boxSizing: "border-box",
+      }}
+      onContextMenu={(event) => {
+        emitContextMenuRequest(event, null, null);
       }}
       onDragOver={handleRailDragOver(laneDefinitions.length)}
       onDragLeave={handleRailDragLeave(laneDefinitions.length)}
@@ -260,6 +293,9 @@ export function ExplorerActivityRail({
               }
               title={lane.label}
               onClick={() => onSelectLane(lane.id)}
+              onContextMenu={(event) => {
+                emitContextMenuRequest(event, lane.id, lane);
+              }}
               draggable={Boolean(onMoveLane)}
               onDragStart={handleLaneDragStart(lane.id)}
               onDragEnd={handleLaneDragEnd}

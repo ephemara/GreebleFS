@@ -7,14 +7,14 @@ import React, {
 } from 'react';
 import { createPortal } from 'react-dom';
 
-import type { ExplorerRuntimeMenuNode } from './explorerMenuRuntime';
+import type { OverlayContextMenuNode } from './overlayContextMenuModel';
 import { resolveExplorerPopupSurfaceStyle } from './explorerPopupStyles';
 
 interface ExplorerContextMenuProps {
   visible: boolean;
   x: number;
   y: number;
-  nodes: ExplorerRuntimeMenuNode[];
+  nodes: OverlayContextMenuNode[];
   portalRoot?: HTMLElement | null;
   density?: 'compact' | 'balanced' | 'touch';
   showDescriptions?: boolean;
@@ -23,7 +23,7 @@ interface ExplorerContextMenuProps {
 }
 
 interface MenuPanelProps {
-  nodes: ExplorerRuntimeMenuNode[];
+  nodes: OverlayContextMenuNode[];
   path: string[];
   density: 'compact' | 'balanced' | 'touch';
   showDescriptions: boolean;
@@ -45,13 +45,13 @@ function getPathKey(path: string[]): string {
   return path.length > 0 ? path.join('/') : 'root';
 }
 
-function findFirstSelectableIndex(nodes: ExplorerRuntimeMenuNode[]): number {
+function findFirstSelectableIndex(nodes: OverlayContextMenuNode[]): number {
   const index = nodes.findIndex((node) => node.kind !== 'separator');
   return index >= 0 ? index : 0;
 }
 
 function findNextSelectableIndex(
-  nodes: ExplorerRuntimeMenuNode[],
+  nodes: OverlayContextMenuNode[],
   startIndex: number,
   direction: 'up' | 'down',
 ): number {
@@ -140,7 +140,7 @@ function MenuPanel({
   const openSubmenuNode =
     openSubmenuId != null
       ? nodes.find(
-          (node): node is Extract<ExplorerRuntimeMenuNode, { kind: 'submenu' }> =>
+          (node): node is Extract<OverlayContextMenuNode, { kind: 'submenu' }> =>
             node.kind === 'submenu' && node.id === openSubmenuId,
         ) ?? null
       : null;
@@ -183,7 +183,7 @@ function MenuPanel({
 
           const active = activeIndex === index;
           const submenuOpen = openSubmenuId === node.id && node.kind === 'submenu';
-          const disabled = node.kind === 'command' && node.disabled;
+          const disabled = node.kind === 'command' && node.disabled === true;
           return (
             <button
               key={node.id}
@@ -371,10 +371,10 @@ export function ExplorerContextMenu({
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const currentPath = openSubmenuPath;
     const currentPathKey = getPathKey(currentPath);
-    let currentNodes: ExplorerRuntimeMenuNode[] = rootNodes;
+    let currentNodes: OverlayContextMenuNode[] = rootNodes;
     currentPath.forEach((submenuId) => {
       const submenuNode = currentNodes.find(
-        (node): node is Extract<ExplorerRuntimeMenuNode, { kind: 'submenu' }> =>
+        (node): node is Extract<OverlayContextMenuNode, { kind: 'submenu' }> =>
           node.kind === 'submenu' && node.id === submenuId,
       );
       if (submenuNode) {
