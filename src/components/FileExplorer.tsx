@@ -32128,7 +32128,15 @@ export function FileExplorer({
             runtimeContextSummary={
               activeActionsPaneRuntimeScope?.summary ?? currentPath
             }
+            runtimeMenuDensity={
+              activeActionsPaneRuntimeScope?.menu.presentation.density ??
+              "balanced"
+            }
             runtimeMenuNodes={activeActionsPaneRuntimeScope?.menu.nodes ?? []}
+            runtimeShowDescriptions={
+              activeActionsPaneRuntimeScope?.menu.presentation
+                .showDescriptions ?? true
+            }
             runtimeScopeOptions={actionsPaneRuntimeScopes.map((scope) => ({
               id: scope.id,
               label: scope.label,

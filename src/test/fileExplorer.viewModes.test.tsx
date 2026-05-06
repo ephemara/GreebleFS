@@ -1910,6 +1910,14 @@ describe("FileExplorer view modes", () => {
       within(pane).getByRole("button", { name: /New Folder/ }),
     ).toBeInTheDocument();
 
+    fireEvent.change(
+      within(pane).getByPlaceholderText(
+        /search commands, actions, and menu paths/i,
+      ),
+      {
+        target: { value: "sample workspace action" },
+      },
+    );
     fireEvent.click(
       await within(pane).findByRole("button", {
         name: /sample workspace action/i,

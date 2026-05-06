@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -21,15 +22,16 @@ import type {
 } from "../../config/explorerChromeLayouts";
 import { formatHotkeyLabel } from "../../config/hotkeys";
 import { OverlayScrollArea } from "../OverlayScrollArea";
-import { WorkbenchDisclosureGroup } from "../WorkbenchDisclosureGroup";
 import {
   buildExplorerCommandSearchHaystack,
   renderExplorerCommandLibraryIcon,
   resolveExplorerCommandSourceLabel,
 } from "./explorerCommandLibrary";
+import { resolveExplorerPopupSurfaceStyle } from "./explorerPopupStyles";
 import type {
   ExplorerRuntimeMenuCommandNode,
   ExplorerRuntimeMenuNode,
+  ExplorerRuntimeMenuSubmenuNode,
 } from "./explorerMenuRuntime";
 
 const categoryLabels: Record<ExplorerCustomizeCatalogCategory, string> = {
@@ -69,7 +71,9 @@ interface ExplorerActionsPaneProps {
   runtimeActiveScopeId: string | null;
   runtimeContextLabel: string;
   runtimeContextSummary: string;
+  runtimeMenuDensity: "compact" | "balanced" | "touch";
   runtimeMenuNodes: ExplorerRuntimeMenuNode[];
+  runtimeShowDescriptions: boolean;
   runtimeScopeOptions: ExplorerActionsPaneRuntimeScopeOption[];
   selectedEntry: ExplorerCustomizeCatalogEntry | null;
   selectedPlacement: ExplorerChromeOverrideEntry | null;
@@ -92,7 +96,8 @@ interface ExplorerActionsPaneProps {
   onSetSelectedWidthPx: (widthPx: number) => void;
 }
 
-interface ExplorerActionsPaneRuntimeItem {
+interface ExplorerActionsPaneRuntimeCommandItem {
+  kind: "command";
   id: string;
   label: string;
   description?: string;
@@ -105,10 +110,31 @@ interface ExplorerActionsPaneRuntimeItem {
   sourceLabel: string;
 }
 
-interface ExplorerActionsPaneRuntimeSection {
-  key: string;
+interface ExplorerActionsPaneRuntimeSubmenuItem {
+  kind: "submenu";
+  id: string;
   label: string;
-  items: ExplorerActionsPaneRuntimeItem[];
+  childCommandCount: number;
+  node: ExplorerRuntimeMenuSubmenuNode;
+}
+
+type ExplorerActionsPaneRuntimeBrowseItem =
+  | ExplorerActionsPaneRuntimeCommandItem
+  | ExplorerActionsPaneRuntimeSubmenuItem;
+
+interface ExplorerActionsPaneRuntimeLetterGroup<
+  Item extends { label: string; kind: string },
+> {
+  letter: string;
+  items: Item[];
+}
+
+interface ExplorerActionsPaneRuntimeBrowsePanel {
+  key: string;
+  title: string;
+  path: string[];
+  items: ExplorerActionsPaneRuntimeBrowseItem[];
+  letterGroups: ExplorerActionsPaneRuntimeLetterGroup<ExplorerActionsPaneRuntimeBrowseItem>[];
 }
 
 function groupCatalogEntriesByCategory(
@@ -126,82 +152,184 @@ function groupCatalogEntriesByCategory(
   return Array.from(groups.entries());
 }
 
-function toRuntimeSectionItem(
+function compareRuntimeBrowseLabels(left: string, right: string): number {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function compareRuntimeLetterKeys(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  if (left === "#") {
+    return 1;
+  }
+  if (right === "#") {
+    return -1;
+  }
+  return compareRuntimeBrowseLabels(left, right);
+}
+
+function resolveRuntimeBrowseLetterKey(label: string): string {
+  const candidate = Array.from(label.trim().toUpperCase()).find((character) =>
+    /[A-Z0-9]/.test(character),
+  );
+  return candidate ?? "#";
+}
+
+function countRuntimeCommandLeaves(nodes: ExplorerRuntimeMenuNode[]): number {
+  return nodes.reduce((count, node) => {
+    if (node.kind === "command") {
+      return count + 1;
+    }
+    if (node.kind === "submenu") {
+      return count + countRuntimeCommandLeaves(node.children);
+    }
+    return count;
+  }, 0);
+}
+
+function groupRuntimeBrowseItemsByLetter<
+  Item extends { label: string; kind: string },
+>(items: Item[]): ExplorerActionsPaneRuntimeLetterGroup<Item>[] {
+  const groups = new Map<string, Item[]>();
+  items.forEach((item) => {
+    const letterKey = resolveRuntimeBrowseLetterKey(item.label);
+    const currentItems = groups.get(letterKey) ?? [];
+    currentItems.push(item);
+    groups.set(letterKey, currentItems);
+  });
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => compareRuntimeLetterKeys(left, right))
+    .map(([letter, groupedItems]) => ({
+      letter,
+      items: groupedItems,
+    }));
+}
+
+function toRuntimeCommandItem(
   node: ExplorerRuntimeMenuCommandNode,
   menuPath: string[],
-): ExplorerActionsPaneRuntimeItem {
+): ExplorerActionsPaneRuntimeCommandItem {
   const dragControlId =
     node.command.source === "action"
       ? toExplorerActionChromeControlId(node.command.execution.action.id)
       : null;
 
   return {
+    kind: "command",
     id: node.id,
     label: node.label,
     description: node.description,
     command: node.command,
     disabled: node.disabled,
     dragControlId,
-    menuPathLabel: menuPath.length > 1 ? menuPath.slice(1).join(" / ") : null,
+    menuPathLabel: menuPath.length > 0 ? menuPath.join(" / ") : null,
     node,
     shortcutId: node.shortcutId ?? undefined,
     sourceLabel: resolveExplorerCommandSourceLabel(node.command),
   };
 }
 
-function collectRuntimeSectionItems(
+function toRuntimeBrowseItem(
+  node: ExplorerRuntimeMenuNode,
+  menuPath: string[],
+): ExplorerActionsPaneRuntimeBrowseItem | null {
+  if (node.kind === "separator") {
+    return null;
+  }
+  if (node.kind === "command") {
+    return toRuntimeCommandItem(node, menuPath);
+  }
+  return {
+    kind: "submenu",
+    id: node.id,
+    label: node.label,
+    childCommandCount: countRuntimeCommandLeaves(node.children),
+    node,
+  };
+}
+
+function buildRuntimeBrowseItems(
   nodes: ExplorerRuntimeMenuNode[],
   menuPath: string[],
-): ExplorerActionsPaneRuntimeItem[] {
-  const items: ExplorerActionsPaneRuntimeItem[] = [];
+): ExplorerActionsPaneRuntimeBrowseItem[] {
+  return nodes
+    .map((node) => toRuntimeBrowseItem(node, menuPath))
+    .filter(
+      (item): item is ExplorerActionsPaneRuntimeBrowseItem => item !== null,
+    )
+    .sort((left, right) => compareRuntimeBrowseLabels(left.label, right.label));
+}
+
+function collectRuntimeSearchItems(
+  nodes: ExplorerRuntimeMenuNode[],
+  menuPath: string[],
+): ExplorerActionsPaneRuntimeCommandItem[] {
+  const items: ExplorerActionsPaneRuntimeCommandItem[] = [];
   for (const node of nodes) {
     if (node.kind === "command") {
-      items.push(toRuntimeSectionItem(node, menuPath));
+      items.push(toRuntimeCommandItem(node, menuPath));
       continue;
     }
     if (node.kind === "submenu") {
       items.push(
-        ...collectRuntimeSectionItems(node.children, [...menuPath, node.label]),
+        ...collectRuntimeSearchItems(node.children, [...menuPath, node.label]),
       );
     }
   }
   return items;
 }
 
-function buildRuntimeSections(
+function resolveRuntimeBrowsePanels(
   nodes: ExplorerRuntimeMenuNode[],
-): ExplorerActionsPaneRuntimeSection[] {
-  const sections: ExplorerActionsPaneRuntimeSection[] = [];
-  const quickAccessItems = nodes
-    .filter(
-      (node): node is ExplorerRuntimeMenuCommandNode => node.kind === "command",
-    )
-    .map((node) => toRuntimeSectionItem(node, []));
+  openSubmenuPath: string[],
+): {
+  panels: ExplorerActionsPaneRuntimeBrowsePanel[];
+  resolvedPath: string[];
+} {
+  const panels: ExplorerActionsPaneRuntimeBrowsePanel[] = [];
+  const resolvedPath: string[] = [];
+  const resolvedLabelPath: string[] = [];
+  let currentNodes = nodes;
 
-  if (quickAccessItems.length > 0) {
-    sections.push({
-      key: "quick-access",
-      label: "Quick Access",
-      items: quickAccessItems,
-    });
-  }
+  const rootItems = buildRuntimeBrowseItems(currentNodes, []);
+  panels.push({
+    key: "__root__",
+    title: "All Actions",
+    path: [],
+    items: rootItems,
+    letterGroups: groupRuntimeBrowseItemsByLetter(rootItems),
+  });
 
-  nodes.forEach((node) => {
-    if (node.kind !== "submenu") {
+  openSubmenuPath.forEach((submenuId) => {
+    const submenuNode = currentNodes.find(
+      (node): node is ExplorerRuntimeMenuSubmenuNode =>
+        node.kind === "submenu" && node.id === submenuId,
+    );
+    if (!submenuNode) {
       return;
     }
-    const items = collectRuntimeSectionItems(node.children, [node.label]);
-    if (items.length === 0) {
-      return;
-    }
-    sections.push({
-      key: node.id,
-      label: node.label,
+    resolvedPath.push(submenuNode.id);
+    resolvedLabelPath.push(submenuNode.label);
+    currentNodes = submenuNode.children;
+    const items = buildRuntimeBrowseItems(currentNodes, resolvedLabelPath);
+    panels.push({
+      key: submenuNode.id,
+      title: submenuNode.label,
+      path: [...resolvedPath],
       items,
+      letterGroups: groupRuntimeBrowseItemsByLetter(items),
     });
   });
 
-  return sections;
+  return {
+    panels,
+    resolvedPath,
+  };
 }
 
 export function ExplorerActionsPane({
@@ -217,7 +345,9 @@ export function ExplorerActionsPane({
   runtimeActiveScopeId,
   runtimeContextLabel,
   runtimeContextSummary,
+  runtimeMenuDensity,
   runtimeMenuNodes,
+  runtimeShowDescriptions,
   runtimeScopeOptions,
   selectedEntry,
   selectedPlacement,
@@ -234,10 +364,17 @@ export function ExplorerActionsPane({
   onSetSelectedWidthPx,
 }: ExplorerActionsPaneProps) {
   const [query, setQuery] = useState("");
-  const [collapsedRuntimeSectionsByKey, setCollapsedRuntimeSectionsByKey] =
-    useState<Record<string, boolean>>({});
+  const [openRuntimeSubmenuPath, setOpenRuntimeSubmenuPath] = useState<
+    string[]
+  >([]);
   const actionPointerTapControlIdRef = useRef<ExplorerChromeControlId | null>(
     null,
+  );
+  const browseLetterSectionRefs = useRef<
+    Record<string, Record<string, HTMLElement | null>>
+  >({});
+  const searchLetterSectionRefs = useRef<Record<string, HTMLElement | null>>(
+    {},
   );
   const filteredCatalog = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -266,42 +403,63 @@ export function ExplorerActionsPane({
     () => groupCatalogEntriesByCategory(filteredCatalog),
     [filteredCatalog],
   );
-  const runtimeSections = useMemo(
-    () => buildRuntimeSections(runtimeMenuNodes),
+  const runtimeSearchItems = useMemo(
+    () =>
+      collectRuntimeSearchItems(runtimeMenuNodes, []).sort((left, right) =>
+        compareRuntimeBrowseLabels(left.label, right.label),
+      ),
     [runtimeMenuNodes],
   );
-  const filteredRuntimeSections = useMemo(() => {
+  const runtimeBrowseState = useMemo(
+    () => resolveRuntimeBrowsePanels(runtimeMenuNodes, openRuntimeSubmenuPath),
+    [openRuntimeSubmenuPath, runtimeMenuNodes],
+  );
+  const filteredRuntimeSearchGroups = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     if (!normalizedQuery) {
-      return runtimeSections;
+      return [] as ExplorerActionsPaneRuntimeLetterGroup<ExplorerActionsPaneRuntimeCommandItem>[];
     }
 
-    return runtimeSections
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) =>
-          [
-            item.label,
-            item.description ?? "",
-            item.sourceLabel,
-            item.menuPathLabel ?? "",
-            item.shortcutId ?? "",
-            buildExplorerCommandSearchHaystack(item.command),
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(normalizedQuery),
-        ),
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [query, runtimeSections]);
-  const forceExpandRuntimeSections = query.trim().length > 0;
+    const filteredItems = runtimeSearchItems.filter((item) =>
+      [
+        item.label,
+        item.description ?? "",
+        item.sourceLabel,
+        item.menuPathLabel ?? "",
+        item.shortcutId ?? "",
+        buildExplorerCommandSearchHaystack(item.command),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+    return groupRuntimeBrowseItemsByLetter(filteredItems);
+  }, [query, runtimeSearchItems]);
+  const runtimeBrowsePanelWidth =
+    runtimeMenuDensity === "touch"
+      ? 296
+      : runtimeMenuDensity === "compact"
+        ? 236
+        : 256;
+  const runtimeBrowseSurfaceStyle = resolveExplorerPopupSurfaceStyle({
+    tone: "preview",
+    padding: 0,
+    overflowY: "auto",
+    maxHeight: "none",
+  });
+  const isRuntimeSearchActive = !customizeMode && query.trim().length > 0;
+  const hasRuntimeCommands = runtimeSearchItems.length > 0;
+  const showRuntimeDescriptions = runtimeShowDescriptions || isRuntimeSearchActive;
   const panelTextStyle = {
     color: text,
     fontFamily:
       appearance?.fonts.ui ??
       'var(--overlay-font-body, "Segoe UI", sans-serif)',
   };
+
+  useEffect(() => {
+    setOpenRuntimeSubmenuPath([]);
+  }, [runtimeActiveScopeId, runtimeMenuNodes]);
 
   const resolveEntryTone = (entry: ExplorerCustomizeCatalogEntry) => {
     if (entry.source === "action") {
@@ -313,7 +471,7 @@ export function ExplorerActionsPane({
     return "color-mix(in srgb, var(--overlay-explorer-text) 74%, transparent)";
   };
 
-  const invokeRuntimeItem = (item: ExplorerActionsPaneRuntimeItem) => {
+  const invokeRuntimeItem = (item: ExplorerActionsPaneRuntimeCommandItem) => {
     if (item.disabled) {
       return;
     }
@@ -322,6 +480,293 @@ export function ExplorerActionsPane({
     }
     void Promise.resolve(item.node.onSelect());
   };
+
+  const jumpToBrowseLetter = (panelKey: string, letter: string) => {
+    browseLetterSectionRefs.current[panelKey]?.[letter]?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    });
+  };
+
+  const jumpToSearchLetter = (letter: string) => {
+    searchLetterSectionRefs.current[letter]?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    });
+  };
+
+  const renderLetterJumpStrip = (
+    letters: string[],
+    onJump: (letter: string) => void,
+  ) => {
+    if (letters.length <= 1) {
+      return null;
+    }
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 6,
+          padding: "0 10px 10px",
+          borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
+        }}
+      >
+        {letters.map((letter) => (
+          <button
+            key={letter}
+            type="button"
+            onClick={() => onJump(letter)}
+            style={{
+              borderRadius: 999,
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              background: "var(--overlay-explorer-chip-bg)",
+              color: text,
+              padding: "4px 7px",
+              minWidth: 28,
+              cursor: "pointer",
+              fontSize: 9,
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+            }}
+          >
+            {letter}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
+  const renderRuntimeCommandButton = (
+    item: ExplorerActionsPaneRuntimeCommandItem,
+    options?: {
+      compact?: boolean;
+      showMenuPath?: boolean;
+      groupBorder?: boolean;
+    },
+  ) => {
+    const compact = options?.compact ?? false;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        aria-disabled={item.disabled}
+        onPointerDown={(event) => {
+          if (
+            event.button !== 0 ||
+            event.ctrlKey ||
+            event.altKey ||
+            !item.dragControlId
+          ) {
+            return;
+          }
+          actionPointerTapControlIdRef.current = item.dragControlId;
+          onBeginCatalogDrag(item.dragControlId, event, {
+            onTap: () => invokeRuntimeItem(item),
+          });
+        }}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (
+            item.dragControlId &&
+            actionPointerTapControlIdRef.current === item.dragControlId
+          ) {
+            actionPointerTapControlIdRef.current = null;
+            return;
+          }
+          if (event.ctrlKey && event.altKey && item.dragControlId) {
+            onRequestHotkeyCapture(item.dragControlId);
+            onSelectControl(item.dragControlId);
+            return;
+          }
+          invokeRuntimeItem(item);
+        }}
+        style={{
+          width: "100%",
+          border: 0,
+          borderTop: options?.groupBorder
+            ? "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 90%, transparent)"
+            : "none",
+          background: "transparent",
+          color: item.disabled ? muted : text,
+          cursor: item.dragControlId
+            ? "grab"
+            : item.disabled
+              ? "not-allowed"
+              : "pointer",
+          textAlign: "left",
+          padding: compact ? "8px 10px" : "10px 12px",
+          opacity: item.disabled ? 0.68 : 1,
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "16px minmax(0, 1fr) auto",
+            alignItems: "start",
+            gap: compact ? 8 : 10,
+          }}
+        >
+          <span style={{ opacity: 0.78 }}>
+            {renderExplorerCommandLibraryIcon(item.command.iconName)}
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: compact ? 10 : 11,
+                fontWeight: 700,
+                color: text,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {item.label}
+            </span>
+            {showRuntimeDescriptions && item.description ? (
+              <span
+                style={{
+                  display: "block",
+                  marginTop: 3,
+                  fontSize: 10,
+                  lineHeight: 1.35,
+                  color: muted,
+                }}
+              >
+                {item.description}
+              </span>
+            ) : null}
+            <span
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 6,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: muted,
+              }}
+            >
+              <span>{item.sourceLabel}</span>
+              {options?.showMenuPath && item.menuPathLabel ? (
+                <span>{item.menuPathLabel}</span>
+              ) : null}
+              {item.dragControlId ? (
+                <span style={{ color: accent }}>Run or Drag</span>
+              ) : null}
+            </span>
+          </span>
+          <span
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 4,
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: item.dragControlId ? accent : muted,
+            }}
+          >
+            {item.shortcutId ? <span>{item.shortcutId}</span> : null}
+            {item.dragControlId ? <span>Pin</span> : <span>Run</span>}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderRuntimeSubmenuButton = (
+    item: ExplorerActionsPaneRuntimeSubmenuItem,
+    panelPath: string[],
+    submenuOpen: boolean,
+    options?: { groupBorder?: boolean },
+  ) => (
+    <button
+      key={item.id}
+      type="button"
+      onMouseEnter={() => setOpenRuntimeSubmenuPath([...panelPath, item.id])}
+      onFocus={() => setOpenRuntimeSubmenuPath([...panelPath, item.id])}
+      onClick={() => setOpenRuntimeSubmenuPath([...panelPath, item.id])}
+      style={{
+        width: "100%",
+        border: 0,
+        borderTop: options?.groupBorder
+          ? "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 90%, transparent)"
+          : "none",
+        background: submenuOpen
+          ? "var(--overlay-explorer-chip-active-bg)"
+          : "transparent",
+        color: text,
+        cursor: "pointer",
+        textAlign: "left",
+        padding: "10px 12px",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "16px minmax(0, 1fr) auto",
+          alignItems: "center",
+          gap: 10,
+        }}
+      >
+        <span style={{ opacity: 0.78 }}>
+          {renderExplorerCommandLibraryIcon(item.node.iconName)}
+        </span>
+        <span style={{ minWidth: 0 }}>
+          <span
+            style={{
+              display: "block",
+              fontSize: 11,
+              fontWeight: 700,
+              color: text,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.label}
+          </span>
+          <span
+            style={{
+              display: "block",
+              marginTop: 3,
+              fontSize: 10,
+              lineHeight: 1.35,
+              color: muted,
+            }}
+          >
+            {item.childCommandCount === 1
+              ? "1 command"
+              : `${item.childCommandCount} commands`}
+          </span>
+        </span>
+        <span
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 4,
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: submenuOpen ? accent : muted,
+          }}
+        >
+          <span>{item.childCommandCount}</span>
+          <span style={{ fontSize: 12, lineHeight: 1 }}>›</span>
+        </span>
+      </div>
+    </button>
+  );
 
   return (
     <div
@@ -700,7 +1145,7 @@ export function ExplorerActionsPane({
                 </div>
               </section>
             ))
-          ) : filteredRuntimeSections.length === 0 ? (
+          ) : !hasRuntimeCommands ? (
             <div
               style={{
                 borderRadius: 12,
@@ -716,169 +1161,223 @@ export function ExplorerActionsPane({
                 ? "No commands match the current filter."
                 : "This scope does not currently expose any menu commands. Edit the menu or switch to another explorer scope."}
             </div>
-          ) : (
-            filteredRuntimeSections.map((section) => (
-              <WorkbenchDisclosureGroup
-                key={section.key}
-                label={section.label}
-                count={section.items.length}
-                ariaLabel={`${section.label} action library section`}
-                collapsed={Boolean(collapsedRuntimeSectionsByKey[section.key])}
-                onToggleCollapsed={() =>
-                  setCollapsedRuntimeSectionsByKey((current) => ({
-                    ...current,
-                    [section.key]: !current[section.key],
-                  }))
-                }
-                variant="panel"
-                forceExpanded={forceExpandRuntimeSections}
-                textColor={text}
-                mutedColor={muted}
-                borderColor={`${border}8a`}
-                background="rgba(255,255,255,0.014)"
+          ) : isRuntimeSearchActive ? (
+            <section
+              data-overlay-explorer-actions-search-results="true"
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
               >
-                <div>
-                  {section.items.map((item, index) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      aria-disabled={item.disabled}
-                      onPointerDown={(event) => {
-                        if (
-                          event.button !== 0 ||
-                          event.ctrlKey ||
-                          event.altKey ||
-                          !item.dragControlId
-                        ) {
-                          return;
-                        }
-                        actionPointerTapControlIdRef.current =
-                          item.dragControlId;
-                        onBeginCatalogDrag(item.dragControlId, event, {
-                          onTap: () => invokeRuntimeItem(item),
-                        });
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (
-                          item.dragControlId &&
-                          actionPointerTapControlIdRef.current ===
-                            item.dragControlId
-                        ) {
-                          actionPointerTapControlIdRef.current = null;
-                          return;
-                        }
-                        if (event.ctrlKey && event.altKey && item.dragControlId) {
-                          onRequestHotkeyCapture(item.dragControlId);
-                          onSelectControl(item.dragControlId);
-                          return;
-                        }
-                        invokeRuntimeItem(item);
-                      }}
+                Search Results
+              </div>
+              {filteredRuntimeSearchGroups.length === 0 ? (
+                <div
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                    padding: "12px 14px",
+                    color: muted,
+                    fontSize: 11,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  No commands match the current filter.
+                </div>
+              ) : (
+                <>
+                  {renderLetterJumpStrip(
+                    filteredRuntimeSearchGroups.map((group) => group.letter),
+                    jumpToSearchLetter,
+                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {filteredRuntimeSearchGroups.map((group) => (
+                      <section
+                        key={group.letter}
+                        data-overlay-explorer-actions-letter-group={group.letter}
+                        ref={(node) => {
+                          searchLetterSectionRefs.current[group.letter] = node;
+                        }}
+                        style={{
+                          borderRadius: 12,
+                          border: "1px solid var(--overlay-explorer-chip-border)",
+                          background: "var(--overlay-explorer-chip-bg)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            padding: "8px 12px",
+                            borderBottom:
+                              "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 88%, transparent)",
+                            fontSize: 10,
+                            fontWeight: 800,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: muted,
+                          }}
+                        >
+                          {group.letter}
+                        </div>
+                        <div>
+                          {group.items.map((item, index) =>
+                            renderRuntimeCommandButton(item, {
+                              showMenuPath: true,
+                              groupBorder: index > 0,
+                            }),
+                          )}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+          ) : (
+            <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
+              >
+                Browse Menu
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: muted,
+                }}
+              >
+                Skim the live menu tree A-Z. Submenus open in sidecar panels so
+                you can stay in the same flow instead of reading one flattened
+                list.
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  overflowX: "auto",
+                  paddingBottom: 4,
+                }}
+              >
+                {runtimeBrowseState.panels.map((panel) => (
+                  <div
+                    key={panel.key}
+                    data-overlay-explorer-actions-browser-panel={panel.key}
+                    style={{
+                      ...runtimeBrowseSurfaceStyle,
+                      width: runtimeBrowsePanelWidth,
+                      minHeight: 280,
+                      maxHeight: 560,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
                       style={{
-                        width: "100%",
-                        border: 0,
-                        borderTop:
-                          index === 0
-                            ? "none"
-                            : "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 92%, transparent)",
-                        background: "transparent",
-                        color: item.disabled ? muted : text,
-                        cursor: item.dragControlId
-                          ? "grab"
-                          : item.disabled
-                            ? "not-allowed"
-                            : "pointer",
-                        textAlign: "left",
-                        padding: "10px 12px",
-                        opacity: item.disabled ? 0.68 : 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "10px 10px 8px",
+                        borderBottom:
+                          "1px solid color-mix(in srgb, var(--overlay-explorer-toolbar-border) 92%, transparent)",
                       }}
                     >
                       <div
                         style={{
-                          display: "grid",
-                          gridTemplateColumns: "16px minmax(0, 1fr) auto",
-                          alignItems: "start",
-                          gap: 10,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: text,
                         }}
                       >
-                        <span style={{ opacity: 0.78 }}>
-                          {renderExplorerCommandLibraryIcon(
-                            item.command.iconName,
-                          )}
-                        </span>
-                        <span style={{ minWidth: 0 }}>
-                          <span
+                        {panel.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: muted,
+                        }}
+                      >
+                        {panel.items.length}
+                      </div>
+                    </div>
+                    {renderLetterJumpStrip(
+                      panel.letterGroups.map((group) => group.letter),
+                      (letter) => jumpToBrowseLetter(panel.key, letter),
+                    )}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        paddingBottom: 8,
+                      }}
+                    >
+                      {panel.letterGroups.map((group) => (
+                        <section
+                          key={`${panel.key}:${group.letter}`}
+                          data-overlay-explorer-actions-letter-group={group.letter}
+                          ref={(node) => {
+                            const currentPanelRefs =
+                              browseLetterSectionRefs.current[panel.key] ?? {};
+                            currentPanelRefs[group.letter] = node;
+                            browseLetterSectionRefs.current[panel.key] =
+                              currentPanelRefs;
+                          }}
+                          style={{ display: "flex", flexDirection: "column" }}
+                        >
+                          <div
                             style={{
-                              display: "block",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: text,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {item.label}
-                          </span>
-                          {item.description ? (
-                            <span
-                              style={{
-                                display: "block",
-                                marginTop: 3,
-                                fontSize: 10,
-                                lineHeight: 1.35,
-                                color: muted,
-                              }}
-                            >
-                              {item.description}
-                            </span>
-                          ) : null}
-                          <span
-                            style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 8,
-                              marginTop: 6,
-                              fontSize: 9,
-                              fontWeight: 700,
-                              letterSpacing: "0.08em",
+                              padding: "8px 12px 6px",
+                              fontSize: 10,
+                              fontWeight: 800,
+                              letterSpacing: "0.12em",
                               textTransform: "uppercase",
                               color: muted,
                             }}
                           >
-                            <span>{item.sourceLabel}</span>
-                            {item.menuPathLabel ? (
-                              <span>{item.menuPathLabel}</span>
-                            ) : null}
-                            {item.dragControlId ? (
-                              <span style={{ color: accent }}>Run or Drag</span>
-                            ) : null}
-                          </span>
-                        </span>
-                        <span
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "flex-end",
-                            gap: 4,
-                            fontSize: 9,
-                            fontWeight: 700,
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
-                            color: item.dragControlId ? accent : muted,
-                          }}
-                        >
-                          {item.shortcutId ? <span>{item.shortcutId}</span> : null}
-                          {item.dragControlId ? <span>Pin</span> : <span>Run</span>}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </WorkbenchDisclosureGroup>
-            ))
+                            {group.letter}
+                          </div>
+                          <div>
+                            {group.items.map((item, index) =>
+                              item.kind === "command"
+                                ? renderRuntimeCommandButton(item, {
+                                    compact: runtimeMenuDensity === "compact",
+                                    groupBorder: index > 0,
+                                  })
+                                : renderRuntimeSubmenuButton(
+                                    item,
+                                    panel.path,
+                                    runtimeBrowseState.resolvedPath[
+                                      panel.path.length
+                                    ] === item.id,
+                                    {
+                                      groupBorder: index > 0,
+                                    },
+                                  ),
+                            )}
+                          </div>
+                        </section>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {customizeMode ? (

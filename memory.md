@@ -485,6 +485,23 @@
 - Next recommended step:
   - Add one small reference Rust wasm-bindgen runtime under the managed `runtimes/` root so future agents can smoke-test `WasmPanelHost` without reverse-engineering the expected `mountPanel` export contract from source.
 
+# 2026-05-05 - Explorer Actions Pane Restores Hierarchy And Adds A-Z Skim
+
+- `src/components/explorer/ExplorerActionsPane.tsx` no longer flattens every submenu branch into one long runtime section list during normal browse mode. The pane now preserves the live `buildExplorerRuntimeMenu(...)` tree as cascading sidecar panels so submenu exploration feels like the rest of the app instead of a card dump.
+- Browse mode and search mode now have different intentional jobs:
+  - browse mode keeps the real menu hierarchy and groups each open panel A-Z so large menus are still skimmable
+  - search mode intentionally flattens commands into an A-Z result list and keeps submenu path labels (including top-level submenu names such as `Open With`) so matches still carry context
+- `src/components/FileExplorer.tsx` now passes the resolved runtime menu presentation density and `showDescriptions` flags into the actions pane. The library should follow the same menu-pack presentation lane as the real runtime menu instead of hardcoding one browse density forever.
+- Durable UX rule after this pass:
+  - do not regress the normal runtime actions pane back into a single flattened section/card list
+  - if future work changes search, keep submenu path metadata visible in result rows so commands from different branches stay distinguishable
+  - submenu browse panels and search results are both first-class; neither should silently replace the other
+- Validation that passed for this pass:
+  - `bunx vitest run src/test/ExplorerActionsPane.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "ExplorerActionsPane|browses scoped runtime commands in the action library" --reporter=dot --testTimeout=30000`
+  - touched-file TypeScript sweep produced no matching diagnostics for `ExplorerActionsPane`, `FileExplorer`, `ExplorerActionsPane.test`, or `fileExplorer.viewModes.test`
+- Validation note:
+  - repo-wide `bunx tsc --noEmit --pretty false` still reports many unrelated branch errors outside this lane; treat those as pre-existing noise unless one of the filtered action-pane files starts showing up in the output
+
 # 2026-05-01 - Explorer Actions Library Now Reuses The Context-Menu Runtime
 
 - The docked explorer actions pane is no longer a separate authored-actions-only browser during normal runtime. `src/components/FileExplorer.tsx` now builds scoped runtime menus through `buildExplorerRuntimeMenu(...)`, and `src/components/explorer/ExplorerActionsPane.tsx` renders those live nodes as an action library with search, scope pills, and an `Edit Menu` deep-link back into Settings.
