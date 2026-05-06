@@ -1,16 +1,56 @@
 import React, { useMemo, useState } from 'react';
 import { definePlugin } from 'overlayterm-plugin';
 
+function buildFileUrl(absolutePath) {
+  const normalizedPath = absolutePath.replace(/\\/g, '/');
+  return normalizedPath.startsWith('/')
+    ? `file://${encodeURI(normalizedPath)}`
+    : `file:///${encodeURI(normalizedPath)}`;
+}
+
+function buildHierarchicalAssetUrl(absolutePath, referenceUrl) {
+  if (!absolutePath) {
+    return '';
+  }
+
+  if (!referenceUrl) {
+    return buildFileUrl(absolutePath);
+  }
+
+  try {
+    const parsedReferenceUrl = new URL(referenceUrl);
+    if (parsedReferenceUrl.protocol === 'file:') {
+      return buildFileUrl(absolutePath);
+    }
+
+    // `convertFileSrc(...)` flattens the whole absolute path into one encoded segment,
+    // which breaks relative HTML/JS asset resolution for standalone app bundles.
+    const normalizedPath = absolutePath.replace(/\\/g, '/');
+    const encodedSegments = normalizedPath
+      .split('/')
+      .filter(Boolean)
+      .map((segment) => encodeURIComponent(segment));
+
+    return `${parsedReferenceUrl.protocol}//${parsedReferenceUrl.host}/${encodedSegments.join('/')}`;
+  } catch {
+    return buildFileUrl(absolutePath);
+  }
+}
+
 function Greeble3DWorkbenchPanel({ api, host, appearance }) {
   const [frameLoaded, setFrameLoaded] = useState(false);
   const panelUrl = useMemo(() => {
-    const baseUrl = api.assets?.resolveUrl('dist/app/index.html') ?? '';
+    const entryPath = api.assets?.resolvePath('dist/app/index.html') ?? '';
+    const referenceUrl = api.assets?.resolveUrl('dist/app/index.html') ?? '';
+    const baseUrl = buildHierarchicalAssetUrl(entryPath, referenceUrl);
     if (!baseUrl) {
       return '';
     }
 
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}embedded=1&host=greeblefs`;
+    const panelEntryUrl = new URL(baseUrl);
+    panelEntryUrl.searchParams.set('embedded', '1');
+    panelEntryUrl.searchParams.set('host', 'greeblefs');
+    return panelEntryUrl.toString();
   }, [api.assets]);
 
   const compact = host?.compact ?? false;

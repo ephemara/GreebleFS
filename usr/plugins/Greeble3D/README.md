@@ -35,6 +35,7 @@ npm run build:lib
 - `extension.toml` exposes the bundle as the `greeble3d` folder plugin inside GreebleFS.
 - The plugin panel mounts `dist/app/index.html` in an isolated iframe so the modeler keeps its own CSS, window listeners, fullscreen behavior, and WASM boot path.
 - The Vite app build uses a relative asset base so the copied `dist/app/` folder stays portable when GreebleFS loads it from `usr/plugins/Greeble3D`.
+- The iframe wrapper must open `dist/app/index.html` through a hierarchical `asset.localhost/.../dist/app/index.html` URL built from `api.assets.resolvePath(...)`, not the raw `api.assets.resolveUrl(...)` output, because Windows `convertFileSrc(...)` encodes the whole absolute path into one URL segment and breaks relative HTML, chunk, image, and WASM fetches.
 
 ## Portable bundle notes
 

@@ -1,3 +1,20 @@
+# 2026-05-06 - Greeble3D Windows Asset URL Fix
+
+- Fixed the first live regression in the new `usr/plugins/Greeble3D` workbench wrapper: the iframe no longer points at the raw `api.assets.resolveUrl('dist/app/index.html')` output on Windows.
+- Root cause:
+  - Tauri `convertFileSrc(...)` encodes the entire absolute path into a single `asset.localhost` URL segment on Windows.
+  - That raw URL is fine for direct image/video assets, but it breaks standalone HTML app bundles because `./assets/...`, `import.meta.url`, dynamic chunk imports, and the bundled WASM URL all resolve against the wrong root and fall back to `http://asset.localhost/assets/...`.
+- `usr/plugins/Greeble3D/index.tsx` now:
+  - uses `api.assets.resolvePath('dist/app/index.html')` as the source of truth
+  - preserves the host protocol/host from `api.assets.resolveUrl(...)`
+  - rebuilds the iframe `src` as a hierarchical `asset.localhost/D%3A/.../dist/app/index.html` URL so relative HTML, JS, image, and WASM fetches stay inside the plugin bundle
+- Durable rule:
+  - For any future app-style folder plugin that mounts a standalone HTML build in an iframe, relative Vite asset paths are necessary but not sufficient on Windows.
+  - If the app depends on relative HTML subresources or `import.meta.url`, do not point the iframe at the raw `convertFileSrc(...)` / `api.assets.resolveUrl(...)` output. Rebuild a hierarchical asset URL from the absolute path first.
+- Validation:
+  - Passed: `npm run check` in `usr/plugins/Greeble3D`
+  - Passed: `npx esbuild index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --outfile=.tmp-greeble3d-panel-check.js`
+
 # 2026-05-05 - Greeble3D Portable Workbench Panel
 
 - Turned `usr/plugins/Greeble3D` from a copied standalone bundle into a host-mountable GreebleFS folder plugin by adding:

@@ -26,8 +26,9 @@ Use this skill when the task touches the Greeble3D plugin as mounted inside Gree
 
 1. Keep the GreebleFS panel isolated through the iframe unless Greeble3D first stops depending on global CSS, fullscreen, `document.title`, localStorage, and window-level listeners.
 2. Keep app-build asset URLs relative. If `dist/app/index.html` ever goes back to `/assets/...`, the workbench panel will break when loaded from `usr/plugins`.
-3. Keep `extension.toml` and `README.md` aligned with the actual mounting strategy.
-4. If deeper host integration is needed, prefer explicit bridge/query-param/panel-request seams over importing random host code into the modeler.
+3. Do not aim the iframe at the raw `api.assets.resolveUrl('dist/app/index.html')` result on Windows. Build a hierarchical asset URL from `api.assets.resolvePath(...)` so `./assets/...`, dynamic imports, `import.meta.url`, and WASM fetches resolve inside `dist/app/` instead of collapsing to `asset.localhost/assets/...`.
+4. Keep `extension.toml` and `README.md` aligned with the actual mounting strategy.
+5. If deeper host integration is needed, prefer explicit bridge/query-param/panel-request seams over importing random host code into the modeler.
 
 ## Validation
 
@@ -44,3 +45,4 @@ Then confirm `dist/app/index.html` references `./assets/...`.
 
 - `npm run build` and `npm run build:lib` may still warn about the duplicate `SHAPES.ICOSA` switch case in `src/features/greeble/KGreebleEngine.tsx`; that warning is not caused by the GreebleFS wrapper.
 - Windows `rustup target add wasm32-unknown-unknown` can fail once with a rename error during `build:lib`; retry once before changing the build scripts.
+- Windows-specific wrapper gotcha: a raw Tauri `convertFileSrc(...)` URL is safe for one-off images but not for standalone HTML app panels with relative subresources. If the iframe starts requesting `http://asset.localhost/assets/...`, inspect the wrapper URL shape before touching Vite again.
