@@ -234,6 +234,11 @@ import {
   type SettingsSectionKey,
 } from './config/settingsNavigation';
 import {
+  buildUsrProfileSettingsVariantOverrides,
+  getUsrProfileSettingsVariant,
+  usrProfileSettingsVariants,
+} from './config/usrProfileSettingsVariants';
+import {
   isExplorerVirtualPath,
 } from './config/explorerVirtualLocations';
 import { OverlayShellScene } from './components/OverlayShellScene';
@@ -327,6 +332,7 @@ import {
 } from './runtime/mobileShareThemeRuntime';
 import { createPythonRuntimeConfig } from './config/python';
 import {
+  mergeSettingsWithDefaults,
   useSettingsStore,
   resolveSystemPresentationState,
   type LayoutPanelState,
@@ -4449,11 +4455,36 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     await switchUsrProfile(profileId, useSettingsStore.getState().settings);
   }, []);
 
-  const handleCreateUsrProfile = useCallback(async (name: string) => {
+  const handleCreateUsrProfile = useCallback(async (
+    name: string,
+    seedSettingsJson?: string | null,
+  ) => {
     await createUsrProfile({
       name,
       activate: true,
-      seedSettingsJson: JSON.stringify(useSettingsStore.getState().settings),
+      seedSettingsJson:
+        typeof seedSettingsJson === 'string' && seedSettingsJson.trim().length > 0
+          ? seedSettingsJson
+          : JSON.stringify(useSettingsStore.getState().settings),
+    });
+  }, []);
+
+  const handleCreateUsrProfileFromVariant = useCallback(async (
+    variantId: string,
+    name: string,
+  ) => {
+    const variant = getUsrProfileSettingsVariant(variantId);
+    if (!variant) {
+      return;
+    }
+
+    const seededSettings = mergeSettingsWithDefaults(
+      buildUsrProfileSettingsVariantOverrides(variant),
+    );
+    await createUsrProfile({
+      name,
+      activate: true,
+      seedSettingsJson: JSON.stringify(seededSettings),
     });
   }, []);
 
@@ -4929,8 +4960,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         usrProfileRuntimeSnapshot,
         usrProfileSettingSliceKeys: getUsrProfileSettingSliceKeys(),
         usrProfileSharedSettingSliceKeys: getUsrProfileSharedSettingSliceKeys(),
+        usrProfileSettingsVariants,
         onSwitchUsrProfile: handleSwitchUsrProfile,
         onCreateUsrProfile: handleCreateUsrProfile,
+        onCreateUsrProfileFromVariant: handleCreateUsrProfileFromVariant,
         onDuplicateUsrProfile: handleDuplicateUsrProfile,
         onRenameUsrProfile: handleRenameUsrProfile,
         onDeleteUsrProfile: handleDeleteUsrProfile,

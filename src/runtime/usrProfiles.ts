@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { bindDeferredUnlisten } from './deferredUnlisten';
 
 import {
   applyManagedContentDirectoryStackOverrides,
@@ -257,7 +258,7 @@ async function ensureUsrProfileChangedListener(): Promise<void> {
     return;
   }
 
-  usrProfileChangedUnlistenPromise = listen<UsrProfileChangedEvent>(
+  const unlistenPromise = listen<UsrProfileChangedEvent>(
     USR_PROFILE_CHANGED_EVENT_NAME,
     async (event) => {
       await applyUsrProfileSnapshot(event.payload?.snapshot ?? null, {
@@ -265,7 +266,9 @@ async function ensureUsrProfileChangedListener(): Promise<void> {
         notifyListeners: true,
       });
     },
-  ).then((unlisten) => unlisten);
+  );
+  bindDeferredUnlisten(unlistenPromise);
+  usrProfileChangedUnlistenPromise = unlistenPromise.then(() => null);
 }
 
 function currentSettingsJsonOrNull(explicitSettings?: unknown): string | null {

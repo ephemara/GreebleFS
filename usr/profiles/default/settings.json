@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1,
+    "appZoom": 1.15,
     "compactMode": false,
     "customThemeBundles": [],
     "customThemes": [],
@@ -61,8 +61,8 @@
   },
   "dock": {
     "activePresentationId": "yakuake-workbench",
-    "defaultTerminalColumns": 100,
-    "defaultTerminalRows": 24,
+    "defaultTerminalColumns": 116,
+    "defaultTerminalRows": 21,
     "edgeSize": 500,
     "edgeWidth": 1000,
     "floatingBounds": null,
@@ -88,7 +88,22 @@
   "explorer": {
     "activeExplorerLayoutId": null,
     "activeMenuPackId": "greeblefs-default-explorer-menu",
-    "chromeLayoutOverridesByThemeId": {},
+    "chromeLayoutOverridesByThemeId": {
+      "pilot-dark": {
+        "default": {
+          "entries": [
+            {
+              "controlId": "previewClose",
+              "hidden": true,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "previewHeader",
+              "zone": "end"
+            }
+          ]
+        }
+      }
+    },
     "collectionPreviewMode": "list",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
@@ -294,7 +309,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.67,
+    "gridZoom": 0.2930000025811699,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -308,7 +323,7 @@
     "layoutUiResetRevision": 0,
     "modeProfileOverridesByThemeId": {},
     "preferredWorkbenchByExtension": {},
-    "showHiddenFiles": false,
+    "showHiddenFiles": true,
     "sortBy": "name",
     "sortOrder": "asc",
     "thumbnails": {
@@ -322,7 +337,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "details"
+    "viewMode": "icons-m"
   },
   "home": {
     "activePackId": null,
@@ -432,9 +447,14 @@
     "panelStateByProfile": {
       "overlay-classic": {
         "activePanelId": "explorer",
-        "dismissedPanelIds": [],
+        "dismissedPanelIds": [
+          "notes",
+          "go-sample-panel"
+        ],
         "openPanelIds": [
-          "settings"
+          "settings",
+          "terminal",
+          "explorer"
         ]
       }
     },
@@ -469,6 +489,6 @@
     "showSidebar": true,
     "windowMode": "windowed",
     "windowedHeight": 888,
-    "windowedWidth": 1440
+    "windowedWidth": 857
   }
 }

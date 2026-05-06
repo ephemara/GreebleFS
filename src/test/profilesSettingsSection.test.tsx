@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ProfilesSettingsSection } from '../components/settings/sections/ProfilesSettingsSection';
@@ -47,8 +48,10 @@ describe('ProfilesSettingsSection', () => {
         }}
         usrProfileSettingSliceKeys={['explorer']}
         usrProfileSharedSettingSliceKeys={['python']}
+        usrProfileSettingsVariants={[]}
         onSwitchUsrProfile={vi.fn()}
         onCreateUsrProfile={vi.fn()}
+        onCreateUsrProfileFromVariant={vi.fn()}
         onDuplicateUsrProfile={vi.fn()}
         onRenameUsrProfile={vi.fn()}
         onDeleteUsrProfile={vi.fn()}
@@ -62,5 +65,55 @@ describe('ProfilesSettingsSection', () => {
     expect(screen.getAllByText('shared-root').length).toBeGreaterThan(0);
     expect(screen.getByText('bundled-default')).toBeInTheDocument();
     expect(screen.getByText(/Writable:/)).toBeInTheDocument();
+  });
+
+  it('creates a profile from a named canonical variation', async () => {
+    const user = userEvent.setup();
+    const createFromVariant = vi.fn(async () => {});
+    const promptMock = vi.spyOn(window, 'prompt').mockImplementation(() => 'Quiet Review');
+
+    try {
+      render(
+        <ProfilesSettingsSection
+          detail="Shared-root usr plus profile-local overlays."
+          accent="#7c3aed"
+          usrProfileRuntimeSnapshot={null}
+          usrProfileSettingSliceKeys={['explorer']}
+          usrProfileSharedSettingSliceKeys={['python']}
+          usrProfileSettingsVariants={[
+            {
+              id: 'minimal-low-motion',
+              name: 'Minimal Low Motion',
+              description: 'Reduced shell motion and sound.',
+              tags: ['quiet', 'accessibility'],
+              sharedSettings: {},
+              profileSettings: {},
+            },
+          ]}
+          onSwitchUsrProfile={vi.fn()}
+          onCreateUsrProfile={vi.fn()}
+          onCreateUsrProfileFromVariant={createFromVariant}
+          onDuplicateUsrProfile={vi.fn()}
+          onRenameUsrProfile={vi.fn()}
+          onDeleteUsrProfile={vi.fn()}
+          onOpenUsrProfilesRootFolder={vi.fn()}
+          onOpenUsrProfileFolder={vi.fn()}
+        />,
+      );
+
+      const variantCard = screen.getByText('Minimal Low Motion').closest('[data-settings-catalog-card]');
+      expect(variantCard).not.toBeNull();
+
+      await user.click(
+        within(variantCard as HTMLElement).getByRole('button', { name: /create profile/i }),
+      );
+
+      expect(createFromVariant).toHaveBeenCalledWith(
+        'minimal-low-motion',
+        'Quiet Review',
+      );
+    } finally {
+      promptMock.mockRestore();
+    }
   });
 });

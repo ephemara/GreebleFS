@@ -20,6 +20,7 @@ export type {
   SecondaryWindowSurfaceKind,
 } from '../generated/tauri';
 import { commands, unwrapTauriResult } from './tauriClient';
+import { bindDeferredUnlisten } from './deferredUnlisten';
 
 export const SECONDARY_WINDOW_DESCRIPTOR_EVENT = 'greeblefs:secondary-window:descriptor';
 export const SECONDARY_WINDOW_CLOSED_EVENT = 'greeblefs:secondary-window:closed';
@@ -165,23 +166,17 @@ function registerSecondaryWindowListener<TDetail>(
   };
   browserWindow?.addEventListener(eventName, browserListener);
 
-  let isDisposed = false;
   let tauriUnlisten: (() => void) | null = null;
   if (isTauri()) {
-    void listen<TDetail>(eventName, (event) => {
-      listener(event.payload);
-    }).then((unlisten) => {
-      if (isDisposed) {
-        unlisten();
-        return;
-      }
-
-      tauriUnlisten = unlisten;
-    }).catch(() => undefined);
+    tauriUnlisten = bindDeferredUnlisten(
+      listen<TDetail>(eventName, (event) => {
+        listener(event.payload);
+      }),
+      { onError: () => undefined },
+    );
   }
 
   return () => {
-    isDisposed = true;
     browserWindow?.removeEventListener(eventName, browserListener);
     tauriUnlisten?.();
   };

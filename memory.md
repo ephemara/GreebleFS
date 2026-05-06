@@ -1,3 +1,60 @@
+# 2026-05-05 - Tauri Callback Spam Reload Guard Sweep
+
+- Fixed the remaining frontend-side callback leak paths behind repeated `[TAURI] Couldn't find callback id ...` warnings during dev reloads, especially the ones that could also re-touch window presentation and cause visible flicker.
+- `src/runtime/deferredUnlisten.ts` is now the shared reload-safe cleanup seam instead of only a late-resolution seam.
+  - It now tracks page unload with `beforeunload` + `pagehide`.
+  - Resolved listeners register a page-unload cleanup callback.
+  - Late-resolving registrations now auto-unlisten if the page has already started unloading.
+  - Added `resetDeferredUnlistenForTests()` so focused runtime tests can exercise unload behavior without leaking global state across cases.
+- `src/runtime/tauriClient.ts` now wraps generated `events.*.listen(...)` subscriptions with `bindDeferredUnlisten(...)` before returning the unlisten callback. That makes long-lived store/runtime feeds such as explorer task progress, audio/video engine state, GPU runtime state, telemetry, and future generated event feeds unload-safe by default instead of relying on each consumer to remember the pattern.
+- Swept the remaining raw listener registrations onto the same contract:
+  - `src/components/WorkbenchTopBar.tsx`
+  - `src/components/TerminalOverlay.tsx`
+  - `src/runtime/explorerPicker.ts`
+  - `src/runtime/fileOperationsWindow.ts`
+  - `src/runtime/secondaryWindows.ts`
+  - `src/runtime/ipc/streams.ts`
+  - `src/runtime/lanShareRuntimeBackend.ts`
+  - `src/runtime/useFolderPluginRuntime.ts`
+  - `src/runtime/usrProfiles.ts`
+- Tightened one adjacent race while touching the plugin watcher: `useFolderPluginRuntime.ts` now bails before `pluginWatchDirectory(...)` if the effect was disposed after the Tauri `listen(...)` resolved but before watcher startup continued.
+- Added focused regression proof:
+  - `src/test/deferredUnlisten.test.ts` now covers cleanup-before-resolution plus page-unload-before/after-resolution paths.
+  - `src/test/ipcStreamsRuntime.test.ts` now covers an IPC stream listener that resolves only after page unload has already started.
+- Validation:
+  - Passed: `bunx vitest run src/test/deferredUnlisten.test.ts src/test/ipcStreamsRuntime.test.ts src/test/useFolderPluginRuntime.fallback.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: filtered touched-file TypeScript sweep via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "deferredUnlisten|tauriClient|WorkbenchTopBar|TerminalOverlay|explorerPicker|fileOperationsWindow|secondaryWindows|ipc/streams|lanShareRuntimeBackend|useFolderPluginRuntime|usrProfiles|deferredUnlisten.test|ipcStreamsRuntime.test"` returned no matches for touched files.
+  - Passed: `git diff --check -- <touched files>` with only pre-existing LF->CRLF working-copy warnings.
+- Durable rule:
+  - Any raw async Tauri listener registration (`listen(...)`, `getCurrentWindow().listen(...)`, `onResized(...)`, `onMoved(...)`, `onCloseRequested(...)`, etc.) must route through `bindDeferredUnlisten(...)`.
+  - Prefer `src/runtime/tauriClient.ts` generated `events.*.listen(...)` wrappers over direct generated event usage so page-unload cleanup stays automatic.
+  - If callback-id warnings reappear during dev reload, inspect the remaining raw listener registrations before assuming the bug is in Rust or Tauri core.
+
+# 2026-05-05 - Canonical Usr Default Settings And Profile Variants
+
+- Canonical first-run defaults now have an explicit frontend bridge instead of drifting between Rust profile bootstrap and the fallback object in `src/store/settingsStore.ts`.
+  - Added `src/config/usrDefaultSettings.ts`, which imports `usr/profiles/shared/settings.json` and `usr/profiles/default/settings.json` and builds the effective shipped default snapshot.
+  - `src/store/settingsStore.ts` now exports `defaultSettings` by merging that shipped `/usr` snapshot on top of the older hardcoded object, which is retained only as a normalization-safe fallback. New product-default decisions should be authored in `/usr`, not only in the store file.
+  - Fixed `mergeSettingsWithDefaults(...)` so partial settings imports preserve the shipped base explorer `gridZoom` when the explorer section is omitted instead of re-anchoring to the generic view-mode preset.
+- Added named profile seed variations for the new Settings flow.
+  - Added `usr/profiles/variants.json` plus `src/config/usrProfileSettingsVariants.ts`.
+  - `src/App.tsx`, `src/components/SettingsPage.tsx`, and `src/components/settings/sections/ProfilesSettingsSection.tsx` now expose `Canonical Variations` so new profiles can be created from stable named baselines instead of only cloning the current live state.
+  - Added a focused test proving the variation card path calls `onCreateUsrProfileFromVariant(...)` with the selected variant id and prompted profile name.
+- Added `usr/README.md` as the high-signal operator map for the `usr/` contract:
+  - shared-root lanes stay under top-level `usr/<lane>`
+  - profile-overlay lanes ship under `usr/profiles/default/<lane>`
+  - shared settings live in `usr/profiles/shared/settings.json`
+  - profile-local first-run settings live in `usr/profiles/default/settings.json`
+  - named seed profiles live in `usr/profiles/variants.json`
+- Validation:
+  - Passed: `bunx vitest run src/test/usrProfileDefaults.test.ts src/test/settingsStore.test.ts src/test/profilesSettingsSection.test.tsx --reporter=dot`
+  - Passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "renders the dedicated profiles section" --reporter=dot`
+- Durable rules:
+  - If a default seems wrong on first launch, on reset, or when creating a new profile, inspect the shipped `/usr` JSON first. Do not assume `settingsStore.ts` is the authored source of truth anymore.
+  - Keep `usr/profiles/variants.json` partial. Variants should override only the slices they intentionally change and should keep stable ids because those ids now flow into the Settings UI and tests.
+- Next recommended step:
+  - Continue moving intentional product-default choices into `usr/profiles/shared/settings.json` and `usr/profiles/default/settings.json` so the large fallback object in `settingsStore.ts` becomes more obviously a compatibility/normalization layer than a shadow source of product policy.
+
 # 2026-05-05 - Root Folder Cleanup And Script Relocation
 
 - Cleaned the repo root so the only markdown files left at top level are `AGENTS.md`, `ARCHITECTURE.md`, and `memory.md`.

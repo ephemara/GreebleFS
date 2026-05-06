@@ -19,10 +19,22 @@ vi.mock("../runtime/tauriClient", () => ({
 }));
 
 import { commands } from "../runtime/tauriClient";
+import { resetDeferredUnlistenForTests } from "../runtime/deferredUnlisten";
 import { subscribeIpcStream } from "../runtime/ipc/streams";
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("ipc stream runtime", () => {
   beforeEach(() => {
+    resetDeferredUnlistenForTests();
     listenMock.mockReset();
     vi.mocked(commands.ipcReleaseStream).mockReset();
     vi.mocked(commands.ipcReplayStream).mockReset();
@@ -203,5 +215,30 @@ describe("ipc stream runtime", () => {
 
     dispose();
     expect(commands.ipcReleaseStream).not.toHaveBeenCalled();
+  });
+
+  it("cleans up a late stream listener registration after page unload starts", async () => {
+    const payloadListener = vi.fn();
+    const unlisten = vi.fn();
+    const registration = createDeferred<() => void>();
+
+    listenMock.mockImplementation(() => registration.promise);
+
+    const disposePromise = subscribeIpcStream(
+      {
+        id: "stream-1",
+        kind: "terminal-output",
+        eventName: "ipc-stream-terminal-output-preview-pane-0",
+      },
+      payloadListener,
+    );
+
+    window.dispatchEvent(new Event("pagehide"));
+    registration.resolve(unlisten);
+    const dispose = await disposePromise;
+
+    expect(unlisten).toHaveBeenCalledTimes(1);
+    dispose();
+    expect(unlisten).toHaveBeenCalledTimes(1);
   });
 });

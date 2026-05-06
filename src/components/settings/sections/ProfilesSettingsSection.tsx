@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Trash2,
 } from '@/components/AppIcons';
+import type { UsrProfileSettingsVariantDefinition } from '../../../config/usrProfileSettingsVariants';
 import type { UsrProfileRuntimeSnapshot } from '../../../runtime/usrProfiles';
 import {
   SettingsActionButton,
@@ -27,8 +28,10 @@ export function ProfilesSettingsSection({
   usrProfileRuntimeSnapshot,
   usrProfileSettingSliceKeys,
   usrProfileSharedSettingSliceKeys,
+  usrProfileSettingsVariants = [],
   onSwitchUsrProfile,
   onCreateUsrProfile,
+  onCreateUsrProfileFromVariant = () => {},
   onDuplicateUsrProfile,
   onRenameUsrProfile,
   onDeleteUsrProfile,
@@ -40,8 +43,10 @@ export function ProfilesSettingsSection({
   usrProfileRuntimeSnapshot: UsrProfileRuntimeSnapshot | null;
   usrProfileSettingSliceKeys: readonly string[];
   usrProfileSharedSettingSliceKeys: readonly string[];
+  usrProfileSettingsVariants: readonly UsrProfileSettingsVariantDefinition[];
   onSwitchUsrProfile: (profileId: string) => Promise<void> | void;
-  onCreateUsrProfile: (name: string) => Promise<void> | void;
+  onCreateUsrProfile: (name: string, seedSettingsJson?: string | null) => Promise<void> | void;
+  onCreateUsrProfileFromVariant: (variantId: string, name: string) => Promise<void> | void;
   onDuplicateUsrProfile: (profileId: string, name: string) => Promise<void> | void;
   onRenameUsrProfile: (profileId: string, name: string) => Promise<void> | void;
   onDeleteUsrProfile: (profileId: string) => Promise<void> | void;
@@ -99,6 +104,21 @@ export function ProfilesSettingsSection({
       return;
     }
     await runProfileAction('Creating profile…', () => onCreateUsrProfile(name));
+  };
+
+  const handleCreateProfileFromVariant = async (
+    variant: UsrProfileSettingsVariantDefinition,
+  ) => {
+    const name = promptForProfileName(
+      `Create profile from ${variant.name}`,
+      variant.name,
+    );
+    if (!name) {
+      return;
+    }
+    await runProfileAction('Creating profile from variation…', () =>
+      onCreateUsrProfileFromVariant(variant.id, name),
+    );
   };
 
   const handleDuplicateProfile = async () => {
@@ -191,6 +211,45 @@ export function ProfilesSettingsSection({
             <RefreshCw size={11} className="animate-spin" />
             <span>{pendingActionLabel}</span>
           </div>
+        </SettingsSectionBlock>
+      ) : null}
+
+      {usrProfileSettingsVariants.length > 0 ? (
+        <SettingsSectionBlock
+          title="Canonical Variations"
+          subtitle="Seed new profiles from named baseline variations instead of cloning the current live state."
+          accent={accent}
+        >
+          <SettingsCatalogGrid className="md:grid-cols-2 xl:grid-cols-4">
+            {usrProfileSettingsVariants.map((variant) => (
+              <SettingsCatalogCard
+                key={variant.id}
+                accent={accent}
+                title={variant.name}
+                subtitle={variant.id}
+                description={variant.description}
+                badges={
+                  <div className="flex flex-wrap gap-1">
+                    {variant.tags.map((tag) => (
+                      <SettingsStatusPill key={`${variant.id}:${tag}`}>
+                        {tag}
+                      </SettingsStatusPill>
+                    ))}
+                  </div>
+                }
+                footer={
+                  <SettingsActionButton
+                    accent={accent}
+                    disabled={pendingActionLabel != null}
+                    onClick={() => void handleCreateProfileFromVariant(variant)}
+                  >
+                    <Plus size={11} />
+                    <span>Create Profile</span>
+                  </SettingsActionButton>
+                }
+              />
+            ))}
+          </SettingsCatalogGrid>
         </SettingsSectionBlock>
       ) : null}
 

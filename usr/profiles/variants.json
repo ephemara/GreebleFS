@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "variants": [
+    {
+      "id": "canonical-default",
+      "name": "Canonical Default",
+      "description": "Matches the shipped first-run GreebleFS baseline from usr/profiles/default/settings.json plus usr/profiles/shared/settings.json.",
+      "tags": [
+        "baseline",
+        "shipped",
+        "profile-seed"
+      ],
+      "sharedSettings": {},
+      "profileSettings": {}
+    },
+    {
+      "id": "focused-authoring",
+      "name": "Focused Authoring",
+      "description": "A quieter authoring profile seed for code, text, and dense file browsing.",
+      "tags": [
+        "authoring",
+        "details-view",
+        "quiet-shell"
+      ],
+      "profileSettings": {
+        "appearance": {
+          "appZoom": 1,
+          "interactionMotionEnabled": false,
+          "layoutDynamicsEnabled": false
+        },
+        "explorer": {
+          "showHiddenFiles": false,
+          "viewMode": "details"
+        },
+        "terminal": {
+          "showSidebar": false,
+          "windowedWidth": 1280,
+          "windowedHeight": 820
+        },
+        "audio": {
+          "soundEffectsEnabled": false
+        }
+      }
+    },
+    {
+      "id": "review-presentation",
+      "name": "Review & Presentation",
+      "description": "A preview-first profile seed for demos, browsing, and review sessions.",
+      "tags": [
+        "demo",
+        "preview-first",
+        "presentation"
+      ],
+      "profileSettings": {
+        "appearance": {
+          "appZoom": 1.15,
+          "animations": true,
+          "interactionMotionEnabled": true
+        },
+        "explorer": {
+          "showHiddenFiles": false,
+          "viewMode": "icons-m"
+        },
+        "terminal": {
+          "showSidebar": true,
+          "windowedWidth": 1360,
+          "windowedHeight": 900
+        },
+        "audio": {
+          "soundEffectsEnabled": true
+        }
+      }
+    },
+    {
+      "id": "minimal-low-motion",
+      "name": "Minimal Low Motion",
+      "description": "Reduces motion, blur, and shell noise for accessibility, remote sessions, or distraction-free work.",
+      "tags": [
+        "low-motion",
+        "accessibility",
+        "minimal"
+      ],
+      "profileSettings": {
+        "appearance": {
+          "animations": false,
+          "appBlur": false,
+          "interactionMotionEnabled": false,
+          "layoutDynamicsEnabled": false
+        },
+        "audio": {
+          "soundEffectsEnabled": false,
+          "buttonSoundsEnabled": false,
+          "navigationSoundsEnabled": false,
+          "taskSoundsEnabled": false,
+          "notificationSoundsEnabled": false
+        },
+        "explorer": {
+          "showHiddenFiles": false
+        }
+      }
+    }
+  ]
+}

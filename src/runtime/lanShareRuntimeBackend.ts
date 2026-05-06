@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanShareResult } from "../generated/tauri";
 import type { MobileRemoteAccessMode } from "../config/mobileAccess";
+import { bindDeferredUnlisten } from "./deferredUnlisten";
 
 export async function lanShareStart(
   path: string,
@@ -37,20 +38,29 @@ export async function initializeUrlDropListener(
   onDragEnter?: (payload: UrlDropPayload) => void,
   onDrop?: (payload: UrlDropPayload) => void
 ) {
-  const unlistenEnter = await listen<UrlDropPayload>("app://url-drag-enter", (event) => {
+  const unlistenEnterPromise = listen<UrlDropPayload>("app://url-drag-enter", (event) => {
     if (onDragEnter) {
       onDragEnter(event.payload);
     }
   });
+  const stopEnterListener = bindDeferredUnlisten(unlistenEnterPromise);
+  await unlistenEnterPromise;
 
-  const unlistenDrop = await listen<UrlDropPayload>("app://url-drop", (event) => {
-    if (onDrop) {
-      onDrop(event.payload);
-    }
-  });
+  try {
+    const unlistenDropPromise = listen<UrlDropPayload>("app://url-drop", (event) => {
+      if (onDrop) {
+        onDrop(event.payload);
+      }
+    });
+    const stopDropListener = bindDeferredUnlisten(unlistenDropPromise);
+    await unlistenDropPromise;
 
-  return () => {
-    unlistenEnter();
-    unlistenDrop();
-  };
+    return () => {
+      stopEnterListener();
+      stopDropListener();
+    };
+  } catch (error) {
+    stopEnterListener();
+    throw error;
+  }
 }

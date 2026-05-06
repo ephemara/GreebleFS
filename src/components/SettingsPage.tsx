@@ -260,6 +260,7 @@ import {
   PluginSettingsSection,
 } from "./settings/sections/PluginSettingsSection";
 import { ProfilesSettingsSection } from "./settings/sections/ProfilesSettingsSection";
+import type { UsrProfileSettingsVariantDefinition } from "../config/usrProfileSettingsVariants";
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getWorkbenchShellFamilyForLayoutProfile,
@@ -3137,8 +3138,10 @@ export function SettingsPage({
   usrProfileRuntimeSnapshot = null,
   usrProfileSettingSliceKeys = [],
   usrProfileSharedSettingSliceKeys = [],
+  usrProfileSettingsVariants = [],
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
+  onCreateUsrProfileFromVariant = async () => {},
   onDuplicateUsrProfile = async () => {},
   onRenameUsrProfile = async () => {},
   onDeleteUsrProfile = async () => {},
@@ -3271,8 +3274,10 @@ export function SettingsPage({
   usrProfileRuntimeSnapshot?: UsrProfileRuntimeSnapshot | null;
   usrProfileSettingSliceKeys?: readonly string[];
   usrProfileSharedSettingSliceKeys?: readonly string[];
+  usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
-  onCreateUsrProfile?: (name: string) => Promise<void>;
+  onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
+  onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
   onDuplicateUsrProfile?: (
     profileId: string,
     name: string,
@@ -15036,8 +15041,10 @@ export function SettingsPage({
             usrProfileRuntimeSnapshot={usrProfileRuntimeSnapshot}
             usrProfileSettingSliceKeys={usrProfileSettingSliceKeys}
             usrProfileSharedSettingSliceKeys={usrProfileSharedSettingSliceKeys}
+            usrProfileSettingsVariants={usrProfileSettingsVariants}
             onSwitchUsrProfile={onSwitchUsrProfile}
             onCreateUsrProfile={onCreateUsrProfile}
+            onCreateUsrProfileFromVariant={onCreateUsrProfileFromVariant}
             onDuplicateUsrProfile={onDuplicateUsrProfile}
             onRenameUsrProfile={onRenameUsrProfile}
             onDeleteUsrProfile={onDeleteUsrProfile}

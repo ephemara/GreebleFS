@@ -184,6 +184,7 @@ import {
 } from '../config/pilotThemeContract';
 import type { IdeWorkbenchLayoutState } from '../config/ideWorkbenchLayout';
 import { DEFAULT_IDE_LAYOUT_PROFILE_ID, type WorkbenchShellFamilyId } from '../config/layoutProfiles';
+import { buildShippedUsrEffectiveDefaultSettings } from '../config/usrDefaultSettings';
 
 // ============================================================================
 // TYPES
@@ -1616,7 +1617,7 @@ export function normalizeAudioSettings(
   };
 }
 
-export const defaultSettings: Settings = {
+const runtimeFallbackDefaultSettings: Settings = {
   editor: {
     fontSize: 14,
     fontFamily: 'JetBrains Mono, Fira Code, Consolas, monospace',
@@ -1840,6 +1841,11 @@ export const defaultSettings: Settings = {
   },
 };
 
+export const defaultSettings: Settings = mergeSettings(
+  runtimeFallbackDefaultSettings,
+  buildShippedUsrEffectiveDefaultSettings(),
+);
+
 function normalizeLayoutPanelState(value: unknown): LayoutPanelState {
   const source = value && typeof value === 'object' ? value as Partial<LayoutPanelState> : {};
   return {
@@ -2009,6 +2015,7 @@ function normalizePluginSettingsCatalog(
 function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Settings {
   const importedAppearance = imported?.appearance;
   const importedTerminal = imported?.terminal;
+  const importedExplorer = (imported as Partial<Settings> | undefined)?.explorer;
   const legacyThemeId = importedAppearance?.activeThemeId ?? importedTerminal?.colorTheme;
   const legacyUiFont = importedAppearance?.uiFontFamily ?? importedAppearance?.uiFont ?? importedTerminal?.uiFont;
   const { uiFont: _legacyAppearanceUiFont, ...importedAppearanceSettings } = importedAppearance ?? {};
@@ -2031,8 +2038,17 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     : migrateLegacyContextMenuOverridesToLayouts(normalizedLegacyContextMenuItemOverrides);
   const normalizedImportedExplorerLayoutSettings = normalizeExplorerSettings(
     base.explorer,
-    (imported as Partial<Settings> | undefined)?.explorer,
+    importedExplorer,
   );
+  const normalizedImportedExplorerViewMode = normalizeExplorerViewMode(
+    importedExplorer?.viewMode ?? base.explorer.viewMode,
+  );
+  const importedExplorerHasExplicitGridZoom =
+    importedExplorer != null &&
+    Object.prototype.hasOwnProperty.call(importedExplorer, 'gridZoom');
+  const importedExplorerHasExplicitViewMode =
+    importedExplorer != null &&
+    Object.prototype.hasOwnProperty.call(importedExplorer, 'viewMode');
 
   return {
     ...base,
@@ -2053,25 +2069,32 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     models: normalizeModelsSettings(base.models, (imported as Partial<Settings> | undefined)?.models),
     explorer: {
       ...base.explorer,
-      ...imported?.explorer,
-      viewMode: normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
+      ...importedExplorer,
+      viewMode: normalizedImportedExplorerViewMode,
       collectionPreviewMode: normalizeExplorerCollectionPreviewMode(
-        imported?.explorer?.collectionPreviewMode ?? base.explorer.collectionPreviewMode,
+        importedExplorer?.collectionPreviewMode ?? base.explorer.collectionPreviewMode,
       ),
-      gridZoom: normalizeExplorerGridZoom(
-        imported?.explorer?.gridZoom,
-        normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
-      ),
+      gridZoom: importedExplorerHasExplicitGridZoom
+        ? normalizeExplorerGridZoom(
+            importedExplorer?.gridZoom,
+            normalizedImportedExplorerViewMode,
+          )
+        : importedExplorerHasExplicitViewMode
+          ? getExplorerGridZoomAnchor(normalizedImportedExplorerViewMode)
+          : base.explorer.gridZoom,
       experimentalViewMode: normalizeExplorerExperimentalViewMode(
-        imported?.explorer?.experimentalViewMode ?? base.explorer.experimentalViewMode,
+        importedExplorer?.experimentalViewMode ?? base.explorer.experimentalViewMode,
       ),
       experimentalDensity: normalizeAdaptiveSemanticDensity(
-        imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
+        importedExplorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
-      folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
-      doubleClickEmptyToGoBack: imported?.explorer?.doubleClickEmptyToGoBack ?? base.explorer.doubleClickEmptyToGoBack,
+      folderClickMode: normalizeExplorerFolderClickMode(
+        importedExplorer?.folderClickMode ?? base.explorer.folderClickMode,
+      ),
+      doubleClickEmptyToGoBack:
+        importedExplorer?.doubleClickEmptyToGoBack ?? base.explorer.doubleClickEmptyToGoBack,
       thumbnails: normalizeExplorerThumbnailSettings(
-        imported?.explorer?.thumbnails ?? base.explorer.thumbnails,
+        importedExplorer?.thumbnails ?? base.explorer.thumbnails,
       ),
       followThemeExplorerLayout:
         normalizedImportedExplorerLayoutSettings.followThemeExplorerLayout,
@@ -2080,18 +2103,20 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       layoutSelectionByPresentationMode:
         normalizedImportedExplorerLayoutSettings.layoutSelectionByPresentationMode,
       modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap(
-        imported?.explorer?.modeProfileOverridesByThemeId ?? base.explorer.modeProfileOverridesByThemeId,
+        importedExplorer?.modeProfileOverridesByThemeId ??
+          base.explorer.modeProfileOverridesByThemeId,
       ),
       chromeLayoutOverridesByThemeId: normalizeExplorerChromeOverrideSnapshotMap(
-        imported?.explorer?.chromeLayoutOverridesByThemeId ?? base.explorer.chromeLayoutOverridesByThemeId,
+        importedExplorer?.chromeLayoutOverridesByThemeId ??
+          base.explorer.chromeLayoutOverridesByThemeId,
       ),
       activeMenuPackId: normalizeExplorerMenuPackId(
-        imported?.explorer?.activeMenuPackId ?? base.explorer.activeMenuPackId,
+        importedExplorer?.activeMenuPackId ?? base.explorer.activeMenuPackId,
       ) ?? base.explorer.activeMenuPackId,
       contextMenuLayoutOverridesByContext: migratedContextMenuLayouts,
       contextMenuItemOverrides: normalizedLegacyContextMenuItemOverrides,
       preferredWorkbenchByExtension: normalizePreferredWorkbenchByExtensionMap(
-        imported?.explorer?.preferredWorkbenchByExtension ??
+        importedExplorer?.preferredWorkbenchByExtension ??
           base.explorer.preferredWorkbenchByExtension,
       ),
     },

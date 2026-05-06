@@ -35,6 +35,7 @@ import * as explorerBackend from './explorerBackend';
 import type { PluginDirectoryWatchEvent } from '../generated/tauri';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
 import { commands, unwrapTauriResult } from './tauriClient';
+import { bindDeferredUnlisten } from './deferredUnlisten';
 import {
   createExtensionHostClient,
   type ExecutionContextSnapshot,
@@ -471,12 +472,19 @@ export function useFolderPluginRuntime(
     const startPluginWatcher = async () => {
       try {
         await ensureDir(pluginSystemConfig.pluginsDirectory);
-        unlistenPlugins = await listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {
+        const unlistenPluginWatchPromise = listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {
           if (!shouldRefreshForPluginWatchPaths(event.payload.paths)) {
             return;
           }
           schedulePluginRefresh(true);
         });
+        unlistenPlugins = bindDeferredUnlisten(unlistenPluginWatchPromise);
+        await unlistenPluginWatchPromise;
+        if (disposed) {
+          unlistenPlugins?.();
+          unlistenPlugins = null;
+          return;
+        }
 
         pluginWatchCleanupRequired = true;
         unwrapTauriResult(await commands.pluginWatchDirectory(

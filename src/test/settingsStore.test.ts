@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSystemPresentationState } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
+import { getExplorerGridZoomAnchor } from '../config/explorerViewModes';
 import { defaultMobileLayoutSettings } from '../config/mobileLayout';
 import { overlayWindowGeometry, panelWindowGeometry } from '../config/overlayWindow';
 import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
@@ -30,21 +31,21 @@ beforeEach(() => {
 describe('resolveSystemPresentationState()', () => {
   it('tracks tray/taskbar visibility and the recovery path', () => {
     expect(resolveSystemPresentationState(defaultSettings.system)).toEqual({
-      trayVisible: true,
-      taskbarVisible: true,
-      hasVisibleEntryPoint: true,
-      recoveryPath: 'tray',
-    });
-
-    expect(resolveSystemPresentationState({
-      ...defaultSettings.system,
-      hideAppInTray: false,
-      showInTaskbar: true,
-    })).toEqual({
       trayVisible: false,
       taskbarVisible: true,
       hasVisibleEntryPoint: true,
       recoveryPath: 'taskbar',
+    });
+
+    expect(resolveSystemPresentationState({
+      ...defaultSettings.system,
+      hideAppInTray: true,
+      showInTaskbar: false,
+    })).toEqual({
+      trayVisible: true,
+      taskbarVisible: false,
+      hasVisibleEntryPoint: true,
+      recoveryPath: 'tray',
     });
   });
 });
@@ -65,8 +66,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
     expect(settings.terminal.overlayAnchor).toBe('bottom');
     expect(settings.terminal.windowMode).toBe('windowed');
-    expect(settings.terminal.windowedWidth).toBe(1440);
-    expect(settings.terminal.windowedHeight).toBe(920);
+    expect(settings.terminal.windowedWidth).toBe(defaultSettings.terminal.windowedWidth);
+    expect(settings.terminal.windowedHeight).toBe(defaultSettings.terminal.windowedHeight);
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.shell).toBe(defaultSettings.terminal.shell);
     expect(settings.terminal.shellProfile).toBe(defaultSettings.terminal.shellProfile);
@@ -97,7 +98,7 @@ describe('useSettingsStore — initial state', () => {
 
   it('has the correct default explorer settings', () => {
     const { settings } = useSettingsStore.getState();
-    expect(settings.explorer.showHiddenFiles).toBe(false);
+    expect(settings.explorer.showHiddenFiles).toBe(defaultSettings.explorer.showHiddenFiles);
     expect(settings.explorer.sortBy).toBe('name');
     expect(settings.explorer.sortOrder).toBe('asc');
     expect(settings.explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
@@ -109,7 +110,9 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.thumbnails).toEqual(defaultExplorerThumbnailSettings);
     expect(settings.explorer.collectionPreviewMode).toBe('list');
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
-    expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
+    expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual(
+      defaultSettings.explorer.chromeLayoutOverridesByThemeId,
+    );
     expect(settings.explorer.followThemeExplorerLayout).toBe(true);
     expect(settings.explorer.activeExplorerLayoutId).toBeNull();
     expect(settings.explorer.layoutSelectionByPresentationMode).toEqual({
@@ -164,23 +167,49 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.startMobileShareOnBoot).toBe(false);
-    expect(settings.system.hideAppInTray).toBe(true);
-    expect(settings.system.showInTaskbar).toBe(true);
+    expect(settings.system.hideAppInTray).toBe(defaultSettings.system.hideAppInTray);
+    expect(settings.system.showInTaskbar).toBe(defaultSettings.system.showInTaskbar);
     expect(settings.system.gpuTierMode).toBe('auto');
     expect(settings.system.developerTestSettingsEnabled).toBe(false);
-    expect(settings.system.devTelemetryHudVisible).toBe(true);
-    expect(settings.system.sourceTraceModeEnabled).toBe(false);
-    expect(settings.system.developerTelemetryEnabled).toBe(false);
-    expect(settings.system.developerTelemetryCaptureMode).toBe('raw');
-    expect(settings.system.developerTelemetryWriteToFile).toBe(true);
-    expect(settings.system.developerTelemetryShowInspector).toBe(true);
-    expect(settings.system.developerTelemetryPayloadMode).toBe('metadata+small-payloads');
-    expect(settings.system.developerTelemetryMaxFileSizeMb).toBe(64);
-    expect(settings.system.consumerDiagnosticsEnabled).toBe(false);
-    expect(settings.system.consumerDiagnosticsIncludePluginRuntime).toBe(true);
-    expect(settings.system.consumerDiagnosticsIncludeRendererRuntime).toBe(true);
-    expect(settings.system.consumerDiagnosticsIncludePerfSamples).toBe(true);
-    expect(settings.system.linuxDisplayBackendPreference).toBe('auto');
+    expect(settings.system.devTelemetryHudVisible).toBe(
+      defaultSettings.system.devTelemetryHudVisible,
+    );
+    expect(settings.system.sourceTraceModeEnabled).toBe(
+      defaultSettings.system.sourceTraceModeEnabled,
+    );
+    expect(settings.system.developerTelemetryEnabled).toBe(
+      defaultSettings.system.developerTelemetryEnabled,
+    );
+    expect(settings.system.developerTelemetryCaptureMode).toBe(
+      defaultSettings.system.developerTelemetryCaptureMode,
+    );
+    expect(settings.system.developerTelemetryWriteToFile).toBe(
+      defaultSettings.system.developerTelemetryWriteToFile,
+    );
+    expect(settings.system.developerTelemetryShowInspector).toBe(
+      defaultSettings.system.developerTelemetryShowInspector,
+    );
+    expect(settings.system.developerTelemetryPayloadMode).toBe(
+      defaultSettings.system.developerTelemetryPayloadMode,
+    );
+    expect(settings.system.developerTelemetryMaxFileSizeMb).toBe(
+      defaultSettings.system.developerTelemetryMaxFileSizeMb,
+    );
+    expect(settings.system.consumerDiagnosticsEnabled).toBe(
+      defaultSettings.system.consumerDiagnosticsEnabled,
+    );
+    expect(settings.system.consumerDiagnosticsIncludePluginRuntime).toBe(
+      defaultSettings.system.consumerDiagnosticsIncludePluginRuntime,
+    );
+    expect(settings.system.consumerDiagnosticsIncludeRendererRuntime).toBe(
+      defaultSettings.system.consumerDiagnosticsIncludeRendererRuntime,
+    );
+    expect(settings.system.consumerDiagnosticsIncludePerfSamples).toBe(
+      defaultSettings.system.consumerDiagnosticsIncludePerfSamples,
+    );
+    expect(settings.system.linuxDisplayBackendPreference).toBe(
+      defaultSettings.system.linuxDisplayBackendPreference,
+    );
   });
 
   it('has the correct default hotkey settings', () => {
@@ -250,7 +279,9 @@ describe('useSettingsStore — initial state', () => {
   it('has the correct default audio settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.audio.activeSoundPackId).toBeNull();
-    expect(settings.audio.soundEffectsEnabled).toBe(true);
+    expect(settings.audio.soundEffectsEnabled).toBe(
+      defaultSettings.audio.soundEffectsEnabled,
+    );
     expect(settings.audio.soundEffectsVolume).toBe(0.72);
     expect(settings.audio.buttonSoundsEnabled).toBe(true);
     expect(settings.audio.navigationSoundsEnabled).toBe(true);
@@ -333,8 +364,8 @@ describe('useSettingsStore.updateTerminal()', () => {
     });
 
     const { settings } = useSettingsStore.getState();
-    expect(settings.terminal.windowedWidth).toBe(panelWindowGeometry.defaultWidth);
-    expect(settings.terminal.windowedHeight).toBe(panelWindowGeometry.defaultHeight);
+    expect(settings.terminal.windowedWidth).toBe(defaultSettings.terminal.windowedWidth);
+    expect(settings.terminal.windowedHeight).toBe(defaultSettings.terminal.windowedHeight);
   });
 
   it('updates external terminal fields together', () => {
@@ -487,8 +518,8 @@ describe('mergeSettingsWithDefaults()', () => {
       },
     });
 
-    expect(merged.terminal.windowedWidth).toBe(panelWindowGeometry.defaultWidth);
-    expect(merged.terminal.windowedHeight).toBe(panelWindowGeometry.defaultHeight);
+    expect(merged.terminal.windowedWidth).toBe(defaultSettings.terminal.windowedWidth);
+    expect(merged.terminal.windowedHeight).toBe(defaultSettings.terminal.windowedHeight);
   });
 
   it('normalizes invalid gpu tier imports back to auto', () => {
@@ -530,7 +561,9 @@ describe('useSettingsStore.updateExplorer()', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({ viewMode: 'icons-l' });
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
-    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(
+      getExplorerGridZoomAnchor('icons-l'),
+    );
   });
 
   it('preserves the first-class list view mode', () => {
@@ -1621,7 +1654,7 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(mergedGrid.explorer.viewMode).toBe('icons-l');
-    expect(mergedGrid.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
+    expect(mergedGrid.explorer.gridZoom).toBe(getExplorerGridZoomAnchor('icons-l'));
     expect(mergedList.explorer.viewMode).toBe('list');
   });
 

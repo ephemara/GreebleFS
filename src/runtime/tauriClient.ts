@@ -8,6 +8,7 @@ import {
   summarizeTelemetryValue,
   type TelemetryMetadata,
 } from "./telemetry";
+import { bindDeferredUnlisten } from "./deferredUnlisten";
 
 export type {
   LinuxDisplayBackendPreference,
@@ -106,8 +107,8 @@ function wrapEvents<
       name,
       {
         ...eventApi,
-        listen: async (listener: (event: { payload: unknown }) => void) =>
-          eventApi.listen((event: { payload: unknown }) => {
+        listen: async (listener: (event: { payload: unknown }) => void) => {
+          const unlistenPromise = eventApi.listen((event: { payload: unknown }) => {
             recordFrontendTelemetry({
               layer: "tauri-bridge",
               kind: "event",
@@ -118,7 +119,11 @@ function wrapEvents<
               },
             });
             listener(event);
-          }),
+          });
+          const cleanup = bindDeferredUnlisten(unlistenPromise);
+          await unlistenPromise;
+          return cleanup;
+        },
       },
     ]),
   ) as TEvents;

@@ -100,6 +100,7 @@ import {
 } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { bindDeferredUnlisten } from '../runtime/deferredUnlisten';
 import { subscribeIpcStream } from '../runtime/ipc/streams';
 import {
   bootstrapManagedPythonRuntime,
@@ -2258,10 +2259,8 @@ export function TerminalOverlay({
       return;
     }
 
-    let cancelled = false;
-    let unlistenShellIntegration: (() => void) | null = null;
-
-    void listen<TerminalShellIntegrationStateEvent>(
+    const stopShellIntegrationListener = bindDeferredUnlisten(
+      listen<TerminalShellIntegrationStateEvent>(
       'terminal-shell-integration-state-event',
       (event) => {
         const payload = event.payload as TerminalShellIntegrationStateEvent;
@@ -2281,17 +2280,12 @@ export function TerminalOverlay({
         lastObservedWorkingDirectoryRef.current = reportedWorkingDirectory;
         onReportedWorkingDirectoryChange(reportedWorkingDirectory);
       },
-    ).then((unlisten) => {
-      if (cancelled) {
-        unlisten();
-        return;
-      }
-      unlistenShellIntegration = unlisten;
-    }).catch(() => {});
+      ),
+      { onError: () => {} },
+    );
 
     return () => {
-      cancelled = true;
-      unlistenShellIntegration?.();
+      stopShellIntegrationListener();
     };
   }, [activePaneId, onReportedWorkingDirectoryChange]);
 

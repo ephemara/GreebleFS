@@ -42,6 +42,7 @@ import type {
   DockPlacementMode,
   DockPreviewSplitMode,
 } from '../config/dockPresentations';
+import { bindDeferredUnlisten } from '../runtime/deferredUnlisten';
 import {
   dockTerminalGridGeometry,
   estimateDockSizeFromTerminalGrid,
@@ -813,13 +814,13 @@ export function WorkbenchTopBar({
     };
 
     void sync();
-    const unlistenResize = currentWindow.onResized(() => {
+    const stopResizeListener = bindDeferredUnlisten(currentWindow.onResized(() => {
       void sync();
-    });
+    }));
 
     return () => {
       cancelled = true;
-      void unlistenResize.then(unlisten => unlisten());
+      stopResizeListener();
     };
   }, [isWindowedMode]);
 

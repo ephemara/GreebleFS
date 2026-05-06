@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import type { IpcStreamHandle, IpcStreamReplayResponse } from "../../generated/tauri";
 import { commands, unwrapTauriResult } from "../tauriClient";
+import { bindDeferredUnlisten } from "../deferredUnlisten";
 
 export type ManagedIpcStreamHandle = IpcStreamHandle;
 
@@ -28,9 +29,11 @@ export async function subscribeIpcStream<TPayload>(
     listener(payload);
   };
 
-  const unlisten = await listen<TPayload>(handle.eventName, (event) => {
+  const unlistenPromise = listen<TPayload>(handle.eventName, (event) => {
     deliverOnce(event.payload);
   });
+  const stopStreamListener = bindDeferredUnlisten(unlistenPromise);
+  await unlistenPromise;
 
   if (options.includeReplay === true || options.replayFromSequence != null) {
     const replay = unwrapTauriResult(
@@ -49,7 +52,7 @@ export async function subscribeIpcStream<TPayload>(
   }
 
   return () => {
-    unlisten();
+    stopStreamListener();
     if (options.releaseOnUnsubscribe ?? true) {
       void commands
         .ipcReleaseStream(handle.id)

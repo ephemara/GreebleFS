@@ -7,6 +7,7 @@ import {
   createSecondaryWindowOpenRequest,
   openSecondaryWindow,
 } from './secondaryWindows';
+import { bindDeferredUnlisten } from './deferredUnlisten';
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -446,16 +447,17 @@ function registerCrossWindowListener<T>(args: {
   browserTarget?.addEventListener('storage', handleStorageEvent);
 
   let closed = false;
-  let unlistenPromise: Promise<() => void> | null = null;
+  let stopTauriListener: (() => void) | null = null;
   if (isTauri()) {
-    unlistenPromise = getCurrentWindow()
-      .listen<unknown>(args.eventName, (event) => {
+    stopTauriListener = bindDeferredUnlisten(
+      getCurrentWindow().listen<unknown>(args.eventName, (event) => {
         const value = args.parseDetail(event.payload);
         if (value) {
           args.listener(value);
         }
-      })
-      .catch(() => () => undefined);
+      }),
+      { onError: () => undefined },
+    );
   }
 
   return () => {
@@ -465,7 +467,7 @@ function registerCrossWindowListener<T>(args: {
     closed = true;
     browserTarget?.removeEventListener(args.eventName, handleBrowserEvent);
     browserTarget?.removeEventListener('storage', handleStorageEvent);
-    void unlistenPromise?.then((unlisten) => unlisten()).catch(() => undefined);
+    stopTauriListener?.();
   };
 }
 
