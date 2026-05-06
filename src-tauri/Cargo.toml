@@ -108,6 +108,16 @@ yazi-sftp = { path = "../crates/fileexplorer/crates/yazi-sftp" }
 yazi-shared = { path = "../crates/fileexplorer/crates/yazi-shared" }
 yazi-term = { path = "../crates/fileexplorer/crates/yazi-term" }
 yazi-vfs = { path = "../crates/fileexplorer/crates/yazi-vfs" }
+# Keep the russh / RustCrypto prerelease family exact. Cargo will otherwise
+# float these prerelease ranges onto newer stable releases when Cargo.lock is
+# absent, which breaks clean builds in the SSH/SFTP stack.
+crypto-bigint = { version = "=0.7.0-rc.10", default-features = false, features = ["alloc", "zeroize"] }
+crypto-primes = { version = "=0.7.0-pre.4", default-features = false }
+der = { version = "=0.8.0-rc.9", default-features = false, features = ["oid"] }
+pkcs1 = { version = "=0.8.0-rc.4", default-features = false, features = ["alloc", "pem"] }
+pkcs8 = { version = "=0.11.0-rc.8", default-features = false, features = ["alloc", "pem"] }
+rsa = { version = "=0.10.0-rc.10", default-features = false, features = ["sha2"] }
+spki = { version = "=0.8.0-rc.4", default-features = false, features = ["alloc"] }
 russh = { workspace = true }
 arc-swap = "1.7.1"
 cpal = "0.17.3"

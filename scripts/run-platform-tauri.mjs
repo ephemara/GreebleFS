@@ -79,6 +79,15 @@ const devRuntimeStateDirectoryEnvKeys = {
 const devRuntimeStateDirectoryNames = {
   notes: "notes",
 };
+const mcpRoot = path.join(projectRoot, "MCP");
+const mcpStateDirectory = path.join(mcpRoot, ".state");
+const mcpTauriDevStatusPath = path.join(mcpStateDirectory, "tauri-dev-session.json");
+const mcpTauriDevLogPath = path.join(mcpStateDirectory, "tauri-dev.log");
+const defaultMcpWebviewDebugPort = (
+  process.env.GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT
+  || process.env.OVERLAYTERM_MCP_WEBVIEW2_DEBUG_PORT
+  || "9222"
+).trim();
 
 function hasExplicitEnvValue(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -86,6 +95,114 @@ function hasExplicitEnvValue(value) {
 
 function normalizePathForLogs(value) {
   return value.replace(/\\/g, "/");
+}
+
+function resolveTauriFrontendDevUrl(existingEnv = process.env) {
+  const explicitDevUrl = (existingEnv.GREEBLEFS_TAURI_DEV_URL || existingEnv.OVERLAYTERM_TAURI_DEV_URL)?.trim();
+  const explicitDevPort = (existingEnv.GREEBLEFS_TAURI_DEV_PORT || existingEnv.OVERLAYTERM_TAURI_DEV_PORT)?.trim();
+  const resolvedDevPort = explicitDevPort || "1420";
+  return explicitDevUrl || `http://localhost:${resolvedDevPort}`;
+}
+
+function appendBrowserArgument(existingArguments, argument) {
+  const trimmedExistingArguments = existingArguments?.trim() || "";
+  if (!trimmedExistingArguments) {
+    return argument;
+  }
+  if (trimmedExistingArguments.includes(argument)) {
+    return trimmedExistingArguments;
+  }
+  return `${trimmedExistingArguments} ${argument}`;
+}
+
+function buildMcpDevelopmentEnvironment({
+  tauriCommand,
+  existingEnv = process.env,
+  platform = process.platform,
+} = {}) {
+  if (tauriCommand !== "dev") {
+    return {
+      environment: {},
+      session: null,
+    };
+  }
+
+  const frontendDevUrl = resolveTauriFrontendDevUrl(existingEnv);
+  const webviewDebugPort = (
+    existingEnv.GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT
+    || existingEnv.OVERLAYTERM_MCP_WEBVIEW2_DEBUG_PORT
+    || defaultMcpWebviewDebugPort
+  ).trim();
+  const environment = {
+    GREEBLEFS_MCP_ENABLED: "1",
+    OVERLAYTERM_MCP_ENABLED: "1",
+    VITE_GREEBLEFS_MCP_ENABLED: "1",
+    VITE_OVERLAYTERM_MCP_ENABLED: "1",
+    GREEBLEFS_MCP_STATUS_FILE: mcpTauriDevStatusPath,
+    OVERLAYTERM_MCP_STATUS_FILE: mcpTauriDevStatusPath,
+    GREEBLEFS_MCP_LOG_FILE: mcpTauriDevLogPath,
+    OVERLAYTERM_MCP_LOG_FILE: mcpTauriDevLogPath,
+    GREEBLEFS_MCP_FRONTEND_DEV_URL: frontendDevUrl,
+    OVERLAYTERM_MCP_FRONTEND_DEV_URL: frontendDevUrl,
+    GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT: webviewDebugPort,
+    OVERLAYTERM_MCP_WEBVIEW2_DEBUG_PORT: webviewDebugPort,
+  };
+
+  if (platform === "win32" && webviewDebugPort) {
+    const remoteDebuggingArgument = `--remote-debugging-port=${webviewDebugPort}`;
+    environment.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = appendBrowserArgument(
+      existingEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS,
+      remoteDebuggingArgument,
+    );
+  }
+
+  return {
+    environment,
+    session: {
+      projectRoot: normalizePathForLogs(projectRoot),
+      statusFilePath: normalizePathForLogs(mcpTauriDevStatusPath),
+      logFilePath: normalizePathForLogs(mcpTauriDevLogPath),
+      frontendDevUrl,
+      webviewDebugPort,
+    },
+  };
+}
+
+async function ensureMcpStateDirectory() {
+  await fs.mkdir(mcpStateDirectory, { recursive: true });
+}
+
+async function writeMcpTauriSessionFile(sessionState) {
+  await ensureMcpStateDirectory();
+  await fs.writeFile(
+    mcpTauriDevStatusPath,
+    `${JSON.stringify({
+      version: 1,
+      product: "GreebleFS",
+      ...sessionState,
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+function formatTauriDevLogChunk(streamName, chunk) {
+  const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+  if (!text) {
+    return "";
+  }
+  const isoTimestamp = new Date().toISOString();
+  return text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line, index, lines) => {
+      if (!line && index === lines.length - 1) {
+        return "";
+      }
+      return `[${isoTimestamp}] [${streamName}] ${line}`;
+    })
+    .filter(Boolean)
+    .join("\n") + "\n";
 }
 
 function setEnvironmentPairIfMissing(targetEnvironment, existingEnv, keys, value) {
@@ -492,6 +609,97 @@ function runCommand(command, args, extraEnv = {}) {
   });
 }
 
+async function runCommandWithMcpTauriDevStatus(command, args, extraEnv = {}, sessionConfig) {
+  const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
+  await ensureMcpStateDirectory();
+  await fs.writeFile(mcpTauriDevLogPath, "", "utf8");
+
+  const sessionState = {
+    command: [command, ...args].join(" "),
+    cwd: normalizePathForLogs(projectRoot),
+    running: false,
+    status: "launching",
+    tauriCommand: "dev",
+    pid: null,
+    exitCode: null,
+    signal: null,
+    startedAt: new Date().toISOString(),
+    lastOutputAt: null,
+    frontendDevUrl: sessionConfig.frontendDevUrl,
+    webviewDebugPort: sessionConfig.webviewDebugPort,
+    logFilePath: sessionConfig.logFilePath,
+    statusFilePath: sessionConfig.statusFilePath,
+  };
+  await writeMcpTauriSessionFile(sessionState);
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: projectRoot,
+      stdio: ["inherit", "pipe", "pipe"],
+      shell: useShell,
+      env: {
+        ...process.env,
+        ...extraEnv,
+      },
+    });
+
+    const updateSessionState = async (nextState) => {
+      Object.assign(sessionState, nextState);
+      await writeMcpTauriSessionFile(sessionState);
+    };
+
+    sessionState.pid = child.pid ?? null;
+    void updateSessionState({
+      running: true,
+      status: "running",
+    }).catch(() => {});
+
+    const handleOutputChunk = async (streamName, chunk, targetStream) => {
+      targetStream.write(chunk);
+      sessionState.lastOutputAt = new Date().toISOString();
+      const formattedChunk = formatTauriDevLogChunk(streamName, chunk);
+      if (formattedChunk) {
+        await fs.appendFile(mcpTauriDevLogPath, formattedChunk, "utf8");
+      }
+      await writeMcpTauriSessionFile(sessionState);
+    };
+
+    child.stdout?.on("data", (chunk) => {
+      void handleOutputChunk("stdout", chunk, process.stdout).catch(() => {});
+    });
+    child.stderr?.on("data", (chunk) => {
+      void handleOutputChunk("stderr", chunk, process.stderr).catch(() => {});
+    });
+
+    child.on("exit", (code, signal) => {
+      void updateSessionState({
+        running: false,
+        status: signal ? "terminated" : "exited",
+        exitCode: code ?? 0,
+        signal: signal ?? null,
+        endedAt: new Date().toISOString(),
+      })
+        .catch(() => {})
+        .finally(() => {
+          resolve(code ?? 0);
+        });
+    });
+
+    child.on("error", (error) => {
+      void updateSessionState({
+        running: false,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+        endedAt: new Date().toISOString(),
+      })
+        .catch(() => {})
+        .finally(() => {
+          reject(error);
+        });
+    });
+  });
+}
+
 function commandExists(command) {
   const result = spawnSync(command, ["--version"], {
     stdio: "ignore",
@@ -592,25 +800,35 @@ async function main() {
     : cacheNodeModules;
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
   const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand, tauriCommand);
+  const mcpDevelopment = buildMcpDevelopmentEnvironment({ tauriCommand });
   const tauriArgs = hasExplicitConfig
     ? cliArgs
     : cliArgs.length === 0
       ? ["--config", runtimeConfigPath]
       : [cliArgs[0], "--config", runtimeConfigPath, ...cliArgs.slice(1)];
 
-  const exitCode = await runCommand(
-    process.execPath,
-    [sharedTauriCliEntry, ...tauriArgs],
-    {
-      NODE_PATH: existingNodePath,
-      npm_config_optional: "true",
-      GREEBLEFS_VITE_OUT_DIR: frontendDist,
-      OVERLAYTERM_VITE_OUT_DIR: frontendDist,
-      ...linuxGraphicsEnvironment,
-      ...sharedRustBuildEnvironment,
-      ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
-    }
-  );
+  const tauriEnvironment = {
+    NODE_PATH: existingNodePath,
+    npm_config_optional: "true",
+    GREEBLEFS_VITE_OUT_DIR: frontendDist,
+    OVERLAYTERM_VITE_OUT_DIR: frontendDist,
+    ...linuxGraphicsEnvironment,
+    ...sharedRustBuildEnvironment,
+    ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
+    ...mcpDevelopment.environment,
+  };
+  const exitCode = tauriCommand === "dev" && mcpDevelopment.session
+    ? await runCommandWithMcpTauriDevStatus(
+        process.execPath,
+        [sharedTauriCliEntry, ...tauriArgs],
+        tauriEnvironment,
+        mcpDevelopment.session,
+      )
+    : await runCommand(
+        process.execPath,
+        [sharedTauriCliEntry, ...tauriArgs],
+        tauriEnvironment,
+      );
 
   process.exit(exitCode);
 }

@@ -59,7 +59,7 @@ echo "[1/5] Syncing canonical icons..."
 bun scripts/sync-canonical-icons.mjs
 
 echo "[2/5] Regenerating Tauri bindings..."
-cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings
+node scripts/run-export-bindings.mjs
 
 echo "[3/5] Building frontend bundle..."
 bunx vite build

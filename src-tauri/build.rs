@@ -43,27 +43,28 @@ fn main() {
         }
     }
 
-    ensure_optional_mobile_bundle_directory(&workspace_root)
+    ensure_optional_bundle_directory(&workspace_root.join("dist"), "frontend bundle")
+        .expect("failed to prepare optional frontend bundle directory");
+    ensure_optional_bundle_directory(&workspace_root.join("dist-mobile"), "mobile bundle")
         .expect("failed to prepare optional mobile bundle directory");
     tauri_build::build()
 }
 
-fn ensure_optional_mobile_bundle_directory(workspace_root: &Path) -> Result<(), String> {
-    let mobile_bundle_dir = workspace_root.join("dist-mobile");
-    if mobile_bundle_dir.is_dir() {
+fn ensure_optional_bundle_directory(bundle_dir: &Path, bundle_label: &str) -> Result<(), String> {
+    if bundle_dir.is_dir() {
         return Ok(());
     }
-    if mobile_bundle_dir.exists() {
+    if bundle_dir.exists() {
         return Err(format!(
-            "optional mobile bundle path exists but is not a directory: {}",
-            mobile_bundle_dir.display()
+            "optional {bundle_label} path exists but is not a directory: {}",
+            bundle_dir.display()
         ));
     }
 
-    fs::create_dir_all(&mobile_bundle_dir).map_err(|error| {
+    fs::create_dir_all(bundle_dir).map_err(|error| {
         format!(
-            "failed to create optional mobile bundle directory {}: {error}",
-            mobile_bundle_dir.display()
+            "failed to create optional {bundle_label} directory {}: {error}",
+            bundle_dir.display()
         )
     })?;
     Ok(())

@@ -91,9 +91,42 @@ function Remove-ManagedPath {
 }
 
 function Stop-GreebleProcesses {
-    # Kill the currently running app so uninstall/replace can actually clear the install tree.
-    Get-Process -Name 'greeblefs', 'overlayterm', 'greeble' -ErrorAction SilentlyContinue |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+    $appProcessNames = @('greeblefs', 'overlayterm', 'greeble')
+    $managedWebViewCommandLinePatterns = @(
+        '--webview-exe-name=greeblefs.exe',
+        '--webview-exe-name=overlayterm.exe',
+        '--webview-exe-name=greeble.exe',
+        '\co.greeblefs.app\EBWebView',
+        '\co.overlayterm.app\EBWebView'
+    )
+
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        # Kill the app host first, then sweep only the matching WebView children that keep
+        # the managed EBWebView cache tree locked during uninstall/reinstall.
+        Get-Process -Name $appProcessNames -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+
+        Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" -ErrorAction SilentlyContinue |
+            Where-Object {
+                $commandLine = [string]$_.CommandLine
+                if ([string]::IsNullOrWhiteSpace($commandLine)) {
+                    return $false
+                }
+
+                foreach ($pattern in $managedWebViewCommandLinePatterns) {
+                    if ($commandLine.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        return $true
+                    }
+                }
+
+                return $false
+            } |
+            ForEach-Object {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+
+        Start-Sleep -Milliseconds 500
+    }
 }
 
 function New-Shortcut {

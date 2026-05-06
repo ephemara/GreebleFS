@@ -19,6 +19,10 @@ import {
     getCurrentSecondaryWindowDescriptor,
     type SecondaryWindowDescriptor,
 } from "./runtime/secondaryWindows";
+import {
+    installGreeblefsDevMcpBridge,
+    markGreeblefsDevMcpBridgeRenderComplete,
+} from "./runtime/devMcpBridge";
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -115,6 +119,7 @@ async function resolveBootstrapTarget() {
 
 async function bootstrapApp() {
     try {
+        await installGreeblefsDevMcpBridge();
         await initializeManagedContentDirectories();
         await initializeUsrProfilesBootstrap();
         const { RootComponent, rootProps } = await resolveBootstrapTarget();
@@ -127,6 +132,7 @@ async function bootstrapApp() {
             <RootComponent {...rootProps} />
           </React.StrictMode>
         );
+        markGreeblefsDevMcpBridgeRenderComplete();
     } catch (error) {
         reportGlobalError("GreebleFS render bootstrap failed", formatGlobalErrorDetail(error));
     }

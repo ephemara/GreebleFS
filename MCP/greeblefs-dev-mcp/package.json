@@ -1,0 +1,21 @@
+{
+  "name": "@greeblefs/dev-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --import tsx src/index.ts --transport stdio",
+    "dev:http": "node --import tsx src/index.ts --transport http --port 4281",
+    "doctor": "node --import tsx src/index.ts --doctor",
+    "smoke": "node --import tsx src/smoke.ts",
+    "smoke:screenshot": "node --import tsx src/smoke.ts --screenshot",
+    "typecheck": "bunx tsc --noEmit --pretty false -p tsconfig.json"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

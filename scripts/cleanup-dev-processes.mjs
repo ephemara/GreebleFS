@@ -34,9 +34,11 @@ function buildTargetCommandMarkers(projectRootPath) {
     `${path.join(projectRootPath, "node_modules", "@tauri-apps", "cli", "tauri.js")} dev`,
     `${path.join(projectRootPath, "node_modules", ".bin", "vite")}`,
     `${path.join(projectRootPath, "node_modules", "vite", "bin", "vite.js")}`,
+    "node scripts/run-export-bindings.mjs",
     "cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings",
     `${path.join(projectRootPath, "target", "debug", "export-bindings")}`,
     "bun scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite",
+    "bun scripts/sync-canonical-icons.mjs && bun run bindings:generate && vite",
   ];
 }
 

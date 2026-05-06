@@ -446,7 +446,7 @@
     },
     "panelStateByProfile": {
       "overlay-classic": {
-        "activePanelId": "explorer",
+        "activePanelId": "greeble3d",
         "dismissedPanelIds": [
           "notes",
           "go-sample-panel"
@@ -486,7 +486,7 @@
     "shellArgs": "",
     "shellPath": "",
     "shellProfile": "auto",
-    "showSidebar": true,
+    "showSidebar": false,
     "windowMode": "windowed",
     "windowedHeight": 888,
     "windowedWidth": 857

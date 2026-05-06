@@ -1,0 +1,1166 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import net from 'node:net';
+import path from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+
+import { chromium, type Browser, type Locator, type Page } from 'playwright';
+import {
+  captureWindowsDesktopWindowScreenshot,
+  listWindowsDesktopWindows,
+  type WindowsDesktopWindowRecord,
+} from './windowsDesktopWindowCapture.js';
+
+const thisFilePath = fileURLToPath(import.meta.url);
+const runtimeDirectory = path.dirname(thisFilePath);
+const packageRoot = path.resolve(runtimeDirectory, '..', '..');
+const repoRoot = path.resolve(packageRoot, '..', '..');
+const mcpRoot = path.join(repoRoot, 'MCP');
+const mcpStateDirectory = path.join(mcpRoot, '.state');
+const screenshotDirectory = path.join(mcpStateDirectory, 'screenshots');
+const tauriDevStatusPath = path.join(mcpStateDirectory, 'tauri-dev-session.json');
+const tauriDevLogPath = path.join(mcpStateDirectory, 'tauri-dev.log');
+const fallbackBrowserProfileDirectory = path.join(mcpStateDirectory, 'fallback-browser-profile');
+const preferredPlaywrightLaunchChannels = [
+  process.env.GREEBLEFS_MCP_PLAYWRIGHT_CHANNEL?.trim(),
+  process.env.PLAYWRIGHT_CHANNEL?.trim(),
+  'msedge',
+  'chrome',
+].filter((value): value is string => Boolean(value));
+const preferredFallbackBrowserExecutables = [
+  process.env.GREEBLEFS_MCP_BROWSER_EXECUTABLE?.trim(),
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim(),
+  process.platform === 'win32' ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' : null,
+  process.platform === 'win32' ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' : null,
+  process.platform === 'win32' ? 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe' : null,
+].filter((value): value is string => Boolean(value));
+
+export interface GreeblefsTauriDevSessionRecord {
+  version: number;
+  product: string;
+  command: string;
+  cwd: string;
+  running: boolean;
+  status: string;
+  tauriCommand: string;
+  pid: number | null;
+  exitCode: number | null;
+  signal?: string | null;
+  startedAt: string;
+  updatedAt: string;
+  endedAt?: string | null;
+  error?: string | null;
+  lastOutputAt?: string | null;
+  frontendDevUrl?: string | null;
+  webviewDebugPort?: string | null;
+  logFilePath?: string | null;
+  statusFilePath?: string | null;
+}
+
+export interface GreeblefsAutomationStatus {
+  repoRoot: string;
+  statusFilePath: string;
+  logFilePath: string;
+  session: GreeblefsTauriDevSessionRecord | null;
+  sessionFileExists: boolean;
+  pidRunning: boolean;
+  devUrlReachable: boolean;
+  cdpReachable: boolean;
+  cdpVersion: string | null;
+  attachMode: 'native-cdp' | 'browser-dev-url' | null;
+  attachedPageUrl: string | null;
+  bridgeReady: boolean;
+  lastAttachError: string | null;
+}
+
+export interface GreeblefsUiTarget {
+  selector?: string;
+  role?: string;
+  name?: string;
+  text?: string;
+  exact?: boolean;
+  agentId?: string;
+  actionId?: string;
+}
+
+interface BrowserAttachmentOptions {
+  preferNative?: boolean;
+  allowFallbackBrowser?: boolean;
+}
+
+export interface GreeblefsWorkspaceDirectoryEntry {
+  name: string;
+  absolutePath: string;
+  relativePath: string;
+  isDirectory: boolean;
+  size: number;
+  modifiedAt: string | null;
+}
+
+export interface GreeblefsWorkspaceStatResult {
+  requestedPath: string;
+  resolvedPath: string;
+  exists: boolean;
+  isDirectory: boolean;
+  size: number;
+  modifiedAt: string | null;
+}
+
+export interface GreeblefsWorkspaceCommandResult {
+  command: string;
+  cwd: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface GreeblefsNativeWindowScreenshotResult {
+  imagePath: string;
+  base64Png: string;
+  window: WindowsDesktopWindowRecord & {
+    bounds?: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+    };
+  };
+}
+
+function normalizeWindowsPathForJson(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildIsoTimestamp(): string {
+  return new Date().toISOString();
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function writeTextFile(filePath: string, content: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, content, 'utf8');
+}
+
+async function appendTextFile(filePath: string, content: string): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.appendFile(filePath, content, 'utf8');
+}
+
+function escapeCssAttributeValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function resolvePathInsideRepo(pathLike: string): string {
+  const resolvedPath = path.isAbsolute(pathLike)
+    ? path.resolve(pathLike)
+    : path.resolve(repoRoot, pathLike);
+  const normalizedRepoRoot = path.resolve(repoRoot);
+  const normalizedResolvedPath = path.resolve(resolvedPath);
+  const relativePath = path.relative(normalizedRepoRoot, normalizedResolvedPath);
+  if (
+    relativePath === '..'
+    || relativePath.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relativePath)
+  ) {
+    throw new Error(
+      `Workspace path ${normalizeWindowsPathForJson(normalizedResolvedPath)} escapes the GreebleFS repo root ${normalizeWindowsPathForJson(normalizedRepoRoot)}.`,
+    );
+  }
+  return normalizedResolvedPath;
+}
+
+async function fetchJson<T>(url: string): Promise<T | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json() as T;
+  } catch {
+    return null;
+  }
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function findAvailableLocalPort(preferredPorts: number[]): Promise<number> {
+  for (const preferredPort of preferredPorts) {
+    const resolvedPort = await new Promise<number | null>((resolve) => {
+      const server = net.createServer();
+      server.unref();
+      server.once('error', () => resolve(null));
+      server.listen(preferredPort, '127.0.0.1', () => {
+        const address = server.address();
+        const port = address && typeof address === 'object' ? address.port : preferredPort;
+        server.close(() => resolve(port));
+      });
+    });
+    if (resolvedPort) {
+      return resolvedPort;
+    }
+  }
+
+  return new Promise<number>((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address !== 'object') {
+        server.close(() => reject(new Error('Could not resolve a free localhost port for browser fallback.')));
+        return;
+      }
+      const port = address.port;
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+function isSessionRunning(session: GreeblefsTauriDevSessionRecord | null): boolean {
+  return Boolean(session?.running && session.pid && session.status !== 'exited' && session.status !== 'failed');
+}
+
+export class GreeblefsAutomationRuntime {
+  private browser: Browser | null = null;
+  private page: Page | null = null;
+  private attachMode: 'native-cdp' | 'browser-dev-url' | null = null;
+  private attachFingerprint = '';
+  private lastAttachError: string | null = null;
+  private startedChildPid: number | null = null;
+  private launchedFallbackBrowserPid: number | null = null;
+
+  getRepoRoot(): string {
+    return repoRoot;
+  }
+
+  getTauriDevStatusPath(): string {
+    return tauriDevStatusPath;
+  }
+
+  async readTauriDevSession(): Promise<GreeblefsTauriDevSessionRecord | null> {
+    return readJsonFile<GreeblefsTauriDevSessionRecord>(tauriDevStatusPath);
+  }
+
+  async isPidRunning(pid: number | null | undefined): Promise<boolean> {
+    if (!pid || pid <= 0) {
+      return false;
+    }
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getStatus(options: { includeAttachProbe?: boolean } = {}): Promise<GreeblefsAutomationStatus> {
+    const session = await this.readTauriDevSession();
+    const sessionFileExists = await pathExists(tauriDevStatusPath);
+    const pidRunning = await this.isPidRunning(session?.pid);
+    const devUrl = session?.frontendDevUrl?.trim() || null;
+    const devUrlReachable = devUrl ? await this.checkUrlReachable(devUrl) : false;
+    const cdpVersionPayload = session?.webviewDebugPort
+      ? await fetchJson<{ Browser?: string; ProtocolVersion?: string }>(
+          `http://127.0.0.1:${session.webviewDebugPort}/json/version`,
+        )
+      : null;
+    let bridgeReady = false;
+    let attachedPageUrl: string | null = null;
+    if (options.includeAttachProbe) {
+      try {
+        const page = await this.ensureAppPage();
+        await page.waitForFunction(() => Boolean((window as Window & {
+          __GREEBLEFS_DEV_MCP__?: unknown;
+        }).__GREEBLEFS_DEV_MCP__), undefined, { timeout: 5000 });
+        bridgeReady = true;
+        attachedPageUrl = page.url();
+      } catch (error) {
+        this.lastAttachError = error instanceof Error ? error.message : String(error);
+      }
+    } else if (this.page && !this.page.isClosed()) {
+      attachedPageUrl = this.page.url();
+      try {
+        bridgeReady = await this.page.evaluate(() => Boolean((window as Window & {
+          __GREEBLEFS_DEV_MCP__?: unknown;
+        }).__GREEBLEFS_DEV_MCP__));
+      } catch {
+        bridgeReady = false;
+      }
+    }
+
+    return {
+      repoRoot: normalizeWindowsPathForJson(repoRoot),
+      statusFilePath: normalizeWindowsPathForJson(tauriDevStatusPath),
+      logFilePath: normalizeWindowsPathForJson(tauriDevLogPath),
+      session,
+      sessionFileExists,
+      pidRunning,
+      devUrlReachable,
+      cdpReachable: Boolean(cdpVersionPayload),
+      cdpVersion: cdpVersionPayload?.Browser ?? cdpVersionPayload?.ProtocolVersion ?? null,
+      attachMode: this.attachMode,
+      attachedPageUrl,
+      bridgeReady,
+      lastAttachError: this.lastAttachError,
+    };
+  }
+
+  async startTauriDev(): Promise<GreeblefsAutomationStatus> {
+    const existingStatus = await this.getStatus();
+    if (existingStatus.pidRunning && existingStatus.session?.running) {
+      return existingStatus;
+    }
+
+    const bunCommand = process.platform === 'win32' ? 'bun.exe' : 'bun';
+    const child = spawn(bunCommand, ['run', 'tauri', 'dev'], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      shell: false,
+    });
+    child.unref();
+    this.startedChildPid = child.pid ?? null;
+
+    const startDeadline = Date.now() + 30_000;
+    while (Date.now() < startDeadline) {
+      const nextStatus = await this.getStatus();
+      if (nextStatus.pidRunning && nextStatus.session?.running) {
+        return nextStatus;
+      }
+      await sleep(500);
+    }
+
+    return this.getStatus();
+  }
+
+  async stopTauriDev(): Promise<GreeblefsAutomationStatus> {
+    const session = await this.readTauriDevSession();
+    const pid = session?.pid ?? this.startedChildPid;
+    if (!pid) {
+      return this.getStatus();
+    }
+
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        const child = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+          stdio: 'ignore',
+          shell: false,
+        });
+        child.on('exit', () => resolve());
+        child.on('error', () => resolve());
+      });
+    } else {
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch {
+        // Ignore kill failures. Status probing below is the truth source.
+      }
+    }
+
+    await this.closeBrowser();
+    const stopDeadline = Date.now() + 10_000;
+    while (Date.now() < stopDeadline) {
+      const running = await this.isPidRunning(pid);
+      if (!running) {
+        break;
+      }
+      await sleep(250);
+    }
+    return this.getStatus();
+  }
+
+  async readDevLogTail(limitLines = 200): Promise<{ logPath: string; lines: string[] }> {
+    const logExists = await pathExists(tauriDevLogPath);
+    if (!logExists) {
+      return {
+        logPath: normalizeWindowsPathForJson(tauriDevLogPath),
+        lines: [],
+      };
+    }
+    const raw = await fs.readFile(tauriDevLogPath, 'utf8');
+    const lines = raw
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .filter(Boolean)
+      .slice(-Math.max(1, limitLines));
+    return {
+      logPath: normalizeWindowsPathForJson(tauriDevLogPath),
+      lines,
+    };
+  }
+
+  async waitForReady(options: {
+    timeoutMs?: number;
+    requireBridge?: boolean;
+    requireCdp?: boolean;
+  } = {}): Promise<GreeblefsAutomationStatus> {
+    const timeoutMs = options.timeoutMs ?? 45_000;
+    const deadline = Date.now() + Math.max(1_000, timeoutMs);
+    let lastStatus = await this.getStatus({
+      includeAttachProbe: options.requireBridge !== false,
+    });
+    while (Date.now() < deadline) {
+      const cdpReady = options.requireCdp === true ? lastStatus.cdpReachable : true;
+      const bridgeReady = options.requireBridge === false ? true : lastStatus.bridgeReady;
+      if (
+        lastStatus.pidRunning
+        && lastStatus.devUrlReachable
+        && cdpReady
+        && bridgeReady
+      ) {
+        return lastStatus;
+      }
+      await sleep(500);
+      lastStatus = await this.getStatus({
+        includeAttachProbe: options.requireBridge !== false,
+      });
+    }
+    return lastStatus;
+  }
+
+  async attachApp(options: BrowserAttachmentOptions = {}): Promise<{
+    attachMode: 'native-cdp' | 'browser-dev-url' | null;
+    pageUrl: string;
+    bridgeReady: boolean;
+  }> {
+    const page = await this.ensureAppPage(options);
+    let bridgeReady = false;
+    try {
+      await this.waitForBridgeReady(page);
+      bridgeReady = true;
+    } catch {
+      bridgeReady = false;
+    }
+    return {
+      attachMode: this.attachMode,
+      pageUrl: page.url(),
+      bridgeReady,
+    };
+  }
+
+  async ensureAppPage(options: BrowserAttachmentOptions = {}): Promise<Page> {
+    const session = await this.readTauriDevSession();
+    const sessionFingerprint = [
+      session?.pid ?? 'none',
+      session?.webviewDebugPort ?? 'none',
+      session?.frontendDevUrl ?? 'none',
+    ].join(':');
+    const preferNative = options.preferNative !== false;
+    const allowFallbackBrowser = options.allowFallbackBrowser !== false;
+
+    if (
+      this.page
+      && !this.page.isClosed()
+      && this.browser
+      && this.attachFingerprint === sessionFingerprint
+    ) {
+      return this.page;
+    }
+
+    await this.closeBrowser();
+
+    if (preferNative && session?.webviewDebugPort) {
+      try {
+        const cdpEndpoint = `http://127.0.0.1:${session.webviewDebugPort}`;
+        this.browser = await chromium.connectOverCDP(cdpEndpoint);
+        this.page = await this.resolveBrowserPage(this.browser, session.frontendDevUrl ?? undefined);
+        this.attachMode = 'native-cdp';
+        this.attachFingerprint = sessionFingerprint;
+        this.lastAttachError = null;
+        await this.waitForBridgeReady(this.page);
+        return this.page;
+      } catch (error) {
+        this.lastAttachError = error instanceof Error ? error.message : String(error);
+        await this.closeBrowser();
+      }
+    }
+
+    if (!allowFallbackBrowser) {
+      throw new Error(
+        this.lastAttachError || 'Native WebView attach failed and browser fallback is disabled.',
+      );
+    }
+
+    const frontendDevUrl = session?.frontendDevUrl?.trim();
+    if (!frontendDevUrl) {
+      throw new Error(
+        this.lastAttachError || 'No frontend dev URL was published by the Tauri dev launcher.',
+      );
+    }
+
+    const fallbackAttachment = await this.attachFallbackBrowserPage(frontendDevUrl);
+    this.browser = fallbackAttachment.browser;
+    this.page = fallbackAttachment.page;
+    this.attachMode = 'browser-dev-url';
+    this.attachFingerprint = sessionFingerprint;
+    try {
+      await this.waitForBridgeReady(this.page);
+    } catch {
+      // The fallback browser does not have Tauri, so bridge readiness is best-effort only.
+    }
+    return this.page;
+  }
+
+  async getBridgeSnapshot(options: Record<string, unknown> = {}): Promise<unknown> {
+    return this.invokeBridgeMethod('getSnapshot', options);
+  }
+
+  async getBridgeStatus(): Promise<unknown> {
+    return this.invokeBridgeMethod('getStatus');
+  }
+
+  async getConsoleEntries(limit = 120): Promise<unknown> {
+    return this.invokeBridgeMethod('getConsoleEntries', { limit });
+  }
+
+  async clearConsoleEntries(): Promise<unknown> {
+    return this.invokeBridgeMethod('clearConsoleEntries');
+  }
+
+  async getHostApiSchema(): Promise<unknown> {
+    return this.invokeBridgeMethod('getHostApiSchema');
+  }
+
+  async getTelemetryStatus(): Promise<unknown> {
+    return this.invokeBridgeMethod('getTelemetryStatus');
+  }
+
+  async getTelemetryRecords(limit = 60): Promise<unknown> {
+    return this.invokeBridgeMethod('getTelemetryRecords', { limit });
+  }
+
+  async getUsrProfileSnapshot(): Promise<unknown> {
+    return this.invokeBridgeMethod('getUsrProfileSnapshot');
+  }
+
+  async getPerformanceSnapshot(): Promise<unknown> {
+    return this.invokeBridgeMethod('getPerformanceSnapshot');
+  }
+
+  async listVisibleActions(options: { includeUnnamed?: boolean } = {}): Promise<unknown[]> {
+    const snapshot = await this.getBridgeSnapshot({
+      includeDom: true,
+      includeThemeVariables: false,
+      includeTelemetryRecords: false,
+      consoleLimit: 25,
+    }) as {
+      domNodes?: Array<Record<string, unknown>>;
+    };
+    const domNodes = Array.isArray(snapshot?.domNodes) ? snapshot.domNodes : [];
+    return domNodes.filter((node) => {
+      const actionId = typeof node.actionId === 'string' ? node.actionId : '';
+      const agentId = typeof node.agentId === 'string' ? node.agentId : '';
+      const accessibleName = typeof node.accessibleName === 'string' ? node.accessibleName : '';
+      if (actionId || agentId) {
+        return true;
+      }
+      return options.includeUnnamed === true && Boolean(accessibleName);
+    });
+  }
+
+  async readWorkspaceText(pathLike: string): Promise<{ requestedPath: string; resolvedPath: string; content: string }> {
+    const resolvedPath = resolvePathInsideRepo(pathLike);
+    const content = await fs.readFile(resolvedPath, 'utf8');
+    return {
+      requestedPath: pathLike,
+      resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+      content,
+    };
+  }
+
+  async writeWorkspaceText(pathLike: string, content: string): Promise<{ requestedPath: string; resolvedPath: string; bytesWritten: number }> {
+    const resolvedPath = resolvePathInsideRepo(pathLike);
+    await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+    await fs.writeFile(resolvedPath, content, 'utf8');
+    return {
+      requestedPath: pathLike,
+      resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+      bytesWritten: Buffer.byteLength(content, 'utf8'),
+    };
+  }
+
+  async listWorkspaceDirectory(pathLike = '.'): Promise<{
+    requestedPath: string;
+    resolvedPath: string;
+    entries: GreeblefsWorkspaceDirectoryEntry[];
+  }> {
+    const resolvedPath = resolvePathInsideRepo(pathLike);
+    const directoryEntries = await fs.readdir(resolvedPath, { withFileTypes: true });
+    const entries = await Promise.all(
+      directoryEntries.map(async (entry) => {
+        const absolutePath = path.join(resolvedPath, entry.name);
+        const metadata = await fs.stat(absolutePath);
+        return {
+          name: entry.name,
+          absolutePath: normalizeWindowsPathForJson(absolutePath),
+          relativePath: normalizeWindowsPathForJson(path.relative(repoRoot, absolutePath) || '.'),
+          isDirectory: metadata.isDirectory(),
+          size: metadata.size,
+          modifiedAt: Number.isFinite(metadata.mtimeMs) ? new Date(metadata.mtimeMs).toISOString() : null,
+        } satisfies GreeblefsWorkspaceDirectoryEntry;
+      }),
+    );
+    entries.sort((left, right) => {
+      if (left.isDirectory !== right.isDirectory) {
+        return left.isDirectory ? -1 : 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+    return {
+      requestedPath: pathLike,
+      resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+      entries,
+    };
+  }
+
+  async statWorkspacePath(pathLike: string): Promise<GreeblefsWorkspaceStatResult> {
+    const resolvedPath = resolvePathInsideRepo(pathLike);
+    try {
+      const metadata = await fs.stat(resolvedPath);
+      return {
+        requestedPath: pathLike,
+        resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+        exists: true,
+        isDirectory: metadata.isDirectory(),
+        size: metadata.size,
+        modifiedAt: Number.isFinite(metadata.mtimeMs) ? new Date(metadata.mtimeMs).toISOString() : null,
+      };
+    } catch {
+      return {
+        requestedPath: pathLike,
+        resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+        exists: false,
+        isDirectory: false,
+        size: 0,
+        modifiedAt: null,
+      };
+    }
+  }
+
+  async deleteWorkspacePath(pathLike: string): Promise<{ requestedPath: string; resolvedPath: string; deleted: boolean }> {
+    const resolvedPath = resolvePathInsideRepo(pathLike);
+    await fs.rm(resolvedPath, {
+      recursive: true,
+      force: false,
+    });
+    return {
+      requestedPath: pathLike,
+      resolvedPath: normalizeWindowsPathForJson(resolvedPath),
+      deleted: true,
+    };
+  }
+
+  async runWorkspaceCommand(command: string, options: { cwd?: string } = {}): Promise<GreeblefsWorkspaceCommandResult> {
+    const cwd = options.cwd ? resolvePathInsideRepo(options.cwd) : repoRoot;
+    const shellCommand = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
+    const shellArgs = process.platform === 'win32'
+      ? ['-NoProfile', '-Command', command]
+      : ['-lc', command];
+    return new Promise((resolve, reject) => {
+      const child = spawn(shellCommand, shellArgs, {
+        cwd,
+        env: process.env,
+        shell: false,
+      });
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      child.stdout?.on('data', (chunk) => {
+        stdoutChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      child.stderr?.on('data', (chunk) => {
+        stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      child.on('error', reject);
+      child.on('exit', (code) => {
+        resolve({
+          command,
+          cwd: normalizeWindowsPathForJson(cwd),
+          exitCode: code ?? 0,
+          stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+          stderr: Buffer.concat(stderrChunks).toString('utf8'),
+        });
+      });
+    });
+  }
+
+  async listNativeWindows(processName = 'greeblefs'): Promise<WindowsDesktopWindowRecord[]> {
+    return listWindowsDesktopWindows(processName);
+  }
+
+  async captureNativeWindowScreenshot(options: {
+    processName?: string;
+    handle?: string;
+    processId?: number;
+    titleContains?: string;
+    pathHint?: string;
+  } = {}): Promise<GreeblefsNativeWindowScreenshotResult> {
+    await fs.mkdir(screenshotDirectory, { recursive: true });
+    const fileStem = (options.pathHint?.trim() || `greeblefs-native-window-${Date.now()}`)
+      .replace(/[^a-z0-9._-]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      || `greeblefs-native-window-${Date.now()}`;
+    const imagePath = path.join(screenshotDirectory, `${fileStem}.png`);
+    const screenshotRecord = await captureWindowsDesktopWindowScreenshot({
+      processName: options.processName,
+      handle: options.handle,
+      processId: options.processId,
+      titleContains: options.titleContains,
+      imagePath,
+    });
+    const pngBuffer = await fs.readFile(imagePath);
+    return {
+      imagePath: normalizeWindowsPathForJson(imagePath),
+      base64Png: pngBuffer.toString('base64'),
+      window: {
+        processId: screenshotRecord.processId,
+        processName: screenshotRecord.processName,
+        title: screenshotRecord.title,
+        handle: screenshotRecord.handle,
+        startTime: screenshotRecord.startTime,
+        bounds: screenshotRecord.bounds,
+      },
+    };
+  }
+
+  async callHostMethod(methodId: string, payload?: unknown): Promise<unknown> {
+    return this.invokeBridgeMethod('callHostMethod', { methodId, payload });
+  }
+
+  async getHostEventsSnapshot(request: Record<string, unknown>): Promise<unknown> {
+    return this.invokeBridgeMethod('getHostEventsSnapshot', { request });
+  }
+
+  async captureScreenshot(options: {
+    fullPage?: boolean;
+    pathHint?: string;
+  } = {}): Promise<{
+    imagePath: string;
+    base64Png: string;
+    attachMode: 'native-cdp' | 'browser-dev-url' | null;
+    pageUrl: string;
+  }> {
+    const page = await this.ensureAppPage();
+    await fs.mkdir(screenshotDirectory, { recursive: true });
+    const fileStem = (options.pathHint?.trim() || `greeblefs-ui-${Date.now()}`)
+      .replace(/[^a-z0-9._-]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      || `greeblefs-ui-${Date.now()}`;
+    const targetPath = path.join(screenshotDirectory, `${fileStem}.png`);
+    await page.screenshot({
+      fullPage: options.fullPage === true,
+      path: targetPath,
+      type: 'png',
+    });
+    const pngBuffer = await fs.readFile(targetPath);
+    return {
+      imagePath: normalizeWindowsPathForJson(targetPath),
+      base64Png: pngBuffer.toString('base64'),
+      attachMode: this.attachMode,
+      pageUrl: page.url(),
+    };
+  }
+
+  async getAccessibilitySnapshot(): Promise<unknown> {
+    const page = await this.ensureAppPage();
+    return page.locator('body').ariaSnapshot();
+  }
+
+  async click(target: GreeblefsUiTarget, options: { button?: 'left' | 'right' | 'middle'; timeoutMs?: number } = {}): Promise<{ pageUrl: string }> {
+    const locator = await this.resolveLocator(target, options.timeoutMs);
+    await locator.click({
+      button: options.button ?? 'left',
+      timeout: options.timeoutMs ?? 15_000,
+    });
+    return {
+      pageUrl: locator.page().url(),
+    };
+  }
+
+  async hover(target: GreeblefsUiTarget, timeoutMs = 15_000): Promise<{ pageUrl: string }> {
+    const locator = await this.resolveLocator(target, timeoutMs);
+    await locator.hover({ timeout: timeoutMs });
+    return {
+      pageUrl: locator.page().url(),
+    };
+  }
+
+  async typeText(target: GreeblefsUiTarget, text: string, options: { clear?: boolean; pressEnter?: boolean; timeoutMs?: number } = {}): Promise<{ value: string }> {
+    const locator = await this.resolveLocator(target, options.timeoutMs);
+    if (options.clear !== false) {
+      await locator.fill('', { timeout: options.timeoutMs ?? 15_000 });
+    }
+    await locator.fill(text, { timeout: options.timeoutMs ?? 15_000 });
+    if (options.pressEnter) {
+      await locator.press('Enter', { timeout: options.timeoutMs ?? 15_000 });
+    }
+    const value = await locator.inputValue().catch(() => text);
+    return { value };
+  }
+
+  async pressKey(key: string): Promise<{ key: string }> {
+    const page = await this.ensureAppPage();
+    await page.keyboard.press(key);
+    return { key };
+  }
+
+  async selectOption(target: GreeblefsUiTarget, option: string): Promise<{ option: string }> {
+    const locator = await this.resolveLocator(target, 15_000);
+    await locator.selectOption(option);
+    return { option };
+  }
+
+  async drag(source: GreeblefsUiTarget, target: GreeblefsUiTarget): Promise<{ ok: true }> {
+    const page = await this.ensureAppPage();
+    const sourceLocator = await this.resolveLocator(source, 15_000);
+    const targetLocator = await this.resolveLocator(target, 15_000);
+    const sourceBox = await sourceLocator.boundingBox();
+    const targetBox = await targetLocator.boundingBox();
+    if (!sourceBox || !targetBox) {
+      throw new Error('Could not resolve drag bounds for the requested source or target element.');
+    }
+    await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, {
+      steps: 12,
+    });
+    await page.mouse.up();
+    return { ok: true };
+  }
+
+  async evaluateInApp(script: string, argument?: unknown): Promise<unknown> {
+    const page = await this.ensureAppPage();
+    return page.evaluate(
+      ({ source, arg }) => {
+        const fn = new Function('arg', source);
+        return fn(arg);
+      },
+      {
+        source: script,
+        arg: argument,
+      },
+    );
+  }
+
+  async close(): Promise<void> {
+    await this.closeBrowser();
+  }
+
+  private async checkUrlReachable(url: string): Promise<boolean> {
+    try {
+      const response = await fetch(url);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForBridgeReady(page: Page): Promise<void> {
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 });
+    await page.waitForFunction(
+      () => Boolean((window as Window & { __GREEBLEFS_DEV_MCP__?: unknown }).__GREEBLEFS_DEV_MCP__),
+      undefined,
+      { timeout: 15_000 },
+    );
+  }
+
+  private async attachFallbackBrowserPage(frontendDevUrl: string): Promise<{ browser: Browser; page: Page }> {
+    const systemBrowserErrors: string[] = [];
+
+    try {
+      return await this.launchSystemBrowserAndConnect(frontendDevUrl);
+    } catch (error) {
+      systemBrowserErrors.push(formatErrorMessage(error));
+    }
+
+    const browser = await this.launchFallbackBrowser();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(frontendDevUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    });
+    return { browser, page };
+  }
+
+  private async launchFallbackBrowser(): Promise<Browser> {
+    const launchErrors: string[] = [];
+    for (const channel of preferredPlaywrightLaunchChannels) {
+      try {
+        return await chromium.launch({
+          channel,
+          headless: true,
+        });
+      } catch (error) {
+        launchErrors.push(`channel ${channel}: ${formatErrorMessage(error)}`);
+      }
+    }
+
+    try {
+      return await chromium.launch({ headless: true });
+    } catch (error) {
+      launchErrors.push(`bundled playwright browser: ${formatErrorMessage(error)}`);
+    }
+
+    throw new Error(
+      `Unable to launch a Playwright fallback browser. Tried ${preferredPlaywrightLaunchChannels.join(', ') || 'no explicit channels'} and the bundled Playwright browser.\n${launchErrors.join('\n')}`,
+    );
+  }
+
+  private async launchSystemBrowserAndConnect(frontendDevUrl: string): Promise<{ browser: Browser; page: Page }> {
+    if (preferredFallbackBrowserExecutables.length === 0) {
+      throw new Error('No installed Chrome/Edge executable candidate was configured for browser fallback.');
+    }
+
+    const executablePath = await this.resolveSystemBrowserExecutable();
+    const debugPort = await findAvailableLocalPort([9333, 9334, 9335, 19333]);
+    const browserUserDataDirectory = path.join(fallbackBrowserProfileDirectory, `port-${debugPort}`);
+    await fs.mkdir(browserUserDataDirectory, { recursive: true });
+
+    const browserProcess = spawn(
+      executablePath,
+      [
+        '--headless=new',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--remote-allow-origins=*',
+        `--remote-debugging-port=${debugPort}`,
+        `--user-data-dir=${browserUserDataDirectory}`,
+        frontendDevUrl,
+      ],
+      {
+        cwd: repoRoot,
+        detached: true,
+        shell: false,
+        stdio: 'ignore',
+      },
+    );
+    browserProcess.unref();
+    this.launchedFallbackBrowserPid = browserProcess.pid ?? null;
+
+    const cdpEndpoint = `http://127.0.0.1:${debugPort}`;
+    const readyDeadline = Date.now() + 15_000;
+    while (Date.now() < readyDeadline) {
+      const versionPayload = await fetchJson<{ Browser?: string }>(`${cdpEndpoint}/json/version`);
+      if (versionPayload?.Browser) {
+        const browser = await chromium.connectOverCDP(cdpEndpoint);
+        const page = await this.resolveBrowserPage(browser, frontendDevUrl);
+        return { browser, page };
+      }
+      await sleep(250);
+    }
+
+    throw new Error(
+      `Installed browser fallback did not expose a CDP endpoint at ${cdpEndpoint} after launch from ${normalizeWindowsPathForJson(executablePath)}.`,
+    );
+  }
+
+  private async resolveSystemBrowserExecutable(): Promise<string> {
+    for (const executablePath of preferredFallbackBrowserExecutables) {
+      if (await pathExists(executablePath)) {
+        return executablePath;
+      }
+    }
+    throw new Error(
+      `Could not find an installed Chrome/Edge executable for browser fallback. Checked: ${preferredFallbackBrowserExecutables.join(', ')}`,
+    );
+  }
+
+  private async resolveBrowserPage(browser: Browser, expectedUrl?: string): Promise<Page> {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const allPages = browser.contexts().flatMap((context) => context.pages());
+      const matchingPage = allPages.find((page) => {
+        const pageUrl = page.url();
+        if (!pageUrl || pageUrl.startsWith('devtools://')) {
+          return false;
+        }
+        if (expectedUrl && pageUrl.startsWith(expectedUrl)) {
+          return true;
+        }
+        return pageUrl.startsWith('http://localhost:1420') || pageUrl.startsWith('http://127.0.0.1:1420');
+      });
+      if (matchingPage) {
+        return matchingPage;
+      }
+      if (allPages.length > 0) {
+        return allPages[0];
+      }
+      await sleep(250);
+    }
+
+    throw new Error('Connected to the browser, but no app page target was discovered.');
+  }
+
+  private async invokeBridgeMethod(method: string, args?: Record<string, unknown>): Promise<unknown> {
+    const page = await this.ensureAppPage();
+    return page.evaluate(
+      async ({ selectedMethod, selectedArgs }) => {
+        const bridge = (window as Window & {
+          __GREEBLEFS_DEV_MCP__?: {
+            getStatus?: () => Promise<unknown>;
+            getSnapshot?: (options?: Record<string, unknown>) => Promise<unknown>;
+            getConsoleEntries?: (limit?: number) => unknown;
+            clearConsoleEntries?: () => void;
+            getHostApiSchema?: () => Promise<unknown>;
+            getTelemetryStatus?: () => Promise<unknown>;
+            getTelemetryRecords?: (limit?: number) => Promise<unknown>;
+            getUsrProfileSnapshot?: () => unknown;
+            getPerformanceSnapshot?: () => unknown;
+            callHostMethod?: (methodId: string, payload?: unknown) => Promise<unknown>;
+            getHostEventsSnapshot?: (request: Record<string, unknown>) => Promise<unknown>;
+          };
+        }).__GREEBLEFS_DEV_MCP__;
+        if (!bridge) {
+          throw new Error('The GreebleFS dev MCP bridge is not installed in the current window.');
+        }
+        switch (selectedMethod) {
+          case 'getStatus':
+            return bridge.getStatus?.();
+          case 'getSnapshot':
+            return bridge.getSnapshot?.(selectedArgs);
+          case 'getConsoleEntries':
+            return bridge.getConsoleEntries?.(Number(selectedArgs?.limit ?? 120));
+          case 'clearConsoleEntries':
+            bridge.clearConsoleEntries?.();
+            return { ok: true };
+          case 'getHostApiSchema':
+            return bridge.getHostApiSchema?.();
+          case 'getTelemetryStatus':
+            return bridge.getTelemetryStatus?.();
+          case 'getTelemetryRecords':
+            return bridge.getTelemetryRecords?.(Number(selectedArgs?.limit ?? 60));
+          case 'getUsrProfileSnapshot':
+            return bridge.getUsrProfileSnapshot?.();
+          case 'getPerformanceSnapshot':
+            return bridge.getPerformanceSnapshot?.();
+          case 'callHostMethod':
+            if (!selectedArgs?.methodId || typeof selectedArgs.methodId !== 'string') {
+              throw new Error('callHostMethod requires a string methodId.');
+            }
+            return bridge.callHostMethod?.(selectedArgs.methodId, selectedArgs.payload);
+          case 'getHostEventsSnapshot':
+            return bridge.getHostEventsSnapshot?.(selectedArgs?.request as Record<string, unknown>);
+          default:
+            throw new Error(`Unsupported bridge method: ${selectedMethod}`);
+        }
+      },
+      {
+        selectedMethod: method,
+        selectedArgs: args ?? {},
+      },
+    );
+  }
+
+  private async resolveLocator(target: GreeblefsUiTarget, timeoutMs = 15_000): Promise<Locator> {
+    const page = await this.ensureAppPage();
+    let locator: Locator | null = null;
+    if (target.agentId) {
+      locator = page.locator([
+        `[data-gfs-agent-id="${escapeCssAttributeValue(target.agentId)}"]`,
+        `[data-agent-id="${escapeCssAttributeValue(target.agentId)}"]`,
+        `#${escapeCssAttributeValue(target.agentId)}`,
+      ].join(', '));
+    } else if (target.actionId) {
+      locator = page.locator(`[data-action-id="${escapeCssAttributeValue(target.actionId)}"]`);
+    } else if (target.selector) {
+      locator = page.locator(target.selector);
+    } else if (target.role) {
+      locator = page.getByRole(target.role as never, {
+        name: target.name ?? target.text,
+        exact: target.exact === true,
+      });
+    } else if (target.text) {
+      locator = page.getByText(target.text, {
+        exact: target.exact === true,
+      });
+    }
+    if (!locator) {
+      throw new Error('A UI target requires selector, role, text, agentId, or actionId.');
+    }
+    await locator.first().waitFor({
+      state: 'visible',
+      timeout: timeoutMs,
+    });
+    return locator.first();
+  }
+
+  private async closeBrowser(): Promise<void> {
+    try {
+      await this.page?.context().close();
+    } catch {
+      // Ignore page-context close failures.
+    }
+    try {
+      await this.browser?.close();
+    } catch {
+      // Ignore browser close failures.
+    }
+    if (this.launchedFallbackBrowserPid) {
+      if (process.platform === 'win32') {
+        await new Promise<void>((resolve) => {
+          const child = spawn('taskkill', ['/PID', String(this.launchedFallbackBrowserPid), '/T', '/F'], {
+            stdio: 'ignore',
+            shell: false,
+          });
+          child.on('exit', () => resolve());
+          child.on('error', () => resolve());
+        });
+      } else {
+        try {
+          process.kill(this.launchedFallbackBrowserPid, 'SIGTERM');
+        } catch {
+          // Ignore fallback-browser kill failures.
+        }
+      }
+    }
+    this.page = null;
+    this.browser = null;
+    this.attachMode = null;
+    this.attachFingerprint = '';
+    this.launchedFallbackBrowserPid = null;
+  }
+}
+
+export async function writeSmokeLog(message: string): Promise<void> {
+  await appendTextFile(
+    tauriDevLogPath,
+    `[${buildIsoTimestamp()}] [greeblefs-dev-mcp] ${message}\n`,
+  );
+}
+
+export async function writeSmokeStatus(message: string): Promise<void> {
+  const current = await readJsonFile<Record<string, unknown>>(tauriDevStatusPath);
+  await writeTextFile(
+    tauriDevStatusPath,
+    `${JSON.stringify({
+      ...(current ?? {}),
+      lastMcpTouchAt: buildIsoTimestamp(),
+      lastMcpTouchMessage: message,
+    }, null, 2)}\n`,
+  );
+}
