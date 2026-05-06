@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import { ExplorerActionsPane } from "../components/explorer/ExplorerActionsPane";
 import type {
   ExplorerBuiltInContextMenuCatalogItem,
-  ExplorerMenuContextKind,
 } from "../config/explorerContextMenu";
 import type {
   ExplorerRuntimeMenuCommandNode,
@@ -100,11 +99,8 @@ function createSubmenuNode(args: {
 
 function renderRuntimeActionsPane(args?: {
   runtimeMenuNodes?: ExplorerRuntimeMenuNode[];
-  contextKind?: ExplorerMenuContextKind;
 }) {
   const onClose = vi.fn();
-  const onOpenRuntimeMenuComposer = vi.fn();
-  const onSelectRuntimeScope = vi.fn();
   const onSelectControl = vi.fn();
 
   render(
@@ -116,31 +112,16 @@ function renderRuntimeActionsPane(args?: {
       catalog={[]}
       muted="rgba(255,255,255,0.6)"
       pendingHotkeyPrompt={null}
-      runtimeActiveContextKind={args?.contextKind ?? "background"}
-      runtimeActiveScopeId="current-folder"
-      runtimeContextLabel="Current Folder"
-      runtimeContextSummary="D:\\GreebleFS\\src"
       runtimeMenuDensity="balanced"
       runtimeMenuNodes={args?.runtimeMenuNodes ?? []}
       runtimeShowDescriptions
-      runtimeScopeOptions={[
-        {
-          id: "current-folder",
-          label: "Current Folder",
-          contextKind: "background",
-          summary: "D:\\GreebleFS\\src",
-          commandCount: 6,
-        },
-      ]}
       selectedEntry={null}
       selectedPlacement={null}
       text="#ffffff"
       onBeginCatalogDrag={vi.fn()}
       onClose={onClose}
-      onOpenRuntimeMenuComposer={onOpenRuntimeMenuComposer}
       onRequestHotkeyCapture={vi.fn()}
       onSelectControl={onSelectControl}
-      onSelectRuntimeScope={onSelectRuntimeScope}
       onSetSelectedShowIcon={vi.fn()}
       onSetSelectedShowLabel={vi.fn()}
       onSetSelectedSizeVariant={vi.fn()}
@@ -155,9 +136,7 @@ function renderRuntimeActionsPane(args?: {
   return {
     pane,
     onClose,
-    onOpenRuntimeMenuComposer,
     onSelectControl,
-    onSelectRuntimeScope,
   };
 }
 
@@ -208,11 +187,16 @@ describe("ExplorerActionsPane", () => {
       ],
     });
 
-    expect(screen.getByText("Browse Menu")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/search actions/i)).toBeInTheDocument();
     expect(
       pane.querySelectorAll("[data-overlay-explorer-actions-browser-panel]")
         .length,
     ).toBe(1);
+    expect(
+      pane.querySelector(
+        '[data-overlay-explorer-actions-letter-rail="__root__"]',
+      ),
+    ).not.toBeNull();
 
     fireEvent.mouseEnter(screen.getByRole("button", { name: /Open With/i }));
 
@@ -270,16 +254,20 @@ describe("ExplorerActionsPane", () => {
     });
 
     fireEvent.change(
-      screen.getByPlaceholderText(/search commands, actions, and menu paths/i),
+      screen.getByPlaceholderText(/search actions/i),
       {
         target: { value: "app" },
       },
     );
 
-    expect(screen.getByText("Search Results")).toBeInTheDocument();
     expect(
       document.querySelector(
         '[data-overlay-explorer-actions-search-results="true"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(
+        '[data-overlay-explorer-actions-letter-rail="search-results"]',
       ),
     ).not.toBeNull();
     expect(

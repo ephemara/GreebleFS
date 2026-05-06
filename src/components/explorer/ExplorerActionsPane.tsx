@@ -9,7 +9,6 @@ import {
 import { Search } from "@/components/AppIcons";
 
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
-import type { ExplorerMenuContextKind } from "../../config/explorerContextMenu";
 import type {
   ExplorerCustomizeCatalogCategory,
   ExplorerCustomizeCatalogEntry,
@@ -50,14 +49,6 @@ const categoryLabels: Record<ExplorerCustomizeCatalogCategory, string> = {
   other: "Other",
 };
 
-export interface ExplorerActionsPaneRuntimeScopeOption {
-  id: string;
-  label: string;
-  contextKind: ExplorerMenuContextKind;
-  summary: string;
-  commandCount: number;
-}
-
 interface ExplorerActionsPaneProps {
   accent: string;
   appearance?: ResolvedOverlayAppearance;
@@ -67,14 +58,9 @@ interface ExplorerActionsPaneProps {
   catalog: ExplorerCustomizeCatalogEntry[];
   muted: string;
   pendingHotkeyPrompt: string | null;
-  runtimeActiveContextKind: ExplorerMenuContextKind;
-  runtimeActiveScopeId: string | null;
-  runtimeContextLabel: string;
-  runtimeContextSummary: string;
   runtimeMenuDensity: "compact" | "balanced" | "touch";
   runtimeMenuNodes: ExplorerRuntimeMenuNode[];
   runtimeShowDescriptions: boolean;
-  runtimeScopeOptions: ExplorerActionsPaneRuntimeScopeOption[];
   selectedEntry: ExplorerCustomizeCatalogEntry | null;
   selectedPlacement: ExplorerChromeOverrideEntry | null;
   text: string;
@@ -86,10 +72,8 @@ interface ExplorerActionsPaneProps {
     },
   ) => void;
   onClose: () => void;
-  onOpenRuntimeMenuComposer: (contextKind: ExplorerMenuContextKind) => void;
   onRequestHotkeyCapture: (controlId: ExplorerChromeControlId) => void;
   onSelectControl: (controlId: ExplorerChromeControlId | null) => void;
-  onSelectRuntimeScope: (scopeId: string) => void;
   onSetSelectedShowIcon: (value: boolean) => void;
   onSetSelectedShowLabel: (value: boolean) => void;
   onSetSelectedSizeVariant: (variant: ExplorerChromeSizeVariant) => void;
@@ -221,7 +205,7 @@ function toRuntimeCommandItem(
 
   return {
     kind: "command",
-    id: node.id,
+    id: menuPath.length > 0 ? `${menuPath.join("::")}::${node.id}` : node.id,
     label: node.label,
     description: node.description,
     command: node.command,
@@ -341,23 +325,16 @@ export function ExplorerActionsPane({
   catalog,
   muted,
   pendingHotkeyPrompt,
-  runtimeActiveContextKind,
-  runtimeActiveScopeId,
-  runtimeContextLabel,
-  runtimeContextSummary,
   runtimeMenuDensity,
   runtimeMenuNodes,
   runtimeShowDescriptions,
-  runtimeScopeOptions,
   selectedEntry,
   selectedPlacement,
   text,
   onBeginCatalogDrag,
   onClose,
-  onOpenRuntimeMenuComposer,
   onRequestHotkeyCapture,
   onSelectControl,
-  onSelectRuntimeScope,
   onSetSelectedShowIcon,
   onSetSelectedShowLabel,
   onSetSelectedSizeVariant,
@@ -444,7 +421,7 @@ export function ExplorerActionsPane({
   const runtimeBrowseSurfaceStyle = resolveExplorerPopupSurfaceStyle({
     tone: "preview",
     padding: 0,
-    overflowY: "auto",
+    overflowY: "hidden",
     maxHeight: "none",
   });
   const isRuntimeSearchActive = !customizeMode && query.trim().length > 0;
@@ -459,7 +436,7 @@ export function ExplorerActionsPane({
 
   useEffect(() => {
     setOpenRuntimeSubmenuPath([]);
-  }, [runtimeActiveScopeId, runtimeMenuNodes]);
+  }, [runtimeMenuNodes]);
 
   const resolveEntryTone = (entry: ExplorerCustomizeCatalogEntry) => {
     if (entry.source === "action") {
@@ -495,21 +472,27 @@ export function ExplorerActionsPane({
     });
   };
 
-  const renderLetterJumpStrip = (
+  const renderLetterJumpRail = (
     letters: string[],
     onJump: (letter: string) => void,
+    railId: string,
   ) => {
     if (letters.length <= 1) {
       return null;
     }
     return (
       <div
+        data-overlay-explorer-actions-letter-rail={railId}
         style={{
           display: "flex",
-          flexWrap: "wrap",
-          gap: 6,
-          padding: "0 10px 10px",
-          borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 4,
+          padding: "8px 6px",
+          borderLeft: "1px solid var(--overlay-explorer-toolbar-border)",
+          background:
+            "color-mix(in srgb, var(--overlay-explorer-toolbar-bg) 58%, transparent)",
+          flexShrink: 0,
         }}
       >
         {letters.map((letter) => (
@@ -518,12 +501,13 @@ export function ExplorerActionsPane({
             type="button"
             onClick={() => onJump(letter)}
             style={{
-              borderRadius: 999,
+              borderRadius: 8,
               border: "1px solid var(--overlay-explorer-chip-border)",
               background: "var(--overlay-explorer-chip-bg)",
               color: text,
-              padding: "4px 7px",
-              minWidth: 28,
+              width: 22,
+              height: 20,
+              padding: 0,
               cursor: "pointer",
               fontSize: 9,
               fontWeight: 800,
@@ -547,6 +531,9 @@ export function ExplorerActionsPane({
     },
   ) => {
     const compact = options?.compact ?? false;
+    const showRuntimeMetaRow = Boolean(
+      (options?.showMenuPath && item.menuPathLabel) || item.dragControlId,
+    );
     return (
       <button
         key={item.id}
@@ -597,7 +584,7 @@ export function ExplorerActionsPane({
               ? "not-allowed"
               : "pointer",
           textAlign: "left",
-          padding: compact ? "8px 10px" : "10px 12px",
+          padding: compact ? "7px 9px" : "8px 10px",
           opacity: item.disabled ? 0.68 : 1,
         }}
       >
@@ -630,7 +617,7 @@ export function ExplorerActionsPane({
               <span
                 style={{
                   display: "block",
-                  marginTop: 3,
+                  marginTop: 2,
                   fontSize: 10,
                   lineHeight: 1.35,
                   color: muted,
@@ -639,27 +626,28 @@ export function ExplorerActionsPane({
                 {item.description}
               </span>
             ) : null}
-            <span
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                marginTop: 6,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: muted,
-              }}
-            >
-              <span>{item.sourceLabel}</span>
-              {options?.showMenuPath && item.menuPathLabel ? (
-                <span>{item.menuPathLabel}</span>
-              ) : null}
-              {item.dragControlId ? (
-                <span style={{ color: accent }}>Run or Drag</span>
-              ) : null}
-            </span>
+            {showRuntimeMetaRow ? (
+              <span
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 5,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: muted,
+                }}
+              >
+                {options?.showMenuPath && item.menuPathLabel ? (
+                  <span>{item.menuPathLabel}</span>
+                ) : null}
+                {item.dragControlId ? (
+                  <span style={{ color: accent }}>Pin</span>
+                ) : null}
+              </span>
+            ) : null}
           </span>
           <span
             style={{
@@ -675,7 +663,7 @@ export function ExplorerActionsPane({
             }}
           >
             {item.shortcutId ? <span>{item.shortcutId}</span> : null}
-            {item.dragControlId ? <span>Pin</span> : <span>Run</span>}
+            {item.dragControlId ? <span>Pin</span> : null}
           </span>
         </div>
       </button>
@@ -706,7 +694,7 @@ export function ExplorerActionsPane({
         color: text,
         cursor: "pointer",
         textAlign: "left",
-        padding: "10px 12px",
+        padding: "8px 10px",
       }}
     >
       <div
@@ -734,26 +722,12 @@ export function ExplorerActionsPane({
           >
             {item.label}
           </span>
-          <span
-            style={{
-              display: "block",
-              marginTop: 3,
-              fontSize: 10,
-              lineHeight: 1.35,
-              color: muted,
-            }}
-          >
-            {item.childCommandCount === 1
-              ? "1 command"
-              : `${item.childCommandCount} commands`}
-          </span>
         </span>
         <span
           style={{
-            display: "flex",
-            flexDirection: "column",
+            display: "inline-flex",
             alignItems: "flex-end",
-            gap: 4,
+            gap: 6,
             fontSize: 9,
             fontWeight: 700,
             letterSpacing: "0.08em",
@@ -785,74 +759,57 @@ export function ExplorerActionsPane({
         overflow: "hidden",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "12px 14px 10px",
-          borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
-          background:
-            "color-mix(in srgb, var(--overlay-explorer-toolbar-bg) 86%, black 14%)",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: "0.14em",
-              textTransform: "uppercase",
-              color: muted,
-            }}
-          >
-            {customizeMode ? "Explorer Customize" : "Action Library"}
-          </div>
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 12,
-              fontWeight: 700,
-              color: text,
-            }}
-          >
-            {customizeMode ? "All In Actions" : runtimeContextLabel}
-          </div>
-          <div
-            title={customizeMode ? undefined : runtimeContextSummary}
-            style={{
-              marginTop: 5,
-              fontSize: 10,
-              color: muted,
-              lineHeight: 1.45,
-              maxWidth: 280,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {customizeMode
-              ? "Drag controls out of this pane and drop them into any explorer chrome band. Ctrl+Alt+click any supported control to bind a hotkey."
-              : runtimeContextSummary}
-          </div>
-          {!customizeMode ? (
+      {customizeMode ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "12px 14px 10px",
+            borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
+            background:
+              "color-mix(in srgb, var(--overlay-explorer-toolbar-bg) 86%, black 14%)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
-                marginTop: 6,
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                color: muted,
+              }}
+            >
+              Explorer Customize
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 12,
+                fontWeight: 700,
+                color: text,
+              }}
+            >
+              All In Actions
+            </div>
+            <div
+              style={{
+                marginTop: 5,
                 fontSize: 10,
                 color: muted,
                 lineHeight: 1.45,
                 maxWidth: 280,
               }}
             >
-              Run commands against the current explorer scope. Authored actions
-              can still be dragged into chrome to pin them as buttons.
+              Drag controls out of this pane and drop them into any explorer
+              chrome band. Ctrl+Alt+click any supported control to bind a
+              hotkey.
             </div>
-          ) : null}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {customizeMode ? (
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span
               style={{
                 borderRadius: 999,
@@ -868,14 +825,13 @@ export function ExplorerActionsPane({
             >
               Customize On
             </span>
-          ) : (
             <button
               type="button"
-              onClick={() => onOpenRuntimeMenuComposer(runtimeActiveContextKind)}
+              onClick={onClose}
               style={{
                 borderRadius: 10,
-                border: `1px solid ${accent}55`,
-                background: `color-mix(in srgb, ${accent} 10%, transparent)`,
+                border: `1px solid ${border}`,
+                background: "var(--overlay-explorer-chip-bg)",
                 color: text,
                 padding: "6px 9px",
                 cursor: "pointer",
@@ -885,33 +841,15 @@ export function ExplorerActionsPane({
                 textTransform: "uppercase",
               }}
             >
-              Edit Menu
+              Done
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              borderRadius: 10,
-              border: `1px solid ${border}`,
-              background: "var(--overlay-explorer-chip-bg)",
-              color: text,
-              padding: "6px 9px",
-              cursor: "pointer",
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
-            {customizeMode ? "Done" : "Close"}
-          </button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div
         style={{
-          padding: "10px 12px 12px",
+          padding: customizeMode ? "10px 12px 12px" : "8px 10px",
           borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
           flexShrink: 0,
         }}
@@ -934,7 +872,7 @@ export function ExplorerActionsPane({
             placeholder={
               customizeMode
                 ? "Browse commands and controls..."
-                : "Search commands, actions, and menu paths..."
+                : "Search actions"
             }
             style={{
               width: "100%",
@@ -948,59 +886,6 @@ export function ExplorerActionsPane({
             }}
           />
         </div>
-        {!customizeMode && runtimeScopeOptions.length > 0 ? (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              marginTop: 10,
-            }}
-          >
-            {runtimeScopeOptions.map((scope) => {
-              const isActive = runtimeActiveScopeId === scope.id;
-              return (
-                <button
-                  key={scope.id}
-                  type="button"
-                  onClick={() => onSelectRuntimeScope(scope.id)}
-                  aria-pressed={isActive}
-                  title={scope.summary}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    borderRadius: 999,
-                    border: isActive
-                      ? `1px solid ${accent}88`
-                      : "1px solid var(--overlay-explorer-chip-border)",
-                    background: isActive
-                      ? `color-mix(in srgb, ${accent} 12%, transparent)`
-                      : "var(--overlay-explorer-chip-bg)",
-                    color: text,
-                    padding: "6px 9px",
-                    cursor: "pointer",
-                    fontSize: 10,
-                    fontWeight: 700,
-                  }}
-                >
-                  <span>{scope.label}</span>
-                  <span
-                    style={{
-                      color: muted,
-                      fontSize: 9,
-                      fontWeight: 800,
-                      letterSpacing: "0.08em",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {scope.commandCount}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
         {pendingHotkeyPrompt ? (
           <div
             style={{
@@ -1158,28 +1043,23 @@ export function ExplorerActionsPane({
               }}
             >
               {query.trim().length > 0
-                ? "No commands match the current filter."
-                : "This scope does not currently expose any menu commands. Edit the menu or switch to another explorer scope."}
+                ? "No actions match."
+                : "No actions in this menu."}
             </div>
           ) : isRuntimeSearchActive ? (
             <section
               data-overlay-explorer-actions-search-results="true"
-              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+              style={{
+                display: "flex",
+                alignItems: "stretch",
+                gap: 0,
+                minHeight: 0,
+              }}
             >
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  color: muted,
-                }}
-              >
-                Search Results
-              </div>
               {filteredRuntimeSearchGroups.length === 0 ? (
                 <div
                   style={{
+                    flex: 1,
                     borderRadius: 12,
                     border: "1px solid var(--overlay-explorer-chip-border)",
                     background: "var(--overlay-explorer-chip-bg)",
@@ -1189,15 +1069,19 @@ export function ExplorerActionsPane({
                     lineHeight: 1.55,
                   }}
                 >
-                  No commands match the current filter.
+                  No actions match.
                 </div>
               ) : (
                 <>
-                  {renderLetterJumpStrip(
-                    filteredRuntimeSearchGroups.map((group) => group.letter),
-                    jumpToSearchLetter,
-                  )}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
+                  >
                     {filteredRuntimeSearchGroups.map((group) => (
                       <section
                         key={group.letter}
@@ -1206,7 +1090,7 @@ export function ExplorerActionsPane({
                           searchLetterSectionRefs.current[group.letter] = node;
                         }}
                         style={{
-                          borderRadius: 12,
+                          borderRadius: 10,
                           border: "1px solid var(--overlay-explorer-chip-border)",
                           background: "var(--overlay-explorer-chip-bg)",
                           overflow: "hidden",
@@ -1214,7 +1098,7 @@ export function ExplorerActionsPane({
                       >
                         <div
                           style={{
-                            padding: "8px 12px",
+                            padding: "6px 10px",
                             borderBottom:
                               "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 88%, transparent)",
                             fontSize: 10,
@@ -1237,40 +1121,21 @@ export function ExplorerActionsPane({
                       </section>
                     ))}
                   </div>
+                  {renderLetterJumpRail(
+                    filteredRuntimeSearchGroups.map((group) => group.letter),
+                    jumpToSearchLetter,
+                    "search-results",
+                  )}
                 </>
               )}
             </section>
           ) : (
-            <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <section
+              data-overlay-explorer-actions-browser="true"
+              style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}
+            >
               <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  color: muted,
-                }}
-              >
-                Browse Menu
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  lineHeight: 1.5,
-                  color: muted,
-                }}
-              >
-                Skim the live menu tree A-Z. Submenus open in sidecar panels so
-                you can stay in the same flow instead of reading one flattened
-                list.
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 12,
-                  overflowX: "auto",
-                  paddingBottom: 4,
-                }}
+                style={{ display: "contents" }}
               >
                 {runtimeBrowseState.panels.map((panel) => (
                   <div
@@ -1279,101 +1144,98 @@ export function ExplorerActionsPane({
                     style={{
                       ...runtimeBrowseSurfaceStyle,
                       width: runtimeBrowsePanelWidth,
-                      minHeight: 280,
+                      minHeight: 250,
                       maxHeight: 560,
                       flexShrink: 0,
+                      display: "flex",
                     }}
                   >
                     <div
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 10,
-                        padding: "10px 10px 8px",
-                        borderBottom:
-                          "1px solid color-mix(in srgb, var(--overlay-explorer-toolbar-border) 92%, transparent)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: text,
-                        }}
-                      >
-                        {panel.title}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 9,
-                          fontWeight: 800,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          color: muted,
-                        }}
-                      >
-                        {panel.items.length}
-                      </div>
-                    </div>
-                    {renderLetterJumpStrip(
-                      panel.letterGroups.map((group) => group.letter),
-                      (letter) => jumpToBrowseLetter(panel.key, letter),
-                    )}
-                    <div
-                      style={{
+                        flex: 1,
+                        minWidth: 0,
                         display: "flex",
                         flexDirection: "column",
-                        paddingBottom: 8,
+                        overflow: "hidden",
                       }}
                     >
-                      {panel.letterGroups.map((group) => (
-                        <section
-                          key={`${panel.key}:${group.letter}`}
-                          data-overlay-explorer-actions-letter-group={group.letter}
-                          ref={(node) => {
-                            const currentPanelRefs =
-                              browseLetterSectionRefs.current[panel.key] ?? {};
-                            currentPanelRefs[group.letter] = node;
-                            browseLetterSectionRefs.current[panel.key] =
-                              currentPanelRefs;
+                      {panel.path.length > 0 ? (
+                        <div
+                          style={{
+                            padding: "7px 10px",
+                            borderBottom:
+                              "1px solid color-mix(in srgb, var(--overlay-explorer-toolbar-border) 92%, transparent)",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: text,
                           }}
-                          style={{ display: "flex", flexDirection: "column" }}
                         >
-                          <div
-                            style={{
-                              padding: "8px 12px 6px",
-                              fontSize: 10,
-                              fontWeight: 800,
-                              letterSpacing: "0.12em",
-                              textTransform: "uppercase",
-                              color: muted,
+                          {panel.title}
+                        </div>
+                      ) : null}
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          overflowY: "auto",
+                          display: "flex",
+                          flexDirection: "column",
+                          paddingBottom: 6,
+                        }}
+                      >
+                        {panel.letterGroups.map((group) => (
+                          <section
+                            key={`${panel.key}:${group.letter}`}
+                            data-overlay-explorer-actions-letter-group={group.letter}
+                            ref={(node) => {
+                              const currentPanelRefs =
+                                browseLetterSectionRefs.current[panel.key] ?? {};
+                              currentPanelRefs[group.letter] = node;
+                              browseLetterSectionRefs.current[panel.key] =
+                                currentPanelRefs;
                             }}
+                            style={{ display: "flex", flexDirection: "column" }}
                           >
-                            {group.letter}
-                          </div>
-                          <div>
-                            {group.items.map((item, index) =>
-                              item.kind === "command"
-                                ? renderRuntimeCommandButton(item, {
-                                    compact: runtimeMenuDensity === "compact",
-                                    groupBorder: index > 0,
-                                  })
-                                : renderRuntimeSubmenuButton(
-                                    item,
-                                    panel.path,
-                                    runtimeBrowseState.resolvedPath[
-                                      panel.path.length
-                                    ] === item.id,
-                                    {
+                            <div
+                              style={{
+                                padding: "6px 10px 5px",
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: "0.12em",
+                                textTransform: "uppercase",
+                                color: muted,
+                              }}
+                            >
+                              {group.letter}
+                            </div>
+                            <div>
+                              {group.items.map((item, index) =>
+                                item.kind === "command"
+                                  ? renderRuntimeCommandButton(item, {
+                                      compact: runtimeMenuDensity === "compact",
                                       groupBorder: index > 0,
-                                    },
-                                  ),
-                            )}
-                          </div>
-                        </section>
-                      ))}
+                                    })
+                                  : renderRuntimeSubmenuButton(
+                                      item,
+                                      panel.path,
+                                      runtimeBrowseState.resolvedPath[
+                                        panel.path.length
+                                      ] === item.id,
+                                      {
+                                        groupBorder: index > 0,
+                                      },
+                                    ),
+                              )}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
                     </div>
+                    {renderLetterJumpRail(
+                      panel.letterGroups.map((group) => group.letter),
+                      (letter) => jumpToBrowseLetter(panel.key, letter),
+                      panel.key,
+                    )}
                   </div>
                 ))}
               </div>

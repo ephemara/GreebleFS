@@ -1,3 +1,25 @@
+# 2026-05-06 - Explorer Actions Pane Runtime Compression Pass
+
+- Compressed the runtime `ExplorerActionsPane` into a tool-first action browser instead of a descriptive side panel.
+  - Runtime mode now keeps only the search bar in the top chrome.
+  - Removed the runtime-only title/context boilerplate, helper copy, scope pills, `Edit Menu`, and in-pane `Close` button.
+  - The pane now relies on the surrounding explorer chrome toggle/commands for entry and exit instead of repeating those controls inside the surface.
+- Runtime browsing is now rooted in the current folder scope and only uses submenu structure for additional contexts.
+  - `FileExplorer.tsx` now feeds the pane the `current-folder` runtime menu nodes at the root.
+  - When available, `selection` and `preview` scopes are appended as synthetic submenu nodes instead of being exposed as visible scope toggles.
+  - Search still spans the full combined tree, so alternate-scope commands remain reachable without extra fixed UI.
+- A-Z navigation now behaves like a slim tool index instead of a row of chips.
+  - Search results use a vertical letter rail on the side.
+  - Runtime browse panels use their own vertical letter rails beside each submenu panel.
+  - Horizontal `Browse Menu` / `Search Results` explainer sections are gone.
+- Durable rules:
+  - Do not reintroduce runtime header filler, helper paragraphs, or dedicated scope-pill chrome in `ExplorerActionsPane`.
+  - If extra runtime scopes are needed, prefer folding them into the live menu tree as submenu nodes before adding fixed UI controls.
+  - Keep letter jumps vertical and pane-adjacent so the action library reads like a compact tool, not a settings/tutorial surface.
+- Validation:
+  - Passed: `bunx vitest run src/test/ExplorerActionsPane.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "ExplorerActionsPane|browses scoped runtime commands in the action library" --reporter=dot --testTimeout=30000`
+  - The filtered repo-wide TypeScript sweep still reports unrelated existing errors in `src/components/FileExplorer.tsx` and older test rows outside this action-pane pass, so use the focused Vitest sweep as the proof point for this iteration.
+
 # 2026-05-06 - Tauron Fork Adoption For Rust-Side Tauri Crates
 
 - GreebleFS now consumes the sibling `D:/tauron` fork as the Rust-side source of truth for core Tauri crates.

@@ -2055,19 +2055,14 @@ describe("FileExplorer view modes", () => {
 
     const pane = getExplorerActionsPane();
     expect(
-      within(pane).getByRole("button", { name: "Edit Menu" }),
-    ).toBeInTheDocument();
-    expect(
-      within(pane).getByRole("button", { name: /Current Folder/ }),
-    ).toBeInTheDocument();
+      within(pane).queryByRole("button", { name: "Edit Menu" }),
+    ).not.toBeInTheDocument();
     expect(
       within(pane).getByRole("button", { name: /New Folder/ }),
     ).toBeInTheDocument();
 
     fireEvent.change(
-      within(pane).getByPlaceholderText(
-        /search commands, actions, and menu paths/i,
-      ),
+      within(pane).getByPlaceholderText(/search actions/i),
       {
         target: { value: "sample workspace action" },
       },
@@ -2095,8 +2090,6 @@ describe("FileExplorer view modes", () => {
         },
       },
     });
-
-    fireEvent.click(within(pane).getByRole("button", { name: "Close" }));
   });
 
   it("resets layout customization to canonical from the menu", async () => {

@@ -373,8 +373,9 @@ import {
   resolveExplorerWindowsShellContextMenuRequestForInvocation,
   resolveMenuInvocationInputModality,
   type ExplorerOpenWithProgramsState,
-  type ExplorerWindowsShellContextMenuState,
   type ExplorerRuntimeMenuNode,
+  type ExplorerRuntimeMenuSubmenuNode,
+  type ExplorerWindowsShellContextMenuState,
 } from "./explorer/explorerMenuRuntime";
 import type { ExplorerPreviewContextMenuRegistration } from "./explorer/explorerPreviewContextMenu";
 import type {
@@ -9345,9 +9346,6 @@ export function FileExplorer({
     activeExplorerBandResizeMetric,
     setActiveExplorerBandResizeMetric,
   ] = useState<keyof ExplorerLayoutBandMetrics | null>(null);
-  const [actionsPaneScopeId, setActionsPaneScopeId] = useState<
-    "selection" | "current-folder" | "preview"
-  >("selection");
   const [actionsPaneSelectedControlId, setActionsPaneSelectedControlId] =
     useState<ExplorerChromeControlId | null>(null);
   const [resizingExplorerChromeControlId, setResizingExplorerChromeControlId] =
@@ -33190,47 +33188,99 @@ export function FileExplorer({
     previewMenuContext,
     selectedMenuInvocationEntries,
   ]);
-  const activeActionsPaneRuntimeScope = useMemo(
+  const actionsPanePrimaryRuntimeScope = useMemo(
     () =>
-      actionsPaneRuntimeScopes.find((scope) => scope.id === actionsPaneScopeId) ??
+      actionsPaneRuntimeScopes.find((scope) => scope.id === "current-folder") ??
       actionsPaneRuntimeScopes[0] ??
       null,
-    [actionsPaneRuntimeScopes, actionsPaneScopeId],
+    [actionsPaneRuntimeScopes],
   );
-  const activeActionsPaneOpenWithTargetPath = useMemo(() => {
-    if (!actionsPaneVisible || !activeActionsPaneRuntimeScope) {
-      return null;
-    }
-    if (activeActionsPaneRuntimeScope.contextKind === "background") {
-      return null;
-    }
-    return activeActionsPaneRuntimeScope.openWithTargetPath;
-  }, [actionsPaneVisible, activeActionsPaneRuntimeScope]);
-  const activeActionsPaneWindowsShellContextMenuRequest = useMemo(() => {
-    if (!actionsPaneVisible || !activeActionsPaneRuntimeScope) {
-      return null;
+  const actionsPaneRuntimeMenuNodes = useMemo(() => {
+    if (!actionsPanePrimaryRuntimeScope) {
+      return [] as ExplorerRuntimeMenuNode[];
     }
 
-    return activeActionsPaneRuntimeScope.windowsShellContextMenuRequest;
-  }, [actionsPaneVisible, activeActionsPaneRuntimeScope]);
+    const resolveScopeMenuIconName = (
+      scopeId: "selection" | "current-folder" | "preview",
+    ): string => {
+      if (scopeId === "selection") {
+        return "Files";
+      }
+      if (scopeId === "preview") {
+        return "Eye";
+      }
+      return "Folder";
+    };
 
-  useEffect(() => {
-    if (!activeActionsPaneOpenWithTargetPath) {
-      return;
+    const supplementalScopeNodes = actionsPaneRuntimeScopes
+      .filter(
+        (scope) =>
+          scope.id !== actionsPanePrimaryRuntimeScope.id && scope.commandCount > 0,
+      )
+      .map<ExplorerRuntimeMenuSubmenuNode>((scope) => ({
+        kind: "submenu",
+        id: `actions-pane-scope.${scope.id}`,
+        label: scope.label,
+        depth: 0,
+        iconName: resolveScopeMenuIconName(scope.id),
+        tone: "safe",
+        source: "layout",
+        quickSlot: "none",
+        fallbackBucket: "default",
+        children: scope.menu.nodes,
+      }));
+
+    return [
+      ...actionsPanePrimaryRuntimeScope.menu.nodes,
+      ...supplementalScopeNodes,
+    ];
+  }, [actionsPanePrimaryRuntimeScope, actionsPaneRuntimeScopes]);
+  const actionsPaneOpenWithTargetPaths = useMemo(() => {
+    if (!actionsPaneVisible) {
+      return [] as string[];
     }
 
-    void requestOpenWithPrograms(activeActionsPaneOpenWithTargetPath);
-  }, [activeActionsPaneOpenWithTargetPath, requestOpenWithPrograms]);
-  useEffect(() => {
-    if (!activeActionsPaneWindowsShellContextMenuRequest) {
-      return;
-    }
-
-    void requestWindowsShellContextMenu(
-      activeActionsPaneWindowsShellContextMenuRequest,
+    return Array.from(
+      new Set(
+        actionsPaneRuntimeScopes
+          .map((scope) => scope.openWithTargetPath)
+          .filter((value): value is string => Boolean(value)),
+      ),
     );
+  }, [actionsPaneRuntimeScopes, actionsPaneVisible]);
+  const actionsPaneWindowsShellContextMenuRequests = useMemo(() => {
+    if (!actionsPaneVisible) {
+      return [] as Array<
+        NonNullable<ReturnType<typeof resolveExplorerWindowsShellContextMenuRequest>>
+      >;
+    }
+
+    const requestsByKey = new Map<
+      string,
+      NonNullable<ReturnType<typeof resolveExplorerWindowsShellContextMenuRequest>>
+    >();
+    actionsPaneRuntimeScopes.forEach((scope) => {
+      if (scope.windowsShellContextMenuRequest) {
+        requestsByKey.set(
+          scope.windowsShellContextMenuRequest.requestKey,
+          scope.windowsShellContextMenuRequest,
+        );
+      }
+    });
+    return Array.from(requestsByKey.values());
+  }, [actionsPaneRuntimeScopes, actionsPaneVisible]);
+
+  useEffect(() => {
+    actionsPaneOpenWithTargetPaths.forEach((targetPath) => {
+      void requestOpenWithPrograms(targetPath);
+    });
+  }, [actionsPaneOpenWithTargetPaths, requestOpenWithPrograms]);
+  useEffect(() => {
+    actionsPaneWindowsShellContextMenuRequests.forEach((request) => {
+      void requestWindowsShellContextMenu(request);
+    });
   }, [
-    activeActionsPaneWindowsShellContextMenuRequest,
+    actionsPaneWindowsShellContextMenuRequests,
     requestWindowsShellContextMenu,
   ]);
   const explorerActionsPane = useMemo(() => {
@@ -33256,48 +33306,25 @@ export function FileExplorer({
           catalog={explorerCustomizeCatalog}
           muted={EXP.muted}
           pendingHotkeyPrompt={pendingExplorerHotkeyPrompt}
-          runtimeActiveContextKind={
-            activeActionsPaneRuntimeScope?.contextKind ?? "background"
-          }
-          runtimeActiveScopeId={activeActionsPaneRuntimeScope?.id ?? null}
-          runtimeContextLabel={
-            activeActionsPaneRuntimeScope?.label ?? "Current Folder"
-          }
-          runtimeContextSummary={
-            activeActionsPaneRuntimeScope?.summary ?? currentPath
-          }
           runtimeMenuDensity={
-            activeActionsPaneRuntimeScope?.menu.presentation.density ??
+            actionsPanePrimaryRuntimeScope?.menu.presentation.density ??
             "balanced"
           }
-          runtimeMenuNodes={activeActionsPaneRuntimeScope?.menu.nodes ?? []}
+          runtimeMenuNodes={actionsPaneRuntimeMenuNodes}
           runtimeShowDescriptions={
-            activeActionsPaneRuntimeScope?.menu.presentation
-              .showDescriptions ?? true
+            actionsPanePrimaryRuntimeScope?.menu.presentation.showDescriptions ??
+            true
           }
-          runtimeScopeOptions={actionsPaneRuntimeScopes.map((scope) => ({
-            id: scope.id,
-            label: scope.label,
-            contextKind: scope.contextKind,
-            summary: scope.summary,
-            commandCount: scope.commandCount,
-          }))}
           selectedEntry={selectedExplorerCustomizeEntry}
           selectedPlacement={selectedExplorerCustomizePlacement}
           text={EXP.text}
           onBeginCatalogDrag={beginCatalogExplorerChromePointerDrag}
           onClose={closeActionsPanel}
-          onOpenRuntimeMenuComposer={openContextMenuComposerSettings}
           onRequestHotkeyCapture={(controlId) => {
             selectExplorerCustomizeControl(controlId);
             requestExplorerChromeHotkeyCapture(controlId);
           }}
           onSelectControl={selectExplorerCustomizeControl}
-          onSelectRuntimeScope={(scopeId) =>
-            setActionsPaneScopeId(
-              scopeId as "selection" | "current-folder" | "preview",
-            )
-          }
           onSetSelectedShowIcon={setSelectedExplorerChromeShowIcon}
           onSetSelectedShowLabel={setSelectedExplorerChromeShowLabel}
           onSetSelectedSizeVariant={setSelectedExplorerChromeSizeVariant}
@@ -33312,23 +33339,19 @@ export function FileExplorer({
     accent,
     actionsPaneShellStyle,
     actionsPaneVisible,
-    actionsPaneRuntimeScopes,
-    activeActionsPaneRuntimeScope,
-    actionsPaneScopeId,
     activeChromeEditSession,
     appearance,
     beginCatalogExplorerChromePointerDrag,
     closeActionsPanel,
-    currentPath,
     explorerCustomizeCatalog,
-    openContextMenuComposerSettings,
     pendingExplorerHotkeyPrompt,
     requestExplorerChromeHotkeyCapture,
     selectExplorerCustomizeControl,
     selectedExplorerCustomizeCommandBinding,
     selectedExplorerCustomizeEntry,
     selectedExplorerCustomizePlacement,
-    setActionsPaneScopeId,
+    actionsPanePrimaryRuntimeScope,
+    actionsPaneRuntimeMenuNodes,
     setSelectedExplorerChromeWidthPx,
     setSelectedExplorerChromeShowIcon,
     setSelectedExplorerChromeShowLabel,
