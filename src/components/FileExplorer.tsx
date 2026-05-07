@@ -110,6 +110,7 @@ import {
 import { stepExplorerCollectionPreviewMode } from "../config/explorerCollectionPreviewModes";
 import type {
   OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActivityLaneContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
   OverlayPluginExplorerWidgetContribution,
@@ -370,6 +371,7 @@ import {
 } from "./explorer/ExplorerSearchLane";
 import { ExplorerSemanticLane } from "./explorer/ExplorerSemanticLane";
 import {
+  ExplorerBoundedText,
   ExplorerSlatePane,
   ExplorerSlatePaneHeader,
   type ExplorerPaneTone,
@@ -532,6 +534,7 @@ import {
   type BoundExplorerViewProps,
   type BoundExplorerViewComponent,
   type ExplorerViewDescriptor,
+  type ExplorerViewHost,
 } from "./explorer/explorerViewRuntime";
 import {
   type BoundExplorerWidgetProps,
@@ -559,8 +562,14 @@ import {
   defaultExplorerActivityLanePlacementById,
   getExplorerActivityLaneDefinition,
   getExplorerActivityLaneDefinitionsForRailSide,
+  getExplorerActivityLaneFallbackOrderBySide,
+  getExplorerActivityLaneFallbackPlacementById,
+  explorerActivityLaneDefinitions,
   moveExplorerActivityLane,
+  normalizeExplorerActivityLaneOrderBySide,
+  normalizeExplorerActivityLanePlacementById,
   normalizeExplorerHiddenActivityLaneIds,
+  type ExplorerActivityLaneDefinition,
   type ExplorerActivityLaneId,
   type ExplorerActivityLaneOrderBySide,
   type ExplorerActivityLanePlacementById,
@@ -8464,6 +8473,7 @@ interface FileExplorerProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerActivityLanes?: OverlayPluginExplorerActivityLaneContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
@@ -8747,7 +8757,9 @@ function normalizeExplorerActivityLaneIdsForRailOpenMode(args: {
   >();
   for (const laneId of normalizedLaneIds) {
     const railSide =
-      args.placementById[laneId] ?? defaultExplorerActivityLanePlacementById[laneId];
+      args.placementById[laneId] ??
+      (defaultExplorerActivityLanePlacementById as ExplorerActivityLanePlacementById)[laneId] ??
+      "left";
     latestLaneIdBySide.set(railSide, laneId);
   }
 
@@ -8864,6 +8876,7 @@ export function FileExplorer({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginExplorerActivityLanes = [],
   pluginExplorerViews = [],
   pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
@@ -9451,7 +9464,7 @@ export function FileExplorer({
         explorerCompatibilityActivityLaneIdSet.has(laneId),
       );
       const fallbackActiveActivityLane =
-        compatibilityOpenLaneIds.at(-1) ??
+        compatibilityOpenLaneIds[compatibilityOpenLaneIds.length - 1] ??
         compatibilityOpenLaneIds[0] ??
         normalizedSession.activeActivityLane;
       return {
@@ -9631,6 +9644,50 @@ export function FileExplorer({
     useRef<ExplorerActivityLanePlacementById>({
       ...initialSession.activityLanePlacementById,
     });
+  const explorerActivityLaneDefinitionCatalog =
+    useMemo<ExplorerActivityLaneDefinition[]>(() => {
+      const laneById = new Map<ExplorerActivityLaneId, ExplorerActivityLaneDefinition>();
+      for (const lane of explorerActivityLaneDefinitions) {
+        laneById.set(lane.id, lane);
+      }
+      for (const lane of pluginExplorerActivityLanes) {
+        laneById.set(lane.id, lane);
+      }
+      return [...laneById.values()];
+    }, [pluginExplorerActivityLanes]);
+  const pluginExplorerActivityLaneById = useMemo(
+    () =>
+      new Map(
+        pluginExplorerActivityLanes.map((lane) => [lane.id, lane] as const),
+      ),
+    [pluginExplorerActivityLanes],
+  );
+  const resolvedActivityLanePlacementById = useMemo(
+    () =>
+      normalizeExplorerActivityLanePlacementById(
+        activityLanePlacementById,
+        getExplorerActivityLaneFallbackPlacementById(
+          explorerActivityLaneDefinitionCatalog,
+        ),
+      ),
+    [activityLanePlacementById, explorerActivityLaneDefinitionCatalog],
+  );
+  const resolvedActivityLaneOrderBySide = useMemo(
+    () =>
+      normalizeExplorerActivityLaneOrderBySide(
+        activityLaneOrderBySide,
+        resolvedActivityLanePlacementById,
+        getExplorerActivityLaneFallbackOrderBySide(
+          explorerActivityLaneDefinitionCatalog,
+          resolvedActivityLanePlacementById,
+        ),
+      ),
+    [
+      activityLaneOrderBySide,
+      explorerActivityLaneDefinitionCatalog,
+      resolvedActivityLanePlacementById,
+    ],
+  );
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [entrySizes, setEntrySizes] = useState<
     Record<string, EntryStorageInfo>
@@ -10319,9 +10376,10 @@ export function FileExplorer({
     currentPathIsCloud || currentPathIsVirtual ? null : currentPath;
   const resolveExplorerActivityRailSideForLane = useCallback(
     (laneId: ExplorerActivityLaneId): ExplorerActivityRailSide =>
-      activityLanePlacementById[laneId] ??
-      defaultExplorerActivityLanePlacementById[laneId],
-    [activityLanePlacementById],
+      resolvedActivityLanePlacementById[laneId] ??
+      (defaultExplorerActivityLanePlacementById as ExplorerActivityLanePlacementById)[laneId] ??
+      "left",
+    [resolvedActivityLanePlacementById],
   );
   const openActivityLaneIdSet = useMemo(
     () => new Set(openActivityLaneIds),
@@ -10329,16 +10387,16 @@ export function FileExplorer({
   );
   const orderedOpenActivityLaneIdsBySide = useMemo(
     () => ({
-      left: activityLaneOrderBySide.left.filter((laneId) =>
+      left: resolvedActivityLaneOrderBySide.left.filter((laneId) =>
         openActivityLaneIdSet.has(laneId),
       ),
-      right: activityLaneOrderBySide.right.filter((laneId) =>
+      right: resolvedActivityLaneOrderBySide.right.filter((laneId) =>
         openActivityLaneIdSet.has(laneId),
       ),
     }),
     [
-      activityLaneOrderBySide.left,
-      activityLaneOrderBySide.right,
+      resolvedActivityLaneOrderBySide.left,
+      resolvedActivityLaneOrderBySide.right,
       openActivityLaneIdSet,
     ],
   );
@@ -10348,7 +10406,8 @@ export function FileExplorer({
     explorerActionsHostLaneIdSet.has(laneId),
   );
   const activityPaneVisible = openActivityLaneIds.some((laneId) =>
-    explorerCompatibilityActivityLaneIdSet.has(laneId),
+    explorerCompatibilityActivityLaneIdSet.has(laneId) ||
+    pluginExplorerActivityLaneById.has(laneId),
   );
   const activeActionsHostLaneId = useMemo<
     "actions" | "customize" | null
@@ -10418,12 +10477,12 @@ export function FileExplorer({
       laneIds: readonly ExplorerActivityLaneId[],
     ): ExplorerActivityDockWidthBounds => {
       const openLaneIdSet = new Set(laneIds);
-      const orderedOpenLaneIds = activityLaneOrderBySide[side].filter((laneId) =>
+      const orderedOpenLaneIds = resolvedActivityLaneOrderBySide[side].filter((laneId) =>
         openLaneIdSet.has(laneId),
       );
       const fallbackLaneIds =
-        activityLaneOrderBySide[side].length > 0
-          ? activityLaneOrderBySide[side].slice(0, 1)
+        resolvedActivityLaneOrderBySide[side].length > 0
+          ? resolvedActivityLaneOrderBySide[side].slice(0, 1)
           : side === "left"
             ? (["files"] satisfies ExplorerActivityLaneId[])
             : (["preview"] satisfies ExplorerActivityLaneId[]);
@@ -10442,8 +10501,8 @@ export function FileExplorer({
       );
     },
     [
-      activityLaneOrderBySide.left,
-      activityLaneOrderBySide.right,
+      resolvedActivityLaneOrderBySide.left,
+      resolvedActivityLaneOrderBySide.right,
       getExplorerActivityDockWidthBounds,
     ],
   );
@@ -10591,7 +10650,7 @@ export function FileExplorer({
       const normalizedLaneIds = normalizeExplorerActivityLaneIdsForRailOpenMode({
         laneIds: requestedLaneIds,
         openMode: explorerActivityRailOpenMode,
-        placementById: activityLanePlacementByIdRef.current,
+        placementById: resolvedActivityLanePlacementById,
       });
       if (areExplorerActivityLaneIdListsEqual(currentLaneIds, normalizedLaneIds)) {
         return;
@@ -10599,7 +10658,7 @@ export function FileExplorer({
       openActivityLaneIdsRef.current = normalizedLaneIds;
       setOpenActivityLaneIds(normalizedLaneIds);
     },
-    [explorerActivityRailOpenMode],
+    [explorerActivityRailOpenMode, resolvedActivityLanePlacementById],
   );
   const openExplorerActivityLaneWithPreferredWidth = useCallback(
     (laneId: ExplorerActivityLaneId) => {
@@ -10611,7 +10670,7 @@ export function FileExplorer({
           true,
         ),
         openMode: explorerActivityRailOpenMode,
-        placementById: activityLanePlacementByIdRef.current,
+        placementById: resolvedActivityLanePlacementById,
       });
       setOpenActivityLaneIdsSafely(nextOpenLaneIds);
       ensureExplorerActivityDockPreferredWidthForLaneIds(
@@ -10623,6 +10682,7 @@ export function FileExplorer({
     [
       ensureExplorerActivityDockPreferredWidthForLaneIds,
       explorerActivityRailOpenMode,
+      resolvedActivityLanePlacementById,
       resolveExplorerActivityRailSideForLane,
       setOpenActivityLaneIdsSafely,
     ],
@@ -10649,12 +10709,12 @@ export function FileExplorer({
     openActivityLaneIdsRef.current = openActivityLaneIds;
   }, [openActivityLaneIds]);
   useEffect(() => {
-    activityLanePlacementByIdRef.current = activityLanePlacementById;
-  }, [activityLanePlacementById]);
+    activityLanePlacementByIdRef.current = resolvedActivityLanePlacementById;
+  }, [resolvedActivityLanePlacementById]);
   useEffect(() => {
     setOpenActivityLaneIdsSafely((currentLaneIds) => currentLaneIds);
   }, [
-    activityLanePlacementById,
+    resolvedActivityLanePlacementById,
     explorerActivityRailOpenMode,
     setOpenActivityLaneIdsSafely,
   ]);
@@ -22301,13 +22361,6 @@ export function FileExplorer({
       effectiveViewModeDefinition.label,
     ],
   );
-  const currentExperimentalModeDefinition = useMemo(
-    () =>
-      effectiveExperimentalViewMode === "off"
-        ? null
-        : getExplorerExperimentalModeDefinition(effectiveExperimentalViewMode),
-    [effectiveExperimentalViewMode],
-  );
   const activeGridMetrics = useMemo(
     () =>
       effectiveViewModeDefinition.presentation === "grid"
@@ -22468,6 +22521,17 @@ export function FileExplorer({
         return;
       }
 
+      if (pluginExplorerActivityLaneById.has(laneId)) {
+        if (openActivityLaneIdSet.has(laneId)) {
+          setOpenActivityLaneIdsSafely((currentLaneIds) =>
+            setExplorerActivityLaneOpen(currentLaneIds, laneId, false),
+          );
+          return;
+        }
+        openExplorerActivityLaneWithPreferredWidth(laneId);
+        return;
+      }
+
       if (actionsPaneVisible && activeChromeEditSession) {
         closeActionsPanel();
         return;
@@ -22490,9 +22554,11 @@ export function FileExplorer({
       closeSourcesPanel,
       openActivityLaneIdSet,
       openExplorerUtilityPane,
+      openExplorerActivityLaneWithPreferredWidth,
       openActionsPanel,
       openSourcesPanel,
       previewPanelVisible,
+      pluginExplorerActivityLaneById,
       resolveExplorerActivityRailSideForLane,
       saveExplorerChromeCustomization,
       setOpenActivityLaneIdsSafely,
@@ -23343,6 +23409,102 @@ export function FileExplorer({
   const explorerWidgetAppearance = useMemo(
     () => appearance ?? resolveOverlayAppearance({}),
     [appearance],
+  );
+  const patchExplorerActivityViewState = useCallback(
+    (
+      viewId: string,
+      patch:
+        | Record<string, unknown>
+        | ((current: Record<string, unknown>) => Record<string, unknown>),
+    ) => {
+      setExplorerViewStateById((current) => {
+        const currentViewState = current[viewId] ?? {};
+        const nextViewState =
+          typeof patch === "function"
+            ? patch(currentViewState)
+            : { ...currentViewState, ...patch };
+        return {
+          ...current,
+          [viewId]: { ...nextViewState },
+        };
+      });
+    },
+    [],
+  );
+  const createExplorerActivityViewHost = useCallback(
+    (viewId: string): ExplorerViewHost => ({
+      setDensity: (value) => {
+        if (activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID) {
+          applyStandardExplorerLayoutZoomValue(value);
+          commitStandardExplorerLayoutZoomValue(value);
+          return;
+        }
+        updateActiveExplorerViewDensityValue(value);
+      },
+      patchViewState: (patch) => patchExplorerActivityViewState(viewId, patch),
+      openPath: (path, options) => {
+        void navigate(path, options?.pushHistory ?? true);
+      },
+      openEntry: (entry) => {
+        void openEntry(entry as FileEntry);
+      },
+      refresh,
+      setSearch,
+      setSort: (sortBy, sortOrder) => {
+        updateExplorerSettings({
+          sortBy,
+          sortOrder: sortOrder ?? explorerSettings.sortOrder,
+        });
+      },
+      setSelectedPaths: (paths, options) => {
+        const nextSelected = new Set(paths);
+        setSelected(nextSelected);
+        const focusPrimaryPath = options?.focusPrimary ? paths[0] : null;
+        if (focusPrimaryPath) {
+          lastSelected.current = focusPrimaryPath;
+          selectionRangeAnchorPathRef.current = focusPrimaryPath;
+          scrollExplorerEntryIntoView(focusPrimaryPath);
+        }
+      },
+      toggleSelectedPath: (path) => {
+        setSelected((current) => {
+          const nextSelected = new Set(current);
+          if (nextSelected.has(path)) {
+            nextSelected.delete(path);
+          } else {
+            nextSelected.add(path);
+          }
+          return nextSelected;
+        });
+      },
+      revealPath: scrollExplorerEntryIntoView,
+      openPanel: onOpenPanel,
+      openWorkflow: (workflowId, options) => {
+        void openExplorerWorkflow({
+          workflowId,
+          payload: options?.payload ?? null,
+          titleOverride: options?.titleOverride ?? null,
+        });
+      },
+      renderSurface: () => null,
+      renderStandardLayout: () => null,
+      renderBuiltInContentView: () => null,
+    }),
+    [
+      activeExplorerViewId,
+      applyStandardExplorerLayoutZoomValue,
+      commitStandardExplorerLayoutZoomValue,
+      explorerSettings.sortOrder,
+      navigate,
+      onOpenPanel,
+      openEntry,
+      openExplorerWorkflow,
+      patchExplorerActivityViewState,
+      refresh,
+      scrollExplorerEntryIntoView,
+      updateActiveExplorerViewDensityValue,
+      updateExplorerSettings,
+    ],
   );
   const renderExplorerWidgetControl = useCallback(
     (
@@ -32657,21 +32819,33 @@ export function FileExplorer({
     () =>
       getExplorerActivityLaneDefinitionsForRailSide(
         "left",
-        activityLanePlacementById,
-        activityLaneOrderBySide,
+        resolvedActivityLanePlacementById,
+        resolvedActivityLaneOrderBySide,
         hiddenActivityLaneIds,
+        explorerActivityLaneDefinitionCatalog,
       ),
-    [activityLaneOrderBySide, activityLanePlacementById, hiddenActivityLaneIds],
+    [
+      explorerActivityLaneDefinitionCatalog,
+      hiddenActivityLaneIds,
+      resolvedActivityLaneOrderBySide,
+      resolvedActivityLanePlacementById,
+    ],
   );
   const rightExplorerActivityRailDefinitions = useMemo(
     () =>
       getExplorerActivityLaneDefinitionsForRailSide(
         "right",
-        activityLanePlacementById,
-        activityLaneOrderBySide,
+        resolvedActivityLanePlacementById,
+        resolvedActivityLaneOrderBySide,
         hiddenActivityLaneIds,
+        explorerActivityLaneDefinitionCatalog,
       ),
-    [activityLaneOrderBySide, activityLanePlacementById, hiddenActivityLaneIds],
+    [
+      explorerActivityLaneDefinitionCatalog,
+      hiddenActivityLaneIds,
+      resolvedActivityLaneOrderBySide,
+      resolvedActivityLanePlacementById,
+    ],
   );
   const activeExplorerActivityLaneIds = useMemo(() => {
     const laneIds = new Set<ExplorerActivityLaneId>();
@@ -32707,8 +32881,8 @@ export function FileExplorer({
         laneId,
         targetSide,
         targetIndex,
-        placementById: activityLanePlacementById,
-        orderBySide: activityLaneOrderBySide,
+        placementById: resolvedActivityLanePlacementById,
+        orderBySide: resolvedActivityLaneOrderBySide,
       });
       activityLanePlacementByIdRef.current = nextPlacement.placementById;
       setActivityLanePlacementById(nextPlacement.placementById);
@@ -32762,14 +32936,14 @@ export function FileExplorer({
     },
     [
       activeActionsHostLaneId,
-      activityLaneOrderBySide,
-      activityLanePlacementById,
       activeChromeEditSession,
       allowMultipleActivityLanesPerRailSide,
       beginExplorerChromeCustomization,
       closeActionsPanel,
       openActionsPanel,
       revealSideExplorerTerminal,
+      resolvedActivityLaneOrderBySide,
+      resolvedActivityLanePlacementById,
       resolveExplorerActivityRailSideForLane,
       setOpenActivityLaneIdsSafely,
       setPreviewEnabled,
@@ -33051,7 +33225,7 @@ export function FileExplorer({
                 handleMoveExplorerActivityLane(
                   laneId,
                   destinationSide,
-                  activityLaneOrderBySide[destinationSide].length,
+                  resolvedActivityLaneOrderBySide[destinationSide].length,
                 ),
             }),
             createOverlayContextMenuSeparatorNode(
@@ -33075,7 +33249,11 @@ export function FileExplorer({
       }
 
       const hiddenLaneDefinitions = hiddenActivityLaneIds.map(
-        getExplorerActivityLaneDefinition,
+        (laneId) =>
+          getExplorerActivityLaneDefinition(
+            laneId,
+            explorerActivityLaneDefinitionCatalog,
+          ),
       );
       const showHiddenLaneChildren =
         hiddenLaneDefinitions.length > 0
@@ -33126,12 +33304,13 @@ export function FileExplorer({
       });
     },
     [
-      activityLaneOrderBySide,
+      explorerActivityLaneDefinitionCatalog,
       hiddenActivityLaneIds,
       hideExplorerActivityLane,
       openActivityLaneIdSet,
       openLocalContextMenu,
       selectExplorerActivityLane,
+      resolvedActivityLaneOrderBySide,
       showAllExplorerActivityLanes,
       showExplorerActivityLane,
       handleMoveExplorerActivityLane,
@@ -34406,6 +34585,133 @@ export function FileExplorer({
     sideExplorerTerminalNamespace,
     sideExplorerTerminalVisible,
   ]);
+  const renderContributedExplorerActivityLanePane = useCallback(
+    (lane: OverlayPluginExplorerActivityLaneContribution) => {
+      const hasViews = lane.views.length > 0;
+      return (
+        <ExplorerSlatePane tone={explorerSlateTone}>
+          <ExplorerSlatePaneHeader
+            title={lane.shortLabel || lane.label}
+            subtitle={lane.pluginName}
+            tone={explorerSlateTone}
+          />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              flex: 1,
+              minHeight: 0,
+              overflow: "auto",
+            }}
+          >
+            {hasViews ? (
+              lane.views.map((view) => {
+                const ViewComponent = view.component;
+                return (
+                  <section
+                    key={view.id}
+                    data-overlay-explorer-contributed-activity-view={view.id}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      minHeight: ViewComponent ? 180 : 0,
+                      borderBottom:
+                        "1px solid var(--overlay-explorer-panel-border)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        minHeight: 30,
+                        padding: "0 10px",
+                        color: explorerSlateTone.muted,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      <ExplorerBoundedText>{view.title}</ExplorerBoundedText>
+                      <span>{view.rendererKind}</span>
+                    </div>
+                    {ViewComponent ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          flex: 1,
+                          minHeight: 0,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <ViewComponent
+                          descriptor={view.viewDescriptor}
+                          appearance={explorerWidgetAppearance}
+                          session={{
+                            ...explorerWidgetSession,
+                            activeViewId: view.viewDescriptor.id,
+                            currentViewState:
+                              explorerViewStateById[view.viewDescriptor.id] ??
+                              {},
+                          }}
+                          data={explorerWidgetData}
+                          runtime={{
+                            rendererKind: view.viewDescriptor.rendererKind,
+                            runtimeId: view.runtimeId,
+                            runtimeSurfaceId: view.runtimeSurfaceId,
+                            buildTarget: view.buildTarget,
+                          }}
+                          host={createExplorerActivityViewHost(
+                            view.viewDescriptor.id,
+                          )}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          padding: "8px 10px 10px",
+                          color: view.error
+                            ? "var(--overlay-danger)"
+                            : explorerSlateTone.muted,
+                          fontSize: 11,
+                          lineHeight: 1.35,
+                        }}
+                      >
+                        {view.error ??
+                          (view.providerPending
+                            ? "Provider bridge pending"
+                            : "No renderer")}
+                      </div>
+                    )}
+                  </section>
+                );
+              })
+            ) : (
+              <div
+                style={{
+                  padding: 12,
+                  color: explorerSlateTone.muted,
+                  fontSize: 11,
+                }}
+              >
+                No contributed views
+              </div>
+            )}
+          </div>
+        </ExplorerSlatePane>
+      );
+    },
+    [
+      createExplorerActivityViewHost,
+      explorerSlateTone,
+      explorerViewStateById,
+      explorerWidgetAppearance,
+      explorerWidgetData,
+      explorerWidgetSession,
+    ],
+  );
   const renderExplorerActivityDockLaneContent = useCallback(
     (laneId: ExplorerActivityLaneId) => {
       switch (laneId) {
@@ -34425,10 +34731,15 @@ export function FileExplorer({
         case "terminal":
           return explorerSideTerminalPane;
         default:
-          return null;
+          return pluginExplorerActivityLaneById.has(laneId)
+            ? renderContributedExplorerActivityLanePane(
+                pluginExplorerActivityLaneById.get(laneId)!,
+              )
+            : null;
       }
     },
     [
+      pluginExplorerActivityLaneById,
       explorerActionsPane,
       explorerFilesLanePane,
       explorerPreviewPane,
@@ -34436,6 +34747,7 @@ export function FileExplorer({
       explorerSemanticLanePane,
       explorerSideTerminalPane,
       explorerTasksLanePane,
+      renderContributedExplorerActivityLanePane,
     ],
   );
   const renderExplorerActivityDockForSide = useCallback(

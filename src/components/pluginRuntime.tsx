@@ -470,7 +470,8 @@ export type BoundOverlayPluginWorkflowComponent =
 export type OverlayPluginSourceKind =
   | 'file-plugin'
   | 'package-plugin'
-  | 'library-package';
+  | 'library-package'
+  | 'vscode-vsix';
 
 export type OverlayPluginPackageKind = 'plugin' | 'library' | 'runtime';
 export type OverlayPluginSourceVisibility = 'open' | 'hybrid' | 'compiled' | 'private';
@@ -504,10 +505,12 @@ export interface OverlayPluginCapabilitySummary {
   actions: number;
   explorerActions: number;
   contextMenuItems: number;
+  explorerActivityLanes?: number;
   explorerViews?: number;
   explorerWidgets?: number;
   previewLanes: number;
   settingsSlots: number;
+  vscodeExtensions?: number;
 }
 
 export interface OverlayPluginDiagnostics {
@@ -670,10 +673,16 @@ export async function loadPluginFromSource(
         options?.diagnostics?.capabilities?.explorerActions ?? 0,
       contextMenuItems:
         options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
+      explorerActivityLanes:
+        options?.diagnostics?.capabilities?.explorerActivityLanes ?? 0,
       explorerViews:
         options?.diagnostics?.capabilities?.explorerViews ?? 0,
+      explorerWidgets:
+        options?.diagnostics?.capabilities?.explorerWidgets ?? 0,
       previewLanes: options?.diagnostics?.capabilities?.previewLanes ?? 0,
       settingsSlots: options?.diagnostics?.capabilities?.settingsSlots ?? 0,
+      vscodeExtensions:
+        options?.diagnostics?.capabilities?.vscodeExtensions ?? 0,
     },
   };
 

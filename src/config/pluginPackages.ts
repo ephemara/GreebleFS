@@ -1,4 +1,5 @@
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
+import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser';
 import { parse as parseToml } from 'smol-toml';
 import React from 'react';
 
@@ -11,6 +12,8 @@ import {
 import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActivityLaneContribution,
+  OverlayPluginExplorerActivityLaneViewContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
   OverlayPluginExplorerWidgetContribution,
@@ -18,6 +21,11 @@ import type {
   OverlayPluginSettingsSlotContribution,
   OverlayPluginWorkflowContribution,
 } from './pluginContributions';
+import type {
+  ExplorerActivityLaneDefinition,
+  ExplorerActivityLaneViewRendererKind,
+  ExplorerActivityRailSide,
+} from './explorerActivityRail';
 import {
   DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
   normalizeOverlayPluginPreviewLaneCapabilities,
@@ -180,7 +188,7 @@ interface PluginPackageExplorerViewManifest {
   ownership?: 'content' | 'surface';
   tags?: string[];
   surfaceOwnership?: Partial<ExplorerViewSurfaceOwnership>;
-  density?: Partial<ExplorerViewDensityContract>;
+  density?: Partial<ExplorerViewDensityContract> | null;
   capabilities?: Partial<ExplorerViewCapabilityFlags>;
 }
 
@@ -205,6 +213,35 @@ interface PluginPackageExplorerWidgetManifest {
   surfaces?: Partial<ExplorerWidgetSurfaceContract>;
   sizing?: Partial<ExplorerWidgetSizingContract>;
   capabilities?: Partial<ExplorerWidgetCapabilityFlags>;
+}
+
+interface PluginPackageExplorerActivityLaneViewManifest {
+  id?: string;
+  title?: string;
+  description?: string;
+  rendererKind: ExplorerActivityLaneViewRendererKind;
+  renderer?: string;
+  rendererEntry?: string;
+  runtimeId?: string;
+  runtimeRef?: string;
+  runtimeSurfaceId?: string;
+  runtimeSurfaceRef?: string;
+  buildTarget?: string;
+  order: number;
+  when?: string;
+}
+
+interface PluginPackageExplorerActivityLaneManifest {
+  id?: string;
+  title?: string;
+  label?: string;
+  shortLabel?: string;
+  description?: string;
+  iconName?: string;
+  iconPath?: string;
+  defaultSide?: ExplorerActivityRailSide;
+  defaultOrder?: number;
+  views?: PluginPackageExplorerActivityLaneViewManifest[];
 }
 
 interface PluginPackagePreviewLaneManifest {
@@ -332,6 +369,7 @@ interface PluginPackageManifest {
     commands?: PluginPackageCommandManifest[];
     explorerActions?: PluginPackageExplorerActionManifest[];
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
+    explorerActivityLanes?: PluginPackageExplorerActivityLaneManifest[];
     explorerViews?: PluginPackageExplorerViewManifest[];
     explorerWidgets?: PluginPackageExplorerWidgetManifest[];
     previewLanes?: PluginPackagePreviewLaneManifest[];
@@ -381,6 +419,7 @@ export interface OverlayPluginDiscoveryResult {
   actions: LoadedExplorerAction[];
   explorerActions: OverlayPluginExplorerActionContribution[];
   contextMenuItems: OverlayPluginContextMenuContribution[];
+  explorerActivityLanes: OverlayPluginExplorerActivityLaneContribution[];
   explorerViews: OverlayPluginExplorerViewContribution[];
   explorerWidgets: OverlayPluginExplorerWidgetContribution[];
   previewLanes: OverlayPluginPreviewLaneContribution[];
@@ -851,6 +890,127 @@ function asExplorerWidgetManifestArray(
   });
 }
 
+function normalizeExplorerActivityLaneRendererKind(
+  record: LooseRecord,
+): ExplorerActivityLaneViewRendererKind {
+  const explicit = asString(record.rendererKind);
+  if (
+    explicit === "wasm-panel" ||
+    explicit === "tree" ||
+    explicit === "webview"
+  ) {
+    return explicit;
+  }
+  if (
+    !asString(record.renderer) &&
+    !asString(record.rendererEntry) &&
+    Boolean(
+      asString(record.runtimeSurfaceId) ||
+        asString(record.runtimeSurfaceRef) ||
+        asString(record.runtimeId) ||
+        asString(record.runtimeRef),
+    )
+  ) {
+    return "wasm-panel";
+  }
+  return "react";
+}
+
+function asExplorerActivityLaneViewManifestArray(
+  value: unknown,
+): PluginPackageExplorerActivityLaneViewManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+    const rendererKind = normalizeExplorerActivityLaneRendererKind(record);
+    const renderer = asString(record.renderer) || asString(record.rendererEntry);
+    const runtimeId =
+      asString(record.runtimeId) ||
+      asString(record.runtimeRef) ||
+      asString(record.runtimeSurfaceId) ||
+      asString(record.runtimeSurfaceRef);
+    if (rendererKind === "react" && !renderer) {
+      return [];
+    }
+    if (rendererKind === "wasm-panel" && !runtimeId) {
+      return [];
+    }
+    const title =
+      asString(record.title) ||
+      deriveDisplayNameFromFilePath(
+        renderer || runtimeId || `activity-view-${index + 1}`,
+      );
+    return [
+      {
+        id: asString(record.id) || deriveIdFromName(title, "activity-view"),
+        title,
+        description: asString(record.description) || undefined,
+        rendererKind,
+        renderer,
+        rendererEntry: asString(record.rendererEntry),
+        runtimeId: asString(record.runtimeId) || asString(record.runtimeRef),
+        runtimeRef: asString(record.runtimeRef),
+        runtimeSurfaceId:
+          asString(record.runtimeSurfaceId) || asString(record.runtimeSurfaceRef),
+        runtimeSurfaceRef: asString(record.runtimeSurfaceRef),
+        buildTarget: asString(record.buildTarget),
+        order:
+          typeof record.order === "number" && Number.isFinite(record.order)
+            ? Math.round(record.order)
+            : index * 10,
+        when: asString(record.when),
+      } satisfies PluginPackageExplorerActivityLaneViewManifest,
+    ];
+  });
+}
+
+function asExplorerActivityLaneManifestArray(
+  value: unknown,
+): PluginPackageExplorerActivityLaneManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+    const title =
+      asString(record.title) ||
+      asString(record.label) ||
+      deriveDisplayNameFromFilePath(
+        asString(record.id) || `activity-lane-${index + 1}`,
+      );
+    const defaultSide =
+      asString(record.defaultSide) === "right" ? "right" : "left";
+    return [
+      {
+        id: asString(record.id) || deriveIdFromName(title, "activity-lane"),
+        title,
+        label: asString(record.label) || title,
+        shortLabel: asString(record.shortLabel) || title,
+        description: asString(record.description) || undefined,
+        iconName: asString(record.iconName) || "Puzzle",
+        iconPath: asString(record.iconPath),
+        defaultSide,
+        defaultOrder:
+          typeof record.defaultOrder === "number" &&
+          Number.isFinite(record.defaultOrder)
+            ? Math.round(record.defaultOrder)
+            : 900 + index * 10,
+        views: asExplorerActivityLaneViewManifestArray(record.views),
+      } satisfies PluginPackageExplorerActivityLaneManifest,
+    ];
+  });
+}
+
 function asPreviewLaneManifestArray(value: unknown): PluginPackagePreviewLaneManifest[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1292,6 +1452,9 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       commands: asCommandManifestArray(contributions?.commands),
       explorerActions: asExplorerActionManifestArray(contributions?.explorerActions),
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
+      explorerActivityLanes: asExplorerActivityLaneManifestArray(
+        contributions?.explorerActivityLanes,
+      ),
       explorerViews: asExplorerViewManifestArray(contributions?.explorerViews),
       explorerWidgets: asExplorerWidgetManifestArray(contributions?.explorerWidgets),
       previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
@@ -1491,6 +1654,7 @@ function estimatePackageManifestCapabilities(
     actions: 0,
     explorerActions: contributions?.explorerActions?.length ?? 0,
     contextMenuItems: contributions?.contextMenuItems?.length ?? 0,
+    explorerActivityLanes: contributions?.explorerActivityLanes?.length ?? 0,
     explorerViews: contributions?.explorerViews?.length ?? 0,
     explorerWidgets: contributions?.explorerWidgets?.length ?? 0,
     previewLanes: contributions?.previewLanes?.length ?? 0,
@@ -1531,6 +1695,7 @@ function createDisabledLegacyPlugin(entry: FileEntry): LoadedOverlayPlugin {
         actions: 0,
         explorerActions: 0,
         contextMenuItems: 0,
+        explorerActivityLanes: 0,
         previewLanes: 0,
         settingsSlots: 0,
       },
@@ -1664,6 +1829,335 @@ function toAssetUrl(filePath: string): string {
     const normalized = filePath.replace(/\\/g, '/');
     return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
   }
+}
+
+interface VsCodeActivityBarContainerManifest {
+  id?: string;
+  title?: string;
+  icon?: string;
+}
+
+interface VsCodeViewManifest {
+  id?: string;
+  name?: string;
+  when?: string;
+}
+
+interface VsCodeCommandManifest {
+  command?: string;
+  title?: string;
+  category?: string;
+}
+
+interface VsCodeExtensionManifest {
+  name?: string;
+  publisher?: string;
+  displayName?: string;
+  description?: string;
+  version?: string;
+  icon?: string;
+  contributes?: {
+    viewsContainers?: {
+      activitybar?: VsCodeActivityBarContainerManifest[];
+    };
+    views?: Record<string, VsCodeViewManifest[]>;
+    commands?: VsCodeCommandManifest[];
+  };
+}
+
+interface ResolvedVsCodeExtensionForRail {
+  originalPath: string;
+  cachedExtractionPath: string;
+  extensionRootPath: string;
+  packageJsonPath: string;
+  manifest: VsCodeExtensionManifest;
+  extensionId: string;
+  extensionName: string;
+  extensionDescription?: string;
+  versionLabel: string;
+  modified: number;
+}
+
+function entryLooksLikeVsix(entry: FileEntry): boolean {
+  return !entry.is_dir && (entry.extension === 'vsix' || entry.path.toLowerCase().endsWith('.vsix'));
+}
+
+function parseJsoncObject<TRecord extends object>(source: string, filePath: string): TRecord {
+  const errors: ParseError[] = [];
+  const parsed = parseJsonc(source, errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  });
+  if (errors.length > 0) {
+    const error = errors[0];
+    throw new Error(
+      `${filePath}: ${printParseErrorCode(error.error)} at offset ${error.offset}`,
+    );
+  }
+  const record = asRecord(parsed);
+  if (!record) {
+    throw new Error(`${filePath}: expected JSON object`);
+  }
+  return record as TRecord;
+}
+
+async function readTextFileIfExists(path: string): Promise<string | null> {
+  try {
+    return await commands.fsReadTextFile(path).then(unwrapTauriResult);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeVsCodeExtensionNamespace(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+async function resolveVsCodeExtensionForRail(
+  entry: FileEntry,
+): Promise<ResolvedVsCodeExtensionForRail | null> {
+  if (!entryLooksLikeVsix(entry)) {
+    return null;
+  }
+  const extractionResult = await commands.fsOpenArchive(entry.path).then(unwrapTauriResult);
+  const rootPackageJsonPath = joinPlatformPath(extractionResult.outputPath, 'package.json');
+  const rootPackageJson = await readTextFileIfExists(rootPackageJsonPath);
+  let extensionRootPath = extractionResult.outputPath;
+  let packageJsonPath = rootPackageJsonPath;
+  let manifestText = rootPackageJson;
+  if (!manifestText) {
+    extensionRootPath = joinPlatformPath(extractionResult.outputPath, 'extension');
+    packageJsonPath = joinPlatformPath(extensionRootPath, 'package.json');
+    manifestText = await readTextFileIfExists(packageJsonPath);
+  }
+  if (!manifestText) {
+    return null;
+  }
+  const manifest = parseJsoncObject<VsCodeExtensionManifest>(
+    manifestText,
+    packageJsonPath,
+  );
+  const extensionName =
+    asString(manifest.displayName) || asString(manifest.name) || entry.name;
+  const rawExtensionId =
+    [asString(manifest.publisher), asString(manifest.name)]
+      .filter(Boolean)
+      .join('.') || deriveIdFromName(entry.name, 'vscode-extension');
+  const extensionId = normalizeVsCodeExtensionNamespace(
+    rawExtensionId,
+    deriveIdFromName(entry.name, 'vscode-extension'),
+  );
+  return {
+    originalPath: entry.path,
+    cachedExtractionPath: extractionResult.outputPath,
+    extensionRootPath,
+    packageJsonPath,
+    manifest,
+    extensionId,
+    extensionName,
+    extensionDescription: asString(manifest.description) || undefined,
+    versionLabel: asString(manifest.version) || '0.0.0',
+    modified: entry.modified,
+  };
+}
+
+function resolveVsCodeActivityIcon(
+  extension: ResolvedVsCodeExtensionForRail,
+  iconValue: string,
+): Pick<ExplorerActivityLaneDefinition, 'iconName' | 'iconUrl'> {
+  const icon = iconValue.trim();
+  const codicon = icon.match(/^\$\(([^)]+)\)$/)?.[1] ?? '';
+  const codiconMap: Record<string, string> = {
+    account: 'User',
+    beaker: 'FlaskConical',
+    book: 'BookOpen',
+    bug: 'Bug',
+    debug: 'Bug',
+    files: 'FolderTree',
+    gear: 'Settings',
+    git: 'GitBranch',
+    graph: 'GitBranch',
+    package: 'Package',
+    puzzle: 'Puzzle',
+    search: 'Search',
+    source_control: 'GitBranch',
+    symbol_class: 'Blocks',
+    terminal: 'TerminalSquare',
+    tools: 'Wrench',
+  };
+  if (codicon) {
+    return { iconName: codiconMap[codicon] || 'Puzzle' };
+  }
+  if (icon && isSafeRelativePath(icon)) {
+    return {
+      iconName: 'Puzzle',
+      iconUrl: toAssetUrl(joinPlatformPath(extension.extensionRootPath, normalizeRelativePath(icon))),
+    };
+  }
+  return { iconName: 'Puzzle' };
+}
+
+function mapVsixManifestToGreebleActivityLanes(
+  extension: ResolvedVsCodeExtensionForRail,
+): OverlayPluginExplorerActivityLaneContribution[] {
+  const contributes = extension.manifest.contributes;
+  const viewsByContainer = asRecord(contributes?.views) ?? {};
+  const activityContainers =
+    contributes?.viewsContainers?.activitybar?.filter((container) =>
+      Boolean(asString(container.id) || asString(container.title)),
+    ) ?? [];
+  const containersById = new Map<string, VsCodeActivityBarContainerManifest>();
+  for (const container of activityContainers) {
+    const containerId =
+      asString(container.id) || deriveIdFromName(asString(container.title), 'activity');
+    containersById.set(containerId, container);
+  }
+  for (const containerId of Object.keys(viewsByContainer)) {
+    if (!containersById.has(containerId)) {
+      containersById.set(containerId, {
+        id: containerId,
+        title: deriveDisplayNameFromFilePath(containerId),
+      });
+    }
+  }
+
+  return [...containersById.entries()].map(([containerId, container], index) => {
+    const laneTitle =
+      asString(container.title) ||
+      deriveDisplayNameFromFilePath(containerId);
+    const stableContainerId = normalizeVsCodeExtensionNamespace(
+      containerId,
+      deriveIdFromName(laneTitle, 'activity'),
+    );
+    const laneId = `vscode:${extension.extensionId}:${stableContainerId}`;
+    const icon = resolveVsCodeActivityIcon(
+      extension,
+      asString(container.icon) || asString(extension.manifest.icon),
+    );
+    const viewEntries = Array.isArray(viewsByContainer[containerId])
+      ? (viewsByContainer[containerId] as unknown[])
+      : [];
+    const views: OverlayPluginExplorerActivityLaneViewContribution[] =
+      viewEntries.flatMap((entry, viewIndex) => {
+        const view = asRecord(entry);
+        if (!view) {
+          return [];
+        }
+        const title =
+          asString(view.name) ||
+          asString(view.title) ||
+          asString(view.id) ||
+          `View ${viewIndex + 1}`;
+        const stableViewId = normalizeVsCodeExtensionNamespace(
+          asString(view.id) || deriveIdFromName(title, 'view'),
+          deriveIdFromName(title, 'view'),
+        );
+        const viewId = `${laneId}.view.${stableViewId}`;
+        const viewDescriptor = normalizeExplorerViewDescriptor(
+          {
+            id: viewId,
+            title,
+            shortLabel: title,
+            description: asString(view.when) || undefined,
+            tags: ['vscode', 'tree-view'],
+            rendererKind: 'react',
+            ownership: 'content',
+          },
+          {
+            id: viewId,
+            title,
+          },
+        );
+        return [
+          {
+            id: viewId,
+            title,
+            description: asString(view.when) || undefined,
+            order: viewIndex * 10,
+            rendererKind: 'tree',
+            providerPending: true,
+            error: null,
+            pluginId: extension.extensionId,
+            pluginName: extension.extensionName,
+            sourceKind: 'vscode-vsix',
+            sourceLabel: extension.originalPath,
+            rendererEntry: null,
+            runtimeId: null,
+            runtimeSurfaceId: null,
+            buildTarget: null,
+            viewDescriptor,
+            component: null,
+          } satisfies OverlayPluginExplorerActivityLaneViewContribution,
+        ];
+      });
+    return {
+      id: laneId,
+      label: laneTitle,
+      shortLabel: laneTitle,
+      ...icon,
+      sourceKind: 'vscode-vsix',
+      sourceLabel: extension.originalPath,
+      defaultSide: 'left',
+      defaultOrder: 1000 + index * 10,
+      views,
+      pluginId: extension.extensionId,
+      pluginName: extension.extensionName,
+    } satisfies OverlayPluginExplorerActivityLaneContribution;
+  });
+}
+
+function createVsCodeExtensionMetadataPlugin(
+  extension: ResolvedVsCodeExtensionForRail,
+  lanes: readonly OverlayPluginExplorerActivityLaneContribution[],
+  disabled: boolean,
+  warnings: string[] = [],
+): LoadedOverlayPlugin {
+  const commandCount = extension.manifest.contributes?.commands?.length ?? 0;
+  return {
+    id: extension.extensionId,
+    name: extension.extensionName,
+    description: extension.extensionDescription,
+    filePath: extension.originalPath,
+    pluginRoot: pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: extension.extensionRootPath,
+    backendDirectory: joinPlatformPath(extension.extensionRootPath, pluginSystemConfig.backendDirectoryName),
+    enablementKey: extension.extensionId,
+    modified: extension.modified,
+    enabled: !disabled,
+    defaultOpen: false,
+    keepMounted: false,
+    component: null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'vscode-vsix',
+      sourceLabel: extension.originalPath,
+      manifestPath: extension.packageJsonPath,
+      category: 'VS Code',
+      tags: ['vscode', 'vsix'],
+      testFiles: [],
+      warnings,
+      capabilities: {
+        panel: false,
+        themes: 0,
+        shaders: 0,
+        fonts: 0,
+        commands: commandCount,
+        actions: 0,
+        explorerActions: 0,
+        contextMenuItems: 0,
+        explorerActivityLanes: lanes.length,
+        explorerViews: 0,
+        explorerWidgets: 0,
+        previewLanes: 0,
+        settingsSlots: 0,
+        vscodeExtensions: 1,
+      },
+    },
+  };
 }
 
 function inferFontFormat(filePath: string): string {
@@ -2238,6 +2732,7 @@ async function loadPluginPackage(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    explorerActivityLanes: [],
     explorerViews: [],
     explorerWidgets: [],
     previewLanes: [],
@@ -2368,6 +2863,7 @@ async function loadPluginPackage(
           actions: 0,
           explorerActions: 0,
           contextMenuItems: 0,
+          explorerActivityLanes: 0,
           explorerViews: 0,
           explorerWidgets: 0,
           previewLanes: 0,
@@ -3037,6 +3533,238 @@ async function loadPluginPackage(
     ),
   );
 
+  const explorerActivityLaneModuleResolver =
+    createPluginRelativeModuleSourceResolver(record.directoryPath);
+  const explorerActivityLaneRendererCache = new Map<
+    string,
+    React.ComponentType<ExplorerViewProps>
+  >();
+  const loadedExplorerActivityLanes: Array<
+    OverlayPluginExplorerActivityLaneContribution | null
+  > = await Promise.all(
+    (record.manifest.contributions?.explorerActivityLanes ?? []).map(
+      async (activityLane, laneIndex) => {
+        const laneTitle =
+          activityLane.title || activityLane.label || `Activity Lane ${laneIndex + 1}`;
+        const stableLaneId =
+          activityLane.id || deriveIdFromName(laneTitle, "activity-lane");
+        const laneId = `plugin:${packageId}:${stableLaneId}`;
+        const iconUrl =
+          activityLane.iconPath && isSafeRelativePath(activityLane.iconPath)
+            ? toAssetUrl(joinPlatformPath(record.directoryPath, normalizeRelativePath(activityLane.iconPath)))
+            : undefined;
+        const loadedViews = await Promise.all(
+          (activityLane.views ?? []).map(async (activityView, viewIndex) => {
+            const viewTitle = activityView.title || `View ${viewIndex + 1}`;
+            const stableViewId =
+              activityView.id || deriveIdFromName(viewTitle, "activity-view");
+            const viewId = `${laneId}.view.${stableViewId}`;
+            const runtimeId =
+              activityView.runtimeSurfaceId?.trim()
+              || activityView.runtimeSurfaceRef?.trim()
+              || activityView.runtimeId?.trim()
+              || activityView.runtimeRef?.trim()
+              || null;
+            const viewDescriptor = normalizeExplorerViewDescriptor(
+              {
+                id: viewId,
+                title: viewTitle,
+                shortLabel: viewTitle,
+                description: activityView.description,
+                tags: ["activity-lane"],
+                priority: -activityView.order,
+                rendererKind:
+                  activityView.rendererKind === "wasm-panel"
+                    ? "wasm-panel"
+                    : "react",
+                rendererEntry:
+                  activityView.rendererEntry?.trim() ||
+                  activityView.renderer?.trim() ||
+                  null,
+                runtimeId,
+                runtimeSurfaceId: runtimeId,
+                buildTarget: activityView.buildTarget?.trim() || null,
+                ownership: "content",
+              },
+              {
+                id: viewId,
+                title: viewTitle,
+              },
+            );
+
+            const baseContribution = {
+              id: viewId,
+              title: viewTitle,
+              description: activityView.description,
+              order: activityView.order,
+              rendererKind: activityView.rendererKind,
+              pluginId: packageId,
+              pluginName: packageName,
+              sourceKind: "plugin" as const,
+              sourceLabel: record.manifestPath,
+              rendererEntry: viewDescriptor.rendererEntry,
+              runtimeId: viewDescriptor.runtimeId,
+              runtimeSurfaceId: viewDescriptor.runtimeSurfaceId,
+              buildTarget: viewDescriptor.buildTarget,
+              viewDescriptor,
+              component: null,
+              error: null,
+            } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+
+            if (
+              activityView.rendererKind === "tree" ||
+              activityView.rendererKind === "webview"
+            ) {
+              return {
+                ...baseContribution,
+                providerPending: true,
+              } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+            }
+
+            if (activityView.rendererKind === "wasm-panel") {
+              if (!runtimeId) {
+                packageWarnings.push(
+                  `activity lane ${laneTitle} / ${viewTitle}: wasm-panel views require runtimeSurfaceId, runtimeSurfaceRef, runtimeId, or runtimeRef`,
+                );
+                return {
+                  ...baseContribution,
+                  error: "Missing wasm runtime id",
+                } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+              }
+              return {
+                ...baseContribution,
+                component: (props) =>
+                  React.createElement(ExplorerWasmRuntimeSurface, {
+                    ...props,
+                    runtimeId,
+                    buildTarget: viewDescriptor.buildTarget,
+                  }),
+              } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+            }
+
+            const rendererEntryValue =
+              activityView.rendererEntry?.trim() || activityView.renderer?.trim() || null;
+            if (!rendererEntryValue || !isSafeRelativePath(rendererEntryValue)) {
+              packageWarnings.push(
+                `activity lane ${laneTitle} / ${viewTitle}: invalid renderer path`,
+              );
+              return {
+                ...baseContribution,
+                error: "Invalid renderer path",
+              } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+            }
+
+            const normalizedRendererEntry = normalizeRelativePath(rendererEntryValue);
+            let rendererComponent =
+              explorerActivityLaneRendererCache.get(normalizedRendererEntry) ??
+              null;
+            let loadedDescriptor = viewDescriptor;
+            let errorMessage: string | null = null;
+            if (!rendererComponent) {
+              const rendererEntry = await resolveRelativeFileEntry(
+                record.directoryPath,
+                normalizedRendererEntry,
+              );
+              if (
+                !rendererEntry ||
+                !pluginSystemConfig.frontendExtensions.includes(
+                  rendererEntry.extension as never,
+                )
+              ) {
+                errorMessage = "Renderer entry could not be resolved";
+              } else {
+                try {
+                  const source = await commands
+                    .fsReadTextFile(rendererEntry.path)
+                    .then(unwrapTauriResult);
+                  const loadedView = await loadExplorerViewFromSource(
+                    source,
+                    rendererEntry as PluginFileEntry,
+                    {
+                      descriptorDefaults: {
+                        ...viewDescriptor,
+                        rendererEntry: normalizedRendererEntry,
+                      },
+                      resolveRelativeModuleSource:
+                        explorerActivityLaneModuleResolver,
+                    },
+                  );
+                  loadedDescriptor = loadedView.descriptor;
+                  errorMessage = loadedView.error;
+                  if (loadedView.component) {
+                    rendererComponent = loadedView.component;
+                    explorerActivityLaneRendererCache.set(
+                      normalizedRendererEntry,
+                      rendererComponent,
+                    );
+                  }
+                } catch (error) {
+                  errorMessage = String(error);
+                }
+              }
+            }
+
+            if (errorMessage) {
+              packageWarnings.push(
+                `activity lane ${laneTitle} / ${viewTitle}: ${errorMessage}`,
+              );
+            }
+
+            const rendererFilePath = joinPlatformPath(
+              record.directoryPath,
+              normalizedRendererEntry,
+            );
+            const activityViewContext: OverlayPluginContext = {
+              ...packagePreviewBaseContext,
+              filePath: rendererFilePath,
+            };
+            const activityViewApi = hostApiFactory(activityViewContext);
+            const boundComponent: BoundExplorerViewComponent | null =
+              rendererComponent
+                ? (props) =>
+                    React.createElement(rendererComponent!, {
+                      ...props,
+                      api: activityViewApi,
+                      plugin: activityViewContext,
+                    })
+                : null;
+
+            return {
+              ...baseContribution,
+              rendererEntry: normalizedRendererEntry,
+              viewDescriptor: loadedDescriptor,
+              component: boundComponent,
+              error: errorMessage,
+            } satisfies OverlayPluginExplorerActivityLaneViewContribution;
+          }),
+        );
+
+        return {
+          id: laneId,
+          label: activityLane.label || laneTitle,
+          shortLabel: activityLane.shortLabel || activityLane.label || laneTitle,
+          iconName: activityLane.iconName || "Puzzle",
+          iconUrl,
+          sourceKind: "plugin",
+          sourceLabel: record.manifestPath,
+          defaultSide: activityLane.defaultSide ?? "left",
+          defaultOrder: activityLane.defaultOrder ?? 900 + laneIndex * 10,
+          views: loadedViews.sort((left, right) => left.order - right.order),
+          pluginId: packageId,
+          pluginName: packageName,
+        } satisfies OverlayPluginExplorerActivityLaneContribution;
+      },
+    ),
+  );
+  result.explorerActivityLanes.push(
+    ...loadedExplorerActivityLanes.filter(
+      (
+        contribution,
+      ): contribution is OverlayPluginExplorerActivityLaneContribution =>
+        contribution != null,
+    ),
+  );
+
   const previewModuleResolver = createPluginRelativeModuleSourceResolver(
     record.directoryPath,
   );
@@ -3461,6 +4189,7 @@ async function loadPluginPackage(
     actions: result.actions.length,
     explorerActions: result.explorerActions.length,
     contextMenuItems: result.contextMenuItems.length,
+    explorerActivityLanes: result.explorerActivityLanes.length,
     explorerViews: result.explorerViews.length,
     explorerWidgets: result.explorerWidgets.length,
     previewLanes: result.previewLanes.length,
@@ -3510,6 +4239,7 @@ export async function discoverOverlayPlugins(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    explorerActivityLanes: [],
     explorerViews: [],
     explorerWidgets: [],
     previewLanes: [],
@@ -3528,6 +4258,9 @@ export async function discoverOverlayPlugins(
   const legacyFiles = rootEntries
     .filter(entry => !entry.is_dir && pluginSystemConfig.frontendExtensions.includes(entry.extension as never))
     .sort((left, right) => left.name.localeCompare(right.name));
+  const vsixFiles = rootEntries
+    .filter(entryLooksLikeVsix)
+    .sort((left, right) => left.name.localeCompare(right.name));
   const pluginPackageDirectories = rootEntries
     .filter(entry => entry.is_dir)
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -3545,6 +4278,7 @@ export async function discoverOverlayPlugins(
     actions: [],
     explorerActions: [],
     contextMenuItems: [],
+    explorerActivityLanes: [],
     explorerViews: [],
     explorerWidgets: [],
     previewLanes: [],
@@ -3615,6 +4349,30 @@ export async function discoverOverlayPlugins(
     aggregate.warnings.push(`${legacyName}: ${String(result.reason)}`);
   });
 
+  const vsixResults = await Promise.allSettled(vsixFiles.map(async (entry) => {
+    const resolved = await resolveVsCodeExtensionForRail(entry);
+    if (!resolved) {
+      throw new Error('VSIX package.json could not be resolved');
+    }
+    const disabled = isPluginDisabled(disabledPluginIds, resolved.extensionId);
+    const lanes = disabled ? [] : mapVsixManifestToGreebleActivityLanes(resolved);
+    return {
+      plugin: createVsCodeExtensionMetadataPlugin(resolved, lanes, disabled),
+      lanes,
+    };
+  }));
+
+  vsixResults.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      aggregate.plugins.push(result.value.plugin);
+      aggregate.explorerActivityLanes.push(...result.value.lanes);
+      return;
+    }
+    const vsixEntry = vsixFiles[index];
+    const vsixName = vsixEntry?.name ?? vsixEntry?.path ?? 'VSIX extension';
+    aggregate.warnings.push(`${vsixName}: ${String(result.reason)}`);
+  });
+
   for (const record of dependencyRuntimeResult.runtime.recordsById.values()) {
     try {
       const packageResult = await loadPluginPackage(
@@ -3632,6 +4390,7 @@ export async function discoverOverlayPlugins(
       aggregate.actions.push(...packageResult.actions);
       aggregate.explorerActions.push(...packageResult.explorerActions);
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
+      aggregate.explorerActivityLanes.push(...packageResult.explorerActivityLanes);
       aggregate.explorerViews.push(...packageResult.explorerViews);
       aggregate.explorerWidgets.push(...packageResult.explorerWidgets);
       aggregate.previewLanes.push(...packageResult.previewLanes);
@@ -3652,6 +4411,11 @@ export async function discoverOverlayPlugins(
   aggregate.actions.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
   aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
+  aggregate.explorerActivityLanes.sort(
+    (left, right) =>
+      (left.defaultOrder ?? 900) - (right.defaultOrder ?? 900) ||
+      left.label.localeCompare(right.label),
+  );
   aggregate.explorerViews.sort(
     (left, right) =>
       right.priority - left.priority || left.title.localeCompare(right.title),

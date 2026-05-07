@@ -85,8 +85,14 @@ import type { ExplorerPaneTone } from '../components/explorer/ExplorerPanePrimit
 import {
   defaultExplorerActivityLaneOrderBySide,
   defaultExplorerActivityLanePlacementById,
+  explorerActivityLaneDefinitions,
+  getExplorerActivityLaneFallbackOrderBySide,
+  getExplorerActivityLaneFallbackPlacementById,
   getExplorerActivityLaneDefinitionsForRailSide,
   moveExplorerActivityLane,
+  normalizeExplorerActivityLaneOrderBySide,
+  normalizeExplorerActivityLanePlacementById,
+  type ExplorerActivityLaneDefinition,
   type ExplorerActivityLaneId,
 } from '../config/explorerActivityRail';
 
@@ -263,6 +269,63 @@ describe('Explorer activity dock surfaces', () => {
     fireEvent.dragEnd(rightPreviewButton, { dataTransfer: rightToLeftTransfer });
 
     expect(onMoveLane).toHaveBeenCalledWith('preview', 'left', 1);
+  });
+
+  it('renders contributed activity lanes from the dynamic rail catalog', () => {
+    const contributedLane = {
+      id: 'plugin:gitlens:source-control',
+      label: 'Source Control',
+      iconName: 'GitBranch',
+      defaultSide: 'left',
+      defaultOrder: 35,
+      views: [],
+    } satisfies ExplorerActivityLaneDefinition;
+    const laneDefinitions = [
+      ...explorerActivityLaneDefinitions,
+      contributedLane,
+    ];
+    const placementById = normalizeExplorerActivityLanePlacementById(
+      {},
+      getExplorerActivityLaneFallbackPlacementById(laneDefinitions),
+    );
+    const orderBySide = normalizeExplorerActivityLaneOrderBySide(
+      {},
+      placementById,
+      getExplorerActivityLaneFallbackOrderBySide(
+        laneDefinitions,
+        placementById,
+      ),
+    );
+
+    expect(
+      getExplorerActivityLaneDefinitionsForRailSide(
+        'left',
+        placementById,
+        orderBySide,
+        [],
+        laneDefinitions,
+      ).map((lane) => lane.id),
+    ).toContain('plugin:gitlens:source-control');
+
+    const onSelectLane = vi.fn();
+    render(
+      <ExplorerActivityRail
+        laneDefinitions={getExplorerActivityLaneDefinitionsForRailSide(
+          'left',
+          placementById,
+          orderBySide,
+          [],
+          laneDefinitions,
+        )}
+        onSelectLane={onSelectLane}
+        railSide="left"
+        tone={tone}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Source Control' }));
+
+    expect(onSelectLane).toHaveBeenCalledWith('plugin:gitlens:source-control');
   });
 
   it('reorders icons within the same rail when lanes are dragged', () => {

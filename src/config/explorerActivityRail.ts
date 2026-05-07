@@ -1,4 +1,4 @@
-export type ExplorerActivityLaneId =
+export type ExplorerBuiltInActivityLaneId =
   | "files"
   | "search"
   | "semantic"
@@ -8,9 +8,40 @@ export type ExplorerActivityLaneId =
   | "terminal"
   | "customize";
 
+export type ExplorerContributedActivityLaneId =
+  | `plugin:${string}:${string}`
+  | `vscode:${string}:${string}`;
+
+export type ExplorerActivityLaneId =
+  | ExplorerBuiltInActivityLaneId
+  | ExplorerContributedActivityLaneId
+  | (string & {});
+
+export type ExplorerActivityLaneSourceKind =
+  | "built-in"
+  | "plugin"
+  | "vscode-vsix";
+
+export type ExplorerActivityLaneViewRendererKind =
+  | "react"
+  | "wasm-panel"
+  | "tree"
+  | "webview";
+
+export interface ExplorerActivityLaneViewDefinition {
+  id: string;
+  title: string;
+  description?: string;
+  order: number;
+  rendererKind: ExplorerActivityLaneViewRendererKind;
+  providerPending?: boolean;
+  error?: string | null;
+}
+
 export interface ExplorerActivityLaneDefinition {
   id: ExplorerActivityLaneId;
   label: string;
+  shortLabel?: string;
   iconName:
     | "FolderTree"
     | "Search"
@@ -18,13 +49,21 @@ export interface ExplorerActivityLaneDefinition {
     | "Eye"
     | "Sparkles"
     | "ListTodo"
+    | "Puzzle"
     | "TerminalSquare"
-    | "Palette";
+    | "Palette"
+    | (string & {});
+  iconUrl?: string;
+  sourceKind?: ExplorerActivityLaneSourceKind;
+  sourceLabel?: string;
+  defaultSide?: ExplorerActivityRailSide;
+  defaultOrder?: number;
+  views?: readonly ExplorerActivityLaneViewDefinition[];
 }
 
 export type ExplorerActivityRailSide = "left" | "right";
 export type ExplorerActivityLanePlacementById = Record<
-  ExplorerActivityLaneId,
+  string,
   ExplorerActivityRailSide
 >;
 export type ExplorerActivityLaneOrderBySide = Record<
@@ -116,17 +155,33 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function isExplorerActivityLaneId(
+export function isExplorerBuiltInActivityLaneId(
+  value: unknown,
+): value is ExplorerBuiltInActivityLaneId {
+  return typeof value === "string" && explorerActivityLaneIdSet.has(value as ExplorerActivityLaneId);
+}
+
+export function isExplorerActivityLaneId(
   value: unknown,
 ): value is ExplorerActivityLaneId {
-  return typeof value === "string" && explorerActivityLaneIdSet.has(value as ExplorerActivityLaneId);
+  if (typeof value !== "string") {
+    return false;
+  }
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 180 || /[\u0000-\u001f]/.test(normalized)) {
+    return false;
+  }
+  if (explorerActivityLaneIdSet.has(normalized as ExplorerActivityLaneId)) {
+    return true;
+  }
+  return /^(plugin|vscode):[A-Za-z0-9_.-]+:[A-Za-z0-9_.:-]+$/.test(normalized);
 }
 
 export function normalizeExplorerActivityLaneId(
   value: unknown,
 ): ExplorerActivityLaneId {
   return isExplorerActivityLaneId(value)
-    ? value
+    ? value.trim()
     : defaultExplorerActivityLaneId;
 }
 
@@ -138,11 +193,63 @@ export function normalizeExplorerActivityRailSide(
 
 export function getExplorerActivityLaneDefinition(
   laneId: ExplorerActivityLaneId,
+  laneDefinitions: readonly ExplorerActivityLaneDefinition[] = explorerActivityLaneDefinitions,
 ): ExplorerActivityLaneDefinition {
   return (
+    laneDefinitions.find((lane) => lane.id === laneId) ??
     explorerActivityLaneDefinitions.find((lane) => lane.id === laneId) ??
-    explorerActivityLaneDefinitions[0]
+    {
+      id: laneId,
+      label: laneId.split(":").pop() || String(laneId),
+      iconName: "Puzzle",
+      sourceKind: laneId.startsWith("vscode:") ? "vscode-vsix" : "plugin",
+      defaultSide: "left",
+      defaultOrder: 900,
+      views: [],
+    }
   );
+}
+
+export function getExplorerActivityLaneFallbackPlacementById(
+  laneDefinitions: readonly ExplorerActivityLaneDefinition[] = explorerActivityLaneDefinitions,
+): ExplorerActivityLanePlacementById {
+  const placement: ExplorerActivityLanePlacementById = {
+    ...defaultExplorerActivityLanePlacementById,
+  };
+  for (const lane of laneDefinitions) {
+    if (!isExplorerActivityLaneId(lane.id)) {
+      continue;
+    }
+    placement[lane.id] =
+      lane.defaultSide ??
+      (defaultExplorerActivityLanePlacementById as ExplorerActivityLanePlacementById)[lane.id] ??
+      "left";
+  }
+  return placement;
+}
+
+export function getExplorerActivityLaneFallbackOrderBySide(
+  laneDefinitions: readonly ExplorerActivityLaneDefinition[] = explorerActivityLaneDefinitions,
+  placementById: ExplorerActivityLanePlacementById = getExplorerActivityLaneFallbackPlacementById(laneDefinitions),
+): ExplorerActivityLaneOrderBySide {
+  const orderBySide: ExplorerActivityLaneOrderBySide = {
+    left: [...defaultExplorerActivityLaneOrderBySide.left],
+    right: [...defaultExplorerActivityLaneOrderBySide.right],
+  };
+  const builtInLaneIds = new Set(explorerActivityLaneIds);
+  const contributedLaneDefinitions = laneDefinitions
+    .filter((lane) => isExplorerActivityLaneId(lane.id) && !builtInLaneIds.has(lane.id as ExplorerBuiltInActivityLaneId))
+    .sort((left, right) => {
+      const orderDelta = (left.defaultOrder ?? 900) - (right.defaultOrder ?? 900);
+      return orderDelta !== 0 ? orderDelta : left.label.localeCompare(right.label);
+    });
+  for (const lane of contributedLaneDefinitions) {
+    const side = placementById[lane.id] ?? lane.defaultSide ?? "left";
+    if (!orderBySide[side].includes(lane.id)) {
+      orderBySide[side].push(lane.id);
+    }
+  }
+  return orderBySide;
 }
 
 export function normalizeExplorerActivityLanePlacementById(
@@ -150,13 +257,21 @@ export function normalizeExplorerActivityLanePlacementById(
   fallback: ExplorerActivityLanePlacementById = defaultExplorerActivityLanePlacementById,
 ): ExplorerActivityLanePlacementById {
   const source = asRecord(value);
-  const normalizedEntries = explorerActivityLaneIds.map((laneId) => [
-    laneId,
-    normalizeExplorerActivityRailSide(source?.[laneId] ?? fallback[laneId]),
-  ] as const);
-  return Object.fromEntries(
-    normalizedEntries,
-  ) as ExplorerActivityLanePlacementById;
+  const normalized: ExplorerActivityLanePlacementById = {};
+  const laneIds = new Set<string>([
+    ...explorerActivityLaneIds,
+    ...Object.keys(fallback),
+    ...(source ? Object.keys(source) : []),
+  ]);
+  for (const laneIdValue of laneIds) {
+    if (!isExplorerActivityLaneId(laneIdValue)) {
+      continue;
+    }
+    normalized[laneIdValue] = normalizeExplorerActivityRailSide(
+      source?.[laneIdValue] ?? fallback[laneIdValue],
+    );
+  }
+  return normalized;
 }
 
 export function normalizeExplorerActivityLaneOrderBySide(
@@ -200,6 +315,18 @@ export function normalizeExplorerActivityLaneOrderBySide(
       seen.add(laneIdValue);
       normalized[side].push(laneIdValue);
     }
+
+    for (const laneIdValue of Object.keys(placementById)) {
+      if (
+        !isExplorerActivityLaneId(laneIdValue) ||
+        placementById[laneIdValue] !== side ||
+        seen.has(laneIdValue)
+      ) {
+        continue;
+      }
+      seen.add(laneIdValue);
+      normalized[side].push(laneIdValue);
+    }
   }
 
   return normalized;
@@ -227,20 +354,23 @@ export function getExplorerActivityLaneDefinitionsForRailSide(
   placementById: ExplorerActivityLanePlacementById = defaultExplorerActivityLanePlacementById,
   orderBySide: ExplorerActivityLaneOrderBySide = defaultExplorerActivityLaneOrderBySide,
   hiddenLaneIds: readonly ExplorerActivityLaneId[] = defaultExplorerHiddenActivityLaneIds,
+  laneDefinitions: readonly ExplorerActivityLaneDefinition[] = explorerActivityLaneDefinitions,
 ): readonly ExplorerActivityLaneDefinition[] {
   const normalizedPlacement = normalizeExplorerActivityLanePlacementById(
     placementById,
+    getExplorerActivityLaneFallbackPlacementById(laneDefinitions),
   );
   const normalizedOrder = normalizeExplorerActivityLaneOrderBySide(
     orderBySide,
     normalizedPlacement,
+    getExplorerActivityLaneFallbackOrderBySide(laneDefinitions, normalizedPlacement),
   );
   const hiddenLaneIdSet = new Set(
     normalizeExplorerHiddenActivityLaneIds(hiddenLaneIds),
   );
   return normalizedOrder[side]
     .filter((laneId) => !hiddenLaneIdSet.has(laneId))
-    .map(getExplorerActivityLaneDefinition);
+    .map((laneId) => getExplorerActivityLaneDefinition(laneId, laneDefinitions));
 }
 
 export function moveExplorerActivityLane(args: {

@@ -192,6 +192,106 @@ describe('plugin package discovery', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('maps VSIX activity bar contributions into explorer activity lanes', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; request?: { archivePath?: string } } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+      const archivePath = String(
+        params?.request?.archivePath ?? params?.path ?? '',
+      ).replace(/\\/g, '/');
+      const pluginsRoot = pluginSystemConfig.pluginsDirectory.replace(/\\/g, '/');
+      const packagesRoot = pluginSystemConfig.packagesDirectory.replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginsRoot) {
+        return [
+          {
+            name: 'gitlens.vsix',
+            path: `${pluginsRoot}/gitlens.vsix`,
+            is_dir: false,
+            extension: 'vsix',
+            modified: 42,
+          },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === packagesRoot) {
+        return [];
+      }
+
+      if (command === 'fs_open_archive' && archivePath === `${pluginsRoot}/gitlens.vsix`) {
+        return {
+          outputPath: '/cache/gitlens',
+          extractedEntryCount: 3,
+          reusedCachedOutput: false,
+        };
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === '/cache/gitlens/package.json') {
+        return JSON.stringify({
+          name: 'gitlens',
+          publisher: 'eamodio',
+          displayName: 'GitLens',
+          description: 'Git superpowers',
+          version: '1.2.3',
+          contributes: {
+            viewsContainers: {
+              activitybar: [
+                {
+                  id: 'gitlens',
+                  title: 'GitLens',
+                  icon: 'images/gitlens.svg',
+                },
+              ],
+            },
+            views: {
+              gitlens: [
+                {
+                  id: 'gitlens.repositories',
+                  name: 'Repositories',
+                },
+              ],
+            },
+            commands: [
+              {
+                command: 'gitlens.open',
+                title: 'Open GitLens',
+              },
+            ],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi());
+
+    expect(result.plugins[0]).toMatchObject({
+      id: 'eamodio.gitlens',
+      name: 'GitLens',
+      diagnostics: {
+        sourceKind: 'vscode-vsix',
+        capabilities: {
+          explorerActivityLanes: 1,
+          vscodeExtensions: 1,
+        },
+      },
+    });
+    expect(result.explorerActivityLanes).toHaveLength(1);
+    expect(result.explorerActivityLanes[0]).toMatchObject({
+      id: 'vscode:eamodio.gitlens:gitlens',
+      label: 'GitLens',
+      sourceKind: 'vscode-vsix',
+      views: [
+        expect.objectContaining({
+          title: 'Repositories',
+          rendererKind: 'tree',
+          providerPending: true,
+        }),
+      ],
+    });
+  });
+
   it('loads declared module dependencies from usr packages and catalogs library packages', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;

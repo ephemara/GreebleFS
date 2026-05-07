@@ -22,6 +22,7 @@ import {
 import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActivityLaneContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
   OverlayPluginExplorerWidgetContribution,
@@ -63,6 +64,7 @@ export interface UseFolderPluginRuntimeResult {
   pluginActions: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  pluginExplorerActivityLanes: OverlayPluginExplorerActivityLaneContribution[];
   pluginExplorerViews: OverlayPluginExplorerViewContribution[];
   pluginExplorerWidgets: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes: OverlayPluginPreviewLaneContribution[];
@@ -102,6 +104,7 @@ export function useFolderPluginRuntime(
   const [pluginActions, setPluginActions] = useState<LoadedExplorerAction[]>([]);
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
+  const [pluginExplorerActivityLanes, setPluginExplorerActivityLanes] = useState<OverlayPluginExplorerActivityLaneContribution[]>([]);
   const [pluginExplorerViews, setPluginExplorerViews] = useState<OverlayPluginExplorerViewContribution[]>([]);
   const [pluginExplorerWidgets, setPluginExplorerWidgets] = useState<OverlayPluginExplorerWidgetContribution[]>([]);
   const [pluginPreviewLanes, setPluginPreviewLanes] = useState<OverlayPluginPreviewLaneContribution[]>([]);
@@ -298,6 +301,7 @@ export function useFolderPluginRuntime(
       setPluginActions([]);
       setPluginExplorerActions([]);
       setPluginContextMenuItems([]);
+      setPluginExplorerActivityLanes([]);
       setPluginExplorerViews([]);
       setPluginExplorerWidgets([]);
       setPluginPreviewLanes([]);
@@ -369,6 +373,7 @@ export function useFolderPluginRuntime(
           setPluginActions(discovered.actions);
           setPluginExplorerActions(discovered.explorerActions);
           setPluginContextMenuItems(discovered.contextMenuItems);
+          setPluginExplorerActivityLanes(discovered.explorerActivityLanes);
           setPluginExplorerViews(discovered.explorerViews);
           setPluginExplorerWidgets(discovered.explorerWidgets);
           setPluginPreviewLanes(discovered.previewLanes);
@@ -386,6 +391,7 @@ export function useFolderPluginRuntime(
           setPluginActions([]);
           setPluginExplorerActions([]);
           setPluginContextMenuItems([]);
+          setPluginExplorerActivityLanes([]);
           setPluginExplorerViews([]);
           setPluginExplorerWidgets([]);
           setPluginPreviewLanes([]);
@@ -568,6 +574,7 @@ export function useFolderPluginRuntime(
     pluginActions,
     pluginExplorerActions,
     pluginContextMenuItems,
+    pluginExplorerActivityLanes,
     pluginExplorerViews,
     pluginExplorerWidgets,
     pluginPreviewLanes,

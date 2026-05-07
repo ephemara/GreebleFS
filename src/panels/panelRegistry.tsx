@@ -5,6 +5,7 @@ import type { LoadedActionPack, LoadedExplorerAction } from '../config/actionPac
 import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActivityLaneContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
   OverlayPluginExplorerWidgetContribution,
@@ -223,6 +224,7 @@ export function createBuiltInPanelDefinitions({
   actions = [],
   pluginExplorerActions,
   pluginContextMenuItems,
+  pluginExplorerActivityLanes = [],
   pluginExplorerViews = [],
   pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
@@ -391,6 +393,7 @@ export function createBuiltInPanelDefinitions({
   actions?: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  pluginExplorerActivityLanes?: OverlayPluginExplorerActivityLaneContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
@@ -606,6 +609,7 @@ export function createBuiltInPanelDefinitions({
           onExplorerPickerCancel={onExplorerPickerCancel}
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
+          pluginExplorerActivityLanes={pluginExplorerActivityLanes}
           pluginExplorerViews={pluginExplorerViews}
           pluginExplorerWidgets={pluginExplorerWidgets}
           pluginPreviewLanes={pluginPreviewLanes}

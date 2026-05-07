@@ -4,6 +4,7 @@ import {
   FolderTree,
   ListTodo,
   Palette,
+  Puzzle,
   Search,
   Sparkles,
   TerminalSquare,
@@ -20,7 +21,7 @@ import { useInteractionMotionController } from "../../animation/interactionMotio
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import {
   explorerActivityLaneDefinitions,
-  explorerActivityLaneIds,
+  isExplorerActivityLaneId,
   type ExplorerActivityLaneDefinition,
   type ExplorerActivityLaneId,
   type ExplorerActivityRailSide,
@@ -29,7 +30,7 @@ import type { ExplorerPaneTone } from "./ExplorerPanePrimitives";
 import type { ExplorerActivityRailContextMenuRequest } from "./overlayContextMenuModel";
 
 const activityLaneIconComponents: Record<
-  ExplorerActivityLaneDefinition["iconName"],
+  string,
   ComponentType<{ size?: number; style?: CSSProperties }>
 > = {
   Database,
@@ -37,6 +38,7 @@ const activityLaneIconComponents: Record<
   FolderTree,
   ListTodo,
   Palette,
+  Puzzle,
   Search,
   Sparkles,
   TerminalSquare,
@@ -105,10 +107,8 @@ export function ExplorerActivityRail({
       const transferredLaneId = event.dataTransfer.getData(
         "application/x-greeblefs-explorer-activity-lane",
       );
-      return explorerActivityLaneIds.includes(
-        transferredLaneId as ExplorerActivityLaneId,
-      )
-        ? (transferredLaneId as ExplorerActivityLaneId)
+      return isExplorerActivityLaneId(transferredLaneId)
+        ? transferredLaneId
         : null;
     },
     [draggedLaneId],
@@ -243,7 +243,7 @@ export function ExplorerActivityRail({
       onDrop={handleRailDrop(laneDefinitions.length)}
     >
       {laneDefinitions.map((lane, index) => {
-        const Icon = activityLaneIconComponents[lane.iconName];
+        const Icon = activityLaneIconComponents[lane.iconName] ?? Puzzle;
         const badge = laneBadges[lane.id];
         const active = isLaneActive(lane.id);
         const motionBinding = bindActivityRailMotion(active, index);
@@ -345,15 +345,33 @@ export function ExplorerActivityRail({
                   transform: active ? "scaleY(1)" : "scaleY(0.35)",
                 }}
               />
-              <Icon
-                size={16}
-                style={{
-                  color: active ? tone.text : tone.muted,
-                  filter: active
-                    ? "drop-shadow(0 1px 6px rgba(255,255,255,0.12))"
-                    : "none",
-                }}
-              />
+              {lane.iconUrl ? (
+                <img
+                  alt=""
+                  aria-hidden="true"
+                  draggable={false}
+                  src={lane.iconUrl}
+                  style={{
+                    width: 16,
+                    height: 16,
+                    objectFit: "contain",
+                    filter: active
+                      ? "drop-shadow(0 1px 6px rgba(255,255,255,0.12))"
+                      : "none",
+                    opacity: active ? 1 : 0.78,
+                  }}
+                />
+              ) : (
+                <Icon
+                  size={16}
+                  style={{
+                    color: active ? tone.text : tone.muted,
+                    filter: active
+                      ? "drop-shadow(0 1px 6px rgba(255,255,255,0.12))"
+                      : "none",
+                  }}
+                />
+              )}
             </button>
             {badge != null && badge !== "" ? (
               <span

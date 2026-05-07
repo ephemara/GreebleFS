@@ -1,3 +1,28 @@
+# 2026-05-07 - VSIX And Plugin Activity Lanes For Explorer
+
+- Added the first real VS Code-style activity-rail ingress for Explorer.
+  - `ExplorerActivityLaneId` is now an open validated namespace instead of a built-in-only union. Built-ins still keep their stable ids, while contributed lanes use `plugin:<pluginId>:<laneId>` and VSIX lanes use `vscode:<extensionId>:<containerId>`.
+  - `src/config/explorerActivityRail.ts` owns validation, normalization, built-in detection, and fallback placement/order for contributed lanes so persisted session state can survive unknown or newly discovered lane ids.
+  - `ExplorerActivityRail.tsx` now renders contributed icon names or plugin/VSIX asset URLs and accepts contributed ids in drag/drop.
+  - `FileExplorer.tsx` merges built-ins with discovered plugin/VSIX activity lanes, persists their rail side/order/open state through the existing store, and renders compact contributed panes through `ExplorerViewHost` for React and `wasm-panel` views.
+- Extended packaged plugin discovery with `contributions.explorerActivityLanes`.
+  - Plugin manifests can contribute activity lanes with `react`, `wasm-panel`, `tree`, or `webview` view descriptors. React and Wasm can render now; `tree` and `webview` are provider-pending shells until the VS Code extension-host bridge exists.
+  - `.vsix` files in the configured plugin directory are discovered as metadata-only `vscode-vsix` plugins. The loader extracts the archive, parses JSONC `package.json`, maps `contributes.viewsContainers.activitybar` and matching `contributes.views` into Explorer rail lanes, resolves extension-local icons to asset URLs, and counts commands/views for diagnostics.
+  - `useFolderPluginRuntime.ts`, `App.tsx`, `panelRegistry.tsx`, and `ExplorerWorkspace.tsx` now pass the discovered activity-lane catalog into Explorer.
+- Durable design decisions:
+  - Keep VS Code ecosystem adoption layered: rail discovery/placement/render shells live in the existing frontend plugin/Explorer stack; the future Node extension host should fill provider data and commands rather than own rail layout.
+  - Keep contributed lane ids namespaced and data-driven. Do not add VS Code extension lanes to the built-in catalog or hardcode specific extension ids.
+  - Treat VSIX lanes as safe metadata until a real extension-host process exists. Do not execute extension JS from `.vsix` in the frontend.
+  - The sibling `D:/tauron` fork helps most when the work reaches high-throughput extension-host transport or WebView/native diagnostics; this pass stayed in GreebleFS because activity rail ingestion did not require framework changes yet.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerActivityDock.test.tsx src/test/pluginPackages.test.ts src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx --reporter=dot`
+  - Passed: `bunx vitest run src/test/explorerStore.test.ts --reporter=dot`
+  - Filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` found no diagnostics for the touched VSIX/activity-lane/plugin-runtime files.
+  - Not clean: repo-wide TypeScript still reports the existing baseline across unrelated mobile ES lib, App/image-cutout/storage/explorerViews, generated/vendor test, and other older surfaces.
+  - Live MCP/native UI proof is currently blocked by dev startup failing during Kain payload staging: `toolchains/kain/payload/runtime/3rdparty/skia-core/src/ports/fontations/Cargo.toml` is missing.
+- Next recommended step:
+  - Add the native/Node `VSCODE_BRIDGE` runtime-host slice only after this rail ingress lands: sidecar process lifecycle, JSON-RPC bridge, command/provider registration, and Monaco/LSP wiring can then attach to the contributed lane/view records instead of inventing another UI placement model.
+
 # 2026-05-07 - Tauron Kain Bridge Opt-In
 
 - Wired GreebleFS to Tauron's generic `tauri-plugin-kain` instead of creating a GreebleFS-only Kain bridge.

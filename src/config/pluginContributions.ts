@@ -8,6 +8,10 @@ import type {
   ExplorerViewDescriptor,
 } from '../components/explorer/explorerViewRuntime';
 import type {
+  ExplorerActivityLaneDefinition,
+  ExplorerActivityLaneViewDefinition,
+} from './explorerActivityRail';
+import type {
   BoundExplorerWidgetComponent,
   ExplorerWidgetDescriptor,
 } from '../components/explorer/explorerWidgetRuntime';
@@ -96,6 +100,29 @@ export interface OverlayPluginExplorerWidgetContribution
   sourceLabel: string;
   component: BoundExplorerWidgetComponent | null;
   error: string | null;
+}
+
+export interface OverlayPluginExplorerActivityLaneViewContribution
+  extends ExplorerActivityLaneViewDefinition {
+  pluginId: string;
+  pluginName: string;
+  sourceKind: 'plugin' | 'vscode-vsix';
+  sourceLabel: string;
+  rendererEntry: string | null;
+  runtimeId: string | null;
+  runtimeSurfaceId: string | null;
+  buildTarget: string | null;
+  viewDescriptor: ExplorerViewDescriptor;
+  component: BoundExplorerViewComponent | null;
+}
+
+export interface OverlayPluginExplorerActivityLaneContribution
+  extends ExplorerActivityLaneDefinition {
+  pluginId: string;
+  pluginName: string;
+  sourceKind: 'plugin' | 'vscode-vsix';
+  sourceLabel: string;
+  views: OverlayPluginExplorerActivityLaneViewContribution[];
 }
 
 export interface OverlayPluginSettingsSlotContribution

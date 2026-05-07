@@ -33,6 +33,7 @@ import {
 } from "../../config/explorerChromeLayouts";
 import type {
   OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActivityLaneContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
   OverlayPluginExplorerWidgetContribution,
@@ -132,6 +133,7 @@ interface ExplorerWorkspaceProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerActivityLanes?: OverlayPluginExplorerActivityLaneContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
@@ -338,6 +340,7 @@ export function ExplorerWorkspace({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginExplorerActivityLanes = [],
   pluginExplorerViews = [],
   pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
@@ -2471,6 +2474,7 @@ export function ExplorerWorkspace({
             actions={actions}
             pluginActions={pluginActions}
             pluginContextMenuItems={pluginContextMenuItems}
+            pluginExplorerActivityLanes={pluginExplorerActivityLanes}
             pluginExplorerViews={pluginExplorerViews}
             pluginExplorerWidgets={pluginExplorerWidgets}
             pluginPreviewLanes={pluginPreviewLanes}
@@ -2521,6 +2525,7 @@ export function ExplorerWorkspace({
       onExplorerPickerConfirm,
       pluginActions,
       pluginContextMenuItems,
+      pluginExplorerActivityLanes,
       pluginExplorerViews,
       pluginExplorerWidgets,
       pluginPreviewLanes,
