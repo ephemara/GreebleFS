@@ -1,3 +1,17 @@
+# 2026-05-07 - Text Thumbnails Became Legible Document Snapshots
+
+- Reworked native text/code thumbnails in `src-tauri/src/thumbnail_commands.rs` so Explorer grid thumbnails prioritize readable file content instead of a tiny decorative dark editor frame.
+  - The renderer now uses a light document-page surface with subtle border/shadow, a left accent rail, larger text, more useful line spacing, and no native filename/header/badge chrome. Explorer already renders names and extension metadata around the thumbnail, so the 256px native artifact should spend pixels on content.
+  - `resolve_code_thumbnail_text_layout(...)` keeps source text large enough to survive downsampling into the normal grid stages, and `truncate_code_thumbnail_line(...)` preserves leading indentation instead of trimming code structure away.
+  - Batch/CMD syntax detection now recognizes common script tokens such as `@echo`, `setlocal`, `set`, `title`, `if`, `for`, `call`, `powershell`, `rem`, and `::`, which makes installer and automation scripts scan better at icon sizes.
+  - The native code thumbnail artifact variant is now `code-v4`, forcing old dark/unreadable `code-v3` cache artifacts to refresh without needing a manual cache clear.
+- Durable rule:
+  - Treat text thumbnail rendering as a content-first native artifact. Do not burn the generated 256px square on duplicate labels, badges, oversized gutters, or mock-editor chrome; the thumbnail must remain useful after Explorer scales it down to `icons-l` / `icons-xl` stages.
+- Validation:
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+  - Passed: `git diff --check -- src-tauri/src/thumbnail_commands.rs`
+  - Blocked by current build-chain/runtime work: targeted `cargo test --manifest-path src-tauri/Cargo.toml thumbnail_commands::tests:: --lib` compiled but the test binary failed to launch with Windows `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`. A later isolated-target retry was interrupted while the build chain was being worked on, so do not treat Cargo test status from this session as renderer evidence.
+
 # 2026-05-07 - Doors Reference Theme And Fully Themeable Explorer Chrome
 
 - Landed the next major bundle-first theming seam for Explorer and workbench chrome so authored themes can drive a Windows/File-Explorer-style shell instead of only recoloring the existing layout.
