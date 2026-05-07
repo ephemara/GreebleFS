@@ -638,6 +638,13 @@
             "order": 15
           }
         },
+        "statusViewSize": {
+          "explorerStatusBar": {
+            "zone": "end",
+            "order": 18,
+            "widthPx": 220
+          }
+        },
         "statusClipboardQueue": {
           "explorerStatusBar": {
             "zone": "center",
@@ -1205,6 +1212,13 @@
           "explorerStatusBar": {
             "zone": "end",
             "order": 15
+          }
+        },
+        "statusViewSize": {
+          "explorerStatusBar": {
+            "zone": "end",
+            "order": 18,
+            "widthPx": 220
           }
         },
         "statusClipboardQueue": {

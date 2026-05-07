@@ -36,19 +36,16 @@ const THUMBNAIL_TEXT_COLOR: Rgba<u8> = Rgba([234, 240, 248, 255]);
 const THUMBNAIL_MUTED_TEXT_COLOR: Rgba<u8> = Rgba([145, 157, 178, 255]);
 const THUMBNAIL_SHADOW_TEXT_COLOR: Rgba<u8> = Rgba([0, 0, 0, 130]);
 const THUMBNAIL_WAVEFORM_COLOR: Rgba<u8> = Rgba([240, 246, 255, 210]);
-const THUMBNAIL_CODE_BACKGROUND: Rgba<u8> = Rgba([10, 13, 18, 255]);
-const THUMBNAIL_CODE_HEADER: Rgba<u8> = Rgba([14, 18, 26, 255]);
-const THUMBNAIL_CODE_PANEL: Rgba<u8> = Rgba([16, 21, 30, 255]);
-const THUMBNAIL_CODE_PANEL_ALT: Rgba<u8> = Rgba([12, 16, 23, 255]);
-const THUMBNAIL_CODE_BORDER: Rgba<u8> = Rgba([39, 49, 65, 255]);
-const THUMBNAIL_CODE_GUTTER: Rgba<u8> = Rgba([12, 16, 22, 255]);
-const THUMBNAIL_CODE_LINE_NUMBER: Rgba<u8> = Rgba([122, 135, 158, 255]);
-const THUMBNAIL_CODE_TEXT: Rgba<u8> = Rgba([234, 240, 248, 255]);
-const THUMBNAIL_CODE_KEYWORD: Rgba<u8> = Rgba([124, 171, 255, 255]);
-const THUMBNAIL_CODE_STRING: Rgba<u8> = Rgba([100, 214, 169, 255]);
-const THUMBNAIL_CODE_NUMBER: Rgba<u8> = Rgba([247, 194, 88, 255]);
-const THUMBNAIL_CODE_PROPERTY: Rgba<u8> = Rgba([182, 152, 255, 255]);
-const THUMBNAIL_CODE_COMMENT: Rgba<u8> = Rgba([132, 144, 163, 255]);
+const THUMBNAIL_TEXT_PAGE_BACKGROUND: Rgba<u8> = Rgba([241, 244, 248, 255]);
+const THUMBNAIL_TEXT_PAGE_ROW_BACKGROUND: Rgba<u8> = Rgba([232, 237, 244, 255]);
+const THUMBNAIL_TEXT_PAGE_BORDER: Rgba<u8> = Rgba([166, 177, 194, 255]);
+const THUMBNAIL_TEXT_PAGE_SHADOW: Rgba<u8> = Rgba([0, 0, 0, 72]);
+const THUMBNAIL_TEXT_PAGE_TEXT: Rgba<u8> = Rgba([26, 32, 43, 255]);
+const THUMBNAIL_TEXT_PAGE_KEYWORD: Rgba<u8> = Rgba([24, 92, 190, 255]);
+const THUMBNAIL_TEXT_PAGE_STRING: Rgba<u8> = Rgba([20, 126, 86, 255]);
+const THUMBNAIL_TEXT_PAGE_NUMBER: Rgba<u8> = Rgba([145, 91, 0, 255]);
+const THUMBNAIL_TEXT_PAGE_PROPERTY: Rgba<u8> = Rgba([103, 75, 176, 255]);
+const THUMBNAIL_TEXT_PAGE_COMMENT: Rgba<u8> = Rgba([99, 111, 130, 255]);
 const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 const DEFAULT_FFPROBE_BINARY: &str = "ffprobe";
 const VIDEO_FRAME_FILTER_TEMPLATE: &str =
@@ -133,6 +130,20 @@ struct NormalizedThumbnailRequest {
 #[derive(Debug, Clone)]
 struct ThumbnailFontSpec {
     family: Family<'static>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CodeThumbnailTextLayout {
+    page_left: u32,
+    page_top: u32,
+    page_right: u32,
+    page_bottom: u32,
+    text_left: u32,
+    text_top: u32,
+    text_scale: f32,
+    line_height: u32,
+    max_lines: usize,
+    max_chars: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -273,9 +284,12 @@ fn resolve_registered_thumbnail_artifact_path(
     descriptor: &IpcArtifactDescriptor,
 ) -> Result<PathBuf, String> {
     let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
-    ipc_runtime
-        .artifact_path(&descriptor.id)?
-        .ok_or_else(|| format!("Thumbnail artifact path is no longer registered: {}", descriptor.id))
+    ipc_runtime.artifact_path(&descriptor.id)?.ok_or_else(|| {
+        format!(
+            "Thumbnail artifact path is no longer registered: {}",
+            descriptor.id
+        )
+    })
 }
 
 fn build_entry_thumbnail_artifact(
@@ -297,7 +311,7 @@ fn build_entry_thumbnail_artifact(
             app,
             request,
             ExplorerThumbnailKind::Code,
-            "code-v3",
+            "code-v4",
             None,
             |artifact_app, _, artifact_request, variant| {
                 ensure_cached_static_thumbnail_path(
@@ -473,15 +487,18 @@ fn register_thumbnail_artifact_descriptor(
         .first_raw()
         .map(str::to_string);
     let ipc_runtime = app.state::<crate::ipc_runtime::IpcRuntimeState>();
-    ipc_runtime.register_artifact_path(app, RegisterArtifactPathRequest {
-        kind: artifact_kind.to_string(),
-        file_path: artifact_path.to_path_buf(),
-        media_type,
-        retention: IpcArtifactRetention::Persistent,
-        identity_key: Some(request.entity_id.clone()),
-        content_revision: Some(request.content_revision.clone()),
-        delete_on_release: false,
-    })
+    ipc_runtime.register_artifact_path(
+        app,
+        RegisterArtifactPathRequest {
+            kind: artifact_kind.to_string(),
+            file_path: artifact_path.to_path_buf(),
+            media_type,
+            retention: IpcArtifactRetention::Persistent,
+            identity_key: Some(request.entity_id.clone()),
+            content_revision: Some(request.content_revision.clone()),
+            delete_on_release: false,
+        },
+    )
 }
 
 fn thumbnail_kind_storage_label(kind: &ExplorerThumbnailKind) -> &'static str {
@@ -1037,9 +1054,7 @@ fn render_text_thumbnail_png(
     let extension = normalized_extension(input_path);
     let accent = extension_accent_color(&extension);
     if !shader_mode {
-        return render_code_thumbnail_card_png(
-            input_path, &content, &extension, accent, max_width, max_height,
-        );
+        return render_code_thumbnail_card_png(input_path, &content, accent, max_width, max_height);
     }
     let mut image = RgbaImage::from_pixel(max_width, max_height, THUMBNAIL_DEFAULT_BACKGROUND);
     let secondary = tint_color(accent, 0.55, 40);
@@ -1210,156 +1225,62 @@ fn render_text_thumbnail_png(
 fn render_code_thumbnail_card_png(
     input_path: &Path,
     content: &str,
-    extension: &str,
     accent: Rgba<u8>,
     max_width: u32,
     max_height: u32,
 ) -> Result<Vec<u8>, String> {
-    let mut image = RgbaImage::from_pixel(max_width, max_height, THUMBNAIL_CODE_BACKGROUND);
-    let header_height = max_height.min(34);
-    let body_top = header_height.saturating_add(8);
-    let body_left: u32 = 12;
-    let body_right = max_width.saturating_sub(12);
-    let body_bottom = max_height.saturating_sub(12);
-    let gutter_right = body_left.saturating_add(42).min(body_right);
+    let mut image = RgbaImage::from_pixel(max_width, max_height, Rgba([0, 0, 0, 0]));
+    let layout = resolve_code_thumbnail_text_layout(max_width, max_height);
 
     fill_rect(
         &mut image,
-        0,
-        0,
-        max_width,
-        max_height,
-        THUMBNAIL_CODE_BACKGROUND,
+        layout.page_left.saturating_add(4),
+        layout.page_top.saturating_add(5),
+        layout.page_right.saturating_add(4),
+        layout.page_bottom.saturating_add(5),
+        THUMBNAIL_TEXT_PAGE_SHADOW,
     );
     fill_rect(
         &mut image,
-        0,
-        0,
-        max_width,
-        header_height,
-        THUMBNAIL_CODE_HEADER,
+        layout.page_left,
+        layout.page_top,
+        layout.page_right,
+        layout.page_bottom,
+        THUMBNAIL_TEXT_PAGE_BACKGROUND,
+    );
+    draw_rect_outline(
+        &mut image,
+        layout.page_left,
+        layout.page_top,
+        layout.page_right,
+        layout.page_bottom,
+        THUMBNAIL_TEXT_PAGE_BORDER,
     );
     fill_rect(
         &mut image,
-        0,
-        header_height.saturating_sub(1),
-        max_width,
-        header_height,
-        THUMBNAIL_CODE_BORDER,
-    );
-    fill_rect(
-        &mut image,
-        body_left,
-        body_top,
-        body_right,
-        body_bottom,
-        THUMBNAIL_CODE_PANEL,
-    );
-    fill_rect(
-        &mut image,
-        body_left.saturating_add(1),
-        body_top.saturating_add(1),
-        body_right.saturating_sub(1),
-        body_bottom.saturating_sub(1),
-        THUMBNAIL_CODE_PANEL_ALT,
-    );
-    fill_rect(
-        &mut image,
-        body_left,
-        body_top,
-        gutter_right,
-        body_bottom,
-        THUMBNAIL_CODE_GUTTER,
-    );
-    fill_rect(
-        &mut image,
-        body_left,
-        body_top,
-        body_left.saturating_add(1),
-        body_bottom,
+        layout.page_left,
+        layout.page_top,
+        layout.page_left.saturating_add(4).min(layout.page_right),
+        layout.page_bottom,
         accent,
     );
-    fill_rect(
-        &mut image,
-        body_left,
-        body_top,
-        body_right,
-        body_top.saturating_add(1),
-        THUMBNAIL_CODE_BORDER,
-    );
-    fill_rect(
-        &mut image,
-        body_left,
-        body_bottom.saturating_sub(1),
-        body_right,
-        body_bottom,
-        THUMBNAIL_CODE_BORDER,
-    );
-    fill_rect(
-        &mut image,
-        body_right.saturating_sub(1),
-        body_top,
-        body_right,
-        body_bottom,
-        THUMBNAIL_CODE_BORDER,
-    );
 
-    let sans_font = load_thumbnail_font(ThumbnailFontSpec {
-        family: Family::SansSerif,
-    })
-    .ok();
     let mono_font = load_thumbnail_font(ThumbnailFontSpec {
         family: Family::Monospace,
     })
     .ok();
 
-    if let Some(font) = sans_font.as_ref() {
-        let title = input_path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("code");
-        draw_text_with_shadow(
-            &mut image,
-            font,
-            PxScale::from(13.5),
-            (16.0, 9.0),
-            &truncate_text(title, 28),
-            THUMBNAIL_CODE_TEXT,
-        );
-
-        let badge_text = if extension.is_empty() {
-            "TEXT".to_string()
-        } else {
-            extension.to_ascii_uppercase()
-        };
-        let badge_width = 18 + (badge_text.len() as u32 * 8);
-        let badge_left = max_width.saturating_sub(badge_width + 12);
-        fill_rounded_badge(
-            &mut image,
-            badge_left,
-            8,
-            badge_width,
-            20,
-            tint_color(accent, 0.24, 16),
-        );
-        draw_text_with_shadow(
-            &mut image,
-            font,
-            PxScale::from(10.5),
-            (badge_left.saturating_add(10) as f32, 13.0),
-            &badge_text,
-            THUMBNAIL_CODE_TEXT,
-        );
-    }
-
     let preview_lines = {
-        let lines = collect_text_thumbnail_preview_lines(content, 5);
+        let lines = collect_text_thumbnail_preview_lines(content, layout.max_lines);
         if lines.is_empty() {
             vec![
-                "use crate::code_preview;".to_string(),
-                "fn render_snippet() {".to_string(),
-                "    println!(\"empty file\");".to_string(),
-                "}".to_string(),
+                "Empty text file".to_string(),
+                "".to_string(),
+                input_path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("text")
+                    .to_string(),
             ]
         } else {
             lines
@@ -1367,45 +1288,76 @@ fn render_code_thumbnail_card_png(
     };
 
     if let Some(font) = mono_font.as_ref() {
-        let line_height = 19;
-        let line_number_scale = PxScale::from(9.5);
-        let text_scale = PxScale::from(11.5);
-        let line_number_x = body_left.saturating_add(12) as f32;
-        let marker_x = body_left.saturating_add(25) as i32;
-        let text_x = body_left.saturating_add(40) as f32;
-        let text_max_chars = if max_width >= 320 { 30 } else { 24 };
-        let preview_start_y = body_top.saturating_add(10);
-
         for (index, line) in preview_lines.iter().enumerate() {
-            let y = preview_start_y + (index as u32 * line_height);
-            if y + line_height >= body_bottom {
+            let y = layout.text_top + (index as u32 * layout.line_height);
+            if y + layout.line_height >= layout.page_bottom {
                 break;
             }
 
             let line_color = code_thumbnail_syntax_color(line);
-            draw_filled_circle_mut(&mut image, (marker_x, y as i32 + 8), 3, line_color);
-            draw_text_with_shadow(
+            if index % 2 == 1 {
+                fill_rect(
+                    &mut image,
+                    layout.page_left.saturating_add(5),
+                    y.saturating_sub(2),
+                    layout.page_right.saturating_sub(5),
+                    (y + layout.line_height).min(layout.page_bottom.saturating_sub(2)),
+                    THUMBNAIL_TEXT_PAGE_ROW_BACKGROUND,
+                );
+            }
+            draw_text_plain(
                 &mut image,
                 font,
-                line_number_scale,
-                (line_number_x, y as f32 + 1.0),
-                &(index + 1).to_string(),
-                THUMBNAIL_CODE_LINE_NUMBER,
-            );
-            draw_text_with_shadow(
-                &mut image,
-                font,
-                text_scale,
-                (text_x, y as f32),
-                &truncate_text(line, text_max_chars),
+                PxScale::from(layout.text_scale),
+                (layout.text_left as f32, y as f32),
+                &truncate_code_thumbnail_line(line, layout.max_chars),
                 line_color,
             );
         }
     } else {
-        draw_text_thumbnail_fallback_bars(&mut image, body_top, accent, false);
+        draw_text_thumbnail_fallback_bars(&mut image, layout.page_top, accent, false);
     }
 
     encode_rgba_image_as_png(&image)
+}
+
+fn resolve_code_thumbnail_text_layout(max_width: u32, max_height: u32) -> CodeThumbnailTextLayout {
+    let shortest_edge = max_width.min(max_height).max(1);
+    let page_margin = (shortest_edge as f32 * 0.045).round().clamp(4.0, 14.0) as u32;
+    let page_left = page_margin;
+    let page_top = page_margin;
+    let page_right = max_width.saturating_sub(page_margin).max(page_left + 1);
+    let page_bottom = max_height.saturating_sub(page_margin).max(page_top + 1);
+    let text_inset = (shortest_edge as f32 * 0.055).round().clamp(8.0, 18.0) as u32;
+    let text_left = page_left
+        .saturating_add(text_inset)
+        .saturating_add(4)
+        .min(page_right.saturating_sub(1));
+    let text_top = page_top
+        .saturating_add(text_inset)
+        .min(page_bottom.saturating_sub(1));
+    let text_scale = (shortest_edge as f32 * 0.072).clamp(13.5, 22.5);
+    let line_height = (text_scale * 1.38).round().max(text_scale + 4.0) as u32;
+    let text_width = page_right.saturating_sub(text_left.saturating_add(text_inset / 2));
+    let text_height = page_bottom.saturating_sub(text_top.saturating_add(4));
+    let max_lines = (text_height / line_height).max(1) as usize;
+    let average_mono_glyph_width = (text_scale * 0.57).max(7.4);
+    let max_chars = ((text_width as f32) / average_mono_glyph_width)
+        .floor()
+        .clamp(8.0, 36.0) as usize;
+
+    CodeThumbnailTextLayout {
+        page_left,
+        page_top,
+        page_right,
+        page_bottom,
+        text_left,
+        text_top,
+        text_scale,
+        line_height,
+        max_lines,
+        max_chars,
+    }
 }
 
 fn render_audio_thumbnail_png(
@@ -1870,64 +1822,101 @@ fn draw_text_thumbnail_fallback_bars(
             break;
         }
         let width = image.width().saturating_sub(64 + (index as u32 * 11 % 56));
-        fill_rect(image, 18, y, 30, y + 10, tint_color(accent, 0.24, 42));
-        fill_rect(
-            image,
-            42,
-            y,
-            42 + width,
-            y + 10,
+        let text_color = if shader_mode {
             if index % 2 == 0 {
                 THUMBNAIL_TEXT_COLOR
             } else {
                 THUMBNAIL_MUTED_TEXT_COLOR
+            }
+        } else if index % 2 == 0 {
+            THUMBNAIL_TEXT_PAGE_TEXT
+        } else {
+            THUMBNAIL_TEXT_PAGE_COMMENT
+        };
+        fill_rect(
+            image,
+            18,
+            y,
+            30,
+            y + 10,
+            if shader_mode {
+                tint_color(accent, 0.24, 42)
+            } else {
+                accent
             },
         );
+        fill_rect(image, 42, y, 42 + width, y + 10, text_color);
     }
 }
 
 fn code_thumbnail_syntax_color(line: &str) -> Rgba<u8> {
     let trimmed = line.trim_start();
+    let lower = trimmed.to_ascii_lowercase();
     if trimmed.is_empty() {
-        return THUMBNAIL_CODE_COMMENT;
+        return THUMBNAIL_TEXT_PAGE_COMMENT;
     }
     if trimmed.starts_with("//")
         || trimmed.starts_with("/*")
         || trimmed.starts_with('*')
         || trimmed.starts_with("<!--")
         || trimmed.starts_with('#')
+        || lower.starts_with("rem ")
+        || lower.starts_with("@rem ")
+        || lower.starts_with("::")
     {
-        return THUMBNAIL_CODE_COMMENT;
+        return THUMBNAIL_TEXT_PAGE_COMMENT;
     }
-    if trimmed.starts_with("use ")
-        || trimmed.starts_with("import ")
-        || trimmed.starts_with("from ")
-        || trimmed.starts_with("const ")
-        || trimmed.starts_with("let ")
-        || trimmed.starts_with("var ")
-        || trimmed.starts_with("pub ")
-        || trimmed.starts_with("fn ")
-        || trimmed.starts_with("def ")
-        || trimmed.starts_with("class ")
-        || trimmed.starts_with("export ")
-        || trimmed.starts_with("type ")
-        || trimmed.starts_with("interface ")
-        || trimmed.starts_with("struct ")
-        || trimmed.starts_with("enum ")
-        || trimmed.starts_with("fn(")
+    if lower.starts_with("@echo")
+        || lower.starts_with("echo ")
+        || lower.starts_with("set ")
+        || lower.starts_with("setlocal")
+        || lower.starts_with("endlocal")
+        || lower.starts_with("title ")
+        || lower.starts_with("if ")
+        || lower.starts_with("for ")
+        || lower.starts_with("do ")
+        || lower.starts_with("goto ")
+        || lower.starts_with("call ")
+        || lower.starts_with("powershell")
+        || lower.starts_with("pwsh")
+        || lower.starts_with("cmd")
+        || lower.starts_with("use ")
+        || lower.starts_with("import ")
+        || lower.starts_with("from ")
+        || lower.starts_with("const ")
+        || lower.starts_with("let ")
+        || lower.starts_with("var ")
+        || lower.starts_with("pub ")
+        || lower.starts_with("fn ")
+        || lower.starts_with("def ")
+        || lower.starts_with("class ")
+        || lower.starts_with("export ")
+        || lower.starts_with("type ")
+        || lower.starts_with("interface ")
+        || lower.starts_with("struct ")
+        || lower.starts_with("enum ")
+        || lower.starts_with("function ")
+        || lower.starts_with("param")
+        || lower.starts_with("return ")
+        || lower.starts_with("fn(")
     {
-        return THUMBNAIL_CODE_KEYWORD;
+        return THUMBNAIL_TEXT_PAGE_KEYWORD;
     }
     if trimmed.contains('"') || trimmed.contains('\'') {
-        return THUMBNAIL_CODE_STRING;
+        return THUMBNAIL_TEXT_PAGE_STRING;
     }
     if trimmed.chars().any(|character| character.is_ascii_digit()) {
-        return THUMBNAIL_CODE_NUMBER;
+        return THUMBNAIL_TEXT_PAGE_NUMBER;
     }
-    if trimmed.contains(':') || trimmed.contains("=>") || trimmed.contains("->") {
-        return THUMBNAIL_CODE_PROPERTY;
+    if trimmed.contains(':')
+        || trimmed.contains("=>")
+        || trimmed.contains("->")
+        || trimmed.contains('%')
+        || trimmed.contains('$')
+    {
+        return THUMBNAIL_TEXT_PAGE_PROPERTY;
     }
-    THUMBNAIL_TEXT_COLOR
+    THUMBNAIL_TEXT_PAGE_TEXT
 }
 
 fn collect_text_thumbnail_preview_lines(content: &str, max_lines: usize) -> Vec<String> {
@@ -2039,6 +2028,39 @@ fn draw_text_with_shadow(
     draw_text_mut(image, color, x, y, scale, font, text);
 }
 
+fn draw_text_plain(
+    image: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    origin: (f32, f32),
+    text: &str,
+    color: Rgba<u8>,
+) {
+    draw_text_mut(
+        image,
+        color,
+        origin.0.round() as i32,
+        origin.1.round() as i32,
+        scale,
+        font,
+        text,
+    );
+}
+
+fn draw_rect_outline(
+    image: &mut RgbaImage,
+    left: u32,
+    top: u32,
+    right: u32,
+    bottom: u32,
+    color: Rgba<u8>,
+) {
+    fill_rect(image, left, top, right, top.saturating_add(1), color);
+    fill_rect(image, left, bottom.saturating_sub(1), right, bottom, color);
+    fill_rect(image, left, top, left.saturating_add(1), bottom, color);
+    fill_rect(image, right.saturating_sub(1), top, right, bottom, color);
+}
+
 fn fill_rect(image: &mut RgbaImage, left: u32, top: u32, right: u32, bottom: u32, color: Rgba<u8>) {
     let bounded_right = right.min(image.width());
     let bounded_bottom = bottom.min(image.height());
@@ -2106,6 +2128,23 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
         .chars()
         .take(max_chars.saturating_sub(1))
         .collect::<String>();
+    output.push('…');
+    output
+}
+
+fn truncate_code_thumbnail_line(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let line = text.trim_end();
+    let char_count = line.chars().count();
+    if char_count <= max_chars {
+        return line.to_string();
+    }
+    if max_chars == 1 {
+        return "…".to_string();
+    }
+    let mut output = line.chars().take(max_chars - 1).collect::<String>();
     output.push('…');
     output
 }
@@ -2204,6 +2243,74 @@ mod tests {
         let decoded = image::load_from_memory(&png).expect("decode png");
         assert_eq!(decoded.width(), 320);
         assert_eq!(decoded.height(), 180);
+    }
+
+    #[test]
+    fn code_thumbnail_layout_keeps_text_large_enough_for_icon_downsampling() {
+        let layout = resolve_code_thumbnail_text_layout(256, 256);
+        assert!(layout.text_scale >= 18.0);
+        assert!(layout.max_lines >= 8);
+        assert!(layout.max_chars >= 18);
+        assert!(layout.text_left <= 32);
+    }
+
+    #[test]
+    fn truncate_code_thumbnail_line_preserves_leading_indentation() {
+        let line = truncate_code_thumbnail_line("    echo Installing from %REPO_ROOT%", 18);
+        assert!(line.starts_with("    echo"));
+        assert!(line.ends_with('…'));
+    }
+
+    #[test]
+    fn code_thumbnail_syntax_color_recognizes_batch_commands() {
+        assert_eq!(
+            code_thumbnail_syntax_color("@echo off"),
+            THUMBNAIL_TEXT_PAGE_KEYWORD
+        );
+        assert_eq!(
+            code_thumbnail_syntax_color("setlocal enabledelayedexpansion"),
+            THUMBNAIL_TEXT_PAGE_KEYWORD
+        );
+        assert_eq!(
+            code_thumbnail_syntax_color("REM installer note"),
+            THUMBNAIL_TEXT_PAGE_COMMENT
+        );
+    }
+
+    #[test]
+    fn render_code_thumbnail_png_uses_content_first_document_surface() {
+        let workspace = tempdir().expect("tempdir");
+        let file_path = workspace.path().join("install.cmd");
+        fs::write(
+            &file_path,
+            "@echo off\nsetlocal enabledelayedexpansion\nset \"REPO_ROOT=C:\\dev\\greeblefs\"\ntitle GreebleFS Clean Install\nif not exist \"%INSTALLER%\" (\n  echo Could not find installer\n)\n",
+        )
+        .expect("write");
+
+        let png = render_code_thumbnail_png(&file_path, 256, 256).expect("thumbnail png");
+        let decoded = image::load_from_memory(&png)
+            .expect("decode png")
+            .to_rgba8();
+        assert_eq!(decoded.get_pixel(0, 0)[3], 0);
+
+        let page_pixel = decoded.get_pixel(24, 24);
+        assert!(page_pixel[0] > 215);
+        assert!(page_pixel[1] > 215);
+        assert!(page_pixel[2] > 215);
+        assert_eq!(page_pixel[3], 255);
+
+        let dark_ink_pixels = decoded
+            .enumerate_pixels()
+            .filter(|(x, y, pixel)| {
+                *x >= 24
+                    && *x <= 232
+                    && *y >= 24
+                    && *y <= 232
+                    && pixel[3] > 0
+                    && u16::from(pixel[0]) + u16::from(pixel[1]) + u16::from(pixel[2]) < 260
+            })
+            .count();
+        assert!(dark_ink_pixels > 120);
     }
 
     #[test]

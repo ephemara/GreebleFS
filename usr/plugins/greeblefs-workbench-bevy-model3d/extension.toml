@@ -1,0 +1,43 @@
+id = "greeblefs-workbench-bevy-model3d"
+version = "1"
+name = "GreebleFS Bevy 3D Workbench"
+description = "Rust/Wasm Bevy-powered 3D model preview workbench with native Bevy PBR rendering."
+entry = "index.tsx"
+defaultOpen = false
+keepMounted = false
+category = "First-party Workbenches"
+tags = ["first-party", "workbench", "preview", "3d", "bevy", "rust", "wasm", "wgpu", "pbr"]
+
+[[testFiles]]
+id = "pbr-cube-gltf"
+label = "PBR Cube Fixture"
+path = "examples/pbr-cube.gltf"
+description = "Tiny embedded glTF fixture for Bevy/Wasm preview smoke tests."
+
+[[contributions.previewLanes]]
+id = "bevy-model3d"
+title = "Bevy 3D Workbench"
+rendererKind = "wasm-panel"
+runtimeSurfaceId = "bevy-model3d-viewer"
+buildTarget = "wasm-bindgen-web"
+priority = 940
+
+[contributions.previewLanes.match]
+appliesTo = "file"
+extensions = ["glb", "gltf"]
+fileNames = []
+previewKinds = ["model3d"]
+
+[contributions.previewLanes.workbenchChrome]
+includePreviewTab = true
+includeEditTab = false
+topBarDensity = "compact"
+
+[contributions.previewLanes.capabilities]
+editable = false
+save = false
+export = false
+workflowTabs = false
+contextMenu = true
+prefetch = true
+closeGuard = false

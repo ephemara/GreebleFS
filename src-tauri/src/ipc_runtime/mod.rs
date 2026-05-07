@@ -57,15 +57,18 @@ pub async fn ipc_register_artifact_path(
         return Err("IPC artifact registration requires a non-empty filePath.".to_string());
     }
 
-    state.register_artifact_path(&app, RegisterArtifactPathRequest {
-        kind: request.kind,
-        file_path: PathBuf::from(trimmed_file_path),
-        media_type: request.media_type,
-        retention: request.retention,
-        identity_key: request.identity_key,
-        content_revision: request.content_revision,
-        delete_on_release: request.delete_on_release,
-    })
+    state.register_artifact_path(
+        &app,
+        RegisterArtifactPathRequest {
+            kind: request.kind,
+            file_path: PathBuf::from(trimmed_file_path),
+            media_type: request.media_type,
+            retention: request.retention,
+            identity_key: request.identity_key,
+            content_revision: request.content_revision,
+            delete_on_release: request.delete_on_release,
+        },
+    )
 }
 
 #[tauri::command]

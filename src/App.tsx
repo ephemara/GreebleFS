@@ -164,6 +164,11 @@ import {
   type LoadedExplorerLayoutPackage,
 } from './config/explorerLayouts';
 import {
+  discoverManagedExplorerViews,
+  explorerViewSystemConfig,
+  type LoadedExplorerViewDefinition,
+} from './config/explorerViews';
+import {
   createEmptyGlobalThemeBundleCatalogs,
   loadThemePackages as discoverThemePackages,
   resolveLoadedThemePackages,
@@ -785,6 +790,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const topBarPackagesSignatureRef = useRef('');
   const dockPresentationPackagesSignatureRef = useRef('');
   const explorerLayoutPackagesSignatureRef = useRef('');
+  const explorerViewsSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
   const soundPacksSignatureRef = useRef('');
@@ -804,6 +810,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const dockPresentationPackagesRefreshQueuedRef = useRef(false);
   const explorerLayoutPackagesRefreshInFlightRef = useRef(false);
   const explorerLayoutPackagesRefreshQueuedRef = useRef(false);
+  const explorerViewsRefreshInFlightRef = useRef(false);
+  const explorerViewsRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
@@ -848,6 +856,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [explorerLayoutPackagesLoading, setExplorerLayoutPackagesLoading] = useState(true);
   const [explorerLayoutPackagesError, setExplorerLayoutPackagesError] = useState<string | null>(null);
   const [explorerLayoutPackagesWarnings, setExplorerLayoutPackagesWarnings] = useState<string[]>([]);
+  const [authoredExplorerViews, setAuthoredExplorerViews] = useState<LoadedExplorerViewDefinition[]>([]);
+  const [explorerViewsLoading, setExplorerViewsLoading] = useState(true);
+  const [explorerViewsError, setExplorerViewsError] = useState<string | null>(null);
+  const [explorerViewsWarnings, setExplorerViewsWarnings] = useState<string[]>([]);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
@@ -1081,6 +1093,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     pluginActions,
     pluginExplorerActions,
     pluginContextMenuItems,
+    pluginExplorerViews,
     pluginPreviewLanes,
     pluginSettingsSlots,
     pluginWorkflows,
@@ -4313,6 +4326,64 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, []);
 
+  const refreshExplorerViews = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredExplorerViews([]);
+      setExplorerViewsError(null);
+      setExplorerViewsWarnings([]);
+      setExplorerViewsLoading(false);
+      return;
+    }
+
+    if (force) {
+      explorerViewsRefreshQueuedRef.current = true;
+    }
+    if (explorerViewsRefreshInFlightRef.current) {
+      explorerViewsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    explorerViewsRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || explorerViewsRefreshQueuedRef.current;
+        explorerViewsRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          explorerViewsSignatureRef.current = '';
+        }
+
+        setExplorerViewsLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(getManagedContentPrimaryDirectory('explorerViews'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature(
+            'explorerViews',
+          );
+
+          if (!nextForce && nextSignature === explorerViewsSignatureRef.current) {
+            setExplorerViewsLoading(false);
+            continue;
+          }
+
+          explorerViewsSignatureRef.current = nextSignature;
+          const result = await discoverManagedExplorerViews();
+          setAuthoredExplorerViews(result.views);
+          setExplorerViewsError(result.sourceError);
+          setExplorerViewsWarnings(result.warnings);
+        } catch (error) {
+          setAuthoredExplorerViews([]);
+          setExplorerViewsError(String(error));
+          setExplorerViewsWarnings([]);
+        } finally {
+          setExplorerViewsLoading(false);
+        }
+      } while (explorerViewsRefreshQueuedRef.current);
+    } finally {
+      explorerViewsRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshLookdevPresets = useCallback(async (force = false) => {
     const lookdevStore = useLookdevStore.getState();
     if (!isTauri()) {
@@ -5006,6 +5077,22 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerLayoutPackages]);
 
   useEffect(() => {
+    void refreshExplorerViews(true);
+  }, [refreshExplorerViews]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !explorerViewSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshExplorerViews();
+    }, explorerViewSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshExplorerViews]);
+
+  useEffect(() => {
     void refreshLookdevPresets(true);
   }, [refreshLookdevPresets]);
 
@@ -5038,6 +5125,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         actions: combinedExplorerActions,
         pluginExplorerActions,
         pluginContextMenuItems,
+        pluginExplorerViews,
         pluginPreviewLanes,
         pluginSettingsSlots,
         pluginWorkflows,
@@ -5074,6 +5162,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         dockPresentationPackagesError,
         dockPresentationPackagesWarnings,
         explorerLayouts: combinedExplorerLayouts,
+        explorerViews: authoredExplorerViews,
         explorerLayoutsDirectory: getManagedContentPrimaryDirectory('explorerLayouts'),
         explorerLayoutsLoading: explorerLayoutPackagesLoading,
         explorerLayoutsError: explorerLayoutPackagesError,
@@ -5248,12 +5337,14 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       combinedExplorerLayouts,
       combinedExplorerActions,
       combinedHomePacks,
+      authoredExplorerViews,
       pluginContributedShaders,
       pluginCommands,
       pluginActionPacks,
       pluginActions,
       pluginExplorerActions,
       pluginContextMenuItems,
+      pluginExplorerViews,
       pluginPreviewLanes,
       openAnimationsFolder,
       openAppearancePacksFolder,

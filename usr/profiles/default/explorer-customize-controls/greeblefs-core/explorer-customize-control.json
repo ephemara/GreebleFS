@@ -1006,6 +1006,23 @@
       "maxWidthPx": 360
     },
     {
+      "controlId": "statusViewSize",
+      "commandId": "explorer-control:statusViewSize",
+      "label": "Status View Size",
+      "description": "Status View Size control",
+      "category": "status",
+      "surfaces": ["explorerStatusBar"],
+      "source": "built-in",
+      "supportsSizeVariant": true,
+      "supportsWidthPx": true,
+      "supportsLabelVisibility": true,
+      "supportsIconVisibility": false,
+      "sizeVariants": ["compact", "regular", "wide"],
+      "defaultWidthPx": 220,
+      "minWidthPx": 150,
+      "maxWidthPx": 320
+    },
+    {
       "controlId": "statusViewToggles",
       "commandId": "explorer-control:statusViewToggles",
       "label": "Status View Toggles",

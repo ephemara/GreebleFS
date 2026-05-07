@@ -108,6 +108,7 @@ export type BuiltInExplorerChromeControlId =
   | "statusClipboardQueue"
   | "statusPreviewLoading"
   | "terminalDrawerToggle"
+  | "statusViewSize"
   | "statusViewToggles";
 
 export type ExplorerChromeControlId =

@@ -111,6 +111,7 @@ import { stepExplorerCollectionPreviewMode } from "../config/explorerCollectionP
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginExplorerViewContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginWorkflowContribution,
 } from "../config/pluginContributions";
@@ -123,6 +124,7 @@ import {
   type ExplorerLayoutBandMetrics,
   type LoadedExplorerLayoutDefinition,
 } from "../config/explorerLayouts";
+import type { LoadedExplorerViewDefinition } from "../config/explorerViews";
 import { getExplorerRailWidthBounds } from "../config/explorerRail";
 import {
   adaptiveSemanticDensityStops,
@@ -172,7 +174,6 @@ import {
 } from "../config/constellationGraph";
 import {
   getFolderIconSrc,
-  resolveFolderIcon,
   type FolderIconRule,
   type FolderIconValue,
 } from "../config/folderIcons";
@@ -206,6 +207,7 @@ import {
 import {
   EXPLORER_LAYOUT_ZOOM_MAX,
   EXPLORER_LAYOUT_ZOOM_MIN,
+  EXPLORER_LAYOUT_ZOOM_SLIDER_STEP,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
   getExplorerGridZoomPercent,
@@ -231,6 +233,7 @@ import { getCommandHotkeyBinding, matchesKeybinding } from "../config/hotkeys";
 import {
   DEFAULT_NATIVE_ICON_SIZE,
   getNativeIconCacheKey,
+  isExplorerNativeAppIconEntry,
   type OverlayNativeIconRequest,
 } from "../config/nativeIcons";
 import {
@@ -371,6 +374,7 @@ import {
   type ExplorerViewSwitcherOptionGroup,
   type ExplorerViewSwitcherTransientHud,
 } from "./explorer/ExplorerViewSwitcherControl";
+import { ExplorerViewSizeSliderControl } from "./explorer/ExplorerViewSizeSliderControl";
 import { ExplorerWorkflowModal } from "./explorer/ExplorerWorkflowModal";
 import {
   buildExplorerRuntimeMenu,
@@ -513,6 +517,16 @@ import {
   type ExplorerPropertiesPanelTab,
   type ExplorerRecursiveSizeCacheEntry,
 } from "../store/explorerStore";
+import {
+  STANDARD_EXPLORER_VIEW_ID,
+  normalizeExplorerViewDescriptor,
+  type BoundExplorerViewComponent,
+  type ExplorerBuiltInSurfaceViewId,
+  type ExplorerViewDescriptor,
+  type ExplorerViewHost,
+  type ExplorerViewProps,
+  type ExplorerViewSurfaceId,
+} from "./explorer/explorerViewRuntime";
 import {
   openExplorerTaskCenter,
   toggleExplorerTaskCenter,
@@ -2730,17 +2744,14 @@ function getIconSrc(
 
 function shouldPreferManagedExplorerIcon(
   entry: FileEntry,
-  folderConfig: Parameters<typeof getFolderIconSrc>[2] | undefined,
   iconTheme = getBuiltInIconTheme(),
 ): boolean {
   if (entry.is_dir) {
-    const resolution = resolveFolderIcon(entry.path, {
-      ...folderConfig,
-      iconTheme,
-    });
-    return (
-      Boolean(resolution.matchedRule) || resolution.icon !== iconTheme.folder
-    );
+    return true;
+  }
+
+  if (isExplorerNativeAppIconEntry(entry.name, getEntryExtension(entry))) {
+    return false;
   }
 
   return (
@@ -8441,8 +8452,10 @@ interface FileExplorerProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
+  explorerViews?: LoadedExplorerViewDefinition[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -8521,6 +8534,13 @@ export interface ExplorerWorkspaceSelectionTransferResult {
   operation: FileTransferOperation;
   sourcePaths: string[];
   success: boolean;
+}
+
+interface ExplorerRuntimeViewDefinition extends ExplorerViewDescriptor {
+  sourceKind: "built-in" | "explorer-view-directory" | "plugin";
+  sourceLabel: string;
+  component: BoundExplorerViewComponent | null;
+  error: string | null;
 }
 
 interface StandardExplorerVirtualSurfaceProps {
@@ -8757,6 +8777,57 @@ function getExplorerChromeSurfaceContextLabel(
   }
 }
 
+const builtInExplorerViewIdSet = new Set<string>([
+  STANDARD_EXPLORER_VIEW_ID,
+  "adaptive-semantic-grid",
+  "constellation",
+  "timeline-surface",
+]);
+
+function cloneLocalExplorerViewStateById(
+  value: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as Record<
+    string,
+    Record<string, unknown>
+  >;
+}
+
+function resolveExplorerViewStateRecord(
+  value: unknown,
+): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? ({ ...(value as Record<string, unknown>) } satisfies Record<
+        string,
+        unknown
+      >)
+    : {};
+}
+
+function findNearestExplorerViewDensityStop(
+  view: ExplorerViewDescriptor | null,
+  density: number,
+) {
+  const stops = view?.density?.stops ?? [];
+  if (stops.length === 0) {
+    return null;
+  }
+
+  let closest = stops[0]!;
+  let closestDistance = Math.abs(density - closest.value);
+  for (const stop of stops.slice(1)) {
+    const distance = Math.abs(density - stop.value);
+    if (distance < closestDistance) {
+      closest = stop;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
 export function FileExplorer({
   theme,
   appearance,
@@ -8772,8 +8843,10 @@ export function FileExplorer({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginExplorerViews = [],
   pluginPreviewLanes = [],
   pluginWorkflows = [],
+  explorerViews = [],
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
@@ -9163,8 +9236,131 @@ export function FileExplorer({
   const collectionPreviewMode = explorerSettings.collectionPreviewMode;
   const viewMode = explorerSettings.viewMode;
   const gridZoom = explorerSettings.gridZoom;
-  const experimentalViewMode = explorerSettings.experimentalViewMode;
-  const experimentalDensity = explorerSettings.experimentalDensity;
+  const configuredActiveExplorerViewId =
+    explorerSettings.activeExplorerViewId?.trim() ||
+    (explorerSettings.experimentalViewMode !== "off"
+      ? explorerSettings.experimentalViewMode
+      : STANDARD_EXPLORER_VIEW_ID);
+  const activeExplorerViewId = configuredActiveExplorerViewId;
+  const activeExplorerViewDensity =
+    explorerSettings.explorerViewDensityById?.[activeExplorerViewId] ??
+    explorerSettings.experimentalDensity;
+  const builtInExplorerViews = useMemo<ExplorerRuntimeViewDefinition[]>(
+    () => [
+      {
+        ...normalizeExplorerViewDescriptor(
+          {
+            id: STANDARD_EXPLORER_VIEW_ID,
+            title: "Standard",
+            shortLabel: "Standard",
+            description:
+              "Use the built-in explorer layouts controlled by the density button.",
+            tags: ["built-in", "standard"],
+            rendererKind: "react",
+            ownership: "content",
+          },
+          {
+            id: STANDARD_EXPLORER_VIEW_ID,
+            title: "Standard",
+          },
+        ),
+        sourceKind: "built-in" as const,
+        sourceLabel: "built-in",
+        component: null,
+        error: null,
+      },
+      ...explorerExperimentalModes.map((mode) => ({
+        ...normalizeExplorerViewDescriptor(
+          {
+            id: mode.id,
+            title: mode.label,
+            shortLabel: mode.shortLabel,
+            description: mode.description,
+            tags: ["built-in", "experimental"],
+            priority: 10,
+            available: mode.available,
+            rendererKind: "react",
+            ownership: "content",
+            density: {
+              axisLabel: mode.densityAxisLabel,
+              defaultValue: explorerSettings.experimentalDensity,
+              step: 0.16,
+              stops: adaptiveSemanticDensityStops.map((stop) => {
+                const descriptor =
+                  mode.id === "adaptive-semantic-grid"
+                    ? stop
+                    : getExplorerExperimentalDensityDescriptor(
+                        mode.id,
+                        stop.density,
+                      );
+                return {
+                  id: stop.id,
+                  label: descriptor.label,
+                  shortLabel: descriptor.shortLabel,
+                  description: descriptor.description,
+                  value: stop.density,
+                };
+              }),
+            },
+          },
+          {
+            id: mode.id,
+            title: mode.label,
+          },
+        ),
+        sourceKind: "built-in" as const,
+        sourceLabel: "built-in",
+        component: null,
+        error: null,
+      })),
+    ],
+    [explorerSettings.experimentalDensity],
+  );
+  const authoredExplorerViews = useMemo<ExplorerRuntimeViewDefinition[]>(
+    () => [
+      ...explorerViews.map((view) => ({
+        ...view,
+        component: view.component
+          ? ((props) => React.createElement(view.component!, props))
+          : null,
+      })),
+      ...pluginExplorerViews,
+    ],
+    [explorerViews, pluginExplorerViews],
+  );
+  const explorerViewCatalog = useMemo(() => {
+    const catalogById = new Map<string, ExplorerRuntimeViewDefinition>();
+    for (const view of builtInExplorerViews) {
+      catalogById.set(view.id, view);
+    }
+    for (const view of authoredExplorerViews) {
+      catalogById.set(view.id, view);
+    }
+    return [...catalogById.values()].sort(
+      (left, right) =>
+        right.priority - left.priority || left.title.localeCompare(right.title),
+    );
+  }, [authoredExplorerViews, builtInExplorerViews]);
+  const explorerViewCatalogById = useMemo(
+    () => new Map(explorerViewCatalog.map((view) => [view.id, view] as const)),
+    [explorerViewCatalog],
+  );
+  const activeExplorerViewDefinition =
+    explorerViewCatalogById.get(activeExplorerViewId) ??
+    explorerViewCatalogById.get(STANDARD_EXPLORER_VIEW_ID) ??
+    builtInExplorerViews[0] ??
+    null;
+  const activeAuthoredExplorerViewDefinition =
+    activeExplorerViewDefinition?.component != null
+      ? activeExplorerViewDefinition
+      : null;
+  const experimentalViewMode =
+    activeAuthoredExplorerViewDefinition == null &&
+    activeExplorerViewId !== STANDARD_EXPLORER_VIEW_ID &&
+    builtInExplorerViewIdSet.has(activeExplorerViewId)
+      ? (activeExplorerViewId as ExplorerExperimentalViewMode)
+      : "off";
+  const experimentalDensity = activeExplorerViewDensity;
   const folderClickMode = explorerSettings.folderClickMode;
   const doubleClickEmptyToGoBack = explorerSettings.doubleClickEmptyToGoBack;
   const preferredViewMode =
@@ -9493,6 +9689,14 @@ export function FileExplorer({
   const [constellationPinnedPaths, setConstellationPinnedPaths] = useState<
     string[]
   >(() => [...initialSession.constellation.pinnedPaths]);
+  const [explorerViewStateById, setExplorerViewStateById] = useState<
+    Record<string, Record<string, unknown>>
+  >(() =>
+    cloneLocalExplorerViewStateById(
+      initialSession.explorerViewStateById ??
+        defaultExplorerSession.explorerViewStateById,
+    ),
+  );
 
   useEffect(() => {
     if (
@@ -11161,6 +11365,24 @@ export function FileExplorer({
     };
   }, [flushPendingExplorerMetrics]);
 
+  const persistedExplorerViewStateById = useMemo(
+    () => ({
+      ...explorerViewStateById,
+      constellation: {
+        ...resolveExplorerViewStateRecord(explorerViewStateById.constellation),
+        activeLens: constellationActiveLens,
+        routeModeEnabled: constellationRouteModeEnabled,
+        pinnedPaths: constellationPinnedPaths,
+      },
+    }),
+    [
+      constellationActiveLens,
+      constellationPinnedPaths,
+      constellationRouteModeEnabled,
+      explorerViewStateById,
+    ],
+  );
+
   useEffect(() => {
     updateExplorerSessionForInstance(instanceId, {
       currentPath,
@@ -11191,6 +11413,7 @@ export function FileExplorer({
         routeModeEnabled: constellationRouteModeEnabled,
         pinnedPaths: constellationPinnedPaths,
       },
+      explorerViewStateById: persistedExplorerViewStateById,
     });
   }, [
     activeActivityLane,
@@ -11219,6 +11442,7 @@ export function FileExplorer({
     searchMode,
     sidebarWidth,
     sourcesVisible,
+    persistedExplorerViewStateById,
     instanceId,
     updateExplorerSessionForInstance,
   ]);
@@ -12338,10 +12562,18 @@ export function FileExplorer({
   const explorerThumbnailRenderContext = isSearchActive ? "search" : "browse";
   const effectiveExperimentalViewMode = useMemo(
     () =>
-      !isCompactDock && !isSearchActive && themedExperimentalViewMode !== "off"
+      activeAuthoredExplorerViewDefinition == null &&
+      !isCompactDock &&
+      !isSearchActive &&
+      themedExperimentalViewMode !== "off"
         ? themedExperimentalViewMode
         : "off",
-    [isCompactDock, isSearchActive, themedExperimentalViewMode],
+    [
+      activeAuthoredExplorerViewDefinition,
+      isCompactDock,
+      isSearchActive,
+      themedExperimentalViewMode,
+    ],
   );
   const toggleSort = useCallback(
     (nextSortBy: ExplorerSortKey) => {
@@ -13698,19 +13930,8 @@ export function FileExplorer({
 
   const shouldUseManagedIconSrc = useCallback(
     (entry: FileEntry) =>
-      shouldPreferManagedExplorerIcon(
-        entry,
-        {
-          rules: explorerSettings.folderIconRules,
-          defaultIcon: explorerSettings.defaultFolderIcon,
-        },
-        themeIconTheme,
-      ),
-    [
-      explorerSettings.defaultFolderIcon,
-      explorerSettings.folderIconRules,
-      themeIconTheme,
-    ],
+      shouldPreferManagedExplorerIcon(entry, themeIconTheme),
+    [themeIconTheme],
   );
 
   const getRenderableIconSrc = useCallback(
@@ -22002,11 +22223,19 @@ export function FileExplorer({
   );
   const activeStatusViewLabel = useMemo(
     () =>
-      effectiveExperimentalViewMode !== "off"
+      activeExplorerViewId !== STANDARD_EXPLORER_VIEW_ID &&
+      activeExplorerViewDefinition
+        ? activeExplorerViewDefinition.title
+        : effectiveExperimentalViewMode !== "off"
         ? (getExplorerExperimentalModeDefinition(effectiveExperimentalViewMode)
             ?.label ?? effectiveViewModeDefinition.label)
         : effectiveViewModeDefinition.label,
-    [effectiveExperimentalViewMode, effectiveViewModeDefinition.label],
+    [
+      activeExplorerViewDefinition,
+      activeExplorerViewId,
+      effectiveExperimentalViewMode,
+      effectiveViewModeDefinition.label,
+    ],
   );
   const currentExperimentalModeDefinition = useMemo(
     () =>
@@ -22345,67 +22574,147 @@ export function FileExplorer({
       zoomHudTimerRef.current = null;
     }, 900);
   }, []);
+  function ensureLayoutZoomPointerAnchorAtViewportCenter(): void {
+    if (layoutZoomPointerAnchorRef.current != null) {
+      return;
+    }
+    const viewport = explorerViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    const rect = viewport.getBoundingClientRect();
+    layoutZoomPointerAnchorRef.current = createLayoutZoomPointerAnchor({
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+  }
+
+  function applyStandardExplorerLayoutZoomValue(nextLayoutZoom: number): void {
+    ensureLayoutZoomPointerAnchorAtViewportCenter();
+    if (!layoutZoomGestureActiveRef.current) {
+      layoutZoomGestureActiveRef.current = true;
+      setLayoutZoomGestureActive(true);
+    }
+
+    liveLayoutZoomTargetStateRef.current = resolveExplorerLayoutZoomStateAtValue(
+      liveLayoutZoomTargetStateRef.current,
+      Math.max(
+        EXPLORER_LAYOUT_ZOOM_MIN,
+        Math.min(EXPLORER_LAYOUT_ZOOM_MAX, nextLayoutZoom),
+      ),
+    );
+    scheduleLiveLayoutZoomPublish();
+    showZoomHud();
+  }
+
+  function commitStandardExplorerLayoutZoomValue(nextLayoutZoom: number): void {
+    applyStandardExplorerLayoutZoomValue(nextLayoutZoom);
+    commitExplorerLayoutZoomGesture();
+  }
+
+  function updateActiveExplorerViewDensityValue(nextDensity: number): void {
+    const resolvedDensity = Math.max(0, Math.min(1, nextDensity));
+    startTransition(() => {
+      updateExplorerSettings({
+        activeExplorerViewId,
+        explorerViewDensityById: {
+          ...explorerSettings.explorerViewDensityById,
+          [activeExplorerViewId]: resolvedDensity,
+        },
+      });
+    });
+    showExperimentalHud();
+  }
 
   const experimentalDensityPercent = useMemo(
     () =>
-      themedExperimentalViewMode !== "off"
-        ? getAdaptiveSemanticDensityPercent(experimentalDensity)
+      activeExplorerViewDefinition?.density != null
+        ? getAdaptiveSemanticDensityPercent(activeExplorerViewDensity)
         : null,
-    [experimentalDensity, themedExperimentalViewMode],
+    [activeExplorerViewDefinition, activeExplorerViewDensity],
   );
-  const currentExperimentalDensityStopId = useMemo(
-    () => getAdaptiveSemanticDensityStopId(experimentalDensity),
-    [experimentalDensity],
+  const currentStandardLayoutZoomValue = useMemo(
+    () =>
+      layoutZoomGestureActive && themedExperimentalViewMode === "off"
+        ? liveLayoutZoomState.layoutZoom
+        : createExplorerLayoutZoomState(themedViewMode, gridZoom).layoutZoom,
+    [
+      gridZoom,
+      layoutZoomGestureActive,
+      liveLayoutZoomState.layoutZoom,
+      themedExperimentalViewMode,
+      themedViewMode,
+    ],
   );
   const standardDensityHudProgressPercent = useMemo(() => {
     if (effectiveExperimentalViewMode !== "off") {
       return null;
     }
-    const activeLayoutZoom =
-      layoutZoomGestureActive && themedExperimentalViewMode === "off"
-        ? liveLayoutZoomState.layoutZoom
-        : resolveExplorerLayoutZoomState(themedViewMode, gridZoom).layoutZoom;
-    return getExplorerLayoutZoomHudProgress(activeLayoutZoom);
-  }, [
-    effectiveExperimentalViewMode,
-    gridZoom,
-    layoutZoomGestureActive,
-    liveLayoutZoomState.layoutZoom,
-    themedExperimentalViewMode,
-    themedViewMode,
-  ]);
-  const activeViewSwitcherModeIcon = useMemo(
+    return getExplorerLayoutZoomHudProgress(currentStandardLayoutZoomValue);
+  }, [currentStandardLayoutZoomValue, effectiveExperimentalViewMode]);
+  const activeExplorerViewDensityDescriptor = useMemo(
     () =>
-      currentExperimentalModeDefinition ? (
+      findNearestExplorerViewDensityStop(
+        activeExplorerViewDefinition,
+        activeExplorerViewDensity,
+      ),
+    [activeExplorerViewDefinition, activeExplorerViewDensity],
+  );
+  const activeViewSwitcherModeIcon = useMemo(() => {
+    if (
+      activeExplorerViewDefinition &&
+      activeExplorerViewDefinition.id !== STANDARD_EXPLORER_VIEW_ID &&
+      builtInExplorerViewIdSet.has(activeExplorerViewDefinition.id)
+    ) {
+      return (
         <ExplorerExperimentalGlyph
           accent={accent}
           active
-          mode={currentExperimentalModeDefinition.id}
+          mode={
+            activeExplorerViewDefinition.id as Exclude<
+              ExplorerExperimentalViewMode,
+              "off"
+            >
+          }
         />
-      ) : (
-        <ExplorerLayoutGlyph
-          mode={effectiveViewModeDefinition}
-          accent={accent}
-          active
-        />
-      ),
-    [accent, currentExperimentalModeDefinition, effectiveViewModeDefinition],
-  );
+      );
+    }
+    if (activeExplorerViewId !== STANDARD_EXPLORER_VIEW_ID) {
+      return <Puzzle size={12} />;
+    }
+    return (
+      <ExplorerLayoutGlyph
+        mode={effectiveViewModeDefinition}
+        accent={accent}
+        active
+      />
+    );
+  }, [
+    accent,
+    activeExplorerViewDefinition,
+    activeExplorerViewId,
+    effectiveViewModeDefinition,
+  ]);
   const activeViewSwitcherModeLabel =
-    currentExperimentalModeDefinition?.label ?? "Default";
+    activeExplorerViewDefinition?.title ?? "Standard";
   const selectDefaultExplorerViewMode = useCallback(() => {
-    updateExplorerSettings({ experimentalViewMode: "off" });
+    updateExplorerSettings({
+      activeExplorerViewId: STANDARD_EXPLORER_VIEW_ID,
+      experimentalViewMode: "off",
+    });
   }, [updateExplorerSettings]);
   const selectStandardExplorerViewMode = useCallback(
     (modeId: ExplorerViewMode) => {
       updateExplorerSettings(
         isExplorerGridMode(modeId)
           ? {
+              activeExplorerViewId: STANDARD_EXPLORER_VIEW_ID,
               experimentalViewMode: "off",
               viewMode: modeId,
               gridZoom: getExplorerGridZoomAnchor(modeId),
             }
           : {
+              activeExplorerViewId: STANDARD_EXPLORER_VIEW_ID,
               experimentalViewMode: "off",
               viewMode: modeId,
             },
@@ -22417,7 +22726,16 @@ export function FileExplorer({
   const selectExperimentalExplorerViewMode = useCallback(
     (modeId: Exclude<ExplorerExperimentalViewMode, "off">) => {
       updateExplorerSettings({
-        experimentalViewMode: modeId,
+        activeExplorerViewId: modeId,
+      });
+      showExperimentalHud();
+    },
+    [showExperimentalHud, updateExplorerSettings],
+  );
+  const selectAuthoredExplorerViewMode = useCallback(
+    (viewId: string) => {
+      updateExplorerSettings({
+        activeExplorerViewId: viewId,
       });
       showExperimentalHud();
     },
@@ -22426,15 +22744,22 @@ export function FileExplorer({
   const explorerViewSwitcherModeGroups = useMemo<
     ExplorerViewSwitcherOptionGroup[]
   >(() => {
-    const defaultViewActive = effectiveExperimentalViewMode === "off";
-    const experimentalOptions = explorerExperimentalModes
-      .filter((mode) => mode.available)
+    const defaultViewActive =
+      activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID;
+    const builtInAdaptiveOptions = explorerExperimentalModes
+      .filter((mode) => {
+        const descriptor = explorerViewCatalogById.get(mode.id);
+        return descriptor?.available !== false;
+      })
       .map((mode) => {
-        const active = effectiveExperimentalViewMode === mode.id;
+        const descriptor =
+          explorerViewCatalogById.get(mode.id) ??
+          builtInExplorerViews.find((view) => view.id === mode.id);
+        const active = activeExplorerViewId === mode.id;
         return {
           id: mode.id,
-          label: mode.label,
-          description: mode.description,
+          label: descriptor?.title ?? mode.label,
+          description: descriptor?.description ?? mode.description,
           active,
           icon: (
             <ExplorerExperimentalGlyph
@@ -22446,13 +22771,31 @@ export function FileExplorer({
           onSelect: () => selectExperimentalExplorerViewMode(mode.id),
         };
       });
+    const authoredOptions = explorerViewCatalog
+      .filter(
+        (view) =>
+          view.id !== STANDARD_EXPLORER_VIEW_ID &&
+          !builtInExplorerViewIdSet.has(view.id) &&
+          view.available,
+      )
+      .map((view) => {
+        const active = activeExplorerViewId === view.id;
+        return {
+          id: view.id,
+          label: view.title,
+          description: view.description,
+          active,
+          icon: <Puzzle size={12} />,
+          onSelect: () => selectAuthoredExplorerViewMode(view.id),
+        };
+      });
     return [
       {
         id: "standard",
         options: [
           {
-            id: "default",
-            label: "Default",
+            id: STANDARD_EXPLORER_VIEW_ID,
+            label: "Standard",
             description:
               "Use the built-in explorer layouts controlled by the density button.",
             active: defaultViewActive,
@@ -22467,21 +22810,34 @@ export function FileExplorer({
           },
         ],
       },
-      ...(experimentalOptions.length > 0
+      ...(builtInAdaptiveOptions.length > 0
         ? [
             {
               id: "experimental",
               label: "Adaptive Views",
-              options: experimentalOptions,
+              options: builtInAdaptiveOptions,
+            },
+          ]
+        : []),
+      ...(authoredOptions.length > 0
+        ? [
+            {
+              id: "authored",
+              label: "Authored Views",
+              options: authoredOptions,
             },
           ]
         : []),
     ];
   }, [
     accent,
-    effectiveExperimentalViewMode,
+    activeExplorerViewId,
+    builtInExplorerViews,
     effectiveViewModeDefinition,
+    explorerViewCatalog,
+    explorerViewCatalogById,
     selectDefaultExplorerViewMode,
+    selectAuthoredExplorerViewMode,
     selectExperimentalExplorerViewMode,
   ]);
   const explorerStandardDensityGroups = useMemo<
@@ -22493,7 +22849,7 @@ export function FileExplorer({
         label: "Density / Layout",
         options: explorerViewModes.map((mode) => {
           const active =
-            effectiveExperimentalViewMode === "off" &&
+            activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID &&
             effectiveViewMode === mode.id;
           return {
             id: `density-${mode.id}`,
@@ -22514,44 +22870,55 @@ export function FileExplorer({
     ],
     [
       accent,
-      effectiveExperimentalViewMode,
+      activeExplorerViewId,
       effectiveViewMode,
       selectStandardExplorerViewMode,
     ],
   );
-  const explorerExperimentalDensityGroups = useMemo<
+  const authoredExplorerViewDensityGroups = useMemo<
     ExplorerViewSwitcherOptionGroup[] | null
   >(() => {
-    if (!currentExperimentalModeDefinition) {
+    if (
+      !activeExplorerViewDefinition?.density ||
+      activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID
+    ) {
       return null;
     }
     return [
       {
-        id: `density-${currentExperimentalModeDefinition.id}`,
-        label: currentExperimentalModeDefinition.densityAxisLabel,
-        options: adaptiveSemanticDensityStops.map((stop) => {
-          const descriptor =
-            currentExperimentalModeDefinition.id === "adaptive-semantic-grid"
-              ? stop
-              : getExplorerExperimentalDensityDescriptor(
-                  currentExperimentalModeDefinition.id,
-                  stop.density,
-                );
-          const active = currentExperimentalDensityStopId === stop.id;
+        id: `density-${activeExplorerViewDefinition.id}`,
+        label: activeExplorerViewDefinition.density.axisLabel,
+        options: activeExplorerViewDefinition.density.stops.map((stop) => {
+          const active = activeExplorerViewDensityDescriptor?.id === stop.id;
           return {
-            id: `${currentExperimentalModeDefinition.id}-${stop.id}`,
-            label: descriptor.label,
-            description: descriptor.description,
+            id: `${activeExplorerViewDefinition.id}-${stop.id}`,
+            label: stop.label,
+            description: stop.description,
             active,
-            icon: (
-              <ExplorerExperimentalGlyph
-                accent={accent}
-                active={active}
-                mode={currentExperimentalModeDefinition.id}
-              />
-            ),
+            icon:
+              activeExplorerViewDefinition.id !== STANDARD_EXPLORER_VIEW_ID &&
+              builtInExplorerViewIdSet.has(activeExplorerViewDefinition.id) ? (
+                <ExplorerExperimentalGlyph
+                  accent={accent}
+                  active={active}
+                  mode={
+                    activeExplorerViewDefinition.id as Exclude<
+                      ExplorerExperimentalViewMode,
+                      "off"
+                    >
+                  }
+                />
+              ) : (
+                <Puzzle size={12} />
+              ),
             onSelect: () => {
-              updateExplorerSettings({ experimentalDensity: stop.density });
+              updateExplorerSettings({
+                activeExplorerViewId: activeExplorerViewDefinition.id,
+                explorerViewDensityById: {
+                  ...explorerSettings.explorerViewDensityById,
+                  [activeExplorerViewDefinition.id]: stop.value,
+                },
+              });
               showExperimentalHud();
             },
           };
@@ -22559,9 +22926,11 @@ export function FileExplorer({
       },
     ];
   }, [
+    activeExplorerViewDefinition,
+    activeExplorerViewDensityDescriptor,
+    activeExplorerViewId,
     accent,
-    currentExperimentalDensityStopId,
-    currentExperimentalModeDefinition,
+    explorerSettings.explorerViewDensityById,
     showExperimentalHud,
     updateExplorerSettings,
   ]);
@@ -22577,14 +22946,17 @@ export function FileExplorer({
     );
   const statusViewSwitcherDensityButton =
     useMemo<ExplorerViewSwitcherButtonDescriptor | null>(() => {
-      if (currentExperimentalModeDefinition && experimentalDensityDescriptor) {
+      if (
+        activeExplorerViewDefinition?.density &&
+        activeExplorerViewDensityDescriptor
+      ) {
         return {
-          ariaLabel: `${currentExperimentalModeDefinition.densityAxisLabel}: ${experimentalDensityDescriptor.label}`,
-          title: `${currentExperimentalModeDefinition.densityAxisLabel}: ${experimentalDensityDescriptor.label}`,
-          label: experimentalDensityDescriptor.shortLabel,
+          ariaLabel: `${activeExplorerViewDefinition.density.axisLabel}: ${activeExplorerViewDensityDescriptor.label}`,
+          title: `${activeExplorerViewDefinition.density.axisLabel}: ${activeExplorerViewDensityDescriptor.label}`,
+          label: activeExplorerViewDensityDescriptor.shortLabel,
         };
       }
-      if (effectiveExperimentalViewMode !== "off") {
+      if (activeExplorerViewId !== STANDARD_EXPLORER_VIEW_ID) {
         return null;
       }
       const gridZoomPercentLabel =
@@ -22597,36 +22969,36 @@ export function FileExplorer({
         label: gridZoomPercentLabel ?? layoutZoomBadgeLabel,
       };
     }, [
-      currentExperimentalModeDefinition,
+      activeExplorerViewDefinition,
+      activeExplorerViewDensityDescriptor,
+      activeExplorerViewId,
       currentGridZoomValue,
-      effectiveExperimentalViewMode,
-      experimentalDensityDescriptor,
       layoutZoomBadgeLabel,
       selectedViewModeDefinition.label,
     ]);
   const statusViewSwitcherDensityGroups =
-    currentExperimentalModeDefinition != null
-      ? explorerExperimentalDensityGroups
-      : explorerStandardDensityGroups;
+    activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID
+      ? explorerStandardDensityGroups
+      : authoredExplorerViewDensityGroups;
   const statusViewSwitcherTransientHud =
     useMemo<ExplorerViewSwitcherTransientHud | null>(() => {
       if (
-        currentExperimentalModeDefinition &&
+        activeExplorerViewDefinition?.density &&
         experimentalHudVisible &&
         experimentalDensityPercent != null
       ) {
         return {
           visible: true,
           label:
-            experimentalDensityDescriptor?.shortLabel ??
-            currentExperimentalModeDefinition.shortLabel,
+            activeExplorerViewDensityDescriptor?.shortLabel ??
+            activeExplorerViewDefinition.shortLabel,
           valueLabel: `${experimentalDensityPercent}%`,
           progressPercent: experimentalDensityPercent,
-          testId: "explorer-experimental-density-hud",
+          testId: "explorer-view-density-hud",
         };
       }
       if (
-        effectiveExperimentalViewMode === "off" &&
+        activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID &&
         zoomHudVisible &&
         standardDensityHudProgressPercent != null
       ) {
@@ -22643,16 +23015,54 @@ export function FileExplorer({
       }
       return null;
     }, [
-      currentExperimentalModeDefinition,
+      activeExplorerViewDefinition,
+      activeExplorerViewDensityDescriptor,
+      activeExplorerViewId,
       currentGridZoomValue,
-      effectiveExperimentalViewMode,
-      experimentalDensityDescriptor,
       experimentalDensityPercent,
       experimentalHudVisible,
       layoutZoomBadgeLabel,
       standardDensityHudProgressPercent,
       zoomHudVisible,
     ]);
+  const statusViewSizeControl =
+    activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID
+      ? {
+          label: "Size",
+          valueLabel:
+            currentGridZoomValue != null
+              ? `${getExplorerGridZoomPercent(currentGridZoomValue)}%`
+              : selectedViewModeDefinition.shortLabel,
+          ariaLabel: "Explorer size",
+          ariaValueText:
+            currentGridZoomValue != null
+              ? `${getExplorerGridZoomPercent(currentGridZoomValue)} percent`
+              : selectedViewModeDefinition.label,
+          value: currentStandardLayoutZoomValue,
+          min: EXPLORER_LAYOUT_ZOOM_MIN,
+          max: EXPLORER_LAYOUT_ZOOM_MAX,
+          step: EXPLORER_LAYOUT_ZOOM_SLIDER_STEP,
+          onChange: applyStandardExplorerLayoutZoomValue,
+          onCommit: commitStandardExplorerLayoutZoomValue,
+        }
+      : activeExplorerViewDefinition?.density
+        ? {
+            label: activeExplorerViewDefinition.density.axisLabel || "Size",
+            valueLabel:
+              activeExplorerViewDensityDescriptor?.shortLabel ??
+              `${getAdaptiveSemanticDensityPercent(activeExplorerViewDensity)}%`,
+            ariaLabel: `Explorer ${activeExplorerViewDefinition.density.axisLabel}`,
+            ariaValueText:
+              activeExplorerViewDensityDescriptor?.label ??
+              `${getAdaptiveSemanticDensityPercent(activeExplorerViewDensity)} percent`,
+            value: activeExplorerViewDensity,
+            min: 0,
+            max: 1,
+            step: activeExplorerViewDefinition.density.step,
+            onChange: updateActiveExplorerViewDensityValue,
+            onCommit: updateActiveExplorerViewDensityValue,
+          }
+        : null;
   const constellationFieldLayout = useMemo(
     () =>
       effectiveExperimentalViewMode === "constellation"
@@ -25881,6 +26291,32 @@ export function FileExplorer({
         ),
       },
       {
+        id: "statusViewSize",
+        label: "Status View Size",
+        surfaces: ["explorerStatusBar"],
+        isVisible: () => !isCompactDock && statusViewSizeControl != null,
+        render: (placement) =>
+          statusViewSizeControl ? (
+            <ExplorerViewSizeSliderControl
+              sizeVariant={placement.sizeVariant}
+              accent={accent}
+              text={EXP.text}
+              muted={EXP.muted}
+              label={statusViewSizeControl.label}
+              valueLabel={statusViewSizeControl.valueLabel}
+              ariaLabel={statusViewSizeControl.ariaLabel}
+              ariaValueText={statusViewSizeControl.ariaValueText}
+              value={statusViewSizeControl.value}
+              min={statusViewSizeControl.min}
+              max={statusViewSizeControl.max}
+              step={statusViewSizeControl.step}
+              showLabel={placement.showLabel !== false}
+              onChange={statusViewSizeControl.onChange}
+              onCommit={statusViewSizeControl.onCommit}
+            />
+          ) : null,
+      },
+      {
         id: "terminalDrawerToggle",
         label: "Terminal Drawer Toggle",
         surfaces: ["explorerStatusBar"],
@@ -26106,6 +26542,7 @@ export function FileExplorer({
       statusViewSwitcherDensityButton,
       statusViewSwitcherDensityGroups,
       statusViewSwitcherModeButton,
+      statusViewSizeControl,
       statusViewSwitcherTransientHud,
       openExplorerWorkflow,
       submitAddressDraft,
@@ -27301,24 +27738,9 @@ export function FileExplorer({
       layoutZoomPointerAnchorRef.current = createLayoutZoomPointerAnchor(
         gesture.rawEvent,
       );
-      if (!layoutZoomGestureActiveRef.current) {
-        layoutZoomGestureActiveRef.current = true;
-        setLayoutZoomGestureActive(true);
-      }
-
-      const nextState = resolveExplorerLayoutZoomStateAtValue(
-        liveLayoutZoomTargetStateRef.current,
-        Math.max(
-          EXPLORER_LAYOUT_ZOOM_MIN,
-          Math.min(
-            EXPLORER_LAYOUT_ZOOM_MAX,
-            liveLayoutZoomTargetStateRef.current.layoutZoom + rawDelta,
-          ),
-        ),
+      applyStandardExplorerLayoutZoomValue(
+        liveLayoutZoomTargetStateRef.current.layoutZoom + rawDelta,
       );
-      liveLayoutZoomTargetStateRef.current = nextState;
-      scheduleLiveLayoutZoomPublish();
-      showZoomHud();
 
       if (layoutZoomCommitTimerRef.current != null) {
         window.clearTimeout(layoutZoomCommitTimerRef.current);
@@ -27329,11 +27751,10 @@ export function FileExplorer({
       return true;
     },
     [
+      applyStandardExplorerLayoutZoomValue,
       commitExplorerLayoutZoomGesture,
       createLayoutZoomPointerAnchor,
       getExplorerZoomGestureViewportHeight,
-      scheduleLiveLayoutZoomPublish,
-      showZoomHud,
     ],
   );
   const shouldHandleExperimentalExplorerZoomGesture = useCallback(

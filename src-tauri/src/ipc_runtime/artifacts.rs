@@ -183,26 +183,32 @@ mod tests {
 
         let registry = ArtifactRegistry::default();
         let first = registry
-            .register_path(app.handle(), RegisterArtifactPathRequest {
-                kind: "thumbnail.poster".to_string(),
-                file_path: artifact_path.clone(),
-                media_type: Some("image/png".to_string()),
-                retention: IpcArtifactRetention::Persistent,
-                identity_key: Some("entity-1".to_string()),
-                content_revision: Some("rev-1".to_string()),
-                delete_on_release: false,
-            })
+            .register_path(
+                app.handle(),
+                RegisterArtifactPathRequest {
+                    kind: "thumbnail.poster".to_string(),
+                    file_path: artifact_path.clone(),
+                    media_type: Some("image/png".to_string()),
+                    retention: IpcArtifactRetention::Persistent,
+                    identity_key: Some("entity-1".to_string()),
+                    content_revision: Some("rev-1".to_string()),
+                    delete_on_release: false,
+                },
+            )
             .expect("first descriptor should register");
         let second = registry
-            .register_path(app.handle(), RegisterArtifactPathRequest {
-                kind: "thumbnail.poster".to_string(),
-                file_path: artifact_path,
-                media_type: Some("image/png".to_string()),
-                retention: IpcArtifactRetention::Persistent,
-                identity_key: Some("entity-1".to_string()),
-                content_revision: Some("rev-1".to_string()),
-                delete_on_release: false,
-            })
+            .register_path(
+                app.handle(),
+                RegisterArtifactPathRequest {
+                    kind: "thumbnail.poster".to_string(),
+                    file_path: artifact_path,
+                    media_type: Some("image/png".to_string()),
+                    retention: IpcArtifactRetention::Persistent,
+                    identity_key: Some("entity-1".to_string()),
+                    content_revision: Some("rev-1".to_string()),
+                    delete_on_release: false,
+                },
+            )
             .expect("second descriptor should register");
 
         assert_eq!(first.id, second.id);
@@ -218,15 +224,18 @@ mod tests {
 
         let registry = ArtifactRegistry::default();
         let descriptor = registry
-            .register_path(app.handle(), RegisterArtifactPathRequest {
-                kind: "preview.bytes".to_string(),
-                file_path: artifact_path.clone(),
-                media_type: None,
-                retention: IpcArtifactRetention::Ephemeral,
-                identity_key: None,
-                content_revision: None,
-                delete_on_release: true,
-            })
+            .register_path(
+                app.handle(),
+                RegisterArtifactPathRequest {
+                    kind: "preview.bytes".to_string(),
+                    file_path: artifact_path.clone(),
+                    media_type: None,
+                    retention: IpcArtifactRetention::Ephemeral,
+                    identity_key: None,
+                    content_revision: None,
+                    delete_on_release: true,
+                },
+            )
             .expect("descriptor should register");
 
         registry

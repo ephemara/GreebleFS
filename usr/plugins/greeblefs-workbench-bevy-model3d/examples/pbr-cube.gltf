@@ -1,0 +1,90 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "GreebleFS Bevy 3D Workbench"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [0]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "GreebleFS PBR Cube"
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "brushed-blue-metal",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.38, 0.62, 0.94, 1.0],
+        "metallicFactor": 0.72,
+        "roughnessFactor": 0.34
+      }
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "data:application/octet-stream;base64,AAAAAAAAgD8AAIC/AAAAAAAAgD8AAIC/AAAAAAAAgD8AAIA/AAAAAAAAgD8AAIA/AAAAAAAAAAAAgD8AAIC/AAAAAAAAgD8AAIC/AAAAAAAAAAAAgD8AAIA/AAAAAAAAgD8AAIA/AAAAAAAAAAAAgL8AAIC/AAAAAAAAgL8AAIC/AAAAAAAAAAAAgL8AAIA/AAAAAAAAgL8AAIA/AAAAAIA/AAAAAAAAAACAPwAAAAAAAAAAgD8AAAAAAAAAAIA/AAAAAAAAAACAPwAAAAAAAAAAgD8AAAAAAAAAAIA/AAAAAAAAAACAPwAAAAAAAAAAgD8AAAAAAAAAAIA/AAAAAAAAAACAvwAAAAAAAAAAgL8AAAAAAAAAAIC/AAAAAAAAAACAvwAAAAAAAAAAgL8AAAAAAAAAAIC/AAAAAAAAAACAvwAAAAAAAAAAgL8AAAAAAAAAAIC/AAAAAAAAAACAvwAAAAAAAAAAgL8AAAAAAAAAAIA/AAAAAAAAAACAPwAAAAAAAAAAgD8AAAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIA/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAIC/AAAAAAAAAAABAAIAAAADAAQABQAGAAcACAAJAAoACwAMAA0ADgAPABAAEQAA",
+      "byteLength": 456
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 288,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 288,
+      "byteLength": 144,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 24,
+      "target": 34963
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3",
+      "min": [-1.0, -1.0, -1.0],
+      "max": [1.0, 1.0, 1.0]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 24,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 36,
+      "type": "SCALAR"
+    }
+  ]
+}

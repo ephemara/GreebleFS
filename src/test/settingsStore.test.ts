@@ -157,7 +157,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.shaderPerformanceMode).toBe('performance');
     expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('system-ui, sans-serif');
-    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.appearance.useNativeOsIcons).toBe(true);
     expect(settings.appearance.animations).toBe(false);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appBlur).toBe(false);
@@ -1098,9 +1098,9 @@ describe('useSettingsStore.updateSystem()', () => {
 describe('useSettingsStore.updateAppearance()', () => {
   it('updates the native OS icon preference', () => {
     const store = useSettingsStore.getState();
-    store.updateAppearance({ useNativeOsIcons: true });
+    store.updateAppearance({ useNativeOsIcons: false });
 
-    expect(useSettingsStore.getState().settings.appearance.useNativeOsIcons).toBe(true);
+    expect(useSettingsStore.getState().settings.appearance.useNativeOsIcons).toBe(false);
   });
 
   it('clamps visual tuning into the supported range', () => {
@@ -1226,7 +1226,7 @@ describe('useSettingsStore.applyThemeSelection()', () => {
     expect(settings.appearance.activeWallpaperId).toBeNull();
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.uiFontFamily).toBe(defaultSettings.appearance.uiFontFamily);
-    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.appearance.useNativeOsIcons).toBe(true);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appZoom).toBe(1);
     expect(settings.appearance.appBlur).toBe(false);

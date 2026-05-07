@@ -7895,3 +7895,20 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - not run: a full live install/uninstall smoke pass on this host, because the local Windows helper intentionally tears down the current per-user install/state roots and is safer to prove on a disposable profile or VM
 - Recommended next step:
   - Run `.\simulate-new-user-flow.bat` on a disposable Windows user profile or VM and confirm the interactive page writes the expected external `/usr` root into `greeblefs-install-profile.toml`, then smoke-launch the installed app against that external managed-content tree.
+# 2026-05-07 - Explorer Status-Bar View Size Slider
+
+- Added a shared explorer chrome size slider instead of hardcoding thumbnail sizing into the footer view-switcher cluster.
+  - `src/components/explorer/ExplorerViewSizeSliderControl.tsx` is the reusable slider surface and intentionally rides the existing `PremiumSlider` plus explorer chrome metrics/tokens instead of introducing a one-off control style.
+  - `usr/profiles/default/explorer-customize-controls/greeblefs-core/explorer-customize-control.json` now registers `statusViewSize` as a built-in placeable explorer control with authored width/label/size-variant support.
+  - `usr/profiles/default/explorer-chrome-layouts/greeblefs-core/explorer-chrome-layout.json` now places `statusViewSize` on the default status bar beside `statusViewToggles`, so default layouts gain the control while user-authored explorer layouts can move/resize/hide it through the normal chrome authoring path.
+- `src/components/FileExplorer.tsx` now treats size as a shared runtime contract rather than a standard-view-only footer detail.
+  - In the built-in `Standard` explorer view, the slider drives the existing live layout-zoom pipeline, including the same transient HUD, pointer anchoring, deferred commit path, and persisted `viewMode` / `gridZoom` behavior already used by Ctrl/Cmd + wheel.
+  - In authored or experimental explorer views that provide a `density` contract, the same control drives `explorerViewDensityById[activeExplorerViewId]` and reuses the shared density HUD instead of inventing view-specific sizing widgets.
+  - Views without a density contract intentionally do not render `statusViewSize`; the rule is to hide the shared control, not to hardcode replacement UI inside a custom renderer.
+- Durable rules:
+  - Keep `statusViewToggles` focused on mode and density menu actions; keep continuous size scrubbing in the separate `statusViewSize` chrome control.
+  - New explorer layouts or usr-authored explorer chrome should place or mirror `statusViewSize` through the chrome layout/customize manifests, not by mounting ad hoc slider JSX inside a layout renderer.
+  - If standard-view size behavior changes, route it through the existing layout-zoom helpers so wheel zoom, HUD feedback, and slider scrubbing stay in sync.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "renders the footer view switcher and size slider as shared status-bar controls on the edge|commits standard explorer size changes through the shared footer slider|drives authored explorer density through the shared footer size slider|scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|uses the saved built-in layout as the default-view proxy when leaving a unique footer mode|switches between default and built-in layouts from the footer toggles" --reporter=dot --testTimeout=30000`

@@ -131,7 +131,24 @@ export function IconSettingsSection({
       <SettingsSectionHeader
         icon={<Image size={12} />}
         title="Icon Themes"
-        subtitle="VS Code-style icon packs for explorer file icons, semantic folders, and stock shell glyphs."
+        subtitle="Theme packs for semantic files plus real OS app icons for shortcuts and executables."
+      />
+
+      <SettingsRow
+        title="Explorer OS App Icons"
+        description={(
+          <>
+            Show real {platformLabel} shell icons for <code>.lnk</code>, <code>.exe</code>, installers, and web shortcuts before generic theme glyphs.
+          </>
+        )}
+        control={(
+          <input
+            type="checkbox"
+            checked={useNativeOsIcons}
+            onChange={event => onToggleNativeOsIcons(event.target.checked)}
+          />
+        )}
+        descriptionAlwaysVisible
       />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(360px,0.7fr)]">
@@ -229,7 +246,7 @@ export function IconSettingsSection({
             subtitle="Explorer files and stock shell glyphs swap immediately. Thumbnail generation remains separate and only wins when the explorer decides a thumbnail should render."
             badges={[
               activeIconThemePackage?.name ?? 'Follow Theme Default',
-              useNativeOsIcons ? 'OS fallback on' : 'OS fallback off',
+              useNativeOsIcons ? 'OS app icons on' : 'OS app icons off',
             ]}
             accent={accent}
           >
@@ -328,21 +345,6 @@ export function IconSettingsSection({
                 </div>
               </SettingsSectionBlock>
 
-              <SettingsRow
-                title="OS Icon Fallback"
-                description={(
-                  <>
-                    Keep icon themes primary for explorer files and semantic folders, then let {platformLabel}&apos;s native icon service fill holes when the active pack has no direct match.
-                  </>
-                )}
-                control={(
-                  <input
-                    type="checkbox"
-                    checked={useNativeOsIcons}
-                    onChange={event => onToggleNativeOsIcons(event.target.checked)}
-                  />
-                )}
-              />
             </div>
           </SettingsInspectorPanel>
         </div>

@@ -416,7 +416,9 @@ describe('SettingsPage behavior', () => {
 
     renderSettingsPage();
 
-    expect(screen.getByText('Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.')).toBeInTheDocument();
+    expect(screen.getByText('Choose a dedicated icon theme, keep folder rules in one place, and make Explorer show real OS app icons for shortcuts and executables.')).toBeInTheDocument();
+    expect(screen.getByText('Explorer OS App Icons')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Explorer OS App Icons' })).toBeChecked();
   });
 
   it('advertises VS Code folder and .vsix compatibility in theme settings copy', async () => {
@@ -2654,7 +2656,7 @@ describe('SettingsPage behavior', () => {
     expect(settings.appearance.activeWallpaperId).toBeNull();
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.uiFontFamily).toBe(defaultSettings.appearance.uiFontFamily);
-    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.appearance.useNativeOsIcons).toBe(true);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appZoom).toBe(1);
     expect(settings.appearance.appBlur).toBe(false);

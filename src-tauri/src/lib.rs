@@ -150,8 +150,7 @@ pub fn run() {
 
     let builder = specta_bindings::app_specta_builder();
     let specta_invoke_handler = builder.invoke_handler();
-    let transport_invoke_handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-        tauri::generate_handler![
+    let transport_invoke_handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
         crate::fs_commands::fs_read_preview_bytes,
         crate::fs_commands::fs_read_archive_entry_preview_bytes,
         crate::cloud_commands::cloud_read_preview_bytes,

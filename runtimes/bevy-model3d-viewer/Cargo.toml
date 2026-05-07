@@ -1,0 +1,41 @@
+[package]
+name = "bevy-model3d-viewer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+bevy = { version = "0.18.1", default-features = false, features = [
+  "3d",
+  "webgpu",
+  "http",
+  "https",
+  "jpeg",
+  "webp",
+] }
+console_error_panic_hook = "0.1"
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "CssStyleDeclaration",
+  "Document",
+  "Element",
+  "HtmlCanvasElement",
+  "HtmlDivElement",
+  "HtmlElement",
+  "Window",
+]
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = 3
+panic = "abort"

@@ -4,6 +4,10 @@ import type {
   BoundOverlayPluginWorkflowComponent,
 } from '../components/pluginRuntime';
 import type {
+  BoundExplorerViewComponent,
+  ExplorerViewDescriptor,
+} from '../components/explorer/explorerViewRuntime';
+import type {
   OverlayPluginPreviewLaneCapabilityFlags,
   OverlayPluginPreviewLaneDescriptor,
   OverlayPluginPreviewLaneMatchRule,
@@ -68,6 +72,15 @@ export interface OverlayPluginPreviewLaneContribution
   match: OverlayPluginPreviewLaneMatchRule;
   capabilities: OverlayPluginPreviewLaneCapabilityFlags;
   component: BoundOverlayPluginPreviewLaneComponent;
+}
+
+export interface OverlayPluginExplorerViewContribution
+  extends ExplorerViewDescriptor {
+  pluginId: string;
+  pluginName: string;
+  sourceLabel: string;
+  component: BoundExplorerViewComponent | null;
+  error: string | null;
 }
 
 export interface OverlayPluginSettingsSlotContribution

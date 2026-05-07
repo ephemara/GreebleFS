@@ -29,8 +29,7 @@ use crate::telemetry::TelemetryManager;
 const ENV_GREEBLEFS_MCP_ENABLED: &str = "GREEBLEFS_MCP_ENABLED";
 const ENV_OVERLAYTERM_MCP_ENABLED: &str = "OVERLAYTERM_MCP_ENABLED";
 const ENV_GREEBLEFS_MCP_NATIVE_AUTOMATION_FILE: &str = "GREEBLEFS_MCP_NATIVE_AUTOMATION_FILE";
-const ENV_OVERLAYTERM_MCP_NATIVE_AUTOMATION_FILE: &str =
-    "OVERLAYTERM_MCP_NATIVE_AUTOMATION_FILE";
+const ENV_OVERLAYTERM_MCP_NATIVE_AUTOMATION_FILE: &str = "OVERLAYTERM_MCP_NATIVE_AUTOMATION_FILE";
 const MAX_SUBSCRIPTION_EVENTS: usize = 1_024;
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,9 +203,9 @@ pub fn start_dev_mcp_native_automation_server(
     std_listener.set_nonblocking(true).map_err(|error| {
         format!("Failed to configure the dev MCP native automation server socket: {error}")
     })?;
-    let socket_addr = std_listener
-        .local_addr()
-        .map_err(|error| format!("Failed to resolve the dev MCP automation socket address: {error}"))?;
+    let socket_addr = std_listener.local_addr().map_err(|error| {
+        format!("Failed to resolve the dev MCP automation socket address: {error}")
+    })?;
     let auth_token = Uuid::new_v4().to_string();
     let started_at_unix_ms = now_unix_ms();
     let base_url = format!("http://127.0.0.1:{}", socket_addr.port());
@@ -245,7 +244,10 @@ pub fn start_dev_mcp_native_automation_server(
         .route("/rpc", post(handle_rpc))
         .route("/host-events/subscribe", post(handle_host_events_subscribe))
         .route("/host-events/read", get(handle_host_events_read))
-        .route("/host-events/unsubscribe", post(handle_host_events_unsubscribe))
+        .route(
+            "/host-events/unsubscribe",
+            post(handle_host_events_unsubscribe),
+        )
         .with_state(state);
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
@@ -348,7 +350,12 @@ async fn handle_host_events_read(
 
     let records = match state.subscriptions.lock() {
         Ok(records) => records,
-        Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Native host-event registry lock poisoned."),
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Native host-event registry lock poisoned.",
+            )
+        }
     };
     let record = match records.get(query.subscription_id.as_str()) {
         Some(record) => record,
@@ -390,7 +397,12 @@ async fn handle_host_events_unsubscribe(
 
     let removed = match state.subscriptions.lock() {
         Ok(mut records) => records.remove(request.subscription_id.as_str()),
-        Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Native host-event registry lock poisoned."),
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Native host-event registry lock poisoned.",
+            )
+        }
     };
     let Some(record) = removed else {
         return Json(serde_json::json!({
@@ -420,8 +432,9 @@ async fn dispatch_rpc_request(
     match request.method.as_str() {
         "host.get_api_schema" => {
             let schema = crate::runtime_pipeline::build_extension_host_api_schema();
-            serde_json::to_value(schema)
-                .map_err(|error| format!("Failed to serialize the extension-host API schema: {error}"))
+            serde_json::to_value(schema).map_err(|error| {
+                format!("Failed to serialize the extension-host API schema: {error}")
+            })
         }
         "host.call" => {
             let payload = request
@@ -437,7 +450,9 @@ async fn dispatch_rpc_request(
                 .get("payload")
                 .map(serde_json::to_string)
                 .transpose()
-                .map_err(|error| format!("Failed to encode the native host-call payload: {error}"))?;
+                .map_err(|error| {
+                    format!("Failed to encode the native host-call payload: {error}")
+                })?;
             let execution_context = payload
                 .get("executionContext")
                 .cloned()
@@ -464,8 +479,8 @@ async fn dispatch_rpc_request(
             let payload = request
                 .payload
                 .ok_or_else(|| "host.events.get_snapshot requires a payload object.".to_string())?;
-            let subscription_request: HostSubscriptionRequest =
-                serde_json::from_value(payload).map_err(|error| {
+            let subscription_request: HostSubscriptionRequest = serde_json::from_value(payload)
+                .map_err(|error| {
                     format!("Failed to decode the host-events snapshot request: {error}")
                 })?;
             let host_event_bus = state.app.state::<HostEventBusState>();
@@ -500,7 +515,9 @@ async fn dispatch_rpc_request(
         }),
         "windows.get_metadata" => serde_json::to_value(collect_window_records(&state.app))
             .map_err(|error| format!("Failed to serialize native window metadata: {error}")),
-        other => Err(format!("Unsupported dev MCP native automation RPC method: {other}")),
+        other => Err(format!(
+            "Unsupported dev MCP native automation RPC method: {other}"
+        )),
     }
 }
 
@@ -551,7 +568,8 @@ fn collect_window_records(app: &AppHandle) -> Vec<DevMcpNativeAutomationWindowRe
         .webview_windows()
         .into_iter()
         .map(|(window_label, window)| {
-            let descriptor = secondary_windows.find_descriptor_by_window_label(window_label.as_str());
+            let descriptor =
+                secondary_windows.find_descriptor_by_window_label(window_label.as_str());
             DevMcpNativeAutomationWindowRecord {
                 title: window.title().unwrap_or_else(|_| window_label.clone()),
                 visible: window.is_visible().ok(),

@@ -185,6 +185,16 @@ import {
 import type { IdeWorkbenchLayoutState } from '../config/ideWorkbenchLayout';
 import { DEFAULT_IDE_LAYOUT_PROFILE_ID, type WorkbenchShellFamilyId } from '../config/layoutProfiles';
 import { buildShippedUsrEffectiveDefaultSettings } from '../config/usrDefaultSettings';
+import { STANDARD_EXPLORER_VIEW_ID } from '../components/explorer/explorerViewRuntime';
+
+const builtInExplorerViewIds = [
+  STANDARD_EXPLORER_VIEW_ID,
+  'adaptive-semantic-grid',
+  'constellation',
+  'timeline-surface',
+] as const;
+
+type BuiltInExplorerViewId = (typeof builtInExplorerViewIds)[number];
 
 // ============================================================================
 // TYPES
@@ -288,6 +298,8 @@ export interface ExplorerSettings {
   sortOrder: 'asc' | 'desc';
   viewMode: ExplorerViewMode;
   gridZoom: number;
+  activeExplorerViewId: string;
+  explorerViewDensityById: Record<string, number>;
   experimentalViewMode: ExplorerExperimentalViewMode;
   experimentalDensity: number;
   folderClickMode: ExplorerFolderClickMode;
@@ -732,16 +744,103 @@ function normalizeExplorerModeProfileOverrideMap(
   );
 }
 
+function normalizeExplorerActiveViewId(value: unknown): string {
+  if (typeof value !== 'string') {
+    return STANDARD_EXPLORER_VIEW_ID;
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return STANDARD_EXPLORER_VIEW_ID;
+  }
+  if (trimmedValue === 'off') {
+    return STANDARD_EXPLORER_VIEW_ID;
+  }
+  return trimmedValue;
+}
+
+function mapExplorerActiveViewIdToLegacyExperimentalMode(
+  viewId: string,
+): ExplorerExperimentalViewMode {
+  switch (viewId) {
+    case 'adaptive-semantic-grid':
+    case 'constellation':
+    case 'timeline-surface':
+      return viewId;
+    default:
+      return 'off';
+  }
+}
+
+function createDefaultExplorerViewDensityById(): Record<string, number> {
+  return Object.fromEntries(
+    builtInExplorerViewIds.map((viewId) => [
+      viewId,
+      DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
+    ]),
+  );
+}
+
+function normalizeExplorerViewDensityById(
+  value: unknown,
+  fallback: Record<string, number>,
+): Record<string, number> {
+  const normalized = { ...fallback };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return normalized;
+  }
+
+  for (const [viewId, density] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedViewId = normalizeExplorerActiveViewId(viewId);
+    normalized[normalizedViewId] = normalizeAdaptiveSemanticDensity(density);
+  }
+  return normalized;
+}
+
 function normalizeExplorerSettings(
   base: ExplorerSettings,
   updates?: Partial<ExplorerSettings>,
 ): ExplorerSettings {
   const nextViewMode = normalizeExplorerViewMode(updates?.viewMode ?? base.viewMode);
   const hasExplicitGridZoom = updates != null && Object.prototype.hasOwnProperty.call(updates, 'gridZoom');
+  const hasExplicitActiveExplorerViewId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'activeExplorerViewId');
+  const hasExplicitExplorerViewDensityById = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'explorerViewDensityById');
   const nextExperimentalViewMode = normalizeExplorerExperimentalViewMode(
-    updates?.experimentalViewMode ?? base.experimentalViewMode,
+    hasExplicitActiveExplorerViewId && !Object.prototype.hasOwnProperty.call(updates ?? {}, 'experimentalViewMode')
+      ? mapExplorerActiveViewIdToLegacyExperimentalMode(
+          normalizeExplorerActiveViewId(updates?.activeExplorerViewId),
+        )
+      : updates?.experimentalViewMode ?? base.experimentalViewMode,
   );
   const hasExplicitExperimentalDensity = updates != null && Object.prototype.hasOwnProperty.call(updates, 'experimentalDensity');
+  const legacySeedExplorerViewId = normalizeExplorerActiveViewId(
+    base.activeExplorerViewId || base.experimentalViewMode,
+  );
+  const nextActiveExplorerViewId = hasExplicitActiveExplorerViewId
+    ? normalizeExplorerActiveViewId(updates?.activeExplorerViewId)
+    : normalizeExplorerActiveViewId(base.activeExplorerViewId || base.experimentalViewMode);
+  const nextExplorerViewDensityById = normalizeExplorerViewDensityById(
+    hasExplicitExplorerViewDensityById
+      ? updates?.explorerViewDensityById
+      : base.explorerViewDensityById,
+    {
+      ...createDefaultExplorerViewDensityById(),
+      ...base.explorerViewDensityById,
+      [legacySeedExplorerViewId]: normalizeAdaptiveSemanticDensity(
+        base.experimentalDensity,
+      ),
+    },
+  );
+  if (hasExplicitExperimentalDensity) {
+    nextExplorerViewDensityById[nextActiveExplorerViewId] =
+      normalizeAdaptiveSemanticDensity(updates?.experimentalDensity);
+  }
+  if (nextExplorerViewDensityById[nextActiveExplorerViewId] == null) {
+    nextExplorerViewDensityById[nextActiveExplorerViewId] =
+      DEFAULT_ADAPTIVE_SEMANTIC_DENSITY;
+  }
   const hasExplicitModeProfileOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'modeProfileOverridesByThemeId');
   const hasExplicitChromeLayoutOverrides = updates != null
@@ -822,10 +921,12 @@ function normalizeExplorerSettings(
       : (updates?.viewMode && isExplorerGridMode(nextViewMode)
           ? getExplorerGridZoomAnchor(nextViewMode)
           : base.gridZoom),
+    activeExplorerViewId: nextActiveExplorerViewId,
+    explorerViewDensityById: nextExplorerViewDensityById,
     experimentalViewMode: nextExperimentalViewMode,
-    experimentalDensity: hasExplicitExperimentalDensity
-      ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
-      : base.experimentalDensity,
+    experimentalDensity:
+      nextExplorerViewDensityById[nextActiveExplorerViewId] ??
+      DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
     activityRailOpenMode: normalizeExplorerActivityRailOpenMode(
       updates?.activityRailOpenMode ?? base.activityRailOpenMode,
@@ -1699,6 +1800,8 @@ const runtimeFallbackDefaultSettings: Settings = {
     sortOrder: 'asc',
     viewMode: 'details',
     gridZoom: getExplorerGridZoomAnchor('icons-l'),
+    activeExplorerViewId: STANDARD_EXPLORER_VIEW_ID,
+    explorerViewDensityById: createDefaultExplorerViewDensityById(),
     experimentalViewMode: 'off',
     experimentalDensity: DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: 'double',
@@ -1748,7 +1851,7 @@ const runtimeFallbackDefaultSettings: Settings = {
     shaderPerformanceMode: shaderSystemConfig.defaultPerformanceMode,
     shaderControlValues: {},
     uiFontFamily: DEFAULT_PILOT_UI_FONT_FAMILY,
-    useNativeOsIcons: false,
+    useNativeOsIcons: true,
     accentColor: DEFAULT_PILOT_ACCENT_COLOR,
     sidebarPosition: 'left',
     activityBarPosition: 'side',
@@ -2094,12 +2197,14 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         : importedExplorerHasExplicitViewMode
           ? getExplorerGridZoomAnchor(normalizedImportedExplorerViewMode)
           : base.explorer.gridZoom,
-      experimentalViewMode: normalizeExplorerExperimentalViewMode(
-        importedExplorer?.experimentalViewMode ?? base.explorer.experimentalViewMode,
-      ),
-      experimentalDensity: normalizeAdaptiveSemanticDensity(
-        importedExplorer?.experimentalDensity ?? base.explorer.experimentalDensity,
-      ),
+      experimentalViewMode:
+        normalizedImportedExplorerLayoutSettings.experimentalViewMode,
+      experimentalDensity:
+        normalizedImportedExplorerLayoutSettings.experimentalDensity,
+      activeExplorerViewId:
+        normalizedImportedExplorerLayoutSettings.activeExplorerViewId,
+      explorerViewDensityById:
+        normalizedImportedExplorerLayoutSettings.explorerViewDensityById,
       folderClickMode: normalizeExplorerFolderClickMode(
         importedExplorer?.folderClickMode ?? base.explorer.folderClickMode,
       ),

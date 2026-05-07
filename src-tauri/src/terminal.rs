@@ -703,11 +703,7 @@ impl TerminalManager {
             .ok_or_else(|| format!("Terminal {} not found", id))
     }
 
-    pub fn open_output_stream(
-        &self,
-        id: &str,
-        app: &AppHandle,
-    ) -> Result<IpcStreamHandle, String> {
+    pub fn open_output_stream(&self, id: &str, app: &AppHandle) -> Result<IpcStreamHandle, String> {
         let _ = self.terminal_instance(id)?;
         if let Some(existing) = self
             .output_streams

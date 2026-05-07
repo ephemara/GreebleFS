@@ -84,9 +84,7 @@ fn resolve_install_profile_path(install_root: &Path) -> PathBuf {
 }
 
 fn resolve_profile_path_value(raw_value: Option<&str>, install_root: &Path) -> Option<PathBuf> {
-    let normalized_value = raw_value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
+    let normalized_value = raw_value.map(str::trim).filter(|value| !value.is_empty())?;
     let candidate_path = PathBuf::from(normalized_value);
     if candidate_path.is_absolute() {
         Some(candidate_path)

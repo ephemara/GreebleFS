@@ -203,9 +203,11 @@ impl HostEventBusState {
         let app_handle = app.clone();
         let stream_id = stream_handle.id.clone();
         let sink: HostEventSink = Arc::new(move |event| {
-            let _ = tauri::transport::publish_stream_packet(&app_handle, stream_id.as_str(), |_metadata| {
-                Ok(event.clone())
-            });
+            let _ = tauri::transport::publish_stream_packet(
+                &app_handle,
+                stream_id.as_str(),
+                |_metadata| Ok(event.clone()),
+            );
         });
         self.register_subscription(
             subscription_id,

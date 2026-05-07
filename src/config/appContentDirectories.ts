@@ -105,6 +105,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 26,
   },
+  explorerViews: {
+    label: "Explorer Views",
+    description:
+      "Author custom explorer renderers, full-surface shells, and alternate file-navigation experiences here.",
+    keywords: [
+      "explorer view",
+      "custom renderer",
+      "xmb",
+      "file explorer clone",
+      "surface runtime",
+    ],
+    order: 26.1,
+  },
   explorerChromeLayouts: {
     label: "Explorer Chrome Layouts",
     description:

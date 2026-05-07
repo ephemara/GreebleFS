@@ -1,0 +1,22 @@
+id = "bevy-model3d-viewer"
+displayName = "Bevy 3D Model Viewer"
+language = "rust"
+kind = "wasm-panel"
+compiler = "cargo-wasm-bindgen"
+moduleDir = "."
+entry = "."
+watchGlobs = ["Cargo.toml", "src/**/*.rs"]
+
+[panel]
+panelId = "bevy-model3d-viewer"
+displayName = "Bevy 3D Model Viewer"
+preferredWidthPx = 640
+preferredHeightPx = 420
+
+[permissions]
+fsRead = false
+fsWrite = false
+hostEvents = false
+network = false
+clipboardRead = false
+clipboardWrite = false

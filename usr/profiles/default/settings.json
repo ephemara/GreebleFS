@@ -1,14 +1,14 @@
 {
   "appearance": {
     "accentColor": "#f5f5f5",
-    "activeAppearancePackId": null,
+    "activeAppearancePackId": "doors:doors-appearance",
     "activeDockThemeId": null,
     "activeIconThemeId": "greeblefs_canonical_icons",
     "activeShaderId": null,
     "activeShellRendererId": null,
-    "activeThemeEngineId": null,
-    "activeThemeId": "toon",
-    "activeThemeRecipeId": null,
+    "activeThemeEngineId": "doors:doors-engine",
+    "activeThemeId": "doors",
+    "activeThemeRecipeId": "doors:doors-shell",
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
     "activityBarPosition": "side",
@@ -479,7 +479,7 @@
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
     "uiFontFamily": "system-ui, sans-serif",
-    "useNativeOsIcons": false,
+    "useNativeOsIcons": true,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,
     "wallpaperOpacity": 1
@@ -499,10 +499,10 @@
   },
   "dock": {
     "activePresentationId": "yakuake-workbench",
-    "defaultTerminalColumns": 200,
-    "defaultTerminalRows": 17,
-    "edgeSize": 418,
-    "edgeWidth": 1683,
+    "defaultTerminalColumns": 87,
+    "defaultTerminalRows": 37,
+    "edgeSize": 500,
+    "edgeWidth": 768,
     "floatingBounds": {
       "height": 824,
       "width": 2524,
@@ -530,6 +530,7 @@
   },
   "explorer": {
     "activeExplorerLayoutId": null,
+    "activeExplorerViewId": "standard",
     "activeMenuPackId": "greeblefs-default-explorer-menu",
     "activityRailOpenMode": "single",
     "chromeLayoutOverridesByThemeId": {
@@ -1721,8 +1722,14 @@
     "defaultFolderIcon": "folder",
     "defaultPath": "greeblefs://home",
     "doubleClickEmptyToGoBack": false,
-    "experimentalDensity": 0,
+    "experimentalDensity": 0.4,
     "experimentalViewMode": "off",
+    "explorerViewDensityById": {
+      "adaptive-semantic-grid": 0.4,
+      "constellation": 0.4,
+      "standard": 0.4,
+      "timeline-surface": 0.4
+    },
     "folderClickMode": "double",
     "folderIconRules": [
       {
@@ -1919,7 +1926,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.40999999809808535,
+    "gridZoom": 0.08799999673957483,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -1947,7 +1954,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-m"
+    "viewMode": "icons-s"
   },
   "home": {
     "activePackId": null,
@@ -2040,6 +2047,7 @@
     "toggleExplorerSortOrder": "Ctrl+Alt+O",
     "toggleExplorerSources": "Ctrl+B",
     "toggleHiddenFiles": "Ctrl+H",
+    "toggleLookdevOverlay": "Ctrl+Alt+L",
     "togglePreviewLock": "Ctrl+Alt+P",
     "togglePreviewTerminal": "Ctrl+Alt+T",
     "windowModeToggle": "F11",
@@ -2047,16 +2055,29 @@
     "zoomAdjust": "Ctrl+Scroll"
   },
   "layout": {
-    "activeProfileId": "overlay-classic",
+    "activeProfileId": "navigator-bottom",
     "configPath": "",
     "followThemeDefaults": false,
     "lastProfileIdByShellFamily": {
-      "classic": "overlay-classic",
+      "classic": "navigator-bottom",
       "ide": "workbench-ide"
     },
     "panelStateByProfile": {
+      "navigator-bottom": {
+        "activePanelId": "explorer",
+        "dismissedPanelIds": [],
+        "openPanelIds": [
+          "storage",
+          "settings",
+          "explorer",
+          "terminal",
+          "notes",
+          "plugins",
+          "git"
+        ]
+      },
       "overlay-classic": {
-        "activePanelId": "settings",
+        "activePanelId": "explorer",
         "dismissedPanelIds": [
           "greeblefs-action-forge"
         ],
@@ -2326,8 +2347,8 @@
     "fontSize": 13,
     "integratedHost": "xterm",
     "overlayAnchor": "bottom",
-    "overlayHeight": 418,
-    "overlayWidth": 1683,
+    "overlayHeight": 500,
+    "overlayWidth": 768,
     "preferredOpenMode": "integrated",
     "scrollback": 10000,
     "shell": "pwsh.exe -NoLogo",

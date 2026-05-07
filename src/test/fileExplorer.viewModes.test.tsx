@@ -586,6 +586,7 @@ import {
   resolveOverlayAppearance,
 } from "../config/appearance";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
+import { DEFAULT_NATIVE_ICON_SIZE } from "../config/nativeIcons";
 import { createDefaultExplorerRailSnapshot } from "../components/explorer/explorerRailState";
 import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
@@ -1169,6 +1170,14 @@ function getStatusViewSwitcher() {
   const control = getChromeControl("statusViewToggles");
   if (!control) {
     throw new Error("Status view switcher control not found");
+  }
+  return control as HTMLElement;
+}
+
+function getStatusViewSizeControl() {
+  const control = getChromeControl("statusViewSize");
+  if (!control) {
+    throw new Error("Status view size control not found");
   }
   return control as HTMLElement;
 }
@@ -5807,13 +5816,14 @@ const value = 1;
     }
   });
 
-  it("renders the footer view switcher as a shared two-button mode and density host on the status bar edge", async () => {
+  it("renders the footer view switcher and size slider as shared status-bar controls on the edge", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
     const switcher = screen.getByRole("group", {
       name: /explorer footer view switcher/i,
     });
+    const sizeControl = getStatusViewSizeControl();
     const statusSurface = document.querySelector(
       '[data-overlay-explorer-surface="explorerStatusBar"]',
     );
@@ -5824,14 +5834,17 @@ const value = 1;
     ).toBeNull();
     expect(within(switcher).getAllByRole("button")).toHaveLength(2);
     expect(
+      within(sizeControl).getByRole("slider", { name: /explorer size/i }),
+    ).toBeInTheDocument();
+    expect(
       within(switcher).getByRole("button", {
-        name: /explorer view mode: default/i,
+        name: /explorer view mode: standard/i,
       }),
     ).toBeInTheDocument();
 
     const modeMenu = await openStatusViewModeMenu();
     expect(
-      within(modeMenu).getByRole("menuitemradio", { name: /default/i }),
+      within(modeMenu).getByRole("menuitemradio", { name: /standard/i }),
     ).toBeTruthy();
     expect(
       within(modeMenu).queryByRole("menuitemradio", { name: /columns/i }),
@@ -5858,7 +5871,7 @@ const value = 1;
       }),
     ).toBeTruthy();
     fireEvent.click(
-      within(modeMenu).getByRole("menuitemradio", { name: /default/i }),
+      within(modeMenu).getByRole("menuitemradio", { name: /standard/i }),
     );
 
     const densityMenu = await openStatusDensityMenu();
@@ -5868,6 +5881,57 @@ const value = 1;
     expect(
       within(densityMenu).getByRole("menuitemradio", { name: /details/i }),
     ).toBeTruthy();
+  });
+
+  it("commits standard explorer size changes through the shared footer slider", async () => {
+    const user = userEvent.setup();
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0.34 });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const sizeSlider = within(getStatusViewSizeControl()).getByRole("slider", {
+      name: /explorer size/i,
+    });
+    sizeSlider.focus();
+    await user.keyboard("{ArrowRight}");
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "icons-m",
+      );
+      expect(
+        useSettingsStore.getState().settings.explorer.gridZoom,
+      ).toBeGreaterThan(0.34);
+    });
+    expect(screen.getByTestId("explorer-layout-zoom-hud")).toBeInTheDocument();
+  });
+
+  it("drives authored explorer density through the shared footer size slider", async () => {
+    const user = userEvent.setup();
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    await selectStatusViewMode(/adaptive semantic grid/i);
+
+    const previousDensity =
+      useSettingsStore.getState().settings.explorer.explorerViewDensityById[
+        "adaptive-semantic-grid"
+      ] ?? 0;
+    const sizeSlider = within(getStatusViewSizeControl()).getByRole("slider");
+    sizeSlider.focus();
+    await user.keyboard("{ArrowRight}");
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.explorerViewDensityById[
+          "adaptive-semantic-grid"
+        ],
+      ).toBeGreaterThan(previousDensity);
+    });
+    expect(screen.getByTestId("explorer-view-density-hud")).toBeInTheDocument();
   });
 
   it("activates adaptive semantic grid without mutating the saved normal layout mode", async () => {
@@ -6135,7 +6199,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    await selectStatusViewMode(/default/i);
+    await selectStatusViewMode(/standard/i);
 
     await waitFor(() => {
       expect(
@@ -6574,7 +6638,7 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    await selectStatusViewMode(/default/i);
+    await selectStatusViewMode(/standard/i);
     await waitFor(() => {
       expect(
         useSettingsStore.getState().settings.explorer.experimentalViewMode,
@@ -7138,6 +7202,110 @@ const value = 1;
       vi
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_resolve_native_icons"),
+    ).toBe(false);
+  });
+
+  it("uses native OS app icons for shortcuts and executables before managed file glyphs", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
+
+    const nativeAppEntries = [
+      {
+        name: "Visual Studio Code.lnk",
+        path: `${REPO_ROOT}\\Visual Studio Code.lnk`,
+        is_dir: false,
+        size: 1432,
+        modified: 0,
+        extension: "lnk",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "FPlot.exe",
+        path: `${REPO_ROOT}\\FPlot.exe`,
+        is_dir: false,
+        size: 2_080_000,
+        modified: 0,
+        extension: "exe",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "notes.txt",
+        path: `${REPO_ROOT}\\notes.txt`,
+        is_dir: false,
+        size: 128,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const nativeIconSrc = "data:image/png;base64,bmF0aXZlLWFwcC1pY29u";
+    const nativeIconRequests: Array<{ path: string; size?: number | null }> =
+      [];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as
+          | { path?: string; paths?: string[]; requests?: Array<{ path: string; size?: number | null }> }
+          | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return nativeAppEntries;
+        }
+        if (command === "fs_measure_entry_sizes") {
+          return (payload?.paths ?? []).map((path) => ({
+            path,
+            bytes: nativeAppEntries.find((entry) => entry.path === path)?.size ?? 0,
+            is_dir: false,
+            is_complete: true,
+          }));
+        }
+        if (command === "fs_resolve_native_icons") {
+          nativeIconRequests.push(...(payload?.requests ?? []));
+          return (payload?.requests ?? []).map(({ path }) => ({
+            path,
+            src: nativeIconSrc,
+          }));
+        }
+
+        return baseInvokeImplementation(
+          command,
+          args as Parameters<typeof invoke>[1],
+        );
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("Visual Studio Code.lnk");
+    await vi.advanceTimersByTimeAsync(220);
+
+    await waitFor(() => {
+      expect(getEntryIconSrc("Visual Studio Code.lnk")).toBe(nativeIconSrc);
+      expect(getEntryIconSrc("FPlot.exe")).toBe(nativeIconSrc);
+    });
+
+    expect(getEntryIconSrc("notes.txt")).toContain("/icons/txt.svg");
+    expect(nativeIconRequests).toEqual(
+      expect.arrayContaining([
+        {
+          path: `${REPO_ROOT}\\Visual Studio Code.lnk`,
+          size: DEFAULT_NATIVE_ICON_SIZE,
+        },
+        {
+          path: `${REPO_ROOT}\\FPlot.exe`,
+          size: DEFAULT_NATIVE_ICON_SIZE,
+        },
+      ]),
+    );
+    expect(
+      nativeIconRequests.some((request) =>
+        request.path.endsWith("\\notes.txt"),
+      ),
     ).toBe(false);
   });
 

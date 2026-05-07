@@ -58,6 +58,14 @@
       "profileMode": "profile-overlay"
     },
     {
+      "id": "explorerViews",
+      "relativeDirectory": "explorer-views",
+      "envVarSuffix": "EXPLORER_VIEWS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
+    },
+    {
       "id": "explorerChromeLayouts",
       "relativeDirectory": "explorer-chrome-layouts",
       "envVarSuffix": "EXPLORER_CHROME_LAYOUTS",

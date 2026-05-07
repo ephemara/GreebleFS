@@ -59,7 +59,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = "overlayterm-explorer-state-v3";
 export const EXPLORER_STATE_BACKUP_KEY = "overlayterm-explorer-state-v3.backup";
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = "fs-bookmarks-v2";
-export const EXPLORER_STATE_VERSION = 13;
+export const EXPLORER_STATE_VERSION = 14;
 export const PRIMARY_EXPLORER_INSTANCE_ID = "primary";
 export const PRIMARY_EXPLORER_TAB_ID = "workspace-tab-primary";
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -131,6 +131,7 @@ export interface ExplorerSessionSnapshot {
   activityLanePlacementById: ExplorerActivityLanePlacementById;
   activityLaneOrderBySide: ExplorerActivityLaneOrderBySide;
   constellation: ExplorerConstellationSessionSnapshot;
+  explorerViewStateById: Record<string, Record<string, unknown>>;
 }
 
 export interface ExplorerConstellationSessionSnapshot {
@@ -272,6 +273,13 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
     activeLens: CONSTELLATION_DEFAULT_LENS,
     routeModeEnabled: false,
     pinnedPaths: [],
+  },
+  explorerViewStateById: {
+    constellation: {
+      activeLens: CONSTELLATION_DEFAULT_LENS,
+      routeModeEnabled: false,
+      pinnedPaths: [],
+    },
   },
 };
 
@@ -585,6 +593,15 @@ function deriveLegacyRightActivityDockWidth(
   return previewWidth ?? actionsWidth ?? null;
 }
 
+function cloneExplorerViewStateById(
+  value: Record<string, Record<string, unknown>>,
+): Record<string, Record<string, unknown>> {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as Record<string, Record<string, unknown>>;
+}
+
 function cloneExplorerSessionSnapshot(
   session: ExplorerSessionSnapshot,
 ): ExplorerSessionSnapshot {
@@ -602,6 +619,9 @@ function cloneExplorerSessionSnapshot(
       ...session.constellation,
       pinnedPaths: [...session.constellation.pinnedPaths],
     },
+    explorerViewStateById: cloneExplorerViewStateById(
+      session.explorerViewStateById,
+    ),
   };
 }
 
@@ -810,6 +830,7 @@ export function normalizeExplorerSessionSnapshot(
       ? source.sourcesRailPinnedOpen || legacyLayout.defaultSourcesVisible
       : legacyLayout.defaultSourcesVisible;
   const rawConstellation = asRecord(source?.constellation);
+  const rawExplorerViewStateById = asRecord(source?.explorerViewStateById);
   const pinnedPaths = Array.isArray(rawConstellation?.pinnedPaths)
     ? rawConstellation.pinnedPaths
         .filter(
@@ -879,6 +900,34 @@ export function normalizeExplorerSessionSnapshot(
     openActivityLaneIds,
     legacyActiveActivityLane,
   );
+  const constellationState = {
+    activeLens: normalizeConstellationLensId(rawConstellation?.activeLens),
+    routeModeEnabled:
+      typeof rawConstellation?.routeModeEnabled === "boolean"
+        ? rawConstellation.routeModeEnabled
+        : defaultExplorerSession.constellation.routeModeEnabled,
+    pinnedPaths,
+  } satisfies ExplorerConstellationSessionSnapshot;
+  const explorerViewStateById: Record<string, Record<string, unknown>> =
+    rawExplorerViewStateById
+      ? Object.fromEntries(
+          Object.entries(rawExplorerViewStateById)
+            .filter(
+              ([viewId, viewState]): viewState is Record<string, unknown> =>
+                viewId.trim().length > 0 &&
+                viewState != null &&
+                typeof viewState === "object" &&
+                !Array.isArray(viewState),
+            )
+            .map(([viewId, viewState]) => [viewId.trim(), { ...viewState }]),
+        )
+      : {};
+  explorerViewStateById.constellation = {
+    ...(asRecord(explorerViewStateById.constellation) ?? {}),
+    activeLens: constellationState.activeLens,
+    routeModeEnabled: constellationState.routeModeEnabled,
+    pinnedPaths: [...constellationState.pinnedPaths],
+  };
 
   return {
     currentPath:
@@ -915,14 +964,8 @@ export function normalizeExplorerSessionSnapshot(
     hiddenActivityLaneIds,
     activityLanePlacementById,
     activityLaneOrderBySide,
-    constellation: {
-      activeLens: normalizeConstellationLensId(rawConstellation?.activeLens),
-      routeModeEnabled:
-        typeof rawConstellation?.routeModeEnabled === "boolean"
-          ? rawConstellation.routeModeEnabled
-          : defaultExplorerSession.constellation.routeModeEnabled,
-      pinnedPaths,
-    },
+    constellation: constellationState,
+    explorerViewStateById,
   };
 }
 

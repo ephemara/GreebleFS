@@ -89,7 +89,11 @@ pub fn build_main_system_tray(app_handle: &AppHandle<Wry>) -> tauri::Result<()> 
         .tooltip(MAIN_SYSTEM_TRAY_DEFINITION.tooltip)
         .show_menu_on_left_click(MAIN_SYSTEM_TRAY_DEFINITION.show_menu_on_left_click)
         .on_menu_event(|app, event| {
-            dispatch_system_tray_menu_event(app, event.id.as_ref(), MAIN_SYSTEM_TRAY_DEFINITION.items);
+            dispatch_system_tray_menu_event(
+                app,
+                event.id.as_ref(),
+                MAIN_SYSTEM_TRAY_DEFINITION.items,
+            );
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
@@ -152,8 +156,12 @@ fn append_menu_items(
                 target_menu.append_system_tray_item(&separator)?;
             }
             SystemTrayMenuItemDefinition::Submenu(definition) => {
-                let submenu =
-                    Submenu::with_id(app_handle, definition.id, definition.label, definition.enabled)?;
+                let submenu = Submenu::with_id(
+                    app_handle,
+                    definition.id,
+                    definition.label,
+                    definition.enabled,
+                )?;
                 append_menu_items(app_handle, &submenu, definition.items)?;
                 target_menu.append_system_tray_item(&submenu)?;
             }

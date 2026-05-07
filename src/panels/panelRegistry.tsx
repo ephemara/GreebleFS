@@ -6,6 +6,7 @@ import type {
   OverlayPluginCommandContribution,
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginExplorerViewContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
   OverlayPluginWorkflowContribution,
@@ -33,6 +34,7 @@ import type {
 import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedDockPresentationPackage } from '../config/dockPresentations';
 import type { LoadedExplorerLayoutDefinition } from '../config/explorerLayouts';
+import type { LoadedExplorerViewDefinition } from '../config/explorerViews';
 import {
   iconThemeSystemConfig,
   type LoadedIconThemePackage,
@@ -219,6 +221,7 @@ export function createBuiltInPanelDefinitions({
   actions = [],
   pluginExplorerActions,
   pluginContextMenuItems,
+  pluginExplorerViews = [],
   pluginPreviewLanes = [],
   pluginSettingsSlots = [],
   pluginWorkflows = [],
@@ -255,6 +258,7 @@ export function createBuiltInPanelDefinitions({
   dockPresentationPackagesError = null,
   dockPresentationPackagesWarnings = [],
   explorerLayouts,
+  explorerViews = [],
   homePacks = [],
   menuPacks = [],
   actionsDirectory = '',
@@ -383,6 +387,7 @@ export function createBuiltInPanelDefinitions({
   actions?: LoadedExplorerAction[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
+  pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
@@ -422,6 +427,7 @@ export function createBuiltInPanelDefinitions({
   dockPresentationPackagesError?: string | null;
   dockPresentationPackagesWarnings?: string[];
   explorerLayouts: LoadedExplorerLayoutDefinition[];
+  explorerViews?: LoadedExplorerViewDefinition[];
   explorerLayoutsDirectory: string;
   explorerLayoutsLoading: boolean;
   explorerLayoutsError: string | null;
@@ -590,8 +596,10 @@ export function createBuiltInPanelDefinitions({
           onExplorerPickerCancel={onExplorerPickerCancel}
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
+          pluginExplorerViews={pluginExplorerViews}
           pluginPreviewLanes={pluginPreviewLanes}
           pluginWorkflows={pluginWorkflows}
+          explorerViews={explorerViews}
         />
       ),
     },

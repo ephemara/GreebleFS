@@ -78,6 +78,7 @@ export interface ResolveThemedExplorerViewModesOptions {
 export const EXPLORER_GRID_ZOOM_MIN = explorerZoomBehavior.gridAnchors['icons-s'];
 export const EXPLORER_GRID_ZOOM_MAX = explorerZoomBehavior.gridAnchors['icons-xl'];
 export const EXPLORER_GRID_ZOOM_STEP = 0.08;
+export const EXPLORER_LAYOUT_ZOOM_SLIDER_STEP = 0.02;
 export const EXPLORER_LAYOUT_ZOOM_MIN =
   explorerZoomBehavior.layoutDomain.minimumRowZoom;
 export const EXPLORER_LIVE_GRID_ZOOM_MAX =

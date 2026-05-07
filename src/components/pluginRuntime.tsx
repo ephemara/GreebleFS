@@ -504,6 +504,7 @@ export interface OverlayPluginCapabilitySummary {
   actions: number;
   explorerActions: number;
   contextMenuItems: number;
+  explorerViews?: number;
   previewLanes: number;
   settingsSlots: number;
 }
@@ -668,6 +669,8 @@ export async function loadPluginFromSource(
         options?.diagnostics?.capabilities?.explorerActions ?? 0,
       contextMenuItems:
         options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
+      explorerViews:
+        options?.diagnostics?.capabilities?.explorerViews ?? 0,
       previewLanes: options?.diagnostics?.capabilities?.previewLanes ?? 0,
       settingsSlots: options?.diagnostics?.capabilities?.settingsSlots ?? 0,
     },

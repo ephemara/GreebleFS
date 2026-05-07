@@ -1158,7 +1158,8 @@ fn call_sidecar_impl(
     }
 
     manager.set_last_error(None)?;
-    let resolved_output_artifacts = resolve_sidecar_output_artifacts(app, response.output_artifacts)?;
+    let resolved_output_artifacts =
+        resolve_sidecar_output_artifacts(app, response.output_artifacts)?;
 
     Ok(PythonSidecarActionResponse {
         runtime_status,

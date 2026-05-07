@@ -2901,7 +2901,7 @@ function getSettingsSectionContent(
       return {
         summary: context.iconThemeSelectionSummary,
         detail:
-          "Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.",
+          "Choose a dedicated icon theme, keep folder rules in one place, and make Explorer show real OS app icons for shortcuts and executables.",
       };
     case "wallpapers":
       return {

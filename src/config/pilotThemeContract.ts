@@ -260,7 +260,7 @@ const sharedBuiltInThemeSelectionDefaults: ThemeSelectionDefaults = {
     wallpaperOpacity: 1,
     wallpaperMuted: true,
     activeShaderId: null,
-    useNativeOsIcons: false,
+    useNativeOsIcons: true,
     appOpacity: 1,
     panelTransparency: 0,
     appZoom: 1,

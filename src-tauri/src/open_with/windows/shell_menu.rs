@@ -16,11 +16,11 @@ use windows::Win32::System::Com::{
     CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED,
 };
 use windows::Win32::UI::Shell::{
-    Common::ITEMIDLIST, IContextMenu, IShellFolder, IShellItem, IShellItemArray, SHBindToParent,
-    SHCreateItemFromParsingName, SHCreateShellItemArrayFromIDLists, SHParseDisplayName,
-    ShellExecuteExW, BHID_SFObject, BHID_SFUIObject, CMINVOKECOMMANDINFOEX, CMF_EXPLORE,
-    CMF_EXTENDEDVERBS, CMF_NORMAL, GCS_VERBA, SEE_MASK_ASYNCOK, SEE_MASK_UNICODE,
-    SHELLEXECUTEINFOW,
+    BHID_SFObject, BHID_SFUIObject, Common::ITEMIDLIST, IContextMenu, IShellFolder, IShellItem,
+    IShellItemArray, SHBindToParent, SHCreateItemFromParsingName,
+    SHCreateShellItemArrayFromIDLists, SHParseDisplayName, ShellExecuteExW, CMF_EXPLORE,
+    CMF_EXTENDEDVERBS, CMF_NORMAL, CMINVOKECOMMANDINFOEX, GCS_VERBA, SEE_MASK_ASYNCOK,
+    SEE_MASK_UNICODE, SHELLEXECUTEINFOW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, DestroyMenu, GetForegroundWindow, GetMenuItemCount, GetMenuItemInfoW, HMENU,
@@ -112,9 +112,7 @@ fn normalize_shell_context_menu_request(
     match request.target_kind {
         ShellContextMenuTargetKind::Entry => {
             if target_paths.len() != 1 {
-                return Err(
-                    "Windows shell item menus require exactly one target path.".to_string(),
-                );
+                return Err("Windows shell item menus require exactly one target path.".to_string());
             }
         }
         ShellContextMenuTargetKind::MultiSelect => {
@@ -142,9 +140,12 @@ fn normalize_shell_context_menu_request(
 }
 
 unsafe fn create_entry_context_menu(target_path: &str) -> Result<IContextMenu, String> {
-    let shell_item: IShellItem =
-        SHCreateItemFromParsingName(&HSTRING::from(target_path), None).map_err(|error| {
-            format!("Failed to create a shell item for '{}': {}", target_path, error)
+    let shell_item: IShellItem = SHCreateItemFromParsingName(&HSTRING::from(target_path), None)
+        .map_err(|error| {
+            format!(
+                "Failed to create a shell item for '{}': {}",
+                target_path, error
+            )
         })?;
 
     shell_item
@@ -160,46 +161,44 @@ unsafe fn create_entry_context_menu(target_path: &str) -> Result<IContextMenu, S
 unsafe fn create_background_context_menu(
     current_directory_path: &str,
 ) -> Result<IContextMenu, String> {
-    let shell_item: IShellItem = SHCreateItemFromParsingName(
-        &HSTRING::from(current_directory_path),
-        None,
-    )
-    .map_err(|error| {
-        format!(
-            "Failed to create a shell folder item for '{}': {}",
-            current_directory_path, error
-        )
-    })?;
+    let shell_item: IShellItem =
+        SHCreateItemFromParsingName(&HSTRING::from(current_directory_path), None).map_err(
+            |error| {
+                format!(
+                    "Failed to create a shell folder item for '{}': {}",
+                    current_directory_path, error
+                )
+            },
+        )?;
 
-    let shell_folder: IShellFolder = shell_item
-        .BindToHandler(None, &BHID_SFObject)
-        .map_err(|error| {
-            format!(
-                "Failed to bind the shell folder for '{}': {}",
-                current_directory_path, error
-            )
-        })?;
+    let shell_folder: IShellFolder =
+        shell_item
+            .BindToHandler(None, &BHID_SFObject)
+            .map_err(|error| {
+                format!(
+                    "Failed to bind the shell folder for '{}': {}",
+                    current_directory_path, error
+                )
+            })?;
 
     shell_folder
         .CreateViewObject(HWND(std::ptr::null_mut()))
         .map_err(|error| {
-        format!(
-            "Failed to resolve a Windows folder background menu for '{}': {}",
-            current_directory_path, error
-        )
-    })
+            format!(
+                "Failed to resolve a Windows folder background menu for '{}': {}",
+                current_directory_path, error
+            )
+        })
 }
 
 unsafe fn parse_shell_pidl(path: &str) -> Result<PidlGuard, String> {
     let mut pidl = std::ptr::null_mut();
-    SHParseDisplayName(
-        &HSTRING::from(path),
-        None,
-        &mut pidl,
-        0,
-        None,
-    )
-    .map_err(|error| format!("Failed to parse the Windows shell path '{}': {}", path, error))?;
+    SHParseDisplayName(&HSTRING::from(path), None, &mut pidl, 0, None).map_err(|error| {
+        format!(
+            "Failed to parse the Windows shell path '{}': {}",
+            path, error
+        )
+    })?;
 
     if pidl.is_null() {
         return Err(format!(
@@ -279,8 +278,8 @@ unsafe fn create_multi_select_context_menu_from_common_parent(
     let mut child_pidls = vec![first_child_pidl as *const ITEMIDLIST];
     for (target_path, pidl_guard) in target_paths.iter().zip(pidl_guards.iter()).skip(1) {
         let mut child_pidl = std::ptr::null_mut();
-        let _: IShellFolder =
-            SHBindToParent(pidl_guard.as_const_ptr(), Some(&mut child_pidl)).map_err(|error| {
+        let _: IShellFolder = SHBindToParent(pidl_guard.as_const_ptr(), Some(&mut child_pidl))
+            .map_err(|error| {
                 format!(
                     "Failed to bind the Windows shell child item for '{}': {}",
                     target_path, error
@@ -300,7 +299,9 @@ unsafe fn create_multi_select_context_menu_from_common_parent(
         })
 }
 
-unsafe fn create_multi_select_context_menu(target_paths: &[String]) -> Result<IContextMenu, String> {
+unsafe fn create_multi_select_context_menu(
+    target_paths: &[String],
+) -> Result<IContextMenu, String> {
     let pidl_guards = parse_shell_pidls(target_paths)?;
 
     match create_multi_select_context_menu_from_item_array(&pidl_guards) {
@@ -308,10 +309,9 @@ unsafe fn create_multi_select_context_menu(target_paths: &[String]) -> Result<IC
         Err(item_array_error) => {
             match create_multi_select_context_menu_from_common_parent(target_paths, &pidl_guards) {
                 Ok(context_menu) => Ok(context_menu),
-                Err(common_parent_error) => Err(format!(
-                    "{} {}",
-                    item_array_error, common_parent_error
-                )),
+                Err(common_parent_error) => {
+                    Err(format!("{} {}", item_array_error, common_parent_error))
+                }
             }
         }
     }
@@ -367,7 +367,10 @@ unsafe fn extract_menu_items(
             continue;
         }
 
-        let text_length = text_buffer.iter().position(|&value| value == 0).unwrap_or(0);
+        let text_length = text_buffer
+            .iter()
+            .position(|&value| value == 0)
+            .unwrap_or(0);
         if text_length == 0 {
             continue;
         }
@@ -408,7 +411,10 @@ unsafe fn extract_menu_items(
             )
             .is_ok()
         {
-            let verb_length = verb_buffer.iter().position(|&value| value == 0).unwrap_or(0);
+            let verb_length = verb_buffer
+                .iter()
+                .position(|&value| value == 0)
+                .unwrap_or(0);
             if verb_length > 0 {
                 Some(String::from_utf8_lossy(&verb_buffer[..verb_length]).to_string())
             } else {
@@ -532,9 +538,7 @@ unsafe fn extract_bitmap_to_base64(
     Some(format!("data:image/png;base64,{}", base64_str))
 }
 
-unsafe fn get_context_menu_items(
-    request: &ShellContextMenuRequest,
-) -> GetShellContextMenuResult {
+unsafe fn get_context_menu_items(request: &ShellContextMenuRequest) -> GetShellContextMenuResult {
     let normalized_request = match normalize_shell_context_menu_request(request) {
         Ok(normalized_request) => normalized_request,
         Err(message) => return error_shell_context_menu_result(message),
@@ -560,9 +564,7 @@ unsafe fn get_context_menu_items(
     }
 }
 
-pub fn get_shell_context_menu_impl(
-    request: &ShellContextMenuRequest,
-) -> GetShellContextMenuResult {
+pub fn get_shell_context_menu_impl(request: &ShellContextMenuRequest) -> GetShellContextMenuResult {
     unsafe {
         let coinit_result = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         let needs_uninit = coinit_result.is_ok();

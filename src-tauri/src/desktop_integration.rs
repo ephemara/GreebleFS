@@ -233,6 +233,18 @@ fn resolve_native_icon_pixels(
     path: &Path,
     size: u32,
 ) -> Result<Option<NativeIconPixelBuffer>, String> {
+    match resolve_native_icon_pixels_with_provider(path, size) {
+        Ok(Some(icon)) => return Ok(Some(icon)),
+        Ok(None) => {}
+        Err(error) => {
+            warn!(
+                "GreebleFS: file_icon_provider failed for {}: {}",
+                path.display(),
+                error
+            );
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
         match resolve_native_icon_pixels_with_windows_shell(path, size) {
@@ -248,17 +260,7 @@ fn resolve_native_icon_pixels(
         }
     }
 
-    match resolve_native_icon_pixels_with_provider(path, size) {
-        Ok(icon) => Ok(icon),
-        Err(error) => {
-            warn!(
-                "GreebleFS: file_icon_provider failed for {}: {}",
-                path.display(),
-                error
-            );
-            Ok(None)
-        }
-    }
+    Ok(None)
 }
 
 fn resolve_native_icon_png_bytes(path: &Path, size: u32) -> Result<Option<Vec<u8>>, String> {
@@ -478,14 +480,13 @@ fn start_native_drag_impl(window: WebviewWindow, drag_paths: Vec<PathBuf>) -> Re
 #[tauri::command]
 #[specta::specta]
 pub fn fs_resolve_native_icons(
-    window: WebviewWindow,
     requests: Vec<NativeIconRequest>,
 ) -> Result<Vec<NativeIconResponse>, String> {
     if requests.is_empty() {
         return Ok(Vec::new());
     }
 
-    run_on_window_main_thread(&window, move || resolve_native_icons_batch(requests))
+    Ok(resolve_native_icons_batch(requests))
 }
 
 #[tauri::command]
@@ -551,6 +552,12 @@ mod tests {
 
         let result = resolve_native_icon_for_path(&missing, 32).unwrap();
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn fs_resolve_native_icons_returns_immediately_for_empty_batches() {
+        let result = fs_resolve_native_icons(Vec::new()).unwrap();
+        assert!(result.is_empty());
     }
 
     #[test]
