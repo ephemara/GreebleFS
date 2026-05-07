@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { CallToolResult, ContentBlock } from '@modelcontextprotocol/sdk/types.js';
+import { isInitializeRequest, type CallToolResult, type ContentBlock } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 
 import {
@@ -31,6 +32,27 @@ const uiTargetSchema = z.object({
     });
   }
 });
+
+const hostEventRequestSchema = z.record(z.string(), z.unknown());
+const hostEventSubscriptionIdSchema = z.string().min(1);
+
+interface HostApiMethodDescriptor {
+  methodId: string;
+  namespace: string;
+  summary: string;
+  requiredPermissions?: string[];
+}
+
+interface HostApiSchemaRecord {
+  apiVersion?: string;
+  transport?: string;
+  methods?: HostApiMethodDescriptor[];
+}
+
+interface SessionServerContext {
+  runtime: GreeblefsAutomationRuntime;
+  server: McpServer;
+}
 
 function parseCliArguments(argv: string[]): {
   transport: 'stdio' | 'http';
@@ -104,6 +126,117 @@ function buildUiTarget(value: z.infer<typeof uiTargetSchema>): GreeblefsUiTarget
   };
 }
 
+function normalizeHostApiSchema(value: unknown): HostApiSchemaRecord | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const methods = Array.isArray((value as HostApiSchemaRecord).methods)
+    ? ((value as HostApiSchemaRecord).methods ?? []).filter((method): method is HostApiMethodDescriptor => (
+      Boolean(method)
+      && typeof method?.methodId === 'string'
+      && typeof method?.namespace === 'string'
+      && typeof method?.summary === 'string'
+    ))
+    : [];
+  if (methods.length === 0) {
+    return null;
+  }
+  return {
+    apiVersion: typeof (value as HostApiSchemaRecord).apiVersion === 'string'
+      ? (value as HostApiSchemaRecord).apiVersion
+      : undefined,
+    transport: typeof (value as HostApiSchemaRecord).transport === 'string'
+      ? (value as HostApiSchemaRecord).transport
+      : undefined,
+    methods,
+  };
+}
+
+function buildTypedHostToolName(methodId: string): string {
+  return methodId === 'host.get_api_schema'
+    ? 'host.api_schema'
+    : `host.${methodId}`;
+}
+
+function isTypedHostToolHandledElsewhere(methodId: string): boolean {
+  return methodId === 'host.get_api_schema'
+    || methodId === 'events.subscribe'
+    || methodId === 'events.unsubscribe'
+    || methodId === 'events.get_snapshot';
+}
+
+function isLikelyMutatingHostMethod(method: HostApiMethodDescriptor): boolean {
+  const requiredPermissions = method.requiredPermissions ?? [];
+  if (requiredPermissions.some((permission) => /write|interaction|launch/i.test(permission))) {
+    return true;
+  }
+  return /write|create|delete|remove|move|rename|spawn|publish|start|cancel|stop/i.test(method.methodId);
+}
+
+function registerHostEventResources(server: McpServer, runtime: GreeblefsAutomationRuntime): void {
+  server.registerResource(
+    'host-events-subscription',
+    new ResourceTemplate('host-events://subscription/{subscriptionId}', {
+      list: undefined,
+    }),
+    {
+      title: 'Host Event Subscription',
+      description: 'Current retained event state for one live host-event subscription.',
+      mimeType: 'application/json',
+    },
+    async (_uri, variables) => {
+      const subscriptionId = String(variables.subscriptionId ?? '').trim();
+      const state = await runtime.readHostEventSubscription(subscriptionId);
+      return {
+        contents: [
+          {
+            uri: runtime.getHostEventsResourceUri(subscriptionId),
+            mimeType: 'application/json',
+            text: safeJsonText(state),
+          },
+        ],
+      };
+    },
+  );
+}
+
+function registerTypedHostTools(
+  server: McpServer,
+  runtime: GreeblefsAutomationRuntime,
+  hostApiSchema: HostApiSchemaRecord | null,
+): void {
+  const methods = hostApiSchema?.methods ?? [];
+  for (const method of methods) {
+    if (isTypedHostToolHandledElsewhere(method.methodId)) {
+      continue;
+    }
+    server.registerTool(
+      buildTypedHostToolName(method.methodId),
+      {
+        title: method.methodId,
+        description: `${method.summary}${method.requiredPermissions?.length ? ` Required permissions: ${method.requiredPermissions.join(', ')}` : ''}`,
+        inputSchema: z.object({
+          payload: z.unknown().optional(),
+          executionContext: z.unknown().optional(),
+        }),
+        annotations: {
+          readOnlyHint: !isLikelyMutatingHostMethod(method),
+          destructiveHint: isLikelyMutatingHostMethod(method),
+          openWorldHint: false,
+          idempotentHint: !isLikelyMutatingHostMethod(method),
+        },
+      },
+      wrapToolHandler(buildTypedHostToolName(method.methodId), async ({ payload, executionContext }) => {
+        const result = await runtime.callHostMethod(method.methodId, payload, { executionContext });
+        return buildJsonToolResult(`Called ${method.methodId}`, {
+          methodId: method.methodId,
+          result,
+        });
+      }),
+    );
+  }
+}
+
 function wrapToolHandler(
   toolName: string,
   handler: (args: any) => Promise<CallToolResult>,
@@ -141,21 +274,17 @@ async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<R
     ];
   }
 
+  try {
+    hostApiSchema = await runtime.getHostApiSchema();
+  } catch (error) {
+    hostApiSchema = {
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    };
+  }
+
   if (status.bridgeReady) {
     bridgeStatus = await runtime.getBridgeStatus();
-    const hostBridgeAvailable = Boolean(
-      bridgeStatus
-      && typeof bridgeStatus === 'object'
-      && (bridgeStatus as { capabilities?: { hostBridge?: boolean } }).capabilities?.hostBridge,
-    );
-    if (hostBridgeAvailable) {
-      hostApiSchema = await runtime.getHostApiSchema();
-    } else {
-      hostApiSchema = {
-        unavailable: true,
-        reason: 'Host bridge APIs are unavailable on browser-dev-url fallback attachments.',
-      };
-    }
     const snapshot = await runtime.getBridgeSnapshot({
       includeDom: true,
       includeThemeVariables: true,
@@ -182,6 +311,10 @@ async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<R
       hint: status.startupHint,
       recentLogActivity: status.recentLogActivity,
       attachProbeDeferredReason: status.attachProbeDeferredReason,
+    },
+    nativeAutomation: {
+      reachable: status.nativeAutomationReachable,
+      session: status.nativeAutomationSession,
     },
     frameworkDiagnostics: status.tauronWebviewDiagnostics,
     bridgeStatus,
@@ -375,15 +508,15 @@ function registerResources(server: McpServer, runtime: GreeblefsAutomationRuntim
       mimeType: 'application/json',
     },
     async () => {
-      const bridgeStatus = await runtime.getBridgeStatus() as {
-        capabilities?: { hostBridge?: boolean };
-      };
-      const hostApiSchema = bridgeStatus.capabilities?.hostBridge
-        ? await runtime.getHostApiSchema()
-        : {
-            unavailable: true,
-            reason: 'Host bridge APIs are unavailable on browser-dev-url fallback attachments.',
-          };
+      let hostApiSchema: unknown;
+      try {
+        hostApiSchema = await runtime.getHostApiSchema();
+      } catch (error) {
+        hostApiSchema = {
+          unavailable: true,
+          reason: error instanceof Error ? error.message : String(error),
+        };
+      }
       return {
         contents: [
           {
@@ -395,9 +528,16 @@ function registerResources(server: McpServer, runtime: GreeblefsAutomationRuntim
       };
     },
   );
+
+  registerHostEventResources(server, runtime);
 }
 
 function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): void {
+  const uiSnapshotCache = new Map<string, {
+    revision: number;
+    snapshot: Record<string, unknown>;
+  }>();
+
   server.registerTool(
     'app_status',
     {
@@ -500,16 +640,20 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       inputSchema: z.object({
         preferNative: z.boolean().optional(),
         allowFallbackBrowser: z.boolean().optional(),
+        windowLabel: z.string().optional(),
+        secondaryWindowKind: z.string().optional(),
       }),
       annotations: {
         readOnlyHint: true,
         idempotentHint: true,
       },
     },
-    wrapToolHandler('app_attach', async ({ preferNative, allowFallbackBrowser }) => {
+    wrapToolHandler('app_attach', async ({ preferNative, allowFallbackBrowser, windowLabel, secondaryWindowKind }) => {
       const attachment = await runtime.attachApp({
         preferNative,
         allowFallbackBrowser,
+        windowLabel,
+        secondaryWindowKind,
       });
       return buildJsonToolResult('Attached to app surface', { attachment });
     }),
@@ -564,6 +708,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
         includeTelemetryRecords: z.boolean().optional(),
         telemetryLimit: z.number().int().positive().optional(),
         consoleLimit: z.number().int().positive().optional(),
+        sinceRevision: z.number().int().nonnegative().optional(),
       }),
       annotations: {
         readOnlyHint: true,
@@ -571,8 +716,37 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       },
     },
     wrapToolHandler('ui_snapshot', async (args) => {
-      const snapshot = await runtime.getBridgeSnapshot(args);
-      return buildJsonToolResult('Captured UI snapshot', { snapshot });
+      const { sinceRevision, ...snapshotOptions } = args;
+      const snapshot = await runtime.getBridgeSnapshot(snapshotOptions) as Record<string, unknown>;
+      const cacheKey = JSON.stringify(snapshotOptions);
+      const previous = uiSnapshotCache.get(cacheKey);
+      const revision = (previous?.revision ?? 0) + 1;
+      uiSnapshotCache.set(cacheKey, {
+        revision,
+        snapshot,
+      });
+      if (typeof sinceRevision === 'number' && previous && sinceRevision === previous.revision) {
+        const changedKeys: string[] = [];
+        const delta: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(snapshot)) {
+          if (JSON.stringify(previous.snapshot[key]) !== JSON.stringify(value)) {
+            changedKeys.push(key);
+            delta[key] = value;
+          }
+        }
+        return buildJsonToolResult('Captured UI snapshot delta', {
+          revision,
+          sinceRevision,
+          changedKeys,
+          snapshot: delta,
+          fullSnapshot: false,
+        });
+      }
+      return buildJsonToolResult('Captured UI snapshot', {
+        revision,
+        snapshot,
+        fullSnapshot: true,
+      });
     }),
   );
 
@@ -584,34 +758,40 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       inputSchema: z.object({
         fullPage: z.boolean().optional(),
         pathHint: z.string().optional(),
+        includeImageData: z.boolean().optional(),
       }),
       annotations: {
         readOnlyHint: true,
         idempotentHint: true,
       },
     },
-    wrapToolHandler('ui_screenshot', async ({ fullPage, pathHint }) => {
+    wrapToolHandler('ui_screenshot', async ({ fullPage, pathHint, includeImageData }) => {
       const screenshot = await runtime.captureScreenshot({
         fullPage,
         pathHint,
+        includeImageData: includeImageData !== false,
       });
+      const content: ContentBlock[] = [
+        {
+          type: 'text' as const,
+          text: `Captured screenshot via ${screenshot.attachMode ?? 'unknown'} at ${screenshot.pageUrl}\nSaved to ${screenshot.imagePath}`,
+        },
+      ];
+      if (screenshot.base64Png) {
+        content.push({
+          type: 'image' as const,
+          data: screenshot.base64Png,
+          mimeType: 'image/png',
+        });
+      }
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Captured screenshot via ${screenshot.attachMode ?? 'unknown'} at ${screenshot.pageUrl}\nSaved to ${screenshot.imagePath}`,
-          },
-          {
-            type: 'image' as const,
-            data: screenshot.base64Png,
-            mimeType: 'image/png',
-          },
-        ] satisfies ContentBlock[],
+        content,
         structuredContent: {
           screenshot: {
             imagePath: screenshot.imagePath,
             attachMode: screenshot.attachMode,
             pageUrl: screenshot.pageUrl,
+            imageDataIncluded: Boolean(screenshot.base64Png),
           },
         },
       };
@@ -629,6 +809,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
         processId: z.number().int().positive().optional(),
         titleContains: z.string().optional(),
         pathHint: z.string().optional(),
+        includeImageData: z.boolean().optional(),
       }),
       annotations: {
         readOnlyHint: true,
@@ -641,6 +822,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       processId,
       titleContains,
       pathHint,
+      includeImageData,
     }) => {
       const screenshot = await runtime.captureNativeWindowScreenshot({
         processName,
@@ -648,21 +830,28 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
         processId,
         titleContains,
         pathHint,
+        includeImageData: includeImageData !== false,
       });
+      const content: ContentBlock[] = [
+        {
+          type: 'text' as const,
+          text: `Captured native window screenshot for ${screenshot.window.processName} (${screenshot.window.handle}) at ${screenshot.imagePath}`,
+        },
+      ];
+      if (screenshot.base64Png) {
+        content.push({
+          type: 'image' as const,
+          data: screenshot.base64Png,
+          mimeType: 'image/png',
+        });
+      }
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Captured native window screenshot for ${screenshot.window.processName} (${screenshot.window.handle}) at ${screenshot.imagePath}`,
-          },
-          {
-            type: 'image' as const,
-            data: screenshot.base64Png,
-            mimeType: 'image/png',
-          },
-        ] satisfies ContentBlock[],
+        content,
         structuredContent: {
-          screenshot,
+          screenshot: {
+            ...screenshot,
+            imageDataIncluded: Boolean(screenshot.base64Png),
+          },
         },
       };
     }),
@@ -884,15 +1073,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       },
     },
     wrapToolHandler('host_api_schema', async () => {
-      const bridgeStatus = await runtime.getBridgeStatus() as {
-        capabilities?: { hostBridge?: boolean };
-      };
-      const hostApiSchema = bridgeStatus.capabilities?.hostBridge
-        ? await runtime.getHostApiSchema()
-        : {
-            unavailable: true,
-            reason: 'Host bridge APIs are unavailable on browser-dev-url fallback attachments.',
-          };
+      const hostApiSchema = await runtime.getHostApiSchema();
       return buildJsonToolResult('Read host API schema', { hostApiSchema });
     }),
   );
@@ -905,6 +1086,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
       inputSchema: z.object({
         methodId: z.string(),
         payload: z.unknown().optional(),
+        executionContext: z.unknown().optional(),
       }),
       annotations: {
         destructiveHint: true,
@@ -912,8 +1094,8 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
         idempotentHint: false,
       },
     },
-    wrapToolHandler('host_call', async ({ methodId, payload }) => {
-      const result = await runtime.callHostMethod(methodId, payload);
+    wrapToolHandler('host_call', async ({ methodId, payload, executionContext }) => {
+      const result = await runtime.callHostMethod(methodId, payload, { executionContext });
       return buildJsonToolResult('Called host method', {
         methodId,
         result,
@@ -937,6 +1119,80 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
     wrapToolHandler('host_events_snapshot', async ({ request }) => {
       const events = await runtime.getHostEventsSnapshot(request);
       return buildJsonToolResult('Read host event snapshot', { events });
+    }),
+  );
+
+  server.registerTool(
+    'host_events_subscribe',
+    {
+      title: 'Host Events Subscribe',
+      description: 'Create one live host-event subscription backed by the native automation lane and return a resource URI for MCP resource subscriptions.',
+      inputSchema: z.object({
+        request: hostEventRequestSchema,
+      }),
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: false,
+      },
+    },
+    wrapToolHandler('host_events_subscribe', async ({ request }) => {
+      const subscription = await runtime.subscribeHostEvents(request, {
+        onUpdate: (state) => {
+          void server.server.sendResourceUpdated({
+            uri: runtime.getHostEventsResourceUri(state.subscription.subscriptionId),
+          }).catch(() => {});
+        },
+      });
+      return buildJsonToolResult('Subscribed to host events', {
+        subscriptionId: subscription.subscriptionId,
+        resourceUri: subscription.resourceUri,
+        state: subscription.state,
+      });
+    }),
+  );
+
+  server.registerTool(
+    'host_events_read',
+    {
+      title: 'Host Events Read',
+      description: 'Read the current retained state for one live host-event subscription.',
+      inputSchema: z.object({
+        subscriptionId: hostEventSubscriptionIdSchema,
+        afterSequence: z.number().int().nonnegative().optional(),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    wrapToolHandler('host_events_read', async ({ subscriptionId, afterSequence }) => {
+      const state = await runtime.readHostEventSubscription(subscriptionId, afterSequence);
+      return buildJsonToolResult('Read host-event subscription state', {
+        subscriptionId,
+        state,
+      });
+    }),
+  );
+
+  server.registerTool(
+    'host_events_unsubscribe',
+    {
+      title: 'Host Events Unsubscribe',
+      description: 'Cancel one live host-event subscription.',
+      inputSchema: z.object({
+        subscriptionId: hostEventSubscriptionIdSchema,
+      }),
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+      },
+    },
+    wrapToolHandler('host_events_unsubscribe', async ({ subscriptionId }) => {
+      const result = await runtime.unsubscribeHostEvents(subscriptionId);
+      return buildJsonToolResult('Unsubscribed from host events', {
+        subscriptionId,
+        result,
+      });
     }),
   );
 
@@ -1148,7 +1404,8 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
   );
 }
 
-function buildServer(runtime: GreeblefsAutomationRuntime): McpServer {
+async function buildServer(runtime: GreeblefsAutomationRuntime): Promise<McpServer> {
+  const hostApiSchema = normalizeHostApiSchema(await runtime.getHostApiSchema().catch(() => null));
   const server = new McpServer(
     {
       name: '@greeblefs/dev-mcp',
@@ -1158,13 +1415,16 @@ function buildServer(runtime: GreeblefsAutomationRuntime): McpServer {
       capabilities: {
         logging: {},
         tools: {},
-        resources: {},
+        resources: {
+          subscribe: true,
+        },
       },
     },
   );
 
   registerResources(server, runtime);
   registerTools(server, runtime);
+  registerTypedHostTools(server, runtime, hostApiSchema);
   return server;
 }
 
@@ -1174,28 +1434,81 @@ async function runDoctorMode(runtime: GreeblefsAutomationRuntime): Promise<void>
 }
 
 async function runStdioServer(runtime: GreeblefsAutomationRuntime): Promise<void> {
-  const server = buildServer(runtime);
+  const server = await buildServer(runtime);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-async function runHttpServer(runtime: GreeblefsAutomationRuntime, port: number): Promise<void> {
+async function runHttpServer(_runtime: GreeblefsAutomationRuntime, port: number): Promise<void> {
   const app = createMcpExpressApp({
     host: '127.0.0.1',
   });
+  const sessions = new Map<string, {
+    context: SessionServerContext;
+    transport: StreamableHTTPServerTransport;
+  }>();
+
+  const readSessionIdHeader = (req: any): string | null => {
+    const rawValue = req.headers['mcp-session-id'];
+    if (typeof rawValue === 'string' && rawValue.trim()) {
+      return rawValue.trim();
+    }
+    return null;
+  };
+
+  const closeSession = async (sessionId: string): Promise<void> => {
+    const record = sessions.get(sessionId);
+    if (!record) {
+      return;
+    }
+    sessions.delete(sessionId);
+    await record.transport.close().catch(() => {});
+    await record.context.server.close().catch(() => {});
+    await record.context.runtime.close().catch(() => {});
+  };
 
   app.post('/mcp', async (req: any, res: any) => {
-    const server = buildServer(runtime);
     try {
-      const transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: undefined,
-      });
-      await server.connect(transport);
-      await transport.handleRequest(req, res, req.body);
-      res.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
+      const existingSessionId = readSessionIdHeader(req);
+      let record = existingSessionId ? sessions.get(existingSessionId) : undefined;
+      if (!record) {
+        if (!isInitializeRequest(req.body)) {
+          res.status(400).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'Initialize must be the first request for a new HTTP MCP session.',
+            },
+            id: null,
+          });
+          return;
+        }
+        const runtime = new GreeblefsAutomationRuntime();
+        const server = await buildServer(runtime);
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+        });
+        transport.onclose = () => {
+          const sessionId = transport.sessionId;
+          if (sessionId) {
+            void closeSession(sessionId);
+          }
+        };
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+        if (!transport.sessionId) {
+          await server.close().catch(() => {});
+          await runtime.close().catch(() => {});
+          return;
+        }
+        record = {
+          context: { runtime, server },
+          transport,
+        };
+        sessions.set(transport.sessionId, record);
+        return;
+      }
+      await record.transport.handleRequest(req, res, req.body);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!res.headersSent) {
@@ -1211,26 +1524,27 @@ async function runHttpServer(runtime: GreeblefsAutomationRuntime, port: number):
     }
   });
 
-  app.get('/mcp', async (_req: any, res: any) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
+  app.get('/mcp', async (req: any, res: any) => {
+    const sessionId = readSessionIdHeader(req);
+    const record = sessionId ? sessions.get(sessionId) : undefined;
+    if (!record) {
+      res.status(400).send('Invalid or missing MCP session id.');
+      return;
+    }
+    await record.transport.handleRequest(req, res);
   });
 
-  app.delete('/mcp', async (_req: any, res: any) => {
-    res.writeHead(405).end(JSON.stringify({
-      jsonrpc: '2.0',
-      error: {
-        code: -32000,
-        message: 'Method not allowed.',
-      },
-      id: null,
-    }));
+  app.delete('/mcp', async (req: any, res: any) => {
+    const sessionId = readSessionIdHeader(req);
+    const record = sessionId ? sessions.get(sessionId) : undefined;
+    if (!record) {
+      res.status(400).send('Invalid or missing MCP session id.');
+      return;
+    }
+    await record.transport.handleRequest(req, res);
+    if (sessionId) {
+      await closeSession(sessionId);
+    }
   });
 
   await new Promise<void>((resolve, reject) => {

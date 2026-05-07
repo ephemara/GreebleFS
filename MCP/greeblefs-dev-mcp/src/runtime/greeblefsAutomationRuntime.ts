@@ -21,6 +21,7 @@ const mcpStateDirectory = path.join(mcpRoot, '.state');
 const screenshotDirectory = path.join(mcpStateDirectory, 'screenshots');
 const tauriDevStatusPath = path.join(mcpStateDirectory, 'tauri-dev-session.json');
 const tauriDevLogPath = path.join(mcpStateDirectory, 'tauri-dev.log');
+const nativeAutomationSessionPath = path.join(mcpStateDirectory, 'greeblefs-native-automation.json');
 const tauronWebviewDiagnosticsPath = path.join(mcpStateDirectory, 'tauron-webview2-session.json');
 const fallbackBrowserProfileDirectory = path.join(mcpStateDirectory, 'fallback-browser-profile');
 const preferredPlaywrightLaunchChannels = [
@@ -56,8 +57,66 @@ export interface GreeblefsTauriDevSessionRecord {
   frontendDevUrl?: string | null;
   webviewDebugPort?: string | null;
   tauronWebviewDiagnosticsPath?: string | null;
+  nativeAutomationFilePath?: string | null;
   logFilePath?: string | null;
   statusFilePath?: string | null;
+}
+
+export interface GreeblefsNativeAutomationCapabilities {
+  health?: boolean;
+  hostApi?: boolean;
+  hostEvents?: boolean;
+  telemetry?: boolean;
+  usrProfiles?: boolean;
+  windowMetadata?: boolean;
+}
+
+export interface GreeblefsNativeAutomationSessionRecord {
+  version: number;
+  pid: number;
+  startedAtUnixMs: number;
+  updatedAtUnixMs: number;
+  filePath: string;
+  baseUrl: string;
+  healthUrl: string;
+  rpcUrl: string;
+  hostEventsSubscribeUrl: string;
+  hostEventsReadUrl: string;
+  hostEventsUnsubscribeUrl: string;
+  authToken: string;
+  capabilities?: GreeblefsNativeAutomationCapabilities;
+}
+
+export interface GreeblefsNativeAutomationWindowRecord {
+  windowLabel: string;
+  title: string;
+  visible?: boolean | null;
+  secondaryWindowId?: string | null;
+  secondaryWindowKind?: string | null;
+}
+
+export interface GreeblefsNativeAutomationHealth {
+  ok: boolean;
+  pid?: number;
+  startedAtUnixMs?: number;
+  updatedAtUnixMs?: number;
+  windows?: GreeblefsNativeAutomationWindowRecord[];
+  subscriptionCount?: number;
+  capabilities?: GreeblefsNativeAutomationCapabilities;
+}
+
+export interface GreeblefsHostEventsSubscriptionSummary {
+  subscriptionId: string;
+  hostSubscriptionId: string;
+  createdAtUnixMs: number;
+  updatedAtUnixMs: number;
+  droppedEvents: number;
+  latestSequence?: number | null;
+}
+
+export interface GreeblefsHostEventsReadResult {
+  subscription: GreeblefsHostEventsSubscriptionSummary;
+  events: Array<Record<string, unknown>>;
 }
 
 export interface TauronWebviewDiagnosticsWebviewRecord {
@@ -118,12 +177,15 @@ export interface GreeblefsAutomationStatus {
   repoRoot: string;
   statusFilePath: string;
   logFilePath: string;
+  nativeAutomationSessionFilePath: string;
   tauronWebviewDiagnosticsFilePath: string;
   session: GreeblefsTauriDevSessionRecord | null;
+  nativeAutomationSession: GreeblefsNativeAutomationSessionRecord | null;
   sessionFileExists: boolean;
   pidRunning: boolean;
   devUrlReachable: boolean;
   cdpReachable: boolean;
+  nativeAutomationReachable: boolean;
   cdpVersion: string | null;
   tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null;
   attachMode: 'native-cdp' | 'browser-dev-url' | null;
@@ -149,6 +211,8 @@ export interface GreeblefsUiTarget {
 interface BrowserAttachmentOptions {
   preferNative?: boolean;
   allowFallbackBrowser?: boolean;
+  windowLabel?: string;
+  secondaryWindowKind?: string;
 }
 
 export interface GreeblefsWorkspaceDirectoryEntry {
@@ -179,7 +243,7 @@ export interface GreeblefsWorkspaceCommandResult {
 
 export interface GreeblefsNativeWindowScreenshotResult {
   imagePath: string;
-  base64Png: string;
+  base64Png?: string | null;
   window: WindowsDesktopWindowRecord & {
     bounds?: {
       left: number;
@@ -188,6 +252,23 @@ export interface GreeblefsNativeWindowScreenshotResult {
       height: number;
     };
   };
+}
+
+interface NativeAutomationRpcEnvelope<T> {
+  ok: boolean;
+  result?: T;
+  error?: string;
+}
+
+interface HostEventSubscriptionRuntimeRecord {
+  subscriptionId: string;
+  request: Record<string, unknown>;
+  resourceUri: string;
+  latestState: GreeblefsHostEventsReadResult;
+  latestSequence: number | null;
+  listeners: Set<(state: GreeblefsHostEventsReadResult) => void>;
+  disposed: boolean;
+  pollTimer: ReturnType<typeof setTimeout> | null;
 }
 
 function normalizeWindowsPathForJson(value: string): string {
@@ -275,6 +356,50 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   } catch {
     return null;
   }
+}
+
+async function fetchJsonWithHeaders<T>(
+  url: string,
+  headers: Record<string, string>,
+): Promise<T | null> {
+  try {
+    const response = await fetch(url, {
+      headers,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json() as T;
+  } catch {
+    return null;
+  }
+}
+
+async function postJson<T>(
+  url: string,
+  payload: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...headers,
+    },
+    body: JSON.stringify(payload ?? null),
+  });
+  const responseText = await response.text();
+  let decoded: T | null = null;
+  if (responseText.trim()) {
+    decoded = JSON.parse(responseText) as T;
+  }
+  if (!response.ok) {
+    const message = decoded && typeof decoded === 'object' && decoded !== null && 'error' in decoded
+      ? String((decoded as { error?: unknown }).error ?? response.statusText)
+      : response.statusText;
+    throw new Error(message || `HTTP ${response.status}`);
+  }
+  return decoded as T;
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -368,6 +493,7 @@ export class GreeblefsAutomationRuntime {
   private lastAttachError: string | null = null;
   private startedChildPid: number | null = null;
   private launchedFallbackBrowserPid: number | null = null;
+  private hostEventSubscriptions = new Map<string, HostEventSubscriptionRuntimeRecord>();
 
   getRepoRoot(): string {
     return repoRoot;
@@ -393,6 +519,18 @@ export class GreeblefsAutomationRuntime {
     return readJsonFile<TauronWebviewDiagnosticsSession>(diagnosticsFilePath);
   }
 
+  async readNativeAutomationSession(
+    session: GreeblefsTauriDevSessionRecord | null = null,
+  ): Promise<GreeblefsNativeAutomationSessionRecord | null> {
+    const sessionFilePath = session?.nativeAutomationFilePath?.trim()
+      || nativeAutomationSessionPath;
+    return readJsonFile<GreeblefsNativeAutomationSessionRecord>(sessionFilePath);
+  }
+
+  getHostEventsResourceUri(subscriptionId: string): string {
+    return `host-events://subscription/${encodeURIComponent(subscriptionId)}`;
+  }
+
   async isPidRunning(pid: number | null | undefined): Promise<boolean> {
     if (!pid || pid <= 0) {
       return false;
@@ -405,10 +543,126 @@ export class GreeblefsAutomationRuntime {
     }
   }
 
+  private async readHealthyNativeAutomationSession(
+    session: GreeblefsTauriDevSessionRecord | null = null,
+  ): Promise<{
+    sessionRecord: GreeblefsNativeAutomationSessionRecord | null;
+    health: GreeblefsNativeAutomationHealth | null;
+  }> {
+    const sessionRecord = await this.readNativeAutomationSession(session);
+    if (!sessionRecord?.healthUrl || !sessionRecord.authToken) {
+      return {
+        sessionRecord,
+        health: null,
+      };
+    }
+    const health = await fetchJsonWithHeaders<GreeblefsNativeAutomationHealth>(
+      sessionRecord.healthUrl,
+      {
+        'x-greeblefs-dev-token': sessionRecord.authToken,
+      },
+    );
+    return {
+      sessionRecord,
+      health,
+    };
+  }
+
+  private async invokeNativeAutomationRpc<T>(
+    method: string,
+    payload?: unknown,
+  ): Promise<T> {
+    const tauriSession = await this.readTauriDevSession();
+    const { sessionRecord, health } = await this.readHealthyNativeAutomationSession(tauriSession);
+    if (!sessionRecord || !health?.ok) {
+      throw new Error('The native dev automation lane is unavailable.');
+    }
+    const response = await postJson<NativeAutomationRpcEnvelope<T>>(
+      sessionRecord.rpcUrl,
+      {
+        method,
+        payload,
+      },
+      {
+        'x-greeblefs-dev-token': sessionRecord.authToken,
+      },
+    );
+    if (!response.ok) {
+      throw new Error(response.error || `Native automation RPC failed for ${method}.`);
+    }
+    return response.result as T;
+  }
+
+  private async subscribeNativeHostEvents(
+    request: Record<string, unknown>,
+  ): Promise<GreeblefsHostEventsReadResult> {
+    const tauriSession = await this.readTauriDevSession();
+    const { sessionRecord, health } = await this.readHealthyNativeAutomationSession(tauriSession);
+    if (!sessionRecord || !health?.ok) {
+      throw new Error('Native host-event subscriptions require the native automation lane.');
+    }
+    return postJson<GreeblefsHostEventsReadResult>(
+      sessionRecord.hostEventsSubscribeUrl,
+      request,
+      {
+        'x-greeblefs-dev-token': sessionRecord.authToken,
+      },
+    );
+  }
+
+  private async readNativeHostEvents(
+    subscriptionId: string,
+    afterSequence?: number | null,
+  ): Promise<GreeblefsHostEventsReadResult> {
+    const tauriSession = await this.readTauriDevSession();
+    const { sessionRecord, health } = await this.readHealthyNativeAutomationSession(tauriSession);
+    if (!sessionRecord || !health?.ok) {
+      throw new Error('The native dev automation lane is unavailable.');
+    }
+    const url = new URL(sessionRecord.hostEventsReadUrl);
+    url.searchParams.set('subscriptionId', subscriptionId);
+    if (typeof afterSequence === 'number' && Number.isFinite(afterSequence)) {
+      url.searchParams.set('afterSequence', String(afterSequence));
+    }
+    const response = await fetchJsonWithHeaders<GreeblefsHostEventsReadResult>(
+      url.toString(),
+      {
+        'x-greeblefs-dev-token': sessionRecord.authToken,
+      },
+    );
+    if (!response) {
+      throw new Error(`Failed to read native host-event subscription ${subscriptionId}.`);
+    }
+    return response;
+  }
+
+  private async unsubscribeNativeHostEvents(subscriptionId: string): Promise<unknown> {
+    const tauriSession = await this.readTauriDevSession();
+    const { sessionRecord, health } = await this.readHealthyNativeAutomationSession(tauriSession);
+    if (!sessionRecord || !health?.ok) {
+      throw new Error('The native dev automation lane is unavailable.');
+    }
+    return postJson<unknown>(
+      sessionRecord.hostEventsUnsubscribeUrl,
+      {
+        subscriptionId,
+      },
+      {
+        'x-greeblefs-dev-token': sessionRecord.authToken,
+      },
+    );
+  }
+
   async getStatus(options: { includeAttachProbe?: boolean } = {}): Promise<GreeblefsAutomationStatus> {
     const session = await this.readTauriDevSession();
     const sessionFileExists = await pathExists(tauriDevStatusPath);
     const pidRunning = await this.isPidRunning(session?.pid);
+    const nativeAutomationSessionFilePath = session?.nativeAutomationFilePath?.trim()
+      || nativeAutomationSessionPath;
+    const {
+      sessionRecord: nativeAutomationSession,
+      health: nativeAutomationHealth,
+    } = await this.readHealthyNativeAutomationSession(session);
     const devUrl = session?.frontendDevUrl?.trim() || null;
     const devUrlReachable = devUrl ? await this.checkUrlReachable(devUrl) : false;
     const logTail = await this.readDevLogTail(80);
@@ -484,14 +738,17 @@ export class GreeblefsAutomationRuntime {
       repoRoot: normalizeWindowsPathForJson(repoRoot),
       statusFilePath: normalizeWindowsPathForJson(tauriDevStatusPath),
       logFilePath: normalizeWindowsPathForJson(tauriDevLogPath),
+      nativeAutomationSessionFilePath: normalizeWindowsPathForJson(nativeAutomationSessionFilePath),
       tauronWebviewDiagnosticsFilePath: normalizeWindowsPathForJson(
         session?.tauronWebviewDiagnosticsPath?.trim() || tauronWebviewDiagnosticsPath,
       ),
       session,
+      nativeAutomationSession,
       sessionFileExists,
       pidRunning,
       devUrlReachable,
       cdpReachable: Boolean(cdpVersionPayload),
+      nativeAutomationReachable: Boolean(nativeAutomationHealth?.ok),
       cdpVersion: cdpVersionPayload?.Browser ?? cdpVersionPayload?.ProtocolVersion ?? null,
       tauronWebviewDiagnostics,
       attachMode: this.attachMode,
@@ -650,6 +907,12 @@ export class GreeblefsAutomationRuntime {
   async ensureAppPage(options: BrowserAttachmentOptions = {}): Promise<Page> {
     const session = await this.readTauriDevSession();
     const tauronWebviewDiagnostics = await this.readTauronWebviewDiagnostics(session);
+    let nativeWindowMetadata: GreeblefsNativeAutomationWindowRecord[] = [];
+    try {
+      nativeWindowMetadata = await this.getNativeWindowMetadata();
+    } catch {
+      nativeWindowMetadata = [];
+    }
     const resolvedWebviewDebugPort = session?.webviewDebugPort?.trim()
       || this.getRemoteDebuggingPortFromDiagnostics(tauronWebviewDiagnostics)
       || null;
@@ -657,6 +920,8 @@ export class GreeblefsAutomationRuntime {
       session?.pid ?? 'none',
       resolvedWebviewDebugPort ?? 'none',
       session?.frontendDevUrl ?? 'none',
+      options.windowLabel ?? 'default-window',
+      options.secondaryWindowKind ?? 'default-kind',
     ].join(':');
     const preferNative = options.preferNative !== false;
     const allowFallbackBrowser = options.allowFallbackBrowser !== false;
@@ -676,7 +941,13 @@ export class GreeblefsAutomationRuntime {
       try {
         const cdpEndpoint = `http://127.0.0.1:${resolvedWebviewDebugPort}`;
         this.browser = await chromium.connectOverCDP(cdpEndpoint);
-        this.page = await this.resolveBrowserPage(this.browser, session?.frontendDevUrl ?? undefined);
+        this.page = await this.resolveBrowserPage(this.browser, {
+          expectedUrl: session?.frontendDevUrl ?? undefined,
+          windowLabel: options.windowLabel,
+          secondaryWindowKind: options.secondaryWindowKind,
+          nativeWindows: nativeWindowMetadata,
+          tauronWebviewDiagnostics,
+        });
         this.attachMode = 'native-cdp';
         this.attachFingerprint = sessionFingerprint;
         this.lastAttachError = null;
@@ -701,7 +972,12 @@ export class GreeblefsAutomationRuntime {
       );
     }
 
-    const fallbackAttachment = await this.attachFallbackBrowserPage(frontendDevUrl);
+    const fallbackAttachment = await this.attachFallbackBrowserPage(
+      frontendDevUrl,
+      options,
+      nativeWindowMetadata,
+      tauronWebviewDiagnostics,
+    );
     this.browser = fallbackAttachment.browser;
     this.page = fallbackAttachment.page;
     this.attachMode = 'browser-dev-url';
@@ -906,19 +1182,35 @@ export class GreeblefsAutomationRuntime {
   }
 
   async getHostApiSchema(): Promise<unknown> {
-    return this.invokeBridgeMethod('getHostApiSchema');
+    try {
+      return await this.invokeNativeAutomationRpc('host.get_api_schema');
+    } catch {
+      return this.invokeBridgeMethod('getHostApiSchema');
+    }
   }
 
   async getTelemetryStatus(): Promise<unknown> {
-    return this.invokeBridgeMethod('getTelemetryStatus');
+    try {
+      return await this.invokeNativeAutomationRpc('telemetry.get_status');
+    } catch {
+      return this.invokeBridgeMethod('getTelemetryStatus');
+    }
   }
 
   async getTelemetryRecords(limit = 60): Promise<unknown> {
-    return this.invokeBridgeMethod('getTelemetryRecords', { limit });
+    try {
+      return await this.invokeNativeAutomationRpc('telemetry.get_recent_records', { limit });
+    } catch {
+      return this.invokeBridgeMethod('getTelemetryRecords', { limit });
+    }
   }
 
   async getUsrProfileSnapshot(): Promise<unknown> {
-    return this.invokeBridgeMethod('getUsrProfileSnapshot');
+    try {
+      return await this.invokeNativeAutomationRpc('usr_profiles.get_runtime_snapshot');
+    } catch {
+      return this.invokeBridgeMethod('getUsrProfileSnapshot');
+    }
   }
 
   async getPerformanceSnapshot(): Promise<unknown> {
@@ -1075,12 +1367,17 @@ export class GreeblefsAutomationRuntime {
     return listWindowsDesktopWindows(processName);
   }
 
+  async getNativeWindowMetadata(): Promise<GreeblefsNativeAutomationWindowRecord[]> {
+    return this.invokeNativeAutomationRpc<GreeblefsNativeAutomationWindowRecord[]>('windows.get_metadata');
+  }
+
   async captureNativeWindowScreenshot(options: {
     processName?: string;
     handle?: string;
     processId?: number;
     titleContains?: string;
     pathHint?: string;
+    includeImageData?: boolean;
   } = {}): Promise<GreeblefsNativeWindowScreenshotResult> {
     await fs.mkdir(screenshotDirectory, { recursive: true });
     const fileStem = (options.pathHint?.trim() || `greeblefs-native-window-${Date.now()}`)
@@ -1095,10 +1392,11 @@ export class GreeblefsAutomationRuntime {
       titleContains: options.titleContains,
       imagePath,
     });
-    const pngBuffer = await fs.readFile(imagePath);
     return {
       imagePath: normalizeWindowsPathForJson(imagePath),
-      base64Png: pngBuffer.toString('base64'),
+      base64Png: options.includeImageData === true
+        ? (await fs.readFile(imagePath)).toString('base64')
+        : null,
       window: {
         processId: screenshotRecord.processId,
         processName: screenshotRecord.processName,
@@ -1110,20 +1408,40 @@ export class GreeblefsAutomationRuntime {
     };
   }
 
-  async callHostMethod(methodId: string, payload?: unknown): Promise<unknown> {
-    return this.invokeBridgeMethod('callHostMethod', { methodId, payload });
+  async callHostMethod(
+    methodId: string,
+    payload?: unknown,
+    options: { executionContext?: unknown } = {},
+  ): Promise<unknown> {
+    try {
+      return await this.invokeNativeAutomationRpc('host.call', {
+        methodId,
+        payload,
+        executionContext: options.executionContext,
+      });
+    } catch (nativeError) {
+      if (typeof options.executionContext !== 'undefined') {
+        throw nativeError;
+      }
+      return this.invokeBridgeMethod('callHostMethod', { methodId, payload });
+    }
   }
 
   async getHostEventsSnapshot(request: Record<string, unknown>): Promise<unknown> {
-    return this.invokeBridgeMethod('getHostEventsSnapshot', { request });
+    try {
+      return await this.invokeNativeAutomationRpc('host.events.get_snapshot', request);
+    } catch {
+      return this.invokeBridgeMethod('getHostEventsSnapshot', { request });
+    }
   }
 
   async captureScreenshot(options: {
     fullPage?: boolean;
     pathHint?: string;
+    includeImageData?: boolean;
   } = {}): Promise<{
     imagePath: string;
-    base64Png: string;
+    base64Png?: string | null;
     attachMode: 'native-cdp' | 'browser-dev-url' | null;
     pageUrl: string;
   }> {
@@ -1139,13 +1457,76 @@ export class GreeblefsAutomationRuntime {
       path: targetPath,
       type: 'png',
     });
-    const pngBuffer = await fs.readFile(targetPath);
     return {
       imagePath: normalizeWindowsPathForJson(targetPath),
-      base64Png: pngBuffer.toString('base64'),
+      base64Png: options.includeImageData === true
+        ? (await fs.readFile(targetPath)).toString('base64')
+        : null,
       attachMode: this.attachMode,
       pageUrl: page.url(),
     };
+  }
+
+  async subscribeHostEvents(
+    request: Record<string, unknown>,
+    options: {
+      onUpdate?: (state: GreeblefsHostEventsReadResult) => void;
+    } = {},
+  ): Promise<{
+    subscriptionId: string;
+    resourceUri: string;
+    state: GreeblefsHostEventsReadResult;
+  }> {
+    const initialState = await this.subscribeNativeHostEvents(request);
+    const subscriptionId = initialState.subscription.subscriptionId;
+    const resourceUri = this.getHostEventsResourceUri(subscriptionId);
+    const listeners = new Set<(state: GreeblefsHostEventsReadResult) => void>();
+    if (options.onUpdate) {
+      listeners.add(options.onUpdate);
+    }
+    const record: HostEventSubscriptionRuntimeRecord = {
+      subscriptionId,
+      request,
+      resourceUri,
+      latestState: initialState,
+      latestSequence: initialState.subscription.latestSequence ?? null,
+      listeners,
+      disposed: false,
+      pollTimer: null,
+    };
+    this.hostEventSubscriptions.set(subscriptionId, record);
+    this.scheduleHostEventPoll(subscriptionId, true);
+    return {
+      subscriptionId,
+      resourceUri,
+      state: initialState,
+    };
+  }
+
+  async readHostEventSubscription(
+    subscriptionId: string,
+    afterSequence?: number | null,
+  ): Promise<GreeblefsHostEventsReadResult> {
+    if (typeof afterSequence === 'number' && Number.isFinite(afterSequence)) {
+      return this.readNativeHostEvents(subscriptionId, afterSequence);
+    }
+    const cached = this.hostEventSubscriptions.get(subscriptionId);
+    if (cached) {
+      return cached.latestState;
+    }
+    return this.readNativeHostEvents(subscriptionId, null);
+  }
+
+  async unsubscribeHostEvents(subscriptionId: string): Promise<unknown> {
+    const record = this.hostEventSubscriptions.get(subscriptionId);
+    if (record?.pollTimer) {
+      clearTimeout(record.pollTimer);
+    }
+    if (record) {
+      record.disposed = true;
+      this.hostEventSubscriptions.delete(subscriptionId);
+    }
+    return this.unsubscribeNativeHostEvents(subscriptionId);
   }
 
   async getAccessibilitySnapshot(): Promise<unknown> {
@@ -1230,6 +1611,7 @@ export class GreeblefsAutomationRuntime {
   }
 
   async close(): Promise<void> {
+    await this.closeHostEventSubscriptions();
     await this.closeBrowser();
   }
 
@@ -1251,11 +1633,21 @@ export class GreeblefsAutomationRuntime {
     );
   }
 
-  private async attachFallbackBrowserPage(frontendDevUrl: string): Promise<{ browser: Browser; page: Page }> {
+  private async attachFallbackBrowserPage(
+    frontendDevUrl: string,
+    options: BrowserAttachmentOptions,
+    nativeWindows: GreeblefsNativeAutomationWindowRecord[],
+    tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null,
+  ): Promise<{ browser: Browser; page: Page }> {
     const systemBrowserErrors: string[] = [];
 
     try {
-      return await this.launchSystemBrowserAndConnect(frontendDevUrl);
+      return await this.launchSystemBrowserAndConnect(
+        frontendDevUrl,
+        options,
+        nativeWindows,
+        tauronWebviewDiagnostics,
+      );
     } catch (error) {
       systemBrowserErrors.push(formatErrorMessage(error));
     }
@@ -1294,7 +1686,12 @@ export class GreeblefsAutomationRuntime {
     );
   }
 
-  private async launchSystemBrowserAndConnect(frontendDevUrl: string): Promise<{ browser: Browser; page: Page }> {
+  private async launchSystemBrowserAndConnect(
+    frontendDevUrl: string,
+    options: BrowserAttachmentOptions,
+    nativeWindows: GreeblefsNativeAutomationWindowRecord[],
+    tauronWebviewDiagnostics: TauronWebviewDiagnosticsSession | null,
+  ): Promise<{ browser: Browser; page: Page }> {
     if (preferredFallbackBrowserExecutables.length === 0) {
       throw new Error('No installed Chrome/Edge executable candidate was configured for browser fallback.');
     }
@@ -1332,7 +1729,13 @@ export class GreeblefsAutomationRuntime {
       const versionPayload = await fetchJson<{ Browser?: string }>(`${cdpEndpoint}/json/version`);
       if (versionPayload?.Browser) {
         const browser = await chromium.connectOverCDP(cdpEndpoint);
-        const page = await this.resolveBrowserPage(browser, frontendDevUrl);
+        const page = await this.resolveBrowserPage(browser, {
+          expectedUrl: frontendDevUrl,
+          windowLabel: options.windowLabel,
+          secondaryWindowKind: options.secondaryWindowKind,
+          nativeWindows,
+          tauronWebviewDiagnostics,
+        });
         return { browser, page };
       }
       await sleep(250);
@@ -1354,25 +1757,100 @@ export class GreeblefsAutomationRuntime {
     );
   }
 
-  private async resolveBrowserPage(browser: Browser, expectedUrl?: string): Promise<Page> {
+  private async resolveBrowserPage(browser: Browser, options: {
+    expectedUrl?: string;
+    windowLabel?: string;
+    secondaryWindowKind?: string;
+    nativeWindows?: GreeblefsNativeAutomationWindowRecord[];
+    tauronWebviewDiagnostics?: TauronWebviewDiagnosticsSession | null;
+  } = {}): Promise<Page> {
     const deadline = Date.now() + 15_000;
+    const expectedUrl = options.expectedUrl;
+    const requestedWindow = options.nativeWindows?.find((windowRecord) => {
+      if (options.windowLabel && windowRecord.windowLabel !== options.windowLabel) {
+        return false;
+      }
+      if (options.secondaryWindowKind && windowRecord.secondaryWindowKind !== options.secondaryWindowKind) {
+        return false;
+      }
+      return true;
+    }) ?? null;
+    const diagnosticsRecords = options.tauronWebviewDiagnostics?.webviews
+      ? Object.values(options.tauronWebviewDiagnostics.webviews)
+      : [];
+    const requestedDiagnosticsRecord = diagnosticsRecords.find((record) => {
+      if (options.windowLabel && record?.label !== options.windowLabel) {
+        return false;
+      }
+      return true;
+    }) ?? null;
+
     while (Date.now() < deadline) {
       const allPages = browser.contexts().flatMap((context) => context.pages());
-      const matchingPage = allPages.find((page) => {
+      const candidatePages = allPages.filter((page) => {
         const pageUrl = page.url();
-        if (!pageUrl || pageUrl.startsWith('devtools://')) {
-          return false;
-        }
-        if (expectedUrl && pageUrl.startsWith(expectedUrl)) {
-          return true;
-        }
-        return pageUrl.startsWith('http://localhost:1420') || pageUrl.startsWith('http://127.0.0.1:1420');
+        return Boolean(pageUrl) && !pageUrl.startsWith('devtools://');
       });
-      if (matchingPage) {
-        return matchingPage;
+      const scoredCandidates = await Promise.all(candidatePages.map(async (page) => {
+        const pageUrl = page.url();
+        let title = '';
+        try {
+          title = await page.title();
+        } catch {
+          title = '';
+        }
+        let score = 0;
+        if (expectedUrl && pageUrl.startsWith(expectedUrl)) {
+          score += 40;
+        } else if (pageUrl.startsWith('http://localhost:1420') || pageUrl.startsWith('http://127.0.0.1:1420')) {
+          score += 10;
+        }
+        if (requestedWindow) {
+          if (title && title === requestedWindow.title) {
+            score += 80;
+          } else if (
+            title
+            && requestedWindow.title
+            && (title.includes(requestedWindow.title) || requestedWindow.title.includes(title))
+          ) {
+            score += 45;
+          }
+        }
+        if (requestedDiagnosticsRecord?.url && pageUrl === requestedDiagnosticsRecord.url) {
+          score += 55;
+        } else if (requestedDiagnosticsRecord?.url && pageUrl.startsWith(requestedDiagnosticsRecord.url)) {
+          score += 35;
+        }
+        return {
+          page,
+          pageUrl,
+          title,
+          score,
+        };
+      }));
+      scoredCandidates.sort((left, right) => right.score - left.score);
+      const winningCandidate = scoredCandidates[0];
+      if (winningCandidate && winningCandidate.score > 0) {
+        return winningCandidate.page;
       }
-      if (allPages.length > 0) {
-        return allPages[0];
+      const directExpectedUrlMatch = candidatePages.find((page) => {
+        const pageUrl = page.url();
+        return expectedUrl
+          ? pageUrl.startsWith(expectedUrl)
+          : pageUrl.startsWith('http://localhost:1420') || pageUrl.startsWith('http://127.0.0.1:1420');
+      });
+      if (directExpectedUrlMatch) {
+        return directExpectedUrlMatch;
+      }
+      if (candidatePages.length === 1) {
+        return candidatePages[0];
+      }
+      if (
+        candidatePages.length > 0
+        && !options.windowLabel
+        && !options.secondaryWindowKind
+      ) {
+        return candidatePages[0];
       }
       await sleep(250);
     }
@@ -1438,6 +1916,53 @@ export class GreeblefsAutomationRuntime {
         selectedArgs: args ?? {},
       },
     );
+  }
+
+  private scheduleHostEventPoll(subscriptionId: string, immediate = false): void {
+    const record = this.hostEventSubscriptions.get(subscriptionId);
+    if (!record || record.disposed) {
+      return;
+    }
+    if (record.pollTimer) {
+      clearTimeout(record.pollTimer);
+    }
+    record.pollTimer = setTimeout(() => {
+      void this.pollHostEventSubscription(subscriptionId);
+    }, immediate ? 0 : 350);
+  }
+
+  private async pollHostEventSubscription(subscriptionId: string): Promise<void> {
+    const record = this.hostEventSubscriptions.get(subscriptionId);
+    if (!record || record.disposed) {
+      return;
+    }
+    try {
+      const update = await this.readNativeHostEvents(subscriptionId, record.latestSequence);
+      const nextSequence = update.subscription.latestSequence ?? record.latestSequence;
+      if (update.events.length > 0 || nextSequence !== record.latestSequence) {
+        record.latestSequence = nextSequence;
+        record.latestState = {
+          subscription: update.subscription,
+          events: [...record.latestState.events, ...update.events],
+        };
+        for (const listener of record.listeners) {
+          try {
+            listener(record.latestState);
+          } catch {
+            // Ignore listener failures so polling stays alive.
+          }
+        }
+      } else {
+        record.latestState = {
+          subscription: update.subscription,
+          events: record.latestState.events,
+        };
+      }
+    } catch {
+      // Keep polling alive across transient native-lane failures.
+    } finally {
+      this.scheduleHostEventPoll(subscriptionId);
+    }
   }
 
   private async resolveLocator(target: GreeblefsUiTarget, timeoutMs = 15_000): Promise<Locator> {
@@ -1507,6 +2032,25 @@ export class GreeblefsAutomationRuntime {
     this.attachMode = null;
     this.attachFingerprint = '';
     this.launchedFallbackBrowserPid = null;
+  }
+
+  private async closeHostEventSubscriptions(): Promise<void> {
+    const subscriptionIds = [...this.hostEventSubscriptions.keys()];
+    for (const subscriptionId of subscriptionIds) {
+      const record = this.hostEventSubscriptions.get(subscriptionId);
+      if (record?.pollTimer) {
+        clearTimeout(record.pollTimer);
+      }
+      if (record) {
+        record.disposed = true;
+      }
+      this.hostEventSubscriptions.delete(subscriptionId);
+      try {
+        await this.unsubscribeNativeHostEvents(subscriptionId);
+      } catch {
+        // Ignore host-event unsubscribe failures during shutdown.
+      }
+    }
   }
 }
 

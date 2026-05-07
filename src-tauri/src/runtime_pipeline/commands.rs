@@ -412,6 +412,20 @@ enum ExtensionHostDispatchTransport {
     RuntimeSidecar,
 }
 
+pub(crate) async fn dispatch_native_dev_host_call(
+    app: AppHandle,
+    registry: &RuntimeRegistry,
+    request: ExtensionHostCallRequest,
+) -> Result<String, String> {
+    dispatch_extension_host_call(
+        app,
+        registry,
+        request,
+        ExtensionHostDispatchTransport::BrowserIpc,
+    )
+    .await
+}
+
 fn is_cloud_explorer_path(path: &str) -> bool {
     path.trim().starts_with("cloud://")
 }

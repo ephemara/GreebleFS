@@ -92,6 +92,7 @@ const mcpRoot = path.join(projectRoot, "MCP");
 const mcpStateDirectory = path.join(mcpRoot, ".state");
 const mcpTauriDevStatusPath = path.join(mcpStateDirectory, "tauri-dev-session.json");
 const mcpTauriDevLogPath = path.join(mcpStateDirectory, "tauri-dev.log");
+const mcpNativeAutomationSessionPath = path.join(mcpStateDirectory, "greeblefs-native-automation.json");
 const mcpTauronWebviewDiagnosticsPath = path.join(mcpStateDirectory, "tauron-webview2-session.json");
 const defaultMcpWebviewDebugPort = (
   process.env.GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT
@@ -191,6 +192,8 @@ function buildMcpDevelopmentEnvironment({
     OVERLAYTERM_MCP_FRONTEND_DEV_URL: frontendDevUrl,
     GREEBLEFS_MCP_WEBVIEW2_DEBUG_PORT: webviewDebugPort,
     OVERLAYTERM_MCP_WEBVIEW2_DEBUG_PORT: webviewDebugPort,
+    GREEBLEFS_MCP_NATIVE_AUTOMATION_FILE: mcpNativeAutomationSessionPath,
+    OVERLAYTERM_MCP_NATIVE_AUTOMATION_FILE: mcpNativeAutomationSessionPath,
   };
 
   if (platform === "win32" && webviewDebugPort) {
@@ -219,6 +222,7 @@ function buildMcpDevelopmentEnvironment({
       projectRoot: normalizePathForLogs(projectRoot),
       statusFilePath: normalizePathForLogs(mcpTauriDevStatusPath),
       logFilePath: normalizePathForLogs(mcpTauriDevLogPath),
+      nativeAutomationFilePath: normalizePathForLogs(mcpNativeAutomationSessionPath),
       frontendDevUrl,
       webviewDebugPort,
       tauronWebviewDiagnosticsPath: platform === "win32"
@@ -761,6 +765,7 @@ async function runCommandWithMcpTauriDevStatus(command, args, extraEnv = {}, ses
     frontendDevUrl: sessionConfig.frontendDevUrl,
     webviewDebugPort: sessionConfig.webviewDebugPort,
     tauronWebviewDiagnosticsPath: sessionConfig.tauronWebviewDiagnosticsPath ?? null,
+    nativeAutomationFilePath: sessionConfig.nativeAutomationFilePath ?? null,
     logFilePath: sessionConfig.logFilePath,
     statusFilePath: sessionConfig.statusFilePath,
   };

@@ -15,6 +15,8 @@ pub mod cloud_commands;
 #[cfg(not(test))]
 pub mod desktop_integration;
 #[cfg(not(test))]
+pub mod dev_mcp_native_automation;
+#[cfg(not(test))]
 pub mod domain_commands;
 #[cfg(not(test))]
 pub mod entry_size_cache;
@@ -216,6 +218,11 @@ pub fn run() {
             app.manage(TelemetryManager::from_app(&app.handle()));
             app.manage(NativeTaskGraphManager::from_app(&app.handle()));
             app.manage(PreviewStreamingManager::from_app(&app.handle()));
+            if let Some(native_automation_server) =
+                dev_mcp_native_automation::start_dev_mcp_native_automation_server(&app.handle())?
+            {
+                app.manage(native_automation_server);
+            }
             let startup_span = start_native_span(
                 &app.handle(),
                 "startup",
