@@ -48,8 +48,8 @@
   - `usr/theme-recipes/andromeda-observatory/explorer.json`
   - Durable rule: use `preferredViewMode` for the standard explorer landing surface; do not treat `preferredExperimentalViewMode` as a permanent default state unless the product also grows a real opt-in contract.
 - Validation:
-  - Passed: `bunx vitest run src/test/explorerViewModes.test.ts src/test/workbenchTopBar.test.tsx src/test/themeRendererPackages.test.ts src/test/toonThemeBundle.test.ts src/test/andromedaThemeBundle.test.ts`
-  - `src/test/themeRendererCatalogContract.test.ts` failed on the current checkout because it still assumes a legacy `D:/GreebleFS/themes` directory that does not exist in this repo shape.
+  - Passed: `bunx vitest run src/test/explorerViewModes.test.ts src/test/workbenchTopBar.test.tsx src/test/themeRendererPackages.test.ts src/test/themeRendererCatalogContract.test.ts src/test/toonThemeBundle.test.ts src/test/andromedaThemeBundle.test.ts`
+  - `src/test/themeRendererCatalogContract.test.ts` now understands both `themes/` and `usr/themes/`, and it resolves modern shell renderers through `theme.json.rendererId` plus `shell-renderers/<renderer-id>/shell-renderer.json` while keeping the legacy inline entry-module fallback.
   - `bunx tsc --noEmit --pretty false` remains red on the existing repo baseline across mobile, lookdev, image-cutout, storage, vendored TipTap, and other unrelated areas; no new blocker was identified from the split-chrome or explorer-default changes themselves.
 
 # 2026-05-06 - Explorer Utility Dock Width Recovery And Terminal Transport ACL

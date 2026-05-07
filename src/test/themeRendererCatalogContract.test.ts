@@ -7,7 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { loadThemeRendererFromSource } from '../components/themeRendererRuntime';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const themesRoot = path.join(repoRoot, 'themes');
+const themeRoots = [
+  path.join(repoRoot, 'themes'),
+  path.join(repoRoot, 'usr', 'themes'),
+].filter(existsSync);
 
 function listThemeRendererEntries(): Array<{
   themeId: string;
@@ -15,24 +18,54 @@ function listThemeRendererEntries(): Array<{
   entryModule: string;
   entryPath: string;
 }> {
-  return readdirSync(themesRoot)
-    .map(themeId => {
-      const themeJsonPath = path.join(themesRoot, themeId, 'theme.json');
+  return themeRoots
+    .flatMap(themeRoot => readdirSync(themeRoot).map(themeId => ({ themeId, themeRoot })))
+    .map(({ themeId, themeRoot }) => {
+      const themeJsonPath = path.join(themeRoot, themeId, 'theme.json');
       if (!existsSync(themeJsonPath)) {
         return null;
       }
 
       const themeJson = JSON.parse(readFileSync(themeJsonPath, 'utf8'));
-      const entryModule = themeJson.themeRenderer?.entryModule;
-      if (typeof entryModule !== 'string' || entryModule.length === 0) {
+      const modernRendererId = typeof themeJson.rendererId === 'string'
+        ? themeJson.rendererId
+        : null;
+      if (modernRendererId) {
+        const rendererManifestPath = path.join(
+          themeRoot,
+          themeId,
+          'shell-renderers',
+          modernRendererId,
+          'shell-renderer.json',
+        );
+        if (!existsSync(rendererManifestPath)) {
+          return null;
+        }
+
+        const rendererManifest = JSON.parse(readFileSync(rendererManifestPath, 'utf8'));
+        const entryModule = rendererManifest.entryModule;
+        if (typeof entryModule !== 'string' || entryModule.length === 0) {
+          return null;
+        }
+
+        return {
+          themeId: typeof themeJson.id === 'string' ? themeJson.id : themeId,
+          themeJsonPath,
+          entryModule,
+          entryPath: path.join(themeRoot, themeId, 'shell-renderers', modernRendererId, entryModule),
+        };
+      }
+
+      const legacyEntryModule = themeJson.themeRenderer?.entryModule;
+      if (typeof legacyEntryModule !== 'string' || legacyEntryModule.length === 0) {
         return null;
       }
 
       return {
-        themeId,
+        themeId: typeof themeJson.id === 'string' ? themeJson.id : themeId,
         themeJsonPath,
-        entryModule,
-        entryPath: path.join(themesRoot, themeId, entryModule),
+        entryModule: legacyEntryModule,
+        entryPath: path.join(themeRoot, themeId, legacyEntryModule),
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
