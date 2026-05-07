@@ -75,6 +75,8 @@ pub enum RuntimeCompiler {
     CargoWasmBindgen,
     /// The legacy Python sidecar lane, migrated onto this manifest.
     PythonSidecar,
+    /// Kain-authored runtime scripts launched through the bundled Kain CLI.
+    KainScript,
 }
 
 impl Default for RuntimeCompiler {
@@ -93,6 +95,7 @@ impl RuntimeCompiler {
             RuntimeCompiler::TinygoWasm => "tinygo-wasm",
             RuntimeCompiler::CargoWasmBindgen => "cargo-wasm-bindgen",
             RuntimeCompiler::PythonSidecar => "python-sidecar",
+            RuntimeCompiler::KainScript => "kain-script",
         }
     }
 
@@ -110,6 +113,7 @@ impl RuntimeCompiler {
                 | RuntimeCompiler::CargoNative
                 | RuntimeCompiler::CNative
                 | RuntimeCompiler::PythonSidecar
+                | RuntimeCompiler::KainScript
         )
     }
 
@@ -360,6 +364,7 @@ impl RuntimeManifest {
         let display_name = raw.display_name.unwrap_or_else(|| raw.id.clone());
         let language = raw.language.unwrap_or_else(|| match raw.compiler {
             RuntimeCompiler::PythonSidecar => "python".to_string(),
+            RuntimeCompiler::KainScript => "kain".to_string(),
             RuntimeCompiler::CargoNative | RuntimeCompiler::CargoWasmBindgen => "rust".to_string(),
             RuntimeCompiler::CNative => "c".to_string(),
             _ => "go".to_string(),
@@ -420,6 +425,7 @@ fn validate_kind_compiler_pairing(
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::CargoNative)
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::CNative)
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::PythonSidecar)
+        | (RuntimeKind::NativeSidecar, RuntimeCompiler::KainScript)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::GoNative)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::CargoNative)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::CNative)
@@ -483,6 +489,28 @@ transport = "stdio-json-lines"
             manifest.sidecar.is_some(),
             "sidecar block should round-trip"
         );
+    }
+
+    #[test]
+    fn parses_kain_native_sidecar_manifest() {
+        let dir = tempdir().expect("tempdir");
+        write_manifest(
+            dir.path(),
+            r#"
+id = "kain-smoke"
+kind = "native-sidecar"
+compiler = "kain-script"
+entry = "src/sidecar.kn"
+
+[sidecar]
+transport = "stdio-json-lines-v2"
+            "#,
+        );
+
+        let manifest = RuntimeManifest::from_dir(dir.path()).expect("parse");
+        assert_eq!(manifest.language, "kain");
+        assert_eq!(manifest.compiler, RuntimeCompiler::KainScript);
+        assert_eq!(manifest.kind, RuntimeKind::NativeSidecar);
     }
 
     #[test]

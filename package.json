@@ -16,7 +16,7 @@
     "mcp:doctor": "bun run --cwd MCP/greeblefs-dev-mcp doctor",
     "mcp:smoke": "bun run --cwd MCP/greeblefs-dev-mcp smoke",
     "dev:vps": "bash scripts/with-vps-artifacts.sh bun run dev",
-    "build": "bun run go:bootstrap && bun scripts/sync-canonical-icons.mjs && bun run bindings:generate && vite build && vite build --config vite.mobile.config.ts",
+    "build": "bun run kain:stage && bun run go:bootstrap && bun scripts/sync-canonical-icons.mjs && bun run bindings:generate && vite build && vite build --config vite.mobile.config.ts",
     "build:vps": "bash scripts/with-vps-artifacts.sh bun run build",
     "release:linux:bundle": "bun run tauri build --bundles deb,rpm,appimage --no-sign --ci",
     "release:linux:install": "bash scripts/build-and-install-linux-local-release.sh",
@@ -51,7 +51,8 @@
     "go:status": "bash scripts/go/status.sh",
     "go:build": "bash scripts/go/build.sh",
     "go:test": "bash scripts/go/test.sh",
-    "go:check": "bash scripts/go/check.sh"
+    "go:check": "bash scripts/go/check.sh",
+    "kain:stage": "node scripts/kain/stage-kain-toolchain.mjs"
   },
   "dependencies": {
     "@babel/parser": "^7.29.2",

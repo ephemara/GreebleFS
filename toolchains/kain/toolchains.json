@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "toolchains": {
+    "kain": {
+      "id": "kain",
+      "displayName": "Kain",
+      "compiler": "kain-script",
+      "defaultSourceRoot": "D:/Kain-Lang",
+      "payloadRoot": "toolchains/kain/payload",
+      "payloadResourcePath": "toolchains/kain/",
+      "requiredExecutables": [
+        "bin/kain.exe"
+      ],
+      "optionalExecutables": [
+        "bin/kn.exe"
+      ],
+      "payloadDirectories": [
+        "stdlib",
+        "runtime",
+        "toolchain",
+        "docs"
+      ],
+      "runtimeEnvironment": {
+        "KAIN_STDLIB_PATH": "stdlib",
+        "KAIN_RUNTIME_MANIFEST_PATH": "runtime/native_runtime.toml",
+        "KAIN_RUNTIME_C_PATH": "runtime/kain_runtime.c"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+id = "greeblefs-kain-host-smoke"
+displayName = "GreebleFS Kain Host Smoke"
+language = "kain"
+kind = "native-sidecar"
+compiler = "kain-script"
+moduleDir = "."
+entry = "src/sidecar.kn"
+watchGlobs = ["src/**/*.kn"]
+args = ["run", "src/sidecar.kn"]
+
+[permissions]
+fsRead = true
+
+[sidecar]
+transport = "stdio-json-lines-v2"
+
+[[sidecar.actions]]
+id = "files.stat-selection"
+label = "Stat Selection"
+description = "Ask the GreebleFS host to stat a path selected by payload or execution context."
+payloadExampleJson = "{\"path\":\"D:/GreebleFS/package.json\"}"

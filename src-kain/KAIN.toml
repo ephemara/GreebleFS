@@ -1,0 +1,14 @@
+[package]
+name = "greeblefs-kain"
+version = "0.1.0"
+authors = ["GreebleFS"]
+description = "First-party Kain runtime sources for GreebleFS."
+
+[build]
+entry = "runtimes/greeblefs-kain-host-smoke/src/sidecar.kn"
+output = "target"
+targets = ["run"]
+
+[runtime]
+host = "greeblefs-runtime-pipeline"
+transport = "stdio-json-lines-v2"

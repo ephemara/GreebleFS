@@ -64,7 +64,9 @@ use crate::runtime_pipeline::registry::RuntimeRegistry;
 use crate::runtime_pipeline::sidecar::{
     ExternalRuntimeSidecarCallResponse, ExternalRuntimeSidecarStatus, ExternalSidecarManager,
 };
-use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, RuntimeToolchainStatus};
+use crate::runtime_pipeline::toolchain::{
+    probe_runtime_toolchains_with_context, RuntimeToolchainContext, RuntimeToolchainStatus,
+};
 use crate::runtime_pipeline::tui::{build_tui_launch, ExternalRuntimeTuiLaunch};
 use crate::semantic_search::{
     ExplorerSemanticFindSimilarRequest, ExplorerSemanticIndexBuildRequest,
@@ -79,6 +81,8 @@ const BUILTIN_RUNTIMES_ROOT_ID: &str = "builtin";
 const MANAGED_RUNTIMES_ROOT_ID: &str = "managed";
 const RUNTIMES_MANAGED_DIR_NAME: &str = "runtimes";
 const BUILTIN_RUNTIMES_REPO_RELATIVE: &str = "../src-go/builtin-runtimes";
+const BUILTIN_KAIN_RUNTIMES_REPO_RELATIVE: &str = "../src-kain/runtimes";
+const BUILTIN_KAIN_RUNTIMES_RESOURCE_RELATIVE: &str = "runtimes/kain";
 const EXPLORER_ARCHIVE_VIRTUAL_SCHEME: &str = "greeblefs://archive";
 const REMOTE_PROTOCOL_PREFIX: &str = "remote://sftp/";
 const RUNTIME_ARTIFACT_BYTES_MAX_BYTES: u64 = 256 * 1024 * 1024;
@@ -2204,8 +2208,11 @@ impl RuntimeListPackagesRequest {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn runtime_get_toolchain_status() -> Result<RuntimeToolchainStatus, String> {
-    Ok(probe_runtime_toolchains())
+pub async fn runtime_get_toolchain_status(
+    app: AppHandle,
+) -> Result<RuntimeToolchainStatus, String> {
+    let context = runtime_toolchain_context(&app);
+    Ok(probe_runtime_toolchains_with_context(&context))
 }
 
 #[tauri::command]
@@ -2223,8 +2230,9 @@ pub async fn runtime_prepare_package(
         .clone()
         .unwrap_or_else(|| default_target_for_compiler(manifest.compiler));
     let mode = request.mode.clone();
+    let toolchain_context = runtime_toolchain_context(&app);
 
-    let toolchain_version = resolve_toolchain_version(manifest.compiler)?;
+    let toolchain_version = resolve_toolchain_version(manifest.compiler, &toolchain_context)?;
 
     let layout = CompileCacheLayout::from_app(&app)?;
     let cache_key = CacheKeyParts {
@@ -2246,7 +2254,8 @@ pub async fn runtime_prepare_package(
     let mut stdout = String::new();
     let mut stderr = String::new();
     if !cache_hit {
-        let build_result = invoke_build_script(manifest, &artifact_path, &target, &mode)?;
+        let build_result =
+            invoke_build_script(manifest, &artifact_path, &target, &mode, &toolchain_context)?;
         stdout = build_result.stdout;
         stderr = build_result.stderr;
     }
@@ -2399,7 +2408,7 @@ pub async fn runtime_start_sidecar(
     let package = require_package(&registry, &app, &request.runtime_id)?;
     if matches!(package.manifest.compiler, RuntimeCompiler::PythonSidecar) {
         return Err(
-            "Use the legacy `python_*` Tauri commands for Python sidecars; this lane is for Go/Wasm runtimes."
+            "Use the legacy `python_*` Tauri commands for Python sidecars; this lane is for external native/Wasm/Kain runtimes."
                 .to_string(),
         );
     }
@@ -2649,6 +2658,15 @@ fn build_default_discovery_roots(app: &AppHandle) -> Vec<RuntimeDiscoveryRoot> {
             ));
         }
     }
+    for kain_root in builtin_kain_runtimes_roots(app) {
+        if kain_root.exists() {
+            roots.push(RuntimeDiscoveryRoot::new(
+                BUILTIN_RUNTIMES_ROOT_ID,
+                RuntimePackageOrigin::Builtin,
+                kain_root,
+            ));
+        }
+    }
     // Migrated Python sidecar — same lifecycle as before, but now registered
     // through the polyglot registry so frontends see one unified catalog.
     if let Some(python_root) = repo_python_sidecar_root() {
@@ -2672,6 +2690,12 @@ fn build_default_discovery_roots(app: &AppHandle) -> Vec<RuntimeDiscoveryRoot> {
     roots
 }
 
+fn runtime_toolchain_context(app: &AppHandle) -> RuntimeToolchainContext {
+    RuntimeToolchainContext {
+        resource_dir: app.path().resource_dir().ok(),
+    }
+}
+
 fn repo_python_sidecar_root() -> Option<PathBuf> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok()?;
     Some(PathBuf::from(manifest_dir).join("../src-python"))
@@ -2680,6 +2704,17 @@ fn repo_python_sidecar_root() -> Option<PathBuf> {
 fn repo_builtin_runtimes_root() -> Option<PathBuf> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok()?;
     Some(PathBuf::from(manifest_dir).join(BUILTIN_RUNTIMES_REPO_RELATIVE))
+}
+
+fn builtin_kain_runtimes_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        roots.push(PathBuf::from(manifest_dir).join(BUILTIN_KAIN_RUNTIMES_REPO_RELATIVE));
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        roots.push(resource_dir.join(BUILTIN_KAIN_RUNTIMES_RESOURCE_RELATIVE));
+    }
+    roots
 }
 
 fn managed_runtimes_root(app: &AppHandle) -> Option<PathBuf> {

@@ -1,0 +1,145 @@
+fn json_field_present(object: Any, key: String) -> Bool:
+    if !json_has(object, key):
+        return false
+    return json_string(json_get(object, key)) != "null"
+
+fn json_string_field(object: Any, key: String) -> String:
+    if json_field_present(object, key):
+        return json_get_string(object, key)
+    return ""
+
+fn write_protocol_packet(packet: Any) -> Int:
+    stdout_write(json_string(packet) + "\n")
+    return 0
+
+fn build_kain_metadata() -> Any:
+    let metadata = json_object_new()
+    json_object_set(metadata, "language", "kain")
+    json_object_set(metadata, "compiler", "kain-script")
+    json_object_set(metadata, "transport", "stdio-json-lines-v2")
+    json_object_set(metadata, "stdlibPath", env("KAIN_STDLIB_PATH"))
+    json_object_set(metadata, "runtimeManifestPath", env("KAIN_RUNTIME_MANIFEST_PATH"))
+    json_object_set(metadata, "payloadRoot", env("GREEBLEFS_KAIN_PAYLOAD_ROOT"))
+    return metadata
+
+fn select_path_from_execution_context(context: Any) -> String:
+    if json_field_present(context, "selectedEntries"):
+        let entries = json_get(context, "selectedEntries")
+        if json_array_len(entries) > 0:
+            let entry = json_array_get(entries, 0)
+            let path = json_string_field(entry, "path")
+            if len(path.trim()) > 0:
+                return path
+
+    if json_field_present(context, "focusedEntry"):
+        let entry = json_get(context, "focusedEntry")
+        let path = json_string_field(entry, "path")
+        if len(path.trim()) > 0:
+            return path
+
+    let active_directory = json_string_field(context, "activeDirectory")
+    if len(active_directory.trim()) > 0:
+        return active_directory
+
+    let cwd = json_string_field(context, "cwd")
+    if len(cwd.trim()) > 0:
+        return cwd
+
+    return ""
+
+fn select_path(packet: Any) -> String:
+    let payload_json = json_string_field(packet, "payloadJson")
+    if len(payload_json.trim()) > 0:
+        let payload = json_parse(payload_json)
+        let path = json_string_field(payload, "path")
+        if len(path.trim()) > 0:
+            return path
+
+    let context_json = json_string_field(packet, "executionContextJson")
+    if len(context_json.trim()) > 0:
+        let context = json_parse(context_json)
+        let context_path = select_path_from_execution_context(context)
+        if len(context_path.trim()) > 0:
+            return context_path
+
+    let cwd = json_string_field(packet, "cwd")
+    if len(cwd.trim()) > 0:
+        return cwd
+
+    return "."
+
+fn build_files_stat_host_call(call_packet: Any, path: String) -> Any:
+    let payload = json_object_new()
+    json_object_set(payload, "path", path)
+
+    let host_call = json_object_new()
+    json_object_set(host_call, "requestId", json_string_field(call_packet, "requestId") + ":files.stat")
+    json_object_set(host_call, "kind", "host-call")
+    json_object_set(host_call, "methodId", "files.stat")
+    json_object_set(host_call, "payloadJson", json_string(payload))
+    return host_call
+
+fn write_error_response(call_packet: Any, message: String) -> Int:
+    let response = json_object_new()
+    json_object_set(response, "requestId", json_string_field(call_packet, "requestId"))
+    json_object_set(response, "kind", "response")
+    json_object_set(response, "ok", false)
+    json_object_set(response, "error", message)
+    write_protocol_packet(response)
+    return 0
+
+fn write_success_response(call_packet: Any, path: String, stat: Any) -> Int:
+    let result = json_object_new()
+    json_object_set(result, "path", path)
+    json_object_set(result, "stat", stat)
+    json_object_set(result, "kain", build_kain_metadata())
+
+    let response = json_object_new()
+    json_object_set(response, "requestId", json_string_field(call_packet, "requestId"))
+    json_object_set(response, "kind", "response")
+    json_object_set(response, "ok", true)
+    json_object_set(response, "actionId", json_string_field(call_packet, "actionId"))
+    json_object_set(response, "resultJson", json_string(result))
+    write_protocol_packet(response)
+    return 0
+
+fn handle_call(call_packet: Any) -> Int:
+    let path = select_path(call_packet)
+    write_protocol_packet(build_files_stat_host_call(call_packet, path))
+
+    let host_response_line = read_line()
+    if len(host_response_line.trim()) == 0:
+        write_error_response(call_packet, "host closed before files.stat responded")
+        return 0
+
+    let host_response = json_parse(host_response_line)
+    if json_has(host_response, "ok") and !json_get_bool(host_response, "ok"):
+        write_error_response(call_packet, json_string_field(host_response, "error"))
+        return 0
+
+    let result_json = json_string_field(host_response, "resultJson")
+    if len(result_json.trim()) == 0:
+        write_error_response(call_packet, "files.stat returned no resultJson")
+        return 0
+
+    write_success_response(call_packet, path, json_parse(result_json))
+    return 0
+
+fn main() -> Int:
+    eprintln("GreebleFS Kain host smoke sidecar ready")
+
+    while true:
+        let packet_line = read_line()
+        if len(packet_line.trim()) == 0:
+            break
+
+        let packet = json_parse(packet_line)
+        let kind = json_string_field(packet, "kind")
+        if kind == "call":
+            let call_result = handle_call(packet)
+        if kind == "shutdown":
+            return 0
+        if kind != "call" and kind != "shutdown":
+            eprintln("GreebleFS Kain host smoke ignored packet kind: " + kind)
+
+    return 0

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Download, Loader2, Settings2 } from '@/components/AppIcons';
 import type {
   AccelerationRuntimeStatusSnapshot,
@@ -6,6 +6,7 @@ import type {
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
   LinuxNvidiaWebkitWorkaroundMode,
+  RuntimeToolchainStatus,
 } from '../../../generated/tauri';
 import type {
   AccelerationProviderResolution,
@@ -14,6 +15,7 @@ import type {
 } from '../../../config/accelerationRuntime';
 import type { GpuRuntimeTierOption } from '../../../config/gpuRuntime';
 import { formatHotkeyLabel } from '../../../config/hotkeys';
+import { getRuntimeToolchainStatus } from '../../../runtime/externalRuntimeBackend';
 import {
   SettingsActionStrip,
   SettingsRow,
@@ -204,6 +206,45 @@ export function SystemSettingsSection({
     semanticSearchProof == null
       ? null
       : new Date(semanticSearchProof.recordedAt).toISOString();
+  const [runtimeToolchainStatus, setRuntimeToolchainStatus] = useState<RuntimeToolchainStatus | null>(null);
+  const [runtimeToolchainPending, setRuntimeToolchainPending] = useState(true);
+  const [runtimeToolchainError, setRuntimeToolchainError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRuntimeToolchainPending(true);
+    getRuntimeToolchainStatus()
+      .then(status => {
+        if (cancelled) return;
+        setRuntimeToolchainStatus(status);
+        setRuntimeToolchainError(null);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setRuntimeToolchainError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRuntimeToolchainPending(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const kainProbe = runtimeToolchainStatus?.kain ?? null;
+  const kainStatusLabel = runtimeToolchainPending
+    ? 'Kain checking'
+    : kainProbe?.installed
+      ? `Kain ${kainProbe.version ?? 'ready'}`
+      : 'Kain missing';
+  const compactPath = (value: string | null | undefined) => {
+    if (!value) return 'path n/a';
+    const normalized = value.replace(/\\/g, '/');
+    const parts = normalized.split('/').filter(Boolean);
+    return parts.slice(Math.max(0, parts.length - 4)).join('/');
+  };
 
   return (
     <section className="space-y-4" data-settings-section="system">
@@ -535,9 +576,10 @@ export function SystemSettingsSection({
             badges={[
               gpuRuntimeSnapshot.computeAvailable ? 'GPU compute visible' : 'GPU compute unavailable',
               semanticSearchProof ? 'Semantic proof captured' : 'Semantic proof pending',
+              kainStatusLabel,
             ]}
           >
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <div
                 className="rounded border px-3 py-3 text-[11px]"
                 style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
@@ -616,6 +658,23 @@ export function SystemSettingsSection({
                     No semantic-search proof captured yet. Run a semantic explorer search and return here to inspect backend/provider routing evidence.
                   </p>
                 )}
+              </div>
+
+              <div
+                className="rounded border px-3 py-3 text-[11px]"
+                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+              >
+                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Kain Toolchain</div>
+                <p className="mt-2 opacity-70">
+                  {runtimeToolchainPending ? 'checking' : kainProbe?.installed ? 'ready' : 'missing'} · {kainProbe?.version ?? 'version n/a'}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <ThemeBadge label={kainProbe?.installed ? 'kain-script enabled' : 'kain-script offline'} />
+                  <ThemeBadge label={runtimeToolchainStatus?.kainManifestPath ? 'manifest pinned' : 'manifest n/a'} />
+                </div>
+                <p className="mt-3 break-words opacity-60">
+                  {runtimeToolchainError ?? kainProbe?.error ?? compactPath(kainProbe?.executablePath)}
+                </p>
               </div>
             </div>
           </SettingsSectionBlock>

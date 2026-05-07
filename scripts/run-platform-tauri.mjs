@@ -62,6 +62,8 @@ const goRuntimeAssetsCachePath = path.join(spectaBindingsCacheDirectory, "go-run
 const goRuntimeAssetsCacheVersion = 1;
 const mobileShareBundleCachePath = path.join(spectaBindingsCacheDirectory, "mobile-share-bundle-state.json");
 const mobileShareBundleCacheVersion = 1;
+const kainToolchainPayloadRoot = path.join(projectRoot, "toolchains", "kain", "payload");
+const kainRuntimeSourceRoot = path.join(projectRoot, "src-kain", "runtimes");
 const spectaBindingsFingerprintTargets = [
   { kind: "file", relativePath: "Cargo.toml" },
   { kind: "file", relativePath: "Cargo.lock" },
@@ -710,6 +712,12 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
       ...config.bundle,
       resources: rewrittenResources,
     };
+    if (await pathExists(kainToolchainPayloadRoot)) {
+      config.bundle.resources[formatBundleDirectoryResourcePathForTauriProject(kainToolchainPayloadRoot)] = "toolchains/kain/";
+    }
+    if (await pathExists(kainRuntimeSourceRoot)) {
+      config.bundle.resources[formatBundleDirectoryResourcePathForTauriProject(kainRuntimeSourceRoot)] = "runtimes/kain/";
+    }
   }
 
   if (resolvedDevUrl) {
@@ -802,6 +810,20 @@ async function prepareGoRuntimeAssets(packageManagerCommand, tauriCommand) {
     inputFiles: preparationState.inputFiles,
     outputPaths,
   });
+}
+
+async function prepareKainToolchainPayload(tauriCommand) {
+  if (tauriCommand !== "dev" && tauriCommand !== "build") {
+    return;
+  }
+  const stageArgs = ["scripts/kain/stage-kain-toolchain.mjs"];
+  if (tauriCommand === "dev") {
+    stageArgs.push("--optional");
+  }
+  const exitCode = await runCommand(process.execPath, stageArgs);
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
 }
 
 async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
@@ -1123,6 +1145,7 @@ async function main() {
     OVERLAYTERM_TAURON_PREFLIGHT_DONE: "1",
     ...windowsRustAccelerationEnvironment,
   };
+  await prepareKainToolchainPayload(tauriCommand);
   await prepareGoRuntimeAssets(packageManagerCommand, tauriCommand);
   await prepareMobileShareBundle(packageManagerCommand, tauriCommand);
   await prepareTauriDevBindings(

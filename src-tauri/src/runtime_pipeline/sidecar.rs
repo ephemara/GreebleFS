@@ -28,6 +28,9 @@ use crate::runtime_pipeline::host_events::{
 };
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimeManifest};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
+use crate::runtime_pipeline::toolchain::{
+    apply_kain_payload_environment, resolve_kain_payload_root, RuntimeToolchainContext,
+};
 
 const SIDECAR_TRANSPORT_V1: &str = "stdio-json-lines";
 const SIDECAR_TRANSPORT_V2: &str = "stdio-json-lines-v2";
@@ -85,6 +88,7 @@ struct ExternalSidecarPacket {
     action_id: Option<String>,
     method_id: Option<String>,
     payload_json: Option<String>,
+    execution_context_json: Option<String>,
     cwd: Option<String>,
     environment: Option<HashMap<String, String>>,
     ok: Option<bool>,
@@ -180,6 +184,9 @@ impl ExternalSidecarManager {
         }
 
         let mut command = Command::new(binary_path);
+        if manifest.compiler == RuntimeCompiler::KainScript {
+            apply_kain_sidecar_environment(&app, &mut command);
+        }
         command
             .args(&manifest.args)
             .stdin(Stdio::piped())
@@ -233,6 +240,7 @@ impl ExternalSidecarManager {
             Arc::clone(&pending_responses),
             Arc::clone(&current_execution_context),
             Arc::clone(&owned_subscription_ids),
+            manifest.compiler == RuntimeCompiler::KainScript,
         );
 
         let session = ExternalSidecarSession {
@@ -296,6 +304,10 @@ impl ExternalSidecarManager {
             )
         };
 
+        let execution_context_json = execution_context
+            .as_ref()
+            .and_then(|snapshot| serde_json::to_string(snapshot).ok());
+
         {
             let mut guard = current_execution_context
                 .lock()
@@ -314,6 +326,7 @@ impl ExternalSidecarManager {
             kind: SIDECAR_KIND_CALL.to_string(),
             action_id: Some(action_id.to_string()),
             payload_json,
+            execution_context_json,
             cwd,
             environment,
             ..ExternalSidecarPacket::default()
@@ -388,6 +401,7 @@ fn spawn_sidecar_reader_thread(
     pending_responses: Arc<Mutex<HashMap<String, Sender<ExternalSidecarPacket>>>>,
     current_execution_context: Arc<Mutex<Option<ExecutionContextSnapshot>>>,
     owned_subscription_ids: Arc<Mutex<Vec<String>>>,
+    allow_stdout_noise: bool,
 ) {
     thread::spawn(move || {
         let mut stdout_reader = BufReader::new(stdout);
@@ -418,6 +432,13 @@ fn spawn_sidecar_reader_thread(
             let packet: ExternalSidecarPacket = match serde_json::from_str(trimmed) {
                 Ok(packet) => packet,
                 Err(error) => {
+                    if allow_stdout_noise {
+                        eprintln!(
+                            "[greeblefs-runtime] ignored non-protocol stdout from {} sidecar: {}",
+                            runtime_id, trimmed
+                        );
+                        continue;
+                    }
                     resolve_pending_sidecar_failures(
                         &pending_responses,
                         format!("failed to parse sidecar packet: {error}"),
@@ -499,6 +520,17 @@ fn spawn_sidecar_reader_thread(
             }
         }
     });
+}
+
+fn apply_kain_sidecar_environment(app: &AppHandle, command: &mut Command) {
+    let context = RuntimeToolchainContext {
+        resource_dir: app.path().resource_dir().ok(),
+    };
+    let payload_root = resolve_kain_payload_root(&context);
+    apply_kain_payload_environment(command, payload_root.as_deref());
+    if let Some(payload_root) = payload_root.as_deref() {
+        command.env("GREEBLEFS_KAIN_PAYLOAD_ROOT", payload_root);
+    }
 }
 
 fn resolve_pending_sidecar_response(

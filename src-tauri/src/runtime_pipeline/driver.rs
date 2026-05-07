@@ -9,10 +9,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeManifest};
-use crate::runtime_pipeline::toolchain::{probe_runtime_toolchains, ToolchainProbe};
-type RuntimeBuildInvoker =
-    fn(&RuntimeManifest, &Path, &str, &str) -> Result<RuntimeCompilerBuildOutput, String>;
-type ToolchainVersionResolver = fn() -> Result<String, String>;
+use crate::runtime_pipeline::toolchain::{
+    kain_executable_name, probe_runtime_toolchains_with_context, RuntimeToolchainContext,
+    ToolchainProbe,
+};
+type RuntimeBuildInvoker = fn(
+    &RuntimeManifest,
+    &Path,
+    &str,
+    &str,
+    &RuntimeToolchainContext,
+) -> Result<RuntimeCompilerBuildOutput, String>;
+type ToolchainVersionResolver = fn(&RuntimeToolchainContext) -> Result<String, String>;
 
 #[derive(Debug, Default)]
 pub struct RuntimeCompilerBuildOutput {
@@ -32,8 +40,11 @@ impl RuntimeCompilerDriver {
         (self.default_target_resolver)()
     }
 
-    fn resolve_toolchain_version(&self) -> Result<String, String> {
-        (self.toolchain_version_resolver)()
+    fn resolve_toolchain_version(
+        &self,
+        context: &RuntimeToolchainContext,
+    ) -> Result<String, String> {
+        (self.toolchain_version_resolver)(context)
     }
 
     fn artifact_name(&self, runtime_id: &str) -> String {
@@ -46,8 +57,9 @@ impl RuntimeCompilerDriver {
         artifact_path: &Path,
         target: &str,
         mode: &str,
+        context: &RuntimeToolchainContext,
     ) -> Result<RuntimeCompilerBuildOutput, String> {
-        (self.build_invoker)(manifest, artifact_path, target, mode)
+        (self.build_invoker)(manifest, artifact_path, target, mode, context)
     }
 }
 
@@ -100,12 +112,22 @@ const PYTHON_SIDECAR_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     build_invoker: skip_host_build,
 };
 
+const KAIN_SCRIPT_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
+    default_target_resolver: default_kain_host_target,
+    toolchain_version_resolver: resolve_kain_toolchain_version,
+    artifact_name_builder: build_native_binary_artifact_name,
+    build_invoker: invoke_kain_script_build,
+};
+
 pub fn default_target_for_compiler(compiler: RuntimeCompiler) -> String {
     require_runtime_compiler_driver(compiler).default_target()
 }
 
-pub fn resolve_toolchain_version(compiler: RuntimeCompiler) -> Result<String, String> {
-    require_runtime_compiler_driver(compiler).resolve_toolchain_version()
+pub fn resolve_toolchain_version(
+    compiler: RuntimeCompiler,
+    context: &RuntimeToolchainContext,
+) -> Result<String, String> {
+    require_runtime_compiler_driver(compiler).resolve_toolchain_version(context)
 }
 
 pub fn artifact_name_for_compiler(compiler: RuntimeCompiler, runtime_id: &str) -> String {
@@ -117,12 +139,14 @@ pub fn invoke_build_script(
     artifact_path: &Path,
     target: &str,
     mode: &str,
+    context: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     require_runtime_compiler_driver(manifest.compiler).invoke_build(
         manifest,
         artifact_path,
         target,
         mode,
+        context,
     )
 }
 
@@ -135,6 +159,7 @@ fn require_runtime_compiler_driver(compiler: RuntimeCompiler) -> &'static Runtim
         RuntimeCompiler::TinygoWasm => &TINYGO_WASM_DRIVER,
         RuntimeCompiler::CargoWasmBindgen => &CARGO_WASM_BINDGEN_DRIVER,
         RuntimeCompiler::PythonSidecar => &PYTHON_SIDECAR_DRIVER,
+        RuntimeCompiler::KainScript => &KAIN_SCRIPT_DRIVER,
     }
 }
 
@@ -166,37 +191,48 @@ fn default_python_host_target() -> String {
     "python-host".to_string()
 }
 
+fn default_kain_host_target() -> String {
+    "kain-host".to_string()
+}
+
 fn resolve_probe_version(probe: &ToolchainProbe) -> Result<String, String> {
     resolve_installed_toolchain_version(probe)
 }
 
-fn resolve_go_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_go_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.go)
 }
 
-fn resolve_cargo_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_cargo_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.cargo)
 }
 
-fn resolve_c_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_c_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.cc)
 }
 
-fn resolve_tinygo_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_tinygo_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.tinygo)
 }
 
-fn resolve_python_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_python_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.python)
 }
 
-fn resolve_cargo_wasm_bindgen_toolchain_version() -> Result<String, String> {
-    let probe = probe_runtime_toolchains();
+fn resolve_kain_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
+    resolve_probe_version(&probe.kain)
+}
+
+fn resolve_cargo_wasm_bindgen_toolchain_version(
+    context: &RuntimeToolchainContext,
+) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
     let cargo_version = resolve_probe_version(&probe.cargo)?;
     let wasm_bindgen_version = resolve_probe_version(&probe.wasm_bindgen)?;
     Ok(format!(
@@ -243,8 +279,56 @@ fn skip_host_build(
     _: &Path,
     _: &str,
     _: &str,
+    _: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     Ok(RuntimeCompilerBuildOutput::default())
+}
+
+fn invoke_kain_script_build(
+    _: &RuntimeManifest,
+    artifact_path: &Path,
+    _: &str,
+    _: &str,
+    context: &RuntimeToolchainContext,
+) -> Result<RuntimeCompilerBuildOutput, String> {
+    let probe = probe_runtime_toolchains_with_context(context).kain;
+    resolve_probe_version(&probe)?;
+    let executable_path = probe
+        .executable_path
+        .ok_or_else(|| "Kain probe did not report an executable path".to_string())?;
+    let executable_path = PathBuf::from(executable_path);
+    if executable_path.file_name().and_then(|name| name.to_str()) != Some(kain_executable_name()) {
+        return Err(format!(
+            "Kain probe resolved {}, expected {}",
+            executable_path.display(),
+            kain_executable_name()
+        ));
+    }
+
+    if let Some(parent) = artifact_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Kain runtime artifact directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    std::fs::copy(&executable_path, artifact_path).map_err(|error| {
+        format!(
+            "failed to stage Kain launcher {} -> {}: {error}",
+            executable_path.display(),
+            artifact_path.display()
+        )
+    })?;
+
+    Ok(RuntimeCompilerBuildOutput {
+        stdout: format!(
+            "staged Kain launcher {} -> {}",
+            executable_path.display(),
+            artifact_path.display()
+        ),
+        stderr: String::new(),
+    })
 }
 
 fn invoke_go_build_script(
@@ -252,6 +336,7 @@ fn invoke_go_build_script(
     artifact_path: &Path,
     target: &str,
     mode: &str,
+    _: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     let script_path = resolve_go_build_script_path().ok_or_else(|| {
         "scripts/go/build.sh could not be located. Set GREEBLEFS_GO_BUILD_SCRIPT or reinstall the app so app-local data contains scripts/go/build.sh.".to_string()
@@ -300,6 +385,7 @@ fn invoke_cargo_build(
     artifact_path: &Path,
     target: &str,
     mode: &str,
+    _: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     let module_dir = PathBuf::from(&manifest.module_dir);
     let cargo_manifest_path = resolve_cargo_manifest_path(&module_dir)?;
@@ -364,6 +450,7 @@ fn invoke_cargo_wasm_bindgen_build(
     artifact_path: &Path,
     target: &str,
     mode: &str,
+    _: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     let module_dir = PathBuf::from(&manifest.module_dir);
     let cargo_manifest_path = resolve_cargo_manifest_path(&module_dir)?;
@@ -474,6 +561,7 @@ fn invoke_unsupported_c_build(
     _: &Path,
     _: &str,
     _: &str,
+    _: &RuntimeToolchainContext,
 ) -> Result<RuntimeCompilerBuildOutput, String> {
     Err(
         "The `c-native` runtime compiler is not implemented yet. Use `cargo-native`, `go-native`, or a wasm compiler for now."
@@ -724,6 +812,10 @@ mod tests {
             default_target_for_compiler(RuntimeCompiler::PythonSidecar),
             "python-host"
         );
+        assert_eq!(
+            default_target_for_compiler(RuntimeCompiler::KainScript),
+            "kain-host"
+        );
     }
 
     #[test]
@@ -751,6 +843,13 @@ mod tests {
             artifact_name_for_compiler(RuntimeCompiler::PythonSidecar, "ignored"),
             "python-sidecar.entry"
         );
+        let kain_artifact =
+            artifact_name_for_compiler(RuntimeCompiler::KainScript, "greeblefs-kain-host-smoke");
+        if cfg!(target_os = "windows") {
+            assert_eq!(kain_artifact, "greeblefs-kain-host-smoke.exe");
+        } else {
+            assert_eq!(kain_artifact, "greeblefs-kain-host-smoke");
+        }
     }
 
     #[test]

@@ -1,3 +1,27 @@
+# 2026-05-07 - First-Class Kain Runtime Lane
+
+- Added the first GreebleFS-owned Kain integration pass so Kain can act as a private first-class runtime/toolchain instead of living outside the app.
+  - `src-kain/runtimes/**` is now discovered as a first-party runtime root in dev, and bundled as `runtimes/kain/` for release resources.
+  - `RuntimeCompiler::KainScript` serializes as `kain-script`; v1 supports `native-sidecar` only.
+  - The compiler driver stages the resolved `kain.exe` into the content-addressed runtime cache as the native sidecar artifact, then launches it with manifest args such as `run src/sidecar.kn`.
+  - `toolchains/kain/toolchains.json` plus `scripts/kain/stage-kain-toolchain.mjs` describe and stage the private payload from `D:/Kain-Lang`; `toolchains/kain/payload/` and `.kain/` stay ignored.
+  - `runtime_get_toolchain_status` now reports Kain status and payload manifest presence, and System settings has a compact Kain proof card under Developer Test Proofs.
+- Added `src-kain/runtimes/greeblefs-kain-host-smoke`, a tiny Kain stdio JSON sidecar action (`files.stat-selection`) that calls back into the host `files.stat` API and returns the stat result plus Kain metadata.
+- Durable design decisions:
+  - Keep Kain-authored GreebleFS code under `src-kain/`, not mixed into `src-go/`, `/usr`, or raw settings JSON. The long-term shape is Kain as source-of-truth/orchestration that can emit boring GreebleFS artifacts where needed.
+  - Kain stdout is noisy today: the CLI can print stdlib/banner/main-return lines around JSON protocol packets. The Rust sidecar reader intentionally ignores non-JSON stdout only for `kain-script`; do not weaken strict protocol parsing for Go/Python sidecars.
+  - Release/build staging is explicit and local. `bun run build` now runs `bun run kain:stage`; `tauri dev` runs the same script with `--optional`. Set `GREEBLEFS_SKIP_KAIN_STAGE=1` only when deliberately building without the private Kain payload.
+- Validation:
+  - Passed: `node scripts/kain/stage-kain-toolchain.mjs --verify-only`
+  - Passed: manual Kain sidecar smoke using `kain run src-kain\runtimes\greeblefs-kain-host-smoke\src\sidecar.kn` with a call packet followed by a `files.stat` host response packet.
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bun run bindings:generate`
+  - Filtered TypeScript scan found no Kain/settings-specific diagnostics after fixing the System settings `replaceAll` usage.
+  - Not clean: `bun run test:runtime-stack:quick` still fails on pre-existing settings-store default drift unrelated to Kain after the telemetry test passes.
+  - Not clean: targeted Rust lib tests still compile but fail to launch with Windows `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`, matching the existing lib-test harness issue.
+  - MCP live UI proof was blocked because the dev Tauri session had exited and native automation was unreachable.
+
 # 2026-05-07 - Explorer Widget Runtime And Zoom Smoothing Pass
 
 - Added first-class Explorer widget ingress instead of treating the status-bar size slider as a one-off JSX control.

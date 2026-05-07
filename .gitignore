@@ -32,6 +32,11 @@ src-tauri/gen/
 
 # --- Rust ---
 target/
+
+# Private Kain toolchain payload staged from D:\Kain-Lang for local builds and
+# release bundling. The tracked manifest/script describe how to reproduce it.
+toolchains/kain/payload/
+.kain/
 target-tests/
 target-codex-tests/
 Cargo.lock
