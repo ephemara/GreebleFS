@@ -1,3 +1,27 @@
+# 2026-05-07 - Shared DCC Editors And Layout Primitives
+
+- Extended the KOS assimilation seam in `usr/packages/greeblefs-ui` from the first panel/control wave into reusable editor and layout primitives.
+  - `usr/packages/greeblefs-ui` is now `1.3.0`.
+  - Added package-safe DCC surfaces under `usr/packages/greeblefs-ui/src/dcc/*`:
+    - `ColorPicker`
+    - `GradientEditor`
+    - `CurveEditor`
+    - shared `colorUtils`
+  - Added package-safe layout primitives under `usr/packages/greeblefs-ui/src/layout/*`:
+    - `ResizeHandle`
+    - `SplitView`
+    - `DockPanel`
+- Durable rules:
+  - Shared package editors/layouts should prefer native React + overlay CSS vars + `overlayterm-plugin` host seams over direct KOS dependency adoption when the original surface wants new runtime baggage.
+  - `GradientEditor` and `CurveEditor` intentionally clamp drag motion between neighboring stops/points so selection stays stable and reordered indices do not thrash while dragging.
+  - `SplitView` persists percent-based first-pane size through `greeblefs-ui:split-view:<persistId>` when a `persistId` is provided; keep persistence in the shared primitive instead of scattering per-surface localStorage code.
+  - `DockPanel` and other shared layout primitives should stay animation-light and plugin-safe unless the plugin/runtime layer explicitly adopts and exposes a richer motion dependency contract.
+  - `NodeGraph` was intentionally deferred in this pass because the queued KOS version depends on `@xyflow/react` and external CSS. If it is adopted later, do it as a deliberate plugin/runtime seam instead of sneaking those assumptions into the shared package.
+- Validation:
+  - Passed: `bunx esbuild usr/packages/greeblefs-ui/src/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --outfile=.tmp-greeblefs-ui-check.js`
+  - Filtered `tsc` scan did not surface touched-file diagnostics for `usr/packages/greeblefs-ui/src/dcc/*`, `usr/packages/greeblefs-ui/src/layout/*`, or the shared package root export file.
+  - Live dev-MCP note: `app_status` showed the dev session still in startup phase `webview-created` with CDP/bridge not yet reachable, so this pass was not interactively smoke-tested inside a live attached app surface.
+
 # 2026-05-07 - Shared DCC UI Library Assimilation
 
 - Started a package-safe DCC ingestion lane for the queued KOS UI library instead of copying its raw Tailwind surfaces directly into the app shell.
