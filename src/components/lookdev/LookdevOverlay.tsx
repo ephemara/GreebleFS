@@ -6,7 +6,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { Pane } from "tweakpane";
+import { Pane, type FolderApi, type TpChangeEvent } from "tweakpane";
 import "tweakpane/dist/tweakpane.css";
 import {
   ExternalLink,
@@ -14,11 +14,11 @@ import {
   Layers3,
   LayoutGrid,
   Palette,
-  PanelTop,
   Puzzle,
   RefreshCw,
   Save,
   SlidersHorizontal,
+  SplitSquareHorizontal,
   Sparkles,
   X,
 } from "@/components/AppIcons";
@@ -84,6 +84,8 @@ function toTweakpaneOptions(entries: Array<{ label: string; value: string }>) {
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
+
+type LookdevPaneChangeEvent = TpChangeEvent<unknown>;
 
 function shouldApplyLivePreview(
   scope: "shared" | "windowed" | "dock",
@@ -334,7 +336,7 @@ export function LookdevOverlay({
     });
     paneInstanceRef.current = pane;
 
-    const shellFolder = pane.addFolder({
+    const shellFolder = (pane as unknown as FolderApi).addFolder({
       title:
         activeLens === "shell"
           ? "Shell"
@@ -343,8 +345,8 @@ export function LookdevOverlay({
             : activeLens === "menus-actions"
               ? "Menus & Actions"
               : activeLens === "theme"
-                ? "Theme"
-                : activeLens === "dock-panels"
+              ? "Theme"
+              : activeLens === "dock-panels"
                   ? "Dock & Panels"
                   : "Save",
       expanded: true,
@@ -367,8 +369,8 @@ export function LookdevOverlay({
           step: 0.01,
           label: "App Opacity",
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("appearance", { appOpacity: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("appearance", { appOpacity: Number(event.value) }),
         );
       shellFolder
         .addBinding(shellParams, "panelTransparency", {
@@ -377,9 +379,9 @@ export function LookdevOverlay({
           step: 0.01,
           label: "Panel Alpha",
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("appearance", {
-            panelTransparency: event.value,
+            panelTransparency: Number(event.value),
           }),
         );
       shellFolder
@@ -389,8 +391,8 @@ export function LookdevOverlay({
           step: 0.01,
           label: "Zoom",
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("appearance", { appZoom: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("appearance", { appZoom: Number(event.value) }),
         );
       shellFolder
         .addBinding(shellParams, "appBlurStrength", {
@@ -399,26 +401,28 @@ export function LookdevOverlay({
           step: 1,
           label: "Blur",
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("appearance", {
-            appBlurStrength: event.value,
-            appBlur: event.value > 0,
+            appBlurStrength: Number(event.value),
+            appBlur: Number(event.value) > 0,
           }),
         );
       shellFolder
         .addBinding(shellParams, "compactMode", {
           label: "Compact",
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("appearance", { compactMode: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("appearance", { compactMode: Boolean(event.value) }),
         );
       shellFolder
         .addBinding(shellParams, "activeTopBarId", {
           label: "Top Bar",
           options: toTweakpaneOptions(topBarOptions),
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("appearance", { activeTopBarId: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("appearance", {
+            activeTopBarId: String(event.value),
+          }),
         );
     }
 
@@ -434,9 +438,9 @@ export function LookdevOverlay({
           label: "Theme",
           options: toTweakpaneOptions(themeOptions),
         })
-        .on("change", (event) => {
+        .on("change", (event: LookdevPaneChangeEvent) => {
           updateDraftScopedSection(editableScope, "appearance", {
-            activeThemeId: event.value,
+            activeThemeId: String(event.value),
           });
           if (shouldApplyLivePreview(editableScope, currentWindowMode)) {
             applyThemeSelection(String(event.value));
@@ -447,16 +451,16 @@ export function LookdevOverlay({
           label: "Accent",
           view: "color",
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("appearance", { accentColor: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("appearance", { accentColor: String(event.value) }),
         );
       shellFolder
         .addBinding(themeParams, "useNativeOsIcons", {
           label: "Native Icons",
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("appearance", {
-            useNativeOsIcons: event.value,
+            useNativeOsIcons: Boolean(event.value),
           }),
         );
     }
@@ -472,18 +476,18 @@ export function LookdevOverlay({
           label: "Menu Pack",
           options: toTweakpaneOptions(menuPackOptions),
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("explorer", {
-            activeMenuPackId: event.value,
+            activeMenuPackId: String(event.value),
           }),
         );
       shellFolder
         .addBinding(explorerParams, "followThemeExplorerLayout", {
           label: "Follow Theme Layout",
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("explorer", {
-            followThemeExplorerLayout: event.value,
+            followThemeExplorerLayout: Boolean(event.value),
           }),
         );
     }
@@ -503,9 +507,9 @@ export function LookdevOverlay({
           label: "Presentation",
           options: toTweakpaneOptions(dockPresentationOptions),
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("dock", {
-            activePresentationId: event.value,
+            activePresentationId: String(event.value),
           }),
         );
       shellFolder
@@ -517,8 +521,8 @@ export function LookdevOverlay({
             Floating: "floating",
           },
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("dock", { placementMode: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("dock", { placementMode: String(event.value) }),
         );
       shellFolder
         .addBinding(dockParams, "edgeSize", {
@@ -527,8 +531,8 @@ export function LookdevOverlay({
           max: 900,
           step: 2,
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("dock", { edgeSize: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("dock", { edgeSize: Number(event.value) }),
         );
       shellFolder
         .addBinding(dockParams, "edgeWidth", {
@@ -537,16 +541,16 @@ export function LookdevOverlay({
           max: 2200,
           step: 4,
         })
-        .on("change", (event) =>
-          patchDraftAndPreview("dock", { edgeWidth: event.value }),
+        .on("change", (event: LookdevPaneChangeEvent) =>
+          patchDraftAndPreview("dock", { edgeWidth: Number(event.value) }),
         );
       shellFolder
         .addBinding(dockParams, "previewEnabled", {
           label: "Preview",
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("dock", {
-            previewEnabled: event.value,
+            previewEnabled: Boolean(event.value),
           }),
         );
       shellFolder
@@ -557,9 +561,9 @@ export function LookdevOverlay({
             Pane: "pane",
           },
         })
-        .on("change", (event) =>
+        .on("change", (event: LookdevPaneChangeEvent) =>
           patchDraftAndPreview("dock", {
-            previewSplitMode: event.value,
+            previewSplitMode: String(event.value),
           }),
         );
     }
@@ -633,7 +637,7 @@ export function LookdevOverlay({
     { lens: "explorer", label: "Explorer", icon: <Layers3 size={13} /> },
     { lens: "menus-actions", label: "Menus", icon: <Puzzle size={13} /> },
     { lens: "theme", label: "Theme", icon: <Palette size={13} /> },
-    { lens: "dock-panels", label: "Dock", icon: <PanelTop size={13} /> },
+    { lens: "dock-panels", label: "Dock", icon: <SplitSquareHorizontal size={13} /> },
     { lens: "save", label: "Save", icon: <Save size={13} /> },
   ];
 
@@ -946,11 +950,11 @@ export function LookdevOverlay({
             <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_420px] gap-4">
               <div className="min-h-0 rounded-[28px] border border-white/10 bg-black/15 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                      window.dispatchEvent(new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT))
-                    }
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT));
+                    }}
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
                   >
                     <Sparkles size={11} />
@@ -973,7 +977,7 @@ export function LookdevOverlay({
                     onClick={onToggleTopBarCustomize}
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
                   >
-                    <PanelTop size={11} />
+                    <SplitSquareHorizontal size={11} />
                     Top Bar Customize
                   </button>
                   <button
@@ -984,13 +988,13 @@ export function LookdevOverlay({
                     <Puzzle size={11} />
                     Menu Composer
                   </button>
-                    <button
-                      type="button"
-                      onClick={() =>
+                  <button
+                    type="button"
+                    onClick={() => {
                       window.dispatchEvent(
                         new CustomEvent(LOOKDEV_TOGGLE_OVERLAY_EVENT),
-                      )
-                    }
+                      );
+                    }}
                     className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
                   >
                     <Layers3 size={11} />

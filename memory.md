@@ -1,3 +1,57 @@
+# 2026-05-06 - Global Lookdev Overlay, Semantic Presets, And Shell Customize Catalog
+
+- Added a first-class semantic lookdev system over the live GreebleFS shell instead of continuing to scatter tweak flows across unrelated settings panes.
+  - `src/components/lookdev/LookdevOverlay.tsx` is the immersive overlay surface. It uses `tweakpane` as a compact inspector and stays draft-first: edits preview live over the current shell, `Cancel` restores the captured baseline, `Apply` keeps the live state, and `Save Preset` writes a durable semantic preset.
+  - `src/store/lookdevStore.ts` is the new session/catalog source of truth for overlay open state, active lens, selected/runtime preset ids, follow-current vs shared/windowed/dock scope mode, draft manifests, and captured baseline snapshots.
+  - `src/runtime/lookdevRuntime.ts` is the only supported bridge for capturing live settings into lookdev overrides and applying overrides back into the live settings store. Durable rule: do not re-implement capture/apply logic in `App.tsx`, `SettingsPage.tsx`, or overlay button handlers.
+  - `src/config/lookdevPresets.ts` now owns the `lookdev-preset.json` contract, manifest normalization, shared/windowed/dock merge rules, starter-manifest generation, loader/save helpers, and the important rule that lookdev presets orchestrate existing theme/dock/explorer/profile truths instead of replacing them with a second monolithic theme file.
+- Added authored managed-content lanes for the system.
+  - `usr/lookdev-presets/**` is the shared-root durable catalog for saved lookdev systems.
+  - `usr/profiles/default/shell-customize-controls/**` is the shipped profile-overlay shell control catalog used by lookdev/top-bar authoring discovery.
+  - `src/config/appContentDirectories.ts` and `usr/manifest.json` were updated so both lanes are first-class managed roots with Settings/open-folder discoverability.
+- `src/config/shellCustomizeCatalog.ts` is now the shell-side equivalent of the explorer customize control catalog.
+  - Durable rule: workbench/top-bar control metadata should be authored in the shell customize manifest lane, not hardcoded back into `WorkbenchTopBar.tsx` or the lookdev overlay.
+- `src/App.tsx`, `src/components/SettingsPage.tsx`, and `src/config/settingsNavigation.ts` now expose the feature end-to-end.
+  - Command-palette entrypoints exist for `lookdev-open-overlay`, `lookdev-toggle-overlay`, and runtime preset reapply.
+  - `src/runtime/lookdevEvents.ts` is the cross-surface event contract for open/toggle/apply/refresh flows.
+  - Settings now has a dedicated `lookdev` authoring section with overlay launch, preset refresh/apply, preset catalog browsing, edit-in-overlay, and managed-folder entrypoints.
+- Durable behavior rules worth preserving:
+  - `lookdevPresets` is the saved orchestration artifact; keep colors/theme ids in appearance/theme lanes, dock geometry in dock presentation lanes, top-bar selection in appearance/top-bar lanes, explorer/menu state in their existing lanes, and only let lookdev coordinate them together.
+  - Runtime preset reapply intentionally strips `presentation` before updating the live shell so switching dock/windowed mode does not create a preset-driven mode flip loop.
+  - `follow-current` scope resolves to `windowed` or `dock` at edit/apply time; shared overrides should only contain truth that genuinely spans both modes.
+- Validation:
+  - Passed: `bunx vitest run src/test/lookdevPresets.test.ts src/test/lookdevStore.test.ts --reporter=dot --testTimeout=30000`
+  - Filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` no longer reports errors in `src/components/lookdev/LookdevOverlay.tsx`, `src/config/lookdevPresets.ts`, `src/runtime/lookdevRuntime.ts`, `src/store/lookdevStore.ts`, `src/runtime/lookdevEvents.ts`, `src/components/SettingsPage.tsx`, or `src/config/settingsNavigation.ts`.
+  - Repo baseline remains red outside this pass, including older `src/App.tsx` effect cleanup typing, `src-mobile/App.tsx`, image-cutout surfaces, storage panel drive shapes, and vendored TipTap/test noise.
+
+# 2026-05-06 - Theme Renderer Split Chrome Surfaces And Explorer Default-View Recovery
+
+- Repaired the Explorer view-switcher regression where `Default` could not escape `Adaptive Semantic Grid`.
+  - `src/config/explorerViewModes.ts` now owns `resolveThemedExplorerViewModes(...)`.
+  - Durable rule: explicit persisted `experimentalViewMode: "off"` must stay off even if a theme recipe or mode profile advertises `preferredExperimentalViewMode`.
+  - `src/components/FileExplorer.tsx` now resolves themed standard/experimental modes through that helper instead of force-falling back to the theme experimental mode whenever the stored value is `off`.
+  - The keyboard layout-cycle path now keys off `effectiveExperimentalViewMode !== "off"` instead of treating theme recipe metadata as a live experimental session.
+- Added a cleaner theme-renderer chrome composition seam so custom shells can move the top bar around instead of wasting a fixed ceiling band.
+  - `src/components/WorkbenchTopBar.tsx` now supports `surfaceMode = "full" | "content-only" | "window-controls-only"`.
+  - `src/components/themeRendererRuntime.tsx` and `src/App.tsx` now expose:
+    - `host.renderDefaultChromeSurface()`
+    - `host.renderChromeContentSurface()`
+    - `host.renderWindowControlsSurface()`
+  - Durable rule: renderer-owned shells that want side-mounted chrome or a razor-thin native control strip should compose `renderChromeContentSurface()` with `renderWindowControlsSurface()` instead of relying on `host.renderChromeBar()` semantics.
+- Rebuilt `usr/themes/toon/shell-renderers/toon-studio-shell/toon-studio-shell.tsx` as a denser proof-of-capability shell.
+  - Window controls now float as their own thin surface.
+  - Chrome content and utility actions are separate compact cards.
+  - The launcher rail is narrower and the prior tall hero/header stack is gone.
+  - Theme metrics were also tightened at the data layer (`chromeHeight`, `railWidth`, shell inset, panel gap) so the compaction is authored, not only painted over in renderer code.
+- Removed the experimental-mode default from the shipped Toon and Andromeda explorer recipes.
+  - `usr/themes/toon/theme-recipes/toon-stagecraft/explorer.json`
+  - `usr/theme-recipes/andromeda-observatory/explorer.json`
+  - Durable rule: use `preferredViewMode` for the standard explorer landing surface; do not treat `preferredExperimentalViewMode` as a permanent default state unless the product also grows a real opt-in contract.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerViewModes.test.ts src/test/workbenchTopBar.test.tsx src/test/themeRendererPackages.test.ts src/test/toonThemeBundle.test.ts src/test/andromedaThemeBundle.test.ts`
+  - `src/test/themeRendererCatalogContract.test.ts` failed on the current checkout because it still assumes a legacy `D:/GreebleFS/themes` directory that does not exist in this repo shape.
+  - `bunx tsc --noEmit --pretty false` remains red on the existing repo baseline across mobile, lookdev, image-cutout, storage, vendored TipTap, and other unrelated areas; no new blocker was identified from the split-chrome or explorer-default changes themselves.
+
 # 2026-05-06 - Explorer Utility Dock Width Recovery And Terminal Transport ACL
 
 - Fixed two coupled Explorer rail regressions that showed up as narrow utility panes plus a broken side terminal open flow.

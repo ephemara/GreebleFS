@@ -2,6 +2,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
 
 import { getManagedContentDirectory } from "./appContentDirectories";
+import type { OverlayWindowBounds } from "./overlayWindow";
 import {
   getManagedContentWritableDirectory,
   loadManagedContentManifestsFromDirectoryStack,
@@ -63,7 +64,7 @@ export interface LookdevDockOverrides {
   edgeWidth?: number;
   defaultTerminalRows?: number;
   defaultTerminalColumns?: number;
-  floatingBounds?: Record<string, unknown> | null;
+  floatingBounds?: OverlayWindowBounds | null;
   topBarId?: string | null;
   previewEnabled?: boolean;
   previewSplitMode?: DockPreviewSplitMode;
@@ -146,6 +147,34 @@ function asNumber(value: unknown): number | undefined {
 
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeOverlayWindowBounds(
+  value: unknown,
+): OverlayWindowBounds | null | undefined {
+  if (value === null) {
+    return null;
+  }
+
+  const source = asRecord(value);
+  if (!source) {
+    return undefined;
+  }
+
+  const width = asNumber(source.width);
+  const height = asNumber(source.height);
+  const x = asNumber(source.x);
+  const y = asNumber(source.y);
+  if (
+    width == null
+    || height == null
+    || x == null
+    || y == null
+  ) {
+    return undefined;
+  }
+
+  return { width, height, x, y };
 }
 
 function asStringArray(value: unknown): string[] {
@@ -371,8 +400,8 @@ function normalizeLookdevDockOverrides(
     normalized.previewSplitMode = source.previewSplitMode;
   }
 
-  const floatingBounds = asRecord(source.floatingBounds);
-  if (floatingBounds || source.floatingBounds === null) {
+  const floatingBounds = normalizeOverlayWindowBounds(source.floatingBounds);
+  if (floatingBounds !== undefined) {
     normalized.floatingBounds = floatingBounds
       ? cloneJsonValue(floatingBounds)
       : null;
