@@ -25,7 +25,7 @@ import {
     markGreeblefsDevMcpBridgeRenderComplete,
 } from "./runtime/devMcpBridge";
 
-if (import.meta.env.DEV || import.meta.env.VITE_GREEBLEFS_MCP_ENABLED === "1") {
+if (import.meta.env.VITE_GREEBLEFS_REACT_SCAN_ENABLED === "1") {
     void import("./runtime/devReactScan").then(({ installDevReactScan }) => installDevReactScan());
 }
 
