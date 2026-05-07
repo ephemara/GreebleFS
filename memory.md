@@ -1,3 +1,40 @@
+# 2026-05-07 - Dev MCP Native Host Lane, Live Host Subscriptions, And Sessionful HTTP
+
+- Extended the dev MCP stack so host-facing automation no longer depends on the React bridge or a live `page.evaluate(...)` lane.
+  - Added `src-tauri/src/dev_mcp_native_automation.rs`, a dev-only localhost automation server that publishes native RPC/event endpoints through `MCP/.state/greeblefs-native-automation.json`.
+  - `src-tauri/src/lib.rs` now starts that server during Tauri setup, and `src-tauri/src/runtime_pipeline/commands.rs` now exposes `dispatch_native_dev_host_call(...)` so native RPC can reach the extension-host/runtime pipeline without bouncing through the frontend.
+  - `scripts/run-platform-tauri.mjs` now publishes `nativeAutomationFilePath` into the wrapper session contract so the MCP runtime can discover the native lane deterministically.
+- The MCP runtime now prefers the native lane for host-owned work.
+  - `MCP/greeblefs-dev-mcp/src/runtime/greeblefsAutomationRuntime.ts` now discovers native automation sessions, runs native RPC, exposes native host-event subscribe/read/unsubscribe helpers, uses native window metadata when available, and supports smarter multi-window targeting.
+  - `MCP/greeblefs-dev-mcp/src/index.ts` now supports typed host tools generated from the host schema, live host-event subscriptions with replay/read/unsubscribe flow, sessionful Streamable HTTP transport, lighter screenshot payloads, and `ui_snapshot` revision deltas.
+- Durable rules:
+  - Treat `MCP/.state/tauri-dev-session.json`, `MCP/.state/tauron-webview2-session.json`, and `MCP/.state/greeblefs-native-automation.json` as complementary truths.
+  - Prefer native automation for host schema, host calls, telemetry, usr-profile snapshots, window metadata, and retained host events. Keep `src/runtime/devMcpBridge.ts` focused on browser-safe UI semantics and fallback behavior.
+  - Do not call `tokio::net::TcpListener::from_std(...)` before entering a Tokio runtime. That reproduces `there is no reactor running` and can crash app startup before WebView creation.
+  - Streamable HTTP MCP initialize requests must send `Accept: application/json, text/event-stream` or session creation will fail with `Not Acceptable`.
+- Validation:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `cmd /d /s /c "pnpm build"` in `D:/tauron/packages/api`
+  - Passed: `bun run mcp:doctor`
+  - Passed: `bun run mcp:smoke`
+  - Passed: manual HTTP MCP `initialize` plus `host_events_subscribe`, `host_events_read`, and `host_events_unsubscribe`
+
+# 2026-05-07 - Shared Cargo Target For Specta Bindings During Tauri Dev
+
+- Tightened the Tauri dev bootstrap so Specta bindings no longer default to a second Rust artifact cache.
+  - `scripts/run-export-bindings.mjs` now defaults `bindings:generate` to the same workspace `target/` dir that `scripts/run-platform-tauri.mjs` passes into `bun run tauri dev`.
+  - The explicit override env vars remain intact:
+    - `GREEBLEFS_BINDINGS_CARGO_TARGET_DIR`
+    - `OVERLAYTERM_BINDINGS_CARGO_TARGET_DIR`
+- Why this changed:
+  - The old default made `export-bindings` build under `src-tauri/target/export-bindings` (or `<inherited-target>/export-bindings`), while the real app compiled under the main workspace `target/`.
+  - Because `src-tauri/src/bin/export-bindings.rs` links `greeble_lib::specta_bindings`, that separate target directory could warm a nearly full second Rust cache tree and make `bun run tauri dev` feel like two full native compiles whenever bindings prep ran.
+- Durable rule:
+  - Keep `beforeDevCommand` Cargo-free and keep Specta export serialized before the real Tauri boot, but prefer the shared workspace Cargo target for the default bindings path so app startup can reuse the same compiled crates.
+  - Only force an isolated bindings target again when there is a proven Windows target-lock or artifact-corruption issue that the shared target cannot tolerate.
+- Validation:
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --bin export-bindings --target-dir target`
+
 # 2026-05-07 - Shared DCC Editors And Layout Primitives
 
 - Extended the KOS assimilation seam in `usr/packages/greeblefs-ui` from the first panel/control wave into reusable editor and layout primitives.

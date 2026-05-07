@@ -12,11 +12,12 @@ const explicitBindingsCargoTargetDir =
   process.env.GREEBLEFS_BINDINGS_CARGO_TARGET_DIR
   || process.env.OVERLAYTERM_BINDINGS_CARGO_TARGET_DIR;
 const inheritedCargoTargetDir = process.env.CARGO_TARGET_DIR;
+const defaultSharedBindingsCargoTargetDir = inheritedCargoTargetDir
+  ? path.resolve(inheritedCargoTargetDir)
+  : path.join(projectRoot, "target");
 const bindingsCargoTargetDir = explicitBindingsCargoTargetDir
   ? path.resolve(explicitBindingsCargoTargetDir)
-  : inheritedCargoTargetDir
-    ? path.resolve(inheritedCargoTargetDir, "export-bindings")
-    : path.join(projectRoot, "src-tauri", "target", "export-bindings");
+  : defaultSharedBindingsCargoTargetDir;
 
 function readMergedTauriConfigOverride() {
   let existingConfig = {};
