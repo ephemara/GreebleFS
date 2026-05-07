@@ -6,8 +6,8 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+// Tweakpane v4 injects its bundled base styles at runtime in this workspace.
 import { Pane, type FolderApi, type TpChangeEvent } from "tweakpane";
-import "tweakpane/dist/tweakpane.css";
 import {
   ExternalLink,
   FolderOpen,
