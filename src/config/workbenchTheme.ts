@@ -4,16 +4,33 @@ import type {
 } from '../generated/tauri';
 import type { OverlayThemeDefinition } from './appearance';
 import {
+  readThemeBooleanProp,
   readThemeNumberProp,
+  readThemeStringProp,
   resolveThemeEngineBindings,
 } from './themeEngineBindings';
 
 export type OverlayWorkbenchThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayWorkbenchChromeStyle = 'solid' | 'glass' | 'floating' | 'minimal';
 export type OverlayWorkbenchPanelStyle = 'solid' | 'glass' | 'floating';
-export type OverlayWorkbenchTabStyle = 'underline' | 'capsule' | 'segment';
+export type OverlayWorkbenchTabStyle = 'underline' | 'capsule' | 'segment' | 'windows';
+export type OverlayWorkbenchTabCloseButtonMode = 'active-only' | 'always' | 'never';
 export type OverlayWorkbenchTerminalRenderer = 'auto' | 'dom' | 'webgl';
 export type OverlayWorkbenchTerminalFxPreset = 'off' | 'subtle' | 'crt' | 'broadcast';
+
+export interface OverlayWorkbenchChromeTabsThemeRecipe {
+  style?: OverlayWorkbenchTabStyle;
+  showIcons?: boolean;
+  showActiveIndicator?: boolean;
+  closeButtonMode?: OverlayWorkbenchTabCloseButtonMode;
+}
+
+export interface ResolvedWorkbenchChromeTabsThemeRecipe {
+  style: OverlayWorkbenchTabStyle;
+  showIcons: boolean;
+  showActiveIndicator: boolean;
+  closeButtonMode: OverlayWorkbenchTabCloseButtonMode;
+}
 
 export interface OverlayWorkbenchThemeMetrics {
   chromeHeight?: number;
@@ -112,6 +129,7 @@ export interface OverlayWorkbenchThemeRecipe {
   terminalFx?: OverlayWorkbenchTerminalFxRecipe;
   settingsStyle?: OverlayWorkbenchPanelStyle;
   tabStyle?: OverlayWorkbenchTabStyle;
+  chromeTabs?: OverlayWorkbenchChromeTabsThemeRecipe;
   metrics?: OverlayWorkbenchThemeMetrics;
   surfaces?: OverlayWorkbenchThemeSurfaces;
   typography?: OverlayWorkbenchThemeTypography;
@@ -132,6 +150,7 @@ export interface ResolvedWorkbenchThemeRecipe {
   terminalFx: ResolvedWorkbenchTerminalFxRecipe;
   settingsStyle: OverlayWorkbenchPanelStyle;
   tabStyle: OverlayWorkbenchTabStyle;
+  chromeTabs: ResolvedWorkbenchChromeTabsThemeRecipe;
   metrics: Required<OverlayWorkbenchThemeMetrics>;
   surfaces: Required<OverlayWorkbenchThemeSurfaces>;
   typography: Required<OverlayWorkbenchThemeTypography>;
@@ -189,6 +208,13 @@ const defaultTypography: Required<OverlayWorkbenchThemeTypography> = {
   pageBodySize: 11,
   badgeSize: 9,
   labelLetterSpacing: '0.08em',
+};
+
+const defaultChromeTabsTheme: ResolvedWorkbenchChromeTabsThemeRecipe = {
+  style: 'underline',
+  showIcons: true,
+  showActiveIndicator: true,
+  closeButtonMode: 'active-only',
 };
 
 const defaultTerminalFxByPreset: Record<OverlayWorkbenchTerminalFxPreset, ResolvedWorkbenchTerminalFxRecipe> = {
@@ -274,6 +300,23 @@ function asTerminalFxPreset(value: unknown): OverlayWorkbenchTerminalFxPreset | 
     : undefined;
 }
 
+function asWorkbenchTabStyle(value: unknown): OverlayWorkbenchTabStyle | undefined {
+  return value === 'underline'
+    || value === 'capsule'
+    || value === 'segment'
+    || value === 'windows'
+    ? value
+    : undefined;
+}
+
+function asWorkbenchTabCloseButtonMode(
+  value: unknown,
+): OverlayWorkbenchTabCloseButtonMode | undefined {
+  return value === 'active-only' || value === 'always' || value === 'never'
+    ? value
+    : undefined;
+}
+
 function normalizeCssVarRecord(value: Record<string, unknown> | undefined): Record<string, string> {
   if (!value) {
     return {};
@@ -293,6 +336,58 @@ function compactObject<T extends object>(input: T | undefined): Partial<T> {
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
+}
+
+function normalizeWorkbenchChromeTabsThemeRecipe(
+  recipe?: OverlayWorkbenchChromeTabsThemeRecipe,
+  fallback?: OverlayWorkbenchChromeTabsThemeRecipe,
+): OverlayWorkbenchChromeTabsThemeRecipe | undefined {
+  if (!recipe && !fallback) {
+    return undefined;
+  }
+
+  return {
+    style: asWorkbenchTabStyle(recipe?.style)
+      ?? asWorkbenchTabStyle(fallback?.style),
+    showIcons: recipe?.showIcons ?? fallback?.showIcons,
+    showActiveIndicator:
+      recipe?.showActiveIndicator ?? fallback?.showActiveIndicator,
+    closeButtonMode: asWorkbenchTabCloseButtonMode(recipe?.closeButtonMode)
+      ?? asWorkbenchTabCloseButtonMode(fallback?.closeButtonMode),
+  };
+}
+
+function getLegacyWorkbenchChromeTabsRecipe(
+  recipe?: OverlayWorkbenchThemeRecipe,
+): OverlayWorkbenchChromeTabsThemeRecipe | undefined {
+  if (!recipe) {
+    return undefined;
+  }
+
+  return normalizeWorkbenchChromeTabsThemeRecipe(
+    recipe.chromeTabs,
+    recipe.tabStyle ? { style: recipe.tabStyle } : undefined,
+  );
+}
+
+function resolveWorkbenchChromeTabsThemeRecipe(
+  presetTabs: OverlayWorkbenchChromeTabsThemeRecipe | undefined,
+  engineTabs: OverlayWorkbenchChromeTabsThemeRecipe | undefined,
+  userTabs: OverlayWorkbenchChromeTabsThemeRecipe | undefined,
+): ResolvedWorkbenchChromeTabsThemeRecipe {
+  const merged = normalizeWorkbenchChromeTabsThemeRecipe(
+    userTabs,
+    normalizeWorkbenchChromeTabsThemeRecipe(engineTabs, presetTabs),
+  );
+
+  return {
+    style: merged?.style ?? defaultChromeTabsTheme.style,
+    showIcons: merged?.showIcons ?? defaultChromeTabsTheme.showIcons,
+    showActiveIndicator:
+      merged?.showActiveIndicator ?? defaultChromeTabsTheme.showActiveIndicator,
+    closeButtonMode:
+      merged?.closeButtonMode ?? defaultChromeTabsTheme.closeButtonMode,
+  };
 }
 
 function resolveWorkbenchTerminalFxRecipe(
@@ -358,6 +453,10 @@ export function normalizeWorkbenchThemeRecipe(
     ...(fallback?.terminalFx ?? {}),
     ...(recipe?.terminalFx ?? {}),
   };
+  const mergedChromeTabs = normalizeWorkbenchChromeTabsThemeRecipe(
+    recipe?.chromeTabs,
+    fallback?.chromeTabs,
+  );
 
   return {
     preset: recipe?.preset ?? fallback?.preset,
@@ -385,7 +484,9 @@ export function normalizeWorkbenchThemeRecipe(
       contrast: asFiniteNumber(mergedTerminalFx.contrast),
     },
     settingsStyle: recipe?.settingsStyle ?? fallback?.settingsStyle,
-    tabStyle: recipe?.tabStyle ?? fallback?.tabStyle,
+    tabStyle: asWorkbenchTabStyle(recipe?.tabStyle)
+      ?? asWorkbenchTabStyle(fallback?.tabStyle),
+    chromeTabs: mergedChromeTabs,
     metrics: {
       chromeHeight: asFiniteNumber(mergedMetrics.chromeHeight),
       controlRadius: asFiniteNumber(mergedMetrics.controlRadius),
@@ -814,7 +915,7 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
       commandPaletteStyle = 'solid';
       terminalStyle = 'solid';
       settingsStyle = 'solid';
-      tabStyle = 'segment';
+      tabStyle = 'windows';
       controlRadius = clampNumber(Math.min(controlRadius, 8), 4, 999);
       panelRadius = clampNumber(Math.min(Math.max(panelRadius, 10), 18), 8, 48);
       shellInset = 0;
@@ -830,6 +931,19 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
     tabStyle = 'capsule';
   }
 
+  const chromeTabs = normalizeWorkbenchChromeTabsThemeRecipe({
+    style: asWorkbenchTabStyle(readThemeStringProp(navigationPattern?.props, 'chromeTabStyle'))
+      ?? tabStyle,
+    showIcons: readThemeBooleanProp(navigationPattern?.props, 'chromeTabShowIcons'),
+    showActiveIndicator: readThemeBooleanProp(
+      navigationPattern?.props,
+      'chromeTabShowActiveIndicator',
+    ),
+    closeButtonMode: asWorkbenchTabCloseButtonMode(
+      readThemeStringProp(navigationPattern?.props, 'chromeTabCloseButtonMode'),
+    ),
+  });
+
   return {
     layoutPrimitiveId: layoutPrimitive?.id,
     navigationPatternId: navigationPattern?.id,
@@ -840,6 +954,7 @@ function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWork
     terminalStyle,
     settingsStyle,
     tabStyle,
+    chromeTabs,
     metrics: {
       chromeHeight,
       controlRadius,
@@ -901,6 +1016,11 @@ export function resolveWorkbenchThemeRecipe(
     presetRecipe.terminalFx,
     engineRecipe.terminalFx,
     userRecipe?.terminalFx,
+  );
+  const chromeTabs = resolveWorkbenchChromeTabsThemeRecipe(
+    getLegacyWorkbenchChromeTabsRecipe(presetRecipe),
+    getLegacyWorkbenchChromeTabsRecipe(engineRecipe),
+    getLegacyWorkbenchChromeTabsRecipe(userRecipe),
   );
   const cssVars = {
     '--overlay-workbench-shell-bg': surfaces.shellBackground,
@@ -974,7 +1094,8 @@ export function resolveWorkbenchThemeRecipe(
     terminalRenderer,
     terminalFx,
     settingsStyle: userRecipe?.settingsStyle ?? engineRecipe.settingsStyle ?? presetRecipe.settingsStyle ?? 'solid',
-    tabStyle: userRecipe?.tabStyle ?? engineRecipe.tabStyle ?? presetRecipe.tabStyle ?? 'underline',
+    tabStyle: chromeTabs.style,
+    chromeTabs,
     metrics: {
       chromeHeight: clampNumber(metrics.chromeHeight, 30, 72),
       controlRadius: clampNumber(metrics.controlRadius, 4, 999),

@@ -179,7 +179,10 @@ function normalizeTopBarStyle(
 function normalizeTopBarTabStyle(
   value: unknown,
 ): OverlayWorkbenchTabStyle | undefined {
-  return value === "underline" || value === "capsule" || value === "segment"
+  return value === "underline"
+    || value === "capsule"
+    || value === "segment"
+    || value === "windows"
     ? value
     : undefined;
 }

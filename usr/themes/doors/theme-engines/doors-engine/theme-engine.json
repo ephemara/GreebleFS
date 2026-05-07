@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "doors-engine",
+  "name": "Doors Engine",
+  "description": "Local composition manifest for the Doors desktop-window-manager bundle.",
+  "author": "Codex",
+  "tags": [
+    "windows",
+    "desktop",
+    "explorer"
+  ],
+  "appearancePackId": "doors-appearance",
+  "interactionMotionPackId": "doors-motion",
+  "themeRecipeId": "doors-shell",
+  "compatibility": {
+    "shellBlueprints": [
+      "classic-dock",
+      "ide-workbench",
+      "retro-desktop"
+    ],
+    "tags": [
+      "windows",
+      "desktop",
+      "explorer",
+      "dark"
+    ]
+  },
+  "designTokens": [
+    {
+      "id": "doors-accent",
+      "name": "Doors Accent",
+      "kind": "color",
+      "value": "#76B9FF"
+    },
+    {
+      "id": "doors-panel-radius",
+      "name": "Doors Panel Radius",
+      "kind": "radius",
+      "value": 12
+    },
+    {
+      "id": "doors-panel-gap",
+      "name": "Doors Panel Gap",
+      "kind": "spacing",
+      "value": 8
+    }
+  ]
+}

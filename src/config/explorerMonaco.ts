@@ -127,6 +127,16 @@ function normalizeMonacoThemeColors(
   );
 }
 
+function normalizeExplorerMonacoThemeIdFragment(themeId: string | undefined): string {
+  const normalized = String(themeId ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'default';
+}
+
 function isLightAppearance(appearance: ResolvedOverlayAppearance): boolean {
   const color = parseOverlayColor(appearance.theme.palette.appBackground)
     ?? parseOverlayColor(appearance.theme.palette.panelBackground);
@@ -156,7 +166,7 @@ export function resolveExplorerMonacoThemeId(
   if (!appearance) {
     return "greeblefs-monaco-default";
   }
-  return `greeblefs-monaco-${appearance.theme.id}`;
+  return `greeblefs-monaco-${normalizeExplorerMonacoThemeIdFragment(appearance.theme.id)}`;
 }
 
 export function buildExplorerMonacoThemeDescriptor(

@@ -1,0 +1,8 @@
+{
+  "chromeStyle": "system",
+  "density": "comfortable",
+  "iconStyle": "skeuomorphic",
+  "motionStyle": "snappy",
+  "cornerRadius": 8,
+  "panelSpacing": 6
+}

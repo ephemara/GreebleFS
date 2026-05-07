@@ -1,0 +1,28 @@
+{
+  "interactionMotion": {
+    "defaultPresetId": "snappy",
+    "intensityMultiplier": 0.96,
+    "surfaceOverrides": {
+      "panelTab": {
+        "intensityMultiplier": 0.9
+      },
+      "topBarButton": {
+        "intensityMultiplier": 0.9
+      },
+      "explorerRailItem": {
+        "intensityMultiplier": 0.94
+      },
+      "explorerEntry": {
+        "intensityMultiplier": 0.96
+      },
+      "settingsCard": {
+        "intensityMultiplier": 0.88
+      }
+    }
+  },
+  "tokens": {
+    "defaultPresetId": "snappy",
+    "hoverLiftPx": 1,
+    "touchTarget": 46
+  }
+}

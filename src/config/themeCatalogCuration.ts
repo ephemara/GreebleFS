@@ -89,6 +89,13 @@ const THEME_CATALOG_PACKAGE_OVERRIDES: Record<string, ThemeCatalogPackageOverrid
     suiteLabel: 'Pilot Suite',
     suiteDescription: 'The editorial shell for the current direction-set.',
   },
+  doors: {
+    tierId: 'official-pilot',
+    sortRank: 4,
+    badgeLabel: 'Pilot',
+    suiteLabel: 'Pilot Suite',
+    suiteDescription: 'The desktop-window-manager reference shell for the current direction-set.',
+  },
   'windows-95-classic': {
     tierId: 'archive',
     sortRank: 0,

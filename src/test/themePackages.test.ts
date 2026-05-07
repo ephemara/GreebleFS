@@ -706,6 +706,49 @@ describe('theme bundle loader', () => {
     expect(secondTheme?.cssVars?.['--gfs-ui-color-accent']).toBe('#abcdef');
   });
 
+  it('treats Windows os error 2 as a missing optional token file when loading appearance packs', async () => {
+    const appearanceDirectoryEntries = [
+      createDirectoryEntry('usr/appearance-packs/windows-proof'),
+    ];
+
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const path = normalizePath((args as { path?: string } | undefined)?.path);
+
+      if (command === 'fs_read_text_file') {
+        if (path === 'usr/appearance-packs/windows-proof/manifest.json') {
+          return JSON.stringify({
+            version: 1,
+            id: 'windows-proof',
+            name: 'Windows Proof',
+            extendsThemeId: 'github-dark',
+          });
+        }
+
+        if (path === 'usr/appearance-packs/windows-proof/tokens/color.json') {
+          return JSON.stringify({
+            tokens: {
+              accent: '#76B9FF',
+            },
+          });
+        }
+
+        throw new Error('The system cannot find the file specified. (os error 2)');
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await loadThemeAppearancePacksFromDirectoryEntries(
+      appearanceDirectoryEntries,
+      { scopeId: 'windows-proof-bundle', virtualRoot: 'themes/windows-proof' },
+    );
+
+    expect(result.warnings).toEqual([]);
+    expect(result.packs).toHaveLength(1);
+    expect(result.packs[0]?.id).toBe('windows-proof-bundle:windows-proof');
+    expect(result.packs[0]?.tokens?.color?.accent).toBe('#76B9FF');
+  });
+
   it('keeps healthy bundles when a sibling bundle has invalid runtime contributions', async () => {
     const directories: Record<string, FileEntry[]> = {
       'themes/good': [],

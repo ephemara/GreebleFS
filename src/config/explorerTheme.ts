@@ -20,6 +20,7 @@ import {
   type ExplorerMenuPresentationRecipe,
 } from './explorerContextMenu';
 import {
+  readThemeBooleanProp,
   readThemeNumberProp,
   readThemeStringProp,
   resolveThemeEngineBindings,
@@ -34,6 +35,16 @@ import {
   normalizeExplorerModeProfileId,
   type ExplorerModeProfileId,
 } from './explorerModeProfiles';
+import {
+  explorerRailSectionOrder,
+  type ExplorerRailActiveBranchStyle,
+  type ExplorerRailHierarchyGuideStyle,
+  type ExplorerRailIconTone,
+  type ExplorerRailRowChrome,
+  type ExplorerRailSectionChrome,
+  type ExplorerRailSectionId,
+  type ExplorerRailViewMode,
+} from './explorerRail';
 
 export type OverlayExplorerThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayExplorerToolbarStyle = 'solid' | 'glass' | 'floating' | 'minimal';
@@ -44,6 +55,74 @@ export type OverlayExplorerPreviewStyle = 'attached' | 'floating' | 'glass';
 export type OverlayExplorerStatusBarStyle = 'solid' | 'floating' | 'hidden';
 export type OverlayExplorerLabelMode = 'stacked' | 'inline';
 export type OverlayExplorerRailPosition = 'left' | 'right';
+export type OverlayExplorerRailSectionHeaderTextTransform = 'uppercase' | 'none';
+export type OverlayExplorerBookmarkChromeStyle = 'full' | 'minimal';
+export type OverlayExplorerWorkspaceTabStyle = 'underline' | 'capsule' | 'segment' | 'windows';
+export type OverlayExplorerTabCloseButtonMode = 'active-only' | 'always' | 'never';
+
+export interface OverlayExplorerRailThemeRecipe {
+  defaultViewMode?: ExplorerRailViewMode;
+  showViewModeSelector?: boolean;
+  showAutoExpandToggle?: boolean;
+  autoExpandToOpenFolder?: boolean;
+  sectionOrder?: ExplorerRailSectionId[];
+  hiddenSectionIds?: ExplorerRailSectionId[];
+  sectionLabels?: Partial<Record<ExplorerRailSectionId, string>>;
+  sectionChrome?: ExplorerRailSectionChrome;
+  rowChrome?: ExplorerRailRowChrome;
+  hierarchyGuideStyle?: ExplorerRailHierarchyGuideStyle;
+  activeBranchStyle?: ExplorerRailActiveBranchStyle;
+  iconTone?: ExplorerRailIconTone;
+  treeIndentStep?: number;
+  showSupportingMeta?: boolean;
+  showDriveCapacity?: boolean;
+  flattenDriveRows?: boolean;
+  showSectionHeaders?: boolean;
+  sectionHeaderTextTransform?: OverlayExplorerRailSectionHeaderTextTransform;
+  bookmarkChromeStyle?: OverlayExplorerBookmarkChromeStyle;
+  sectionGap?: number;
+}
+
+export interface ResolvedExplorerRailThemeRecipe {
+  defaultViewMode: ExplorerRailViewMode | null;
+  showViewModeSelector: boolean;
+  showAutoExpandToggle: boolean;
+  autoExpandToOpenFolder: boolean | null;
+  sectionOrder: ExplorerRailSectionId[];
+  hiddenSectionIds: ExplorerRailSectionId[];
+  sectionLabels: Partial<Record<ExplorerRailSectionId, string>>;
+  sectionChrome: ExplorerRailSectionChrome | null;
+  rowChrome: ExplorerRailRowChrome | null;
+  hierarchyGuideStyle: ExplorerRailHierarchyGuideStyle | null;
+  activeBranchStyle: ExplorerRailActiveBranchStyle | null;
+  iconTone: ExplorerRailIconTone | null;
+  treeIndentStep: number | null;
+  showSupportingMeta: boolean | null;
+  showDriveCapacity: boolean | null;
+  flattenDriveRows: boolean | null;
+  showSectionHeaders: boolean;
+  sectionHeaderTextTransform: OverlayExplorerRailSectionHeaderTextTransform;
+  bookmarkChromeStyle: OverlayExplorerBookmarkChromeStyle;
+  sectionGap: number | null;
+}
+
+export interface OverlayExplorerWorkspaceTabsThemeRecipe {
+  style?: OverlayExplorerWorkspaceTabStyle;
+  showPaneSwitcher?: boolean;
+  showLeadingStatusDot?: boolean;
+  showPaneCountBadge?: boolean;
+  showActiveIndicator?: boolean;
+  closeButtonMode?: OverlayExplorerTabCloseButtonMode;
+}
+
+export interface ResolvedExplorerWorkspaceTabsThemeRecipe {
+  style: OverlayExplorerWorkspaceTabStyle;
+  showPaneSwitcher: boolean;
+  showLeadingStatusDot: boolean;
+  showPaneCountBadge: boolean;
+  showActiveIndicator: boolean;
+  closeButtonMode: OverlayExplorerTabCloseButtonMode;
+}
 
 export interface OverlayExplorerThemeMetrics {
   railWidth?: number;
@@ -123,6 +202,8 @@ export interface OverlayExplorerThemeRecipe {
   preferredViewMode?: ExplorerViewMode;
   preferredExperimentalViewMode?: ExplorerExperimentalViewMode;
   menuPresentation?: ExplorerMenuPresentationRecipe;
+  rail?: OverlayExplorerRailThemeRecipe;
+  workspaceTabs?: OverlayExplorerWorkspaceTabsThemeRecipe;
   metrics?: OverlayExplorerThemeMetrics;
   surfaces?: OverlayExplorerThemeSurfaces;
   typography?: OverlayExplorerThemeTypography;
@@ -148,6 +229,8 @@ export interface ResolvedExplorerThemeRecipe {
   preferredViewMode: ExplorerViewMode | null;
   preferredExperimentalViewMode: ExplorerExperimentalViewMode | null;
   menuPresentation: ExplorerMenuPresentationRecipe;
+  rail: ResolvedExplorerRailThemeRecipe;
+  workspaceTabs: ResolvedExplorerWorkspaceTabsThemeRecipe;
   metrics: Required<OverlayExplorerThemeMetrics>;
   surfaces: Required<OverlayExplorerThemeSurfaces>;
   typography: Required<OverlayExplorerThemeTypography>;
@@ -213,6 +296,46 @@ const workbenchSurfaces: Required<OverlayExplorerThemeSurfaces> = {
   chipActiveText: 'var(--overlay-accent)',
 };
 
+const defaultExplorerRailSectionLabels = {
+  'quick-access': 'Quick Access',
+  drives: 'Drives',
+  'saved-searches': 'Saved Searches',
+  tags: 'Tags',
+  bookmarks: 'Bookmarks',
+} as const satisfies Record<ExplorerRailSectionId, string>;
+
+const defaultExplorerRailTheme: ResolvedExplorerRailThemeRecipe = {
+  defaultViewMode: null,
+  showViewModeSelector: true,
+  showAutoExpandToggle: true,
+  autoExpandToOpenFolder: null,
+  sectionOrder: [...explorerRailSectionOrder],
+  hiddenSectionIds: [],
+  sectionLabels: {},
+  sectionChrome: null,
+  rowChrome: null,
+  hierarchyGuideStyle: null,
+  activeBranchStyle: null,
+  iconTone: null,
+  treeIndentStep: null,
+  showSupportingMeta: null,
+  showDriveCapacity: null,
+  flattenDriveRows: null,
+  showSectionHeaders: true,
+  sectionHeaderTextTransform: 'uppercase',
+  bookmarkChromeStyle: 'full',
+  sectionGap: null,
+};
+
+const defaultExplorerWorkspaceTabsTheme: ResolvedExplorerWorkspaceTabsThemeRecipe = {
+  style: 'capsule',
+  showPaneSwitcher: true,
+  showLeadingStatusDot: true,
+  showPaneCountBadge: true,
+  showActiveIndicator: true,
+  closeButtonMode: 'always',
+};
+
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -242,6 +365,132 @@ function isExplorerExperimentalViewMode(value: unknown): value is ExplorerExperi
     || value === 'timeline-surface';
 }
 
+function isExplorerRailViewModeValue(value: unknown): value is ExplorerRailViewMode {
+  return value === 'default' || value === 'compact' || value === 'tree';
+}
+
+function asExplorerRailSectionChrome(value: unknown): ExplorerRailSectionChrome | undefined {
+  return value === 'carded'
+    || value === 'compact'
+    || value === 'tree'
+    || value === 'plain'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailRowChrome(value: unknown): ExplorerRailRowChrome | undefined {
+  return value === 'carded'
+    || value === 'compact'
+    || value === 'tree'
+    || value === 'plain'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailHierarchyGuideStyle(
+  value: unknown,
+): ExplorerRailHierarchyGuideStyle | undefined {
+  return value === 'none' || value === 'soft' || value === 'strong'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailActiveBranchStyle(
+  value: unknown,
+): ExplorerRailActiveBranchStyle | undefined {
+  return value === 'soft' || value === 'bold' || value === 'lane'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailIconTone(value: unknown): ExplorerRailIconTone | undefined {
+  return value === 'muted' || value === 'contrast' || value === 'accented'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailSectionId(value: unknown): ExplorerRailSectionId | undefined {
+  return value === 'quick-access'
+    || value === 'drives'
+    || value === 'saved-searches'
+    || value === 'tags'
+    || value === 'bookmarks'
+    ? value
+    : undefined;
+}
+
+function asExplorerRailSectionHeaderTextTransform(
+  value: unknown,
+): OverlayExplorerRailSectionHeaderTextTransform | undefined {
+  return value === 'uppercase' || value === 'none' ? value : undefined;
+}
+
+function asExplorerBookmarkChromeStyle(
+  value: unknown,
+): OverlayExplorerBookmarkChromeStyle | undefined {
+  return value === 'full' || value === 'minimal' ? value : undefined;
+}
+
+function asExplorerWorkspaceTabStyle(
+  value: unknown,
+): OverlayExplorerWorkspaceTabStyle | undefined {
+  return value === 'underline'
+    || value === 'capsule'
+    || value === 'segment'
+    || value === 'windows'
+    ? value
+    : undefined;
+}
+
+function asExplorerTabCloseButtonMode(
+  value: unknown,
+): OverlayExplorerTabCloseButtonMode | undefined {
+  return value === 'active-only' || value === 'always' || value === 'never'
+    ? value
+    : undefined;
+}
+
+function normalizeExplorerRailSectionOrder(
+  value: unknown,
+): ExplorerRailSectionId[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const seen = new Set<ExplorerRailSectionId>();
+  const orderedIds = value
+    .map(entry => asExplorerRailSectionId(entry))
+    .filter((entry): entry is ExplorerRailSectionId => Boolean(entry))
+    .filter((entry) => {
+      if (seen.has(entry)) {
+        return false;
+      }
+      seen.add(entry);
+      return true;
+    });
+
+  return orderedIds.length > 0 ? orderedIds : undefined;
+}
+
+function normalizeExplorerRailSectionLabels(
+  value: Record<string, unknown> | undefined,
+): Partial<Record<ExplorerRailSectionId, string>> {
+  if (!value) {
+    return {};
+  }
+
+  const labels: Partial<Record<ExplorerRailSectionId, string>> = {};
+  for (const [key, label] of Object.entries(value)) {
+    const sectionId = asExplorerRailSectionId(key);
+    const normalizedLabel = asTrimmedString(label);
+    if (!sectionId || !normalizedLabel) {
+      continue;
+    }
+    labels[sectionId] = normalizedLabel;
+  }
+  return labels;
+}
+
 function normalizeCssVarRecord(value: Record<string, unknown> | undefined): Record<string, string> {
   if (!value) {
     return {};
@@ -263,6 +512,85 @@ function compactObject<T extends object>(input: T | undefined): Partial<T> {
   ) as Partial<T>;
 }
 
+function normalizeExplorerRailThemeRecipe(
+  recipe?: OverlayExplorerRailThemeRecipe,
+  fallback?: OverlayExplorerRailThemeRecipe,
+): OverlayExplorerRailThemeRecipe | undefined {
+  if (!recipe && !fallback) {
+    return undefined;
+  }
+
+  const mergedSectionLabels = {
+    ...normalizeExplorerRailSectionLabels(fallback?.sectionLabels as Record<string, unknown> | undefined),
+    ...normalizeExplorerRailSectionLabels(recipe?.sectionLabels as Record<string, unknown> | undefined),
+  };
+  const hiddenSectionIds = normalizeExplorerRailSectionOrder(
+    recipe?.hiddenSectionIds ?? fallback?.hiddenSectionIds,
+  );
+
+  return {
+    defaultViewMode: isExplorerRailViewModeValue(recipe?.defaultViewMode)
+      ? recipe.defaultViewMode
+      : isExplorerRailViewModeValue(fallback?.defaultViewMode)
+        ? fallback.defaultViewMode
+        : undefined,
+    showViewModeSelector: recipe?.showViewModeSelector ?? fallback?.showViewModeSelector,
+    showAutoExpandToggle: recipe?.showAutoExpandToggle ?? fallback?.showAutoExpandToggle,
+    autoExpandToOpenFolder:
+      recipe?.autoExpandToOpenFolder ?? fallback?.autoExpandToOpenFolder,
+    sectionOrder: normalizeExplorerRailSectionOrder(recipe?.sectionOrder)
+      ?? normalizeExplorerRailSectionOrder(fallback?.sectionOrder),
+    hiddenSectionIds,
+    sectionLabels: mergedSectionLabels,
+    sectionChrome: asExplorerRailSectionChrome(recipe?.sectionChrome)
+      ?? asExplorerRailSectionChrome(fallback?.sectionChrome),
+    rowChrome: asExplorerRailRowChrome(recipe?.rowChrome)
+      ?? asExplorerRailRowChrome(fallback?.rowChrome),
+    hierarchyGuideStyle: asExplorerRailHierarchyGuideStyle(recipe?.hierarchyGuideStyle)
+      ?? asExplorerRailHierarchyGuideStyle(fallback?.hierarchyGuideStyle),
+    activeBranchStyle: asExplorerRailActiveBranchStyle(recipe?.activeBranchStyle)
+      ?? asExplorerRailActiveBranchStyle(fallback?.activeBranchStyle),
+    iconTone: asExplorerRailIconTone(recipe?.iconTone)
+      ?? asExplorerRailIconTone(fallback?.iconTone),
+    treeIndentStep: asFiniteNumber(recipe?.treeIndentStep)
+      ?? asFiniteNumber(fallback?.treeIndentStep),
+    showSupportingMeta: recipe?.showSupportingMeta ?? fallback?.showSupportingMeta,
+    showDriveCapacity: recipe?.showDriveCapacity ?? fallback?.showDriveCapacity,
+    flattenDriveRows: recipe?.flattenDriveRows ?? fallback?.flattenDriveRows,
+    showSectionHeaders: recipe?.showSectionHeaders ?? fallback?.showSectionHeaders,
+    sectionHeaderTextTransform:
+      asExplorerRailSectionHeaderTextTransform(recipe?.sectionHeaderTextTransform)
+      ?? asExplorerRailSectionHeaderTextTransform(fallback?.sectionHeaderTextTransform),
+    bookmarkChromeStyle: asExplorerBookmarkChromeStyle(recipe?.bookmarkChromeStyle)
+      ?? asExplorerBookmarkChromeStyle(fallback?.bookmarkChromeStyle),
+    sectionGap: asFiniteNumber(recipe?.sectionGap)
+      ?? asFiniteNumber(fallback?.sectionGap),
+  };
+}
+
+function normalizeExplorerWorkspaceTabsThemeRecipe(
+  recipe?: OverlayExplorerWorkspaceTabsThemeRecipe,
+  fallback?: OverlayExplorerWorkspaceTabsThemeRecipe,
+): OverlayExplorerWorkspaceTabsThemeRecipe | undefined {
+  if (!recipe && !fallback) {
+    return undefined;
+  }
+
+  return {
+    style: asExplorerWorkspaceTabStyle(recipe?.style)
+      ?? asExplorerWorkspaceTabStyle(fallback?.style),
+    showPaneSwitcher: recipe?.showPaneSwitcher ?? fallback?.showPaneSwitcher,
+    showLeadingStatusDot:
+      recipe?.showLeadingStatusDot ?? fallback?.showLeadingStatusDot,
+    showPaneCountBadge:
+      recipe?.showPaneCountBadge ?? fallback?.showPaneCountBadge,
+    showActiveIndicator:
+      recipe?.showActiveIndicator ?? fallback?.showActiveIndicator,
+    closeButtonMode: asExplorerTabCloseButtonMode(recipe?.closeButtonMode)
+      ?? asExplorerTabCloseButtonMode(fallback?.closeButtonMode),
+  };
+}
+
 export function normalizeExplorerThemeRecipe(
   recipe?: OverlayExplorerThemeRecipe,
   fallback?: OverlayExplorerThemeRecipe,
@@ -275,6 +603,11 @@ export function normalizeExplorerThemeRecipe(
   const mergedMetrics = source?.metrics ?? {};
   const mergedSurfaces = source?.surfaces ?? {};
   const mergedTypography = source?.typography ?? {};
+  const mergedRail = normalizeExplorerRailThemeRecipe(recipe?.rail, fallback?.rail);
+  const mergedWorkspaceTabs = normalizeExplorerWorkspaceTabsThemeRecipe(
+    recipe?.workspaceTabs,
+    fallback?.workspaceTabs,
+  );
 
   const next: OverlayExplorerThemeRecipe = {
     preset: source?.preset,
@@ -303,6 +636,8 @@ export function normalizeExplorerThemeRecipe(
       ? source.preferredExperimentalViewMode
       : undefined,
     menuPresentation: normalizeExplorerMenuPresentationRecipe(source?.menuPresentation),
+    rail: mergedRail,
+    workspaceTabs: mergedWorkspaceTabs,
     metrics: {
       railWidth: asFiniteNumber(mergedMetrics.railWidth),
       previewWidth: asFiniteNumber(mergedMetrics.previewWidth),
@@ -677,6 +1012,7 @@ function createExplorerEngineRecipe(
   const layoutPrimitive = bindings.layoutPrimitive;
   const navigationPattern = bindings.navigationPattern;
   const renderStyle = bindings.renderStyle;
+  const navigationProps = navigationPattern?.props;
   const styleSeed = createExplorerStyleSeed(appearance);
   const spacingScale = getDensitySpacingScale(presentation?.density);
   const panelSpacing = clampNumber(
@@ -864,6 +1200,134 @@ function createExplorerEngineRecipe(
       break;
   }
 
+  let railRecipe: OverlayExplorerRailThemeRecipe | undefined;
+  let workspaceTabsRecipe: OverlayExplorerWorkspaceTabsThemeRecipe | undefined;
+
+  const railSectionOrder = normalizeExplorerRailSectionOrder(
+    readThemeStringProp(navigationProps, 'railSectionOrder')
+      ?.split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean),
+  );
+  const railHiddenSectionIds = normalizeExplorerRailSectionOrder(
+    readThemeStringProp(navigationProps, 'railHiddenSectionIds')
+      ?.split(',')
+      .map(entry => entry.trim())
+      .filter(Boolean),
+  );
+
+  if (navigationPattern?.kind === 'hierarchy') {
+    railRecipe = normalizeExplorerRailThemeRecipe({
+      defaultViewMode: 'tree',
+      showSupportingMeta: false,
+      showDriveCapacity: false,
+      flattenDriveRows: true,
+    }, railRecipe);
+  } else if (navigationPattern?.kind === 'palette') {
+    railRecipe = normalizeExplorerRailThemeRecipe({
+      defaultViewMode: 'compact',
+    }, railRecipe);
+  }
+
+  if (navigationPattern?.kind === 'tabbed') {
+    workspaceTabsRecipe = normalizeExplorerWorkspaceTabsThemeRecipe({
+      style: renderStyle?.kind === 'desktop-window-manager' ? 'windows' : 'segment',
+    }, workspaceTabsRecipe);
+  } else if (
+    navigationPattern?.kind === 'xmb'
+    || navigationPattern?.kind === 'spatial'
+  ) {
+    workspaceTabsRecipe = normalizeExplorerWorkspaceTabsThemeRecipe({
+      style: 'capsule',
+    }, workspaceTabsRecipe);
+  }
+
+  railRecipe = normalizeExplorerRailThemeRecipe({
+    defaultViewMode: isExplorerRailViewModeValue(
+      readThemeStringProp(navigationProps, 'railViewMode'),
+    )
+      ? readThemeStringProp(navigationProps, 'railViewMode') as ExplorerRailViewMode
+      : undefined,
+    showViewModeSelector: readThemeBooleanProp(
+      navigationProps,
+      'railShowViewModeSelector',
+    ),
+    showAutoExpandToggle: readThemeBooleanProp(
+      navigationProps,
+      'railShowAutoExpandToggle',
+    ),
+    autoExpandToOpenFolder: readThemeBooleanProp(
+      navigationProps,
+      'railAutoExpandToOpenFolder',
+    ),
+    sectionOrder: railSectionOrder,
+    hiddenSectionIds: railHiddenSectionIds,
+    sectionChrome: asExplorerRailSectionChrome(
+      readThemeStringProp(navigationProps, 'railSectionChrome'),
+    ),
+    rowChrome: asExplorerRailRowChrome(
+      readThemeStringProp(navigationProps, 'railRowChrome'),
+    ),
+    hierarchyGuideStyle: asExplorerRailHierarchyGuideStyle(
+      readThemeStringProp(navigationProps, 'railHierarchyGuideStyle'),
+    ),
+    activeBranchStyle: asExplorerRailActiveBranchStyle(
+      readThemeStringProp(navigationProps, 'railActiveBranchStyle'),
+    ),
+    iconTone: asExplorerRailIconTone(
+      readThemeStringProp(navigationProps, 'railIconTone'),
+    ),
+    treeIndentStep: readThemeNumberProp(navigationProps, 'railTreeIndentStep'),
+    showSupportingMeta: readThemeBooleanProp(
+      navigationProps,
+      'railShowSupportingMeta',
+    ),
+    showDriveCapacity: readThemeBooleanProp(
+      navigationProps,
+      'railShowDriveCapacity',
+    ),
+    flattenDriveRows: readThemeBooleanProp(
+      navigationProps,
+      'railFlattenDriveRows',
+    ),
+    showSectionHeaders: readThemeBooleanProp(
+      navigationProps,
+      'railShowSectionHeaders',
+    ),
+    sectionHeaderTextTransform: asExplorerRailSectionHeaderTextTransform(
+      readThemeStringProp(navigationProps, 'railSectionHeaderTextTransform'),
+    ),
+    bookmarkChromeStyle: asExplorerBookmarkChromeStyle(
+      readThemeStringProp(navigationProps, 'railBookmarkChromeStyle'),
+    ),
+    sectionGap: readThemeNumberProp(navigationProps, 'railSectionGap'),
+  }, railRecipe);
+
+  workspaceTabsRecipe = normalizeExplorerWorkspaceTabsThemeRecipe({
+    style: asExplorerWorkspaceTabStyle(
+      readThemeStringProp(navigationProps, 'workspaceTabStyle'),
+    ),
+    showPaneSwitcher: readThemeBooleanProp(
+      navigationProps,
+      'workspaceTabShowPaneSwitcher',
+    ),
+    showLeadingStatusDot: readThemeBooleanProp(
+      navigationProps,
+      'workspaceTabShowLeadingStatusDot',
+    ),
+    showPaneCountBadge: readThemeBooleanProp(
+      navigationProps,
+      'workspaceTabShowPaneCountBadge',
+    ),
+    showActiveIndicator: readThemeBooleanProp(
+      navigationProps,
+      'workspaceTabShowActiveIndicator',
+    ),
+    closeButtonMode: asExplorerTabCloseButtonMode(
+      readThemeStringProp(navigationProps, 'workspaceTabCloseButtonMode'),
+    ),
+  }, workspaceTabsRecipe);
+
   return {
     layoutPrimitiveId: layoutPrimitive?.id,
     navigationPatternId: navigationPattern?.id,
@@ -878,6 +1342,8 @@ function createExplorerEngineRecipe(
     labelMode,
     preferredViewMode: preferredViewMode ?? undefined,
     preferredExperimentalViewMode: preferredExperimentalViewMode ?? undefined,
+    rail: railRecipe,
+    workspaceTabs: workspaceTabsRecipe,
     metrics: {
       railWidth,
       previewWidth,
@@ -943,6 +1409,103 @@ function resolveTypography(
   };
 }
 
+function resolveExplorerRailThemeRecipe(
+  presetRail: OverlayExplorerRailThemeRecipe | undefined,
+  engineRail: OverlayExplorerRailThemeRecipe | undefined,
+  userRail: OverlayExplorerRailThemeRecipe | undefined,
+): ResolvedExplorerRailThemeRecipe {
+  const normalized = normalizeExplorerRailThemeRecipe(
+    userRail,
+    normalizeExplorerRailThemeRecipe(engineRail, presetRail),
+  );
+  const hiddenSectionIds = normalizeExplorerRailSectionOrder(
+    normalized?.hiddenSectionIds,
+  ) ?? [];
+  const orderedSectionIds = [
+    ...(
+      normalizeExplorerRailSectionOrder(normalized?.sectionOrder)
+      ?? explorerRailSectionOrder
+    ).filter(sectionId => !hiddenSectionIds.includes(sectionId)),
+    ...explorerRailSectionOrder.filter(
+      sectionId =>
+        !hiddenSectionIds.includes(sectionId)
+        && !(
+          normalizeExplorerRailSectionOrder(normalized?.sectionOrder)
+          ?? []
+        ).includes(sectionId),
+    ),
+  ];
+
+  return {
+    defaultViewMode: isExplorerRailViewModeValue(normalized?.defaultViewMode)
+      ? normalized.defaultViewMode
+      : defaultExplorerRailTheme.defaultViewMode,
+    showViewModeSelector:
+      normalized?.showViewModeSelector ?? defaultExplorerRailTheme.showViewModeSelector,
+    showAutoExpandToggle:
+      normalized?.showAutoExpandToggle ?? defaultExplorerRailTheme.showAutoExpandToggle,
+    autoExpandToOpenFolder:
+      normalized?.autoExpandToOpenFolder
+      ?? defaultExplorerRailTheme.autoExpandToOpenFolder,
+    sectionOrder: orderedSectionIds,
+    hiddenSectionIds,
+    sectionLabels: {
+      ...defaultExplorerRailSectionLabels,
+      ...(normalized?.sectionLabels ?? defaultExplorerRailTheme.sectionLabels),
+    },
+    sectionChrome:
+      normalized?.sectionChrome ?? defaultExplorerRailTheme.sectionChrome,
+    rowChrome: normalized?.rowChrome ?? defaultExplorerRailTheme.rowChrome,
+    hierarchyGuideStyle:
+      normalized?.hierarchyGuideStyle ?? defaultExplorerRailTheme.hierarchyGuideStyle,
+    activeBranchStyle:
+      normalized?.activeBranchStyle ?? defaultExplorerRailTheme.activeBranchStyle,
+    iconTone: normalized?.iconTone ?? defaultExplorerRailTheme.iconTone,
+    treeIndentStep:
+      normalized?.treeIndentStep ?? defaultExplorerRailTheme.treeIndentStep,
+    showSupportingMeta:
+      normalized?.showSupportingMeta ?? defaultExplorerRailTheme.showSupportingMeta,
+    showDriveCapacity:
+      normalized?.showDriveCapacity ?? defaultExplorerRailTheme.showDriveCapacity,
+    flattenDriveRows:
+      normalized?.flattenDriveRows ?? defaultExplorerRailTheme.flattenDriveRows,
+    showSectionHeaders:
+      normalized?.showSectionHeaders ?? defaultExplorerRailTheme.showSectionHeaders,
+    sectionHeaderTextTransform:
+      normalized?.sectionHeaderTextTransform
+      ?? defaultExplorerRailTheme.sectionHeaderTextTransform,
+    bookmarkChromeStyle:
+      normalized?.bookmarkChromeStyle ?? defaultExplorerRailTheme.bookmarkChromeStyle,
+    sectionGap: normalized?.sectionGap ?? defaultExplorerRailTheme.sectionGap,
+  };
+}
+
+function resolveExplorerWorkspaceTabsThemeRecipe(
+  presetTabs: OverlayExplorerWorkspaceTabsThemeRecipe | undefined,
+  engineTabs: OverlayExplorerWorkspaceTabsThemeRecipe | undefined,
+  userTabs: OverlayExplorerWorkspaceTabsThemeRecipe | undefined,
+): ResolvedExplorerWorkspaceTabsThemeRecipe {
+  const merged = normalizeExplorerWorkspaceTabsThemeRecipe(
+    userTabs,
+    normalizeExplorerWorkspaceTabsThemeRecipe(engineTabs, presetTabs),
+  );
+
+  return {
+    style: merged?.style ?? defaultExplorerWorkspaceTabsTheme.style,
+    showPaneSwitcher:
+      merged?.showPaneSwitcher ?? defaultExplorerWorkspaceTabsTheme.showPaneSwitcher,
+    showLeadingStatusDot:
+      merged?.showLeadingStatusDot
+      ?? defaultExplorerWorkspaceTabsTheme.showLeadingStatusDot,
+    showPaneCountBadge:
+      merged?.showPaneCountBadge ?? defaultExplorerWorkspaceTabsTheme.showPaneCountBadge,
+    showActiveIndicator:
+      merged?.showActiveIndicator ?? defaultExplorerWorkspaceTabsTheme.showActiveIndicator,
+    closeButtonMode:
+      merged?.closeButtonMode ?? defaultExplorerWorkspaceTabsTheme.closeButtonMode,
+  };
+}
+
 export function resolveExplorerThemeRecipe(
   appearance?: ResolvedOverlayAppearance,
 ): ResolvedExplorerThemeRecipe {
@@ -999,6 +1562,16 @@ export function resolveExplorerThemeRecipe(
       ?? engineRecipe.defaultModeProfileId
       ?? presetRecipe.defaultModeProfileId
       ?? defaultExplorerModeProfileId,
+  );
+  const rail = resolveExplorerRailThemeRecipe(
+    presetRecipe.rail,
+    engineRecipe.rail,
+    userRecipe?.rail,
+  );
+  const workspaceTabs = resolveExplorerWorkspaceTabsThemeRecipe(
+    presetRecipe.workspaceTabs,
+    engineRecipe.workspaceTabs,
+    userRecipe?.workspaceTabs,
   );
 
   const cssVars = {
@@ -1140,6 +1713,8 @@ export function resolveExplorerThemeRecipe(
       ? preferredExperimentalViewMode
       : null,
     menuPresentation,
+    rail,
+    workspaceTabs,
     metrics,
     surfaces,
     typography,

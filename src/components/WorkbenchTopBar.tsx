@@ -435,8 +435,12 @@ export function WorkbenchTopBar({
   const muted = appearance.theme.palette.textMuted;
   const text = appearance.theme.palette.textPrimary;
   const workbench = appearance.workbenchTheme;
+  const chromeTabsTheme = workbench.chromeTabs;
   const effectiveTopBarStyle = topBarDefinition.topBarStyle ?? workbench.topBarStyle;
-  const effectiveTabStyle = topBarDefinition.tabStyle ?? workbench.tabStyle;
+  const effectiveTabStyle = topBarDefinition.tabStyle ?? chromeTabsTheme.style ?? workbench.tabStyle;
+  const effectiveTabShowIcons = chromeTabsTheme.showIcons;
+  const effectiveTabShowActiveIndicator = chromeTabsTheme.showActiveIndicator;
+  const effectiveTabCloseButtonMode = chromeTabsTheme.closeButtonMode;
   const uiFont = appearance.fonts.ui;
   const monoFont = appearance.fonts.mono;
   const usesDockControlStrip = windowMode === 'overlay' && topBarDefinition.id === 'dock-control-strip';
@@ -2635,7 +2639,7 @@ export function WorkbenchTopBar({
         alignItems: 'stretch',
         flex: 1,
         minWidth: 0,
-        background: 'rgba(0,0,0,0.08)',
+        background: effectiveTabStyle === 'windows' ? 'transparent' : 'rgba(0,0,0,0.08)',
       }}
       contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}
     >
@@ -2644,6 +2648,7 @@ export function WorkbenchTopBar({
         const isDragged = draggedPanelId === panel.id;
         const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
         const panelTabMotion = bindPanelTabMotion(isActive, index);
+        const usesWindowsTabChrome = effectiveTabStyle === 'windows';
         return (
           <button
             key={panel.id}
@@ -2677,15 +2682,27 @@ export function WorkbenchTopBar({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              gap: effectiveTabShowIcons ? 6 : 0,
               padding: '0 9px',
               cursor: 'pointer',
               background: isActive
-                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
-                : (effectiveTabStyle === 'segment' ? 'var(--overlay-workbench-chrome-tab-bg)' : 'transparent'),
-              border: 'none',
-              borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
-              borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
+                ? usesWindowsTabChrome
+                  ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                  : 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : effectiveTabStyle === 'segment'
+                  ? 'var(--overlay-workbench-chrome-tab-bg)'
+                  : usesWindowsTabChrome
+                    ? 'var(--overlay-workbench-chrome-tab-bg)'
+                    : 'transparent',
+              border: usesWindowsTabChrome
+                ? `1px solid ${borderColor}`
+                : 'none',
+              borderBottom: usesWindowsTabChrome
+                ? `1px solid ${isActive ? 'var(--overlay-workbench-chrome-bg)' : borderColor}`
+                : isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
+              borderTop: usesWindowsTabChrome
+                ? `1px solid ${borderColor}`
+                : isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
               borderRight: `1px solid ${borderColor}`,
               color: isActive ? text : muted,
               fontSize: 'var(--overlay-workbench-tab-label-size)',
@@ -2696,16 +2713,35 @@ export function WorkbenchTopBar({
               userSelect: 'none',
               opacity: isDragged ? 0.45 : 1,
               height: '100%',
-              borderRadius: effectiveTabStyle === 'capsule' ? workbench.metrics.controlRadius : 0,
-              margin: effectiveTabStyle === 'capsule' ? '4px 4px' : 0,
+              borderRadius: effectiveTabStyle === 'capsule'
+                ? workbench.metrics.controlRadius
+                : usesWindowsTabChrome
+                  ? isBottomBar
+                    ? '0 0 10px 10px'
+                    : '10px 10px 0 0'
+                  : 0,
+              margin: effectiveTabStyle === 'capsule'
+                ? '4px 4px'
+                : usesWindowsTabChrome
+                  ? isBottomBar
+                    ? '0 2px 6px 0'
+                    : '6px 2px -1px 0'
+                  : 0,
               ...panelTabMotion.motionStyle,
             }}
           >
-            <span style={{ display: 'flex', color: isActive ? accent : muted }}>{panel.icon}</span>
+            {effectiveTabShowIcons ? (
+              <span style={{ display: 'flex', color: isActive ? accent : muted }}>{panel.icon}</span>
+            ) : null}
             <span>{panel.label}</span>
-            {isActive ? <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} /> : null}
-            {isActive && !isPersistentTab ? (
-              <span
+            {effectiveTabShowActiveIndicator && isActive ? (
+              <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />
+            ) : null}
+            {!isPersistentTab
+            && effectiveTabCloseButtonMode !== 'never'
+            && (effectiveTabCloseButtonMode === 'always' || isActive) ? (
+              <button
+                type="button"
                 onClick={event => {
                   event.stopPropagation();
                   onPanelClose(panel.id);
@@ -2715,14 +2751,20 @@ export function WorkbenchTopBar({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 14,
-                  height: 14,
-                  borderRadius: 4,
+                  width: 16,
+                  height: 16,
+                  borderRadius: usesWindowsTabChrome ? 5 : 4,
+                  border: 'none',
+                  background: usesWindowsTabChrome && isActive
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'transparent',
                   color: muted,
+                  cursor: 'pointer',
+                  padding: 0,
                 }}
               >
                 <X size={10} />
-              </span>
+              </button>
             ) : null}
           </button>
         );

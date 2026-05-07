@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" fill="none">
+  <defs>
+    <linearGradient id="doors-bg" x1="960" x2="960" y1="0" y2="1080" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1D1D1D"/>
+      <stop offset="1" stop-color="#121212"/>
+    </linearGradient>
+    <radialGradient id="doors-glow" cx="0" cy="0" r="1" gradientTransform="translate(1560 120) rotate(134.78) scale(520 360)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#76B9FF" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#76B9FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="doors-fade" cx="0" cy="0" r="1" gradientTransform="translate(540 920) rotate(-20.12) scale(720 260)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#doors-bg)"/>
+  <rect width="1920" height="1080" fill="url(#doors-glow)"/>
+  <rect width="1920" height="1080" fill="url(#doors-fade)"/>
+  <path d="M0 140H1920" stroke="rgba(255,255,255,0.03)"/>
+  <path d="M0 960H1920" stroke="rgba(255,255,255,0.03)"/>
+  <path d="M1240 180L1700 180" stroke="rgba(255,255,255,0.05)" stroke-width="2" stroke-linecap="round"/>
+  <path d="M1320 220L1760 220" stroke="rgba(255,255,255,0.03)" stroke-width="2" stroke-linecap="round"/>
+</svg>

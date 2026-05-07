@@ -5,6 +5,7 @@ import {
   buildExplorerMonacoThemeDescriptor,
   buildExplorerMonacoPreviewOptions,
   getExplorerTextPreviewMetrics,
+  resolveExplorerMonacoThemeId,
 } from "../config/explorerMonaco";
 import { normalizeThemeDefinition, resolveOverlayAppearance } from "../config/appearance";
 import { defaultSettings } from "../store/settingsStore";
@@ -100,6 +101,20 @@ describe("explorerMonaco", () => {
     expect(descriptor.colors["editorLineNumber.foreground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
     expect(descriptor.colors["scrollbarSlider.activeBackground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
     expect(descriptor.colors["editor.selectionBackground"]).toMatch(/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/);
+  });
+
+  it("sanitizes scoped or punctuated theme ids into Monaco-safe names", () => {
+    const scopedTheme = normalizeThemeDefinition({
+      id: "doors:txt-preview@lane",
+      name: "Doors Scoped",
+      extendsThemeId: "github-dark",
+    });
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: scopedTheme.id,
+      packageThemes: [scopedTheme],
+    });
+
+    expect(resolveExplorerMonacoThemeId(appearance)).toBe("greeblefs-monaco-doors-txt-preview-lane");
   });
 
   it("keeps Monaco surfaces off the hardcoded vs-dark path", () => {

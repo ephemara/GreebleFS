@@ -366,7 +366,13 @@ async function readOptionalLooseRecord(filePath: string): Promise<LooseRecord | 
     return parseManifestText(text, filePath);
   } catch (error) {
     const message = String(error).toLowerCase();
-    if (message.includes('enoent') || message.includes('not found') || message.includes('no such file')) {
+    if (
+      message.includes('enoent')
+      || message.includes('not found')
+      || message.includes('no such file')
+      || message.includes('cannot find the file specified')
+      || message.includes('os error 2')
+    ) {
       return null;
     }
     throw error;

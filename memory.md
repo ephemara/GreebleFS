@@ -1,3 +1,27 @@
+# 2026-05-07 - Doors Reference Theme And Fully Themeable Explorer Chrome
+
+- Landed the next major bundle-first theming seam for Explorer and workbench chrome so authored themes can drive a Windows/File-Explorer-style shell instead of only recoloring the existing layout.
+  - `src/config/explorerTheme.ts` now has first-class `explorer.rail` and `explorer.workspaceTabs` recipes.
+  - `src/config/workbenchTheme.ts` now has first-class `workbench.chromeTabs`.
+  - Navigation-pattern engine props now project into those lanes, so authored engines/recipes can drive rail view mode, section order/visibility, plain row chrome, minimal bookmark chrome, workspace-tab style, and Windows-style top-bar tab behavior without hardcoding component branches.
+- Runtime surfaces now honor those authored seams end-to-end.
+  - `src/components/explorer/ExplorerSideRail.tsx` consumes the resolved rail recipe for tree/compact defaults, section ordering, hidden sections, plain chrome, header visibility, minimal bookmark mode, and themed auto-expand behavior.
+  - `src/components/explorer/ExplorerWorkspace.tsx` consumes themed workspace-tab recipes, including the new `windows` tab style and close-button behavior.
+  - `src/components/WorkbenchTopBar.tsx` consumes themed chrome-tab recipes, including `windows` styling, icon visibility, active-indicator visibility, and close-button modes.
+  - `src/config/explorerRail.ts` and `src/config/topBars.ts` were widened to accept the new `plain` / `windows` chrome variants.
+- Added `usr/themes/doors/` as the reference Windows shell bundle.
+  - `doors` is the pilot/reference bundle for the new seams: Windows-dark appearance pack, calmer motion pack, desktop-window-manager render recipe, Windows top bar, Explorer rail/tree recipe, Explorer workspace-tabs recipe, icon overrides, preview wallpaper, and inline-preview explorer layout.
+  - `src/config/themeCatalogCuration.ts` now curates `doors` into the `official-pilot` suite so it surfaces at the front of the theme catalog.
+- Two durable cross-platform fixes came out of live validation:
+  - `src/config/themeBundlePacks.ts` must treat Windows `The system cannot find the file specified. (os error 2)` the same way it treats `ENOENT` for optional token files. Without that, any partial appearance/motion token pack can poison the whole theme scan on Windows.
+  - `src/config/explorerMonaco.ts` now sanitizes theme-derived Monaco ids before calling `defineTheme` / `setTheme`. Scoped or punctuated ids can otherwise trip Monaco with `Illegal theme name!` inside text previews/workbenches.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerMonaco.test.ts src/test/doorsThemeBundle.test.ts src/test/themePackages.test.ts src/test/explorerTheme.test.ts src/test/workbenchTheme.test.ts src/test/themeCatalogCuration.test.ts`
+  - Live app proof via WebView2/CDP:
+    - theme bundle scan no longer fails
+    - `Doors` appears in Settings -> Theme Bundles -> Official Pilot Suite
+    - active `Doors` explorer screenshot with the open tree rail was captured at `MCP/.state/screenshots/doors-explorer-tree-open-live.png`
+
 # 2026-05-07 - Dev MCP Native Host Lane, Live Host Subscriptions, And Sessionful HTTP
 
 - Extended the dev MCP stack so host-facing automation no longer depends on the React bridge or a live `page.evaluate(...)` lane.

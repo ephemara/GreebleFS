@@ -1,8 +1,8 @@
 export type ExplorerRailSectionId = 'quick-access' | 'drives' | 'saved-searches' | 'tags' | 'bookmarks';
 
 export type ExplorerRailViewMode = 'default' | 'compact' | 'tree';
-export type ExplorerRailSectionChrome = 'carded' | 'compact' | 'tree';
-export type ExplorerRailRowChrome = 'carded' | 'compact' | 'tree';
+export type ExplorerRailSectionChrome = 'carded' | 'compact' | 'tree' | 'plain';
+export type ExplorerRailRowChrome = 'carded' | 'compact' | 'tree' | 'plain';
 export type ExplorerRailHierarchyGuideStyle = 'none' | 'soft' | 'strong';
 export type ExplorerRailActiveBranchStyle = 'soft' | 'bold' | 'lane';
 export type ExplorerRailIconTone = 'muted' | 'contrast' | 'accented';

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "id": "doors-layouts",
+  "name": "Doors Layouts",
+  "description": "Windows-style explorer layouts for the Doors bundle.",
+  "ownership": "shipped",
+  "tags": [
+    "windows",
+    "explorer-layouts",
+    "desktop"
+  ],
+  "layouts": [
+    {
+      "id": "doors-inline-preview",
+      "name": "Doors Inline Preview",
+      "description": "Tree-first browsing with a Windows-like toolbar stack, right-side preview lane, and compact workspace tabs.",
+      "sortOrder": 5,
+      "tags": [
+        "default",
+        "preview",
+        "windows"
+      ],
+      "modeProfileId": "inspector",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 272,
+        "previewWidthPx": 418,
+        "actionsWidthPx": 332,
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 90,
+        "explorerToolbarHeightPx": 46,
+        "railHeaderHeightPx": 38,
+        "previewHeaderHeightPx": 38,
+        "explorerStatusBarHeightPx": 28
+      },
+      "chromeSnapshot": {
+        "entries": [
+          { "controlId": "workspaceTabStrip", "surfaceId": "workspaceHeader", "zone": "center", "order": 10 },
+          { "controlId": "workspaceNewTab", "surfaceId": "workspaceHeader", "zone": "end", "order": 10 },
+          { "controlId": "workspacePaneCounts", "surfaceId": "workspaceHeader", "zone": "end", "order": 20 },
+          { "controlId": "workspacePaneActionsMenu", "surfaceId": "workspaceHeader", "zone": "end", "order": 30 },
+          { "controlId": "navigateBack", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 10 },
+          { "controlId": "navigateForward", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 20 },
+          { "controlId": "navigateUp", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 30 },
+          { "controlId": "refresh", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 40 },
+          { "controlId": "addressBar", "surfaceId": "explorerToolbar", "zone": "primaryCenter", "order": 10, "widthPx": 780, "showIcon": false, "showLabel": true },
+          { "controlId": "togglePreview", "surfaceId": "explorerToolbar", "zone": "primaryEnd", "order": 10 },
+          { "controlId": "actionsPaneToggle", "surfaceId": "explorerToolbar", "zone": "primaryEnd", "order": 20 },
+          { "controlId": "previewIdentity", "surfaceId": "previewHeader", "zone": "start", "order": 10 },
+          { "controlId": "previewModeToggle", "surfaceId": "previewHeader", "zone": "end", "order": 10 },
+          { "controlId": "previewClose", "surfaceId": "previewHeader", "zone": "end", "order": 20 },
+          { "controlId": "statusItemCount", "surfaceId": "explorerStatusBar", "zone": "start", "order": 10 },
+          { "controlId": "statusTaskBadge", "surfaceId": "explorerStatusBar", "zone": "end", "order": 10 },
+          { "controlId": "statusViewToggles", "surfaceId": "explorerStatusBar", "zone": "end", "order": 20 }
+        ]
+      },
+      "basedOnLayoutId": "inspector"
+    }
+  ]
+}

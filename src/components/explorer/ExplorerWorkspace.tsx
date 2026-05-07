@@ -34,11 +34,13 @@ import {
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
+  OverlayPluginExplorerViewContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginWorkflowContribution,
 } from "../../config/pluginContributions";
 import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
 import type { LoadedExplorerLayoutDefinition } from "../../config/explorerLayouts";
+import type { LoadedExplorerViewDefinition } from "../../config/explorerViews";
 import type { LoadedExplorerHomePack } from "../../config/homePackages";
 import type { LoadedExplorerMenuPack } from "../../config/menuPacks";
 import {
@@ -51,7 +53,10 @@ import {
   type ExplorerModeProfileId,
 } from "../../config/explorerModeProfiles";
 import { isExplorerHomePath } from "../../config/explorerVirtualLocations";
-import { resolveExplorerThemeRecipe } from "../../config/explorerTheme";
+import {
+  resolveExplorerThemeRecipe,
+  type OverlayExplorerWorkspaceTabStyle,
+} from "../../config/explorerTheme";
 import {
   getExplorerPaneLabel,
   getExplorerWorkspaceLayoutDefinition,
@@ -125,9 +130,11 @@ interface ExplorerWorkspaceProps {
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
+  explorerViews?: LoadedExplorerViewDefinition[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -327,9 +334,11 @@ export function ExplorerWorkspace({
   actions = [],
   pluginActions = [],
   pluginContextMenuItems = [],
+  pluginExplorerViews = [],
   pluginPreviewLanes = [],
   pluginWorkflows = [],
   explorerLayouts = [],
+  explorerViews = [],
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
@@ -409,6 +418,7 @@ export function ExplorerWorkspace({
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
+  const workspaceTabsTheme = explorerTheme.workspaceTabs;
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
@@ -1027,6 +1037,7 @@ export function ExplorerWorkspace({
         <div
           aria-label="Workspace tab strip"
           style={{
+            ...workspaceTabStripRootStyle(workspaceTabsTheme.style),
             display: "flex",
             alignItems: "center",
             gap: sizing.stripGap,
@@ -1035,7 +1046,7 @@ export function ExplorerWorkspace({
             padding: sizing.compact ? "2px 0" : "3px 0",
           }}
         >
-          {visiblePaneIds.length > 1 ? (
+          {workspaceTabsTheme.showPaneSwitcher && visiblePaneIds.length > 1 ? (
             <div
               aria-label="Workspace panes"
               role="group"
@@ -1053,7 +1064,11 @@ export function ExplorerWorkspace({
                   onClick={() => setFocusedPane(paneId)}
                   title={`Focus ${getExplorerPaneLabel(paneId)}`}
                   style={{
-                    ...paneSwitcherButtonStyle(activePane === paneId, theme.accent),
+                    ...paneSwitcherButtonStyle(
+                      activePane === paneId,
+                      theme.accent,
+                      workspaceTabsTheme.style,
+                    ),
                     minWidth: sizing.compact ? 30 : sizing.wide ? 44 : 38,
                     minHeight: sizing.controlHeight,
                     padding: sizing.paneButtonPadding,
@@ -1070,13 +1085,19 @@ export function ExplorerWorkspace({
             className="overlay-scrollbars-none"
             aria-label="Workspace tabs"
             style={{
+              ...workspaceTabLaneStyle(workspaceTabsTheme.style),
               display: "flex",
               alignItems: "center",
-              gap: sizing.compact ? 4 : 6,
+              gap:
+                workspaceTabsTheme.style === "windows"
+                  ? 0
+                  : sizing.compact
+                    ? 4
+                    : 6,
               minWidth: 0,
               flex: 1,
               overflowX: "auto",
-              paddingBottom: 1,
+              paddingBottom: workspaceTabsTheme.style === "windows" ? 0 : 1,
             }}
           >
             {workspaceTabs.map((tab) => {
@@ -1119,6 +1140,7 @@ export function ExplorerWorkspace({
                     ...workspaceTabChipStyle(
                       isActive,
                       theme.accent,
+                      workspaceTabsTheme.style,
                       isDropTarget,
                     ),
                     padding: sizing.tabChipPadding,
@@ -1144,21 +1166,34 @@ export function ExplorerWorkspace({
                     onClick={() => focusWorkspaceTab(tab.id)}
                     title={currentPath || tabLabel}
                     style={{
-                      ...workspaceTabButtonStyle(isActive, isDropTarget),
-                      gap: sizing.compact ? 5 : 7,
+                      ...workspaceTabButtonStyle(
+                        isActive,
+                        workspaceTabsTheme.style,
+                        isDropTarget,
+                      ),
+                      gap:
+                        workspaceTabsTheme.style === "windows"
+                          ? sizing.compact
+                            ? 4
+                            : 6
+                          : sizing.compact
+                            ? 5
+                            : 7,
                     }}
                   >
-                    <span
-                      style={{
-                        width: sizing.compact ? 5 : 6,
-                        height: sizing.compact ? 5 : 6,
-                        borderRadius: 999,
-                        background: isActive
-                          ? theme.accent
-                          : "rgba(255,255,255,0.35)",
-                        flexShrink: 0,
-                      }}
-                    />
+                    {workspaceTabsTheme.showLeadingStatusDot ? (
+                      <span
+                        style={{
+                          width: sizing.compact ? 5 : 6,
+                          height: sizing.compact ? 5 : 6,
+                          borderRadius: 999,
+                          background: isActive
+                            ? theme.accent
+                            : "rgba(255,255,255,0.35)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : null}
                     <span
                       style={{
                         maxWidth: sizing.tabLabelMaxWidth,
@@ -1171,15 +1206,28 @@ export function ExplorerWorkspace({
                     >
                       {tabLabel}
                     </span>
-                    {tabPaneCount > 1 ? (
+                    {workspaceTabsTheme.showPaneCountBadge && tabPaneCount > 1 ? (
                       <span
                         style={{
-                          ...paneSwitcherCountStyle(isActive, theme.accent),
+                          ...paneSwitcherCountStyle(
+                            isActive,
+                            theme.accent,
+                            workspaceTabsTheme.style,
+                          ),
                           fontSize: sizing.compact ? 8 : 9,
                         }}
                       >
                         {tabPaneCount}
                       </span>
+                    ) : null}
+                    {workspaceTabsTheme.showActiveIndicator && isActive ? (
+                      <span
+                        aria-hidden="true"
+                        style={workspaceTabActiveIndicatorStyle(
+                          workspaceTabsTheme.style,
+                          theme.accent,
+                        )}
+                      />
                     ) : null}
                     {isDwellTarget ? (
                       <span
@@ -1212,13 +1260,18 @@ export function ExplorerWorkspace({
                       </span>
                     ) : null}
                   </button>
-                  {workspaceTabs.length > 1 ? (
+                  {workspaceTabs.length > 1 &&
+                  workspaceTabsTheme.closeButtonMode !== "never" &&
+                  (workspaceTabsTheme.closeButtonMode === "always" || isActive) ? (
                     <button
                       type="button"
                       onClick={() => closeWorkspaceTab(tab.id)}
                       title="Close tab"
                       style={{
-                        ...workspaceTabIconButtonStyle,
+                        ...workspaceTabIconButtonStyle(
+                          workspaceTabsTheme.style,
+                          isActive,
+                        ),
                         width: sizing.compact ? 18 : 20,
                         height: sizing.compact ? 18 : 20,
                       }}
@@ -1241,6 +1294,7 @@ export function ExplorerWorkspace({
       runtimeSnapshotsByInstanceId,
       sessions,
       setFocusedPane,
+      workspaceTabsTheme,
       theme.accent,
       visiblePaneIds,
       workspaceTabs,
@@ -2409,6 +2463,7 @@ export function ExplorerWorkspace({
             actions={actions}
             pluginActions={pluginActions}
             pluginContextMenuItems={pluginContextMenuItems}
+            pluginExplorerViews={pluginExplorerViews}
             pluginPreviewLanes={pluginPreviewLanes}
             pluginWorkflows={pluginWorkflows}
             explorerPicker={isActivePane ? explorerPicker : null}
@@ -2417,6 +2472,7 @@ export function ExplorerWorkspace({
             theme={theme}
             onAddBookmark={onAddBookmark}
             explorerLayouts={explorerLayouts}
+            explorerViews={explorerViews}
             homePacks={homePacks}
             menuPacks={menuPacks}
             onOpenPanel={onOpenPanel}
@@ -2443,6 +2499,7 @@ export function ExplorerWorkspace({
       actions,
       defaultModeProfileId,
       explorerLayouts,
+      explorerViews,
       externalWorkspaceChromeControls,
       homePacks,
       onOpenInFilesystemAquarium,
@@ -2453,6 +2510,7 @@ export function ExplorerWorkspace({
       onExplorerPickerConfirm,
       pluginActions,
       pluginContextMenuItems,
+      pluginExplorerViews,
       pluginPreviewLanes,
       pluginWorkflows,
       publishRuntimeSnapshot,
@@ -2739,7 +2797,9 @@ const paneSwitcherGroupStyle: React.CSSProperties = {
 function paneSwitcherButtonStyle(
   active: boolean,
   accent: string,
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
 ): React.CSSProperties {
+  const windowsStyle = tabStyle === "windows";
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -2747,9 +2807,15 @@ function paneSwitcherButtonStyle(
     gap: 6,
     minWidth: 38,
     padding: "4px 9px",
-    borderRadius: 999,
+    borderRadius: windowsStyle ? 8 : 999,
     border: `1px solid ${active ? `${accent}66` : "var(--overlay-border)"}`,
-    background: active ? `${accent}18` : "var(--overlay-explorer-chip-bg)",
+    background: active
+      ? windowsStyle
+        ? "color-mix(in srgb, var(--overlay-bg-panel) 96%, white 4%)"
+        : `${accent}18`
+      : windowsStyle
+        ? "rgba(255,255,255,0.025)"
+        : "var(--overlay-explorer-chip-bg)",
     color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-muted)",
     fontSize: 10,
     fontWeight: 700,
@@ -2760,12 +2826,18 @@ function paneSwitcherButtonStyle(
 function paneSwitcherCountStyle(
   active: boolean,
   accent: string,
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
 ): React.CSSProperties {
+  const windowsStyle = tabStyle === "windows";
   return {
     minWidth: 16,
     padding: "1px 5px",
-    borderRadius: 999,
-    background: active ? `${accent}24` : "rgba(255,255,255,0.08)",
+    borderRadius: windowsStyle ? 6 : 999,
+    background: active
+      ? windowsStyle
+        ? "rgba(255,255,255,0.09)"
+        : `${accent}24`
+      : "rgba(255,255,255,0.08)",
     color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-dim)",
     fontSize: 9,
     fontWeight: 700,
@@ -2776,31 +2848,55 @@ function paneSwitcherCountStyle(
 function workspaceTabChipStyle(
   active: boolean,
   accent: string,
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
   dropTarget = false,
 ): React.CSSProperties {
+  const windowsStyle = tabStyle === "windows";
+  const underlineStyle = tabStyle === "underline";
+  const segmentStyle = tabStyle === "segment";
   return {
     display: "inline-flex",
     alignItems: "center",
-    gap: 6,
+    gap: windowsStyle ? 4 : 6,
     minWidth: 0,
     padding: "6px 8px 6px 10px",
-    borderRadius: 999,
-    border: `1px solid ${dropTarget ? `${accent}92` : active ? `${accent}66` : "var(--overlay-border)"}`,
+    borderRadius: windowsStyle ? "10px 10px 0 0" : tabStyle === "capsule" ? 999 : 10,
+    border: windowsStyle
+      ? `1px solid ${dropTarget ? `${accent}92` : active ? "color-mix(in srgb, var(--overlay-border) 50%, white 50%)" : "var(--overlay-border)"}`
+      : `1px solid ${dropTarget ? `${accent}92` : active ? `${accent}66` : "var(--overlay-border)"}`,
+    borderBottom: windowsStyle
+      ? `1px solid ${active ? "color-mix(in srgb, var(--overlay-bg-panel) 92%, white 8%)" : "transparent"}`
+      : underlineStyle
+        ? `2px solid ${active ? accent : "transparent"}`
+        : undefined,
     background: dropTarget
       ? `color-mix(in srgb, ${accent} 18%, var(--overlay-explorer-chip-bg))`
+      : windowsStyle
+        ? active
+          ? "color-mix(in srgb, var(--overlay-bg-panel) 96%, white 4%)"
+          : "rgba(255,255,255,0.025)"
+      : underlineStyle
+        ? "transparent"
+      : segmentStyle
+        ? active
+          ? "color-mix(in srgb, var(--overlay-accent) 12%, transparent)"
+          : "rgba(255,255,255,0.02)"
       : active
         ? `${accent}1b`
         : "var(--overlay-explorer-chip-bg)",
     boxShadow: dropTarget
       ? `0 0 0 1px ${accent}2a, 0 12px 28px ${accent}24`
       : undefined,
+    marginRight: windowsStyle ? 2 : 0,
   };
 }
 
 function workspaceTabButtonStyle(
   active: boolean,
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
   dropTarget = false,
 ): React.CSSProperties {
+  const windowsStyle = tabStyle === "windows";
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -2812,25 +2908,71 @@ function workspaceTabButtonStyle(
     cursor: "pointer",
     padding: 0,
     position: "relative",
+    minHeight: windowsStyle ? 20 : undefined,
     transform: dropTarget ? "translateY(-1px) scale(1.02)" : "none",
     transition:
       "transform 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms ease",
   };
 }
 
-const workspaceTabIconButtonStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: 20,
-  height: 20,
-  borderRadius: 999,
-  border: "none",
-  background: "transparent",
-  color: "var(--overlay-text-dim)",
-  cursor: "pointer",
-  flexShrink: 0,
-};
+function workspaceTabIconButtonStyle(
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
+  active: boolean,
+): React.CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 20,
+    height: 20,
+    borderRadius: tabStyle === "windows" ? 6 : 999,
+    border: "none",
+    background:
+      tabStyle === "windows" && active
+        ? "rgba(255,255,255,0.06)"
+        : "transparent",
+    color: active ? "var(--overlay-text-muted)" : "var(--overlay-text-dim)",
+    cursor: "pointer",
+    flexShrink: 0,
+  };
+}
+
+function workspaceTabStripRootStyle(
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
+): React.CSSProperties {
+  return tabStyle === "windows"
+    ? {
+        alignItems: "flex-end",
+      }
+    : {};
+}
+
+function workspaceTabLaneStyle(
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
+): React.CSSProperties {
+  return tabStyle === "windows"
+    ? {
+        alignItems: "flex-end",
+        paddingTop: 4,
+      }
+    : {};
+}
+
+function workspaceTabActiveIndicatorStyle(
+  tabStyle: OverlayExplorerWorkspaceTabStyle,
+  accent: string,
+): React.CSSProperties {
+  return {
+    position: "absolute",
+    left: tabStyle === "windows" ? 0 : 8,
+    right: tabStyle === "windows" ? 0 : 8,
+    bottom: tabStyle === "windows" ? -7 : -5,
+    height: 2,
+    borderRadius: 999,
+    background: accent,
+    pointerEvents: "none",
+  };
+}
 
 function paneActionButtonStyle(
   active: boolean,

@@ -91,8 +91,13 @@ import { getExplorerChromeCommandId } from "../../config/explorerCustomizeCatalo
 import {
   explorerRailViewModes,
   getExplorerRailViewModeDefinition,
+  type ExplorerRailSectionId,
   type ExplorerRailViewModeDefinition,
 } from "../../config/explorerRail";
+import {
+  resolveExplorerThemeRecipe,
+  type ResolvedExplorerRailThemeRecipe,
+} from "../../config/explorerTheme";
 import { isExplorerHomePath } from "../../config/explorerVirtualLocations";
 import {
   createExplorerDropSurfaceBinding,
@@ -104,7 +109,7 @@ import {
 } from "./explorerDragAndDrop";
 
 interface ExplorerSideRailProps {
-  appearance?: Pick<ResolvedOverlayAppearance, "baseTheme"> | null;
+  appearance?: Pick<ResolvedOverlayAppearance, "baseTheme" | "explorerTheme"> | null;
   accent: string;
   brandLabel: string;
   sidebarWidth: number;
@@ -294,6 +299,15 @@ export function ExplorerSideRail({
   const commandBindingsById = useSettingsStore(
     (state) => state.settings.keybindings.commandBindingsById,
   );
+  const explorerTheme = useMemo(
+    () =>
+      appearance?.explorerTheme ??
+      resolveExplorerThemeRecipe(
+        appearance as ResolvedOverlayAppearance | undefined,
+      ),
+    [appearance],
+  );
+  const railTheme = explorerTheme.rail;
   const interactionMotion = useInteractionMotionController(appearance);
   const activeFileDropState = useExplorerDragInteractionSelector(
     (state) => ({
@@ -345,11 +359,16 @@ export function ExplorerSideRail({
     [onContextMenuRequest],
   );
 
+  const resolvedRailViewModeId =
+    railTheme.showViewModeSelector === false
+      ? railTheme.defaultViewMode ?? rail.viewMode
+      : rail.viewMode;
   const railViewMode = useMemo<ExplorerRailViewModeDefinition>(
-    () => getExplorerRailViewModeDefinition(rail.viewMode),
-    [rail.viewMode],
+    () => createThemedRailViewModeDefinition(resolvedRailViewModeId, railTheme),
+    [railTheme, resolvedRailViewModeId],
   );
-  const autoExpandToOpenFolder = rail.autoExpandToOpenFolder === true;
+  const autoExpandToOpenFolder =
+    railTheme.autoExpandToOpenFolder ?? rail.autoExpandToOpenFolder === true;
   const dense =
     isCompactDock ||
     sidebarWidth < EXPLORER_RAIL_DENSE_WIDTH ||
@@ -376,6 +395,9 @@ export function ExplorerSideRail({
   );
   const [importPlan, setImportPlan] =
     useState<ExplorerBookmarkImportPlan | null>(null);
+  const usesMinimalBookmarkChrome =
+    railTheme.bookmarkChromeStyle === "minimal";
+  const effectiveManageMode = usesMinimalBookmarkChrome ? false : isManageMode;
   const toggleRailManageMode = useCallback(() => {
     setIsManageMode((current) => {
       const next = !current;
@@ -386,6 +408,23 @@ export function ExplorerSideRail({
       return next;
     });
   }, []);
+  useEffect(() => {
+    if (usesMinimalBookmarkChrome && isManageMode) {
+      setIsManageMode(false);
+    }
+  }, [isManageMode, usesMinimalBookmarkChrome]);
+  const railSectionOrderIndex = useMemo(
+    () =>
+      new Map(
+        railTheme.sectionOrder.map((sectionId, index) => [sectionId, index] as const),
+      ),
+    [railTheme.sectionOrder],
+  );
+  const isRailSectionHidden = useCallback(
+    (sectionId: ExplorerRailSectionId) =>
+      railTheme.hiddenSectionIds.includes(sectionId),
+    [railTheme.hiddenSectionIds],
+  );
 
   const deferredQuery = useDeferredValue(rail.searchQuery);
   const categories = useMemo(
@@ -697,6 +736,18 @@ export function ExplorerSideRail({
     const sources = resolveDroppedSources(droppedPaths);
     const nextPlan = planExplorerBookmarkImport(rail, sources, targetFolderId);
     if (nextPlan) {
+      if (usesMinimalBookmarkChrome) {
+        const result = applyExplorerBookmarkImportPlan(
+          rail,
+          nextPlan,
+          "bookmark",
+        );
+        updateRail(result.snapshot);
+        for (const node of result.createdNodes) {
+          onBookmarkCreated(node.name, node.path);
+        }
+        return;
+      }
       setImportPlan(nextPlan);
     }
   };
@@ -864,7 +915,9 @@ export function ExplorerSideRail({
         id: "railBookmarkSummary",
         label: "Rail Bookmark Summary",
         surfaces: ["railHeader"],
-        isVisible: () => true,
+        isVisible: () =>
+          !usesMinimalBookmarkChrome &&
+          (bookmarkCount > 0 || showVerboseDragGuide),
         render: () => (
           <>
             <span style={railMetaPillStyle}>{bookmarkCount} pinned</span>
@@ -897,15 +950,15 @@ export function ExplorerSideRail({
         id: "railManageToggle",
         label: "Rail Manage Toggle",
         surfaces: ["railHeader"],
-        isVisible: () => true,
+        isVisible: () => !usesMinimalBookmarkChrome,
         render: () => (
           <button
             type="button"
-            aria-pressed={isManageMode}
+            aria-pressed={effectiveManageMode}
             onClick={toggleRailManageMode}
-            style={manageToggleButtonStyle(accent, isManageMode)}
+            style={manageToggleButtonStyle(accent, effectiveManageMode)}
           >
-            {isManageMode ? "Done" : "Manage"}
+            {effectiveManageMode ? "Done" : "Manage"}
           </button>
         ),
       },
@@ -914,7 +967,7 @@ export function ExplorerSideRail({
       accent,
       bookmarkCount,
       brandLabel,
-      isManageMode,
+      effectiveManageMode,
       locationLabel,
       locationTitle,
       onCloseSources,
@@ -923,6 +976,7 @@ export function ExplorerSideRail({
       showSupportingMeta,
       showVerboseDragGuide,
       toggleRailManageMode,
+      usesMinimalBookmarkChrome,
     ],
   );
   const railChromeControlRegistryById = useMemo(
@@ -1060,53 +1114,58 @@ export function ExplorerSideRail({
           layoutDynamics={railHeaderLayoutDynamics}
           editMode={chromeEditMode}
         />
-        <div
-          role="group"
-          aria-label="Side rail view mode"
-          style={railViewModeGroupStyle}
-        >
-          {explorerRailViewModes.map((mode) => {
-            const active = rail.viewMode === mode.id;
-            return (
+        {(railTheme.showViewModeSelector || railTheme.showAutoExpandToggle) && (
+          <div
+            role="group"
+            aria-label="Side rail view mode"
+            style={railViewModeGroupStyle}
+          >
+            {railTheme.showViewModeSelector &&
+              explorerRailViewModes.map((mode) => {
+                const active = resolvedRailViewModeId === mode.id;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={`${mode.label} side rail view`}
+                    title={mode.description}
+                    onClick={() =>
+                      updateRail((current) =>
+                        setExplorerRailViewMode(current, mode.id),
+                      )
+                    }
+                    style={railViewModeButtonStyle(accent, active)}
+                  >
+                    {dense ? mode.shortLabel : mode.label}
+                  </button>
+                );
+              })}
+            {railTheme.showAutoExpandToggle && (
               <button
-                key={mode.id}
                 type="button"
-                aria-pressed={active}
-                aria-label={`${mode.label} side rail view`}
-                title={mode.description}
+                aria-pressed={autoExpandToOpenFolder}
+                aria-label="Toggle expand to open folder"
+                title={
+                  autoExpandToOpenFolder
+                    ? "Expand to Open Folder is on. The rail follows the open path automatically."
+                    : "Expand to Open Folder is off. Only the chevrons expand the rail tree."
+                }
                 onClick={() =>
                   updateRail((current) =>
-                    setExplorerRailViewMode(current, mode.id),
+                    setExplorerRailAutoExpandToOpenFolder(
+                      current,
+                      !autoExpandToOpenFolder,
+                    ),
                   )
                 }
-                style={railViewModeButtonStyle(accent, active)}
+                style={railViewModeButtonStyle(accent, autoExpandToOpenFolder)}
               >
-                {dense ? mode.shortLabel : mode.label}
+                Auto
               </button>
-            );
-          })}
-          <button
-            type="button"
-            aria-pressed={autoExpandToOpenFolder}
-            aria-label="Toggle expand to open folder"
-            title={
-              autoExpandToOpenFolder
-                ? "Expand to Open Folder is on. The rail follows the open path automatically."
-                : "Expand to Open Folder is off. Only the chevrons expand the rail tree."
-            }
-            onClick={() =>
-              updateRail((current) =>
-                setExplorerRailAutoExpandToOpenFolder(
-                  current,
-                  !current.autoExpandToOpenFolder,
-                ),
-              )
-            }
-            style={railViewModeButtonStyle(accent, autoExpandToOpenFolder)}
-          >
-            Auto
-          </button>
-        </div>
+            )}
+          </div>
+        )}
         {persistence.message && (
           <div
             style={{
@@ -1177,8 +1236,19 @@ export function ExplorerSideRail({
         style={{ flex: 1, minHeight: 0 }}
         viewportStyle={{ padding: dense ? 6 : 10 }}
       >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            minHeight: "100%",
+          }}
+        >
         <RailSection
-          title="Quick Access"
+          sectionId="quick-access"
+          title={railTheme.sectionLabels["quick-access"] ?? "Quick Access"}
+          theme={railTheme}
+          hidden={isRailSectionHidden("quick-access")}
+          order={railSectionOrderIndex.get("quick-access") ?? 0}
           viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, "quick-access")}
           onToggle={() =>
@@ -1227,7 +1297,11 @@ export function ExplorerSideRail({
         </RailSection>
 
         <RailSection
-          title="Drives"
+          sectionId="drives"
+          title={railTheme.sectionLabels.drives ?? "Drives"}
+          theme={railTheme}
+          hidden={isRailSectionHidden("drives")}
+          order={railSectionOrderIndex.get("drives") ?? 1}
           viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, "drives")}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, "drives"))}
@@ -1534,7 +1608,11 @@ export function ExplorerSideRail({
         </RailSection>
 
         <RailSection
-          title="Saved Searches"
+          sectionId="saved-searches"
+          title={railTheme.sectionLabels["saved-searches"] ?? "Saved Searches"}
+          theme={railTheme}
+          hidden={isRailSectionHidden("saved-searches")}
+          order={railSectionOrderIndex.get("saved-searches") ?? 2}
           viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, "saved-searches")}
           onToggle={() =>
@@ -1633,7 +1711,11 @@ export function ExplorerSideRail({
         </RailSection>
 
         <RailSection
-          title="Tags"
+          sectionId="tags"
+          title={railTheme.sectionLabels.tags ?? "Tags"}
+          theme={railTheme}
+          hidden={isRailSectionHidden("tags")}
+          order={railSectionOrderIndex.get("tags") ?? 3}
           viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, "tags")}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, "tags"))}
@@ -1763,7 +1845,11 @@ export function ExplorerSideRail({
         </RailSection>
 
         <RailSection
-          title="Bookmarks"
+          sectionId="bookmarks"
+          title={railTheme.sectionLabels.bookmarks ?? "Bookmarks"}
+          theme={railTheme}
+          hidden={isRailSectionHidden("bookmarks")}
+          order={railSectionOrderIndex.get("bookmarks") ?? 4}
           viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, "bookmarks")}
           onToggle={() =>
@@ -1771,14 +1857,15 @@ export function ExplorerSideRail({
           }
           grow
         >
-          <div
-            style={{
-              padding: dense ? "6px 7px" : "8px 10px",
-              borderRadius: 9,
-              border: "1px solid var(--overlay-border)",
-              background: "rgba(255,255,255,0.02)",
-            }}
-          >
+          {!usesMinimalBookmarkChrome && (
+            <div
+              style={{
+                padding: dense ? "6px 7px" : "8px 10px",
+                borderRadius: 9,
+                border: "1px solid var(--overlay-border)",
+                background: "rgba(255,255,255,0.02)",
+              }}
+            >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Search
                 size={11}
@@ -1810,7 +1897,7 @@ export function ExplorerSideRail({
               )}
             </div>
 
-            {(isManageMode ||
+            {(effectiveManageMode ||
               rail.activeCategoryIds.length > 0 ||
               draftCategoryName.length > 0) && (
               <div
@@ -1884,7 +1971,7 @@ export function ExplorerSideRail({
               </div>
             )}
 
-            {isManageMode && (
+            {effectiveManageMode && (
               <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                 <button
                   type="button"
@@ -1909,9 +1996,10 @@ export function ExplorerSideRail({
                 </button>
               </div>
             )}
-          </div>
+            </div>
+          )}
 
-          {draftFolderParentId !== false && (
+          {!usesMinimalBookmarkChrome && draftFolderParentId !== false && (
             <div style={draftPanelStyle}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <FolderTree
@@ -1949,7 +2037,7 @@ export function ExplorerSideRail({
             </div>
           )}
 
-          {draftCategoryName && (
+          {!usesMinimalBookmarkChrome && draftCategoryName && (
             <div style={draftPanelStyle}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Tag size={13} style={{ color: accent, flexShrink: 0 }} />
@@ -2043,12 +2131,15 @@ export function ExplorerSideRail({
             style={{
               flex: 1,
               minHeight: 120,
-              marginTop: 8,
-              padding: 3,
-              borderRadius: 10,
-              border: `1px dashed ${dropTargetFolderId === null ? `${accent}55` : "transparent"}`,
-              background:
-                dropTargetFolderId === null
+              marginTop: usesMinimalBookmarkChrome ? 0 : 8,
+              padding: usesMinimalBookmarkChrome ? 0 : 3,
+              borderRadius: usesMinimalBookmarkChrome ? 0 : 10,
+              border: usesMinimalBookmarkChrome
+                ? "none"
+                : `1px dashed ${dropTargetFolderId === null ? `${accent}55` : "transparent"}`,
+              background: usesMinimalBookmarkChrome
+                ? "transparent"
+                : dropTargetFolderId === null
                   ? `${accent}10`
                   : "var(--overlay-explorer-chip-bg)",
             }}
@@ -2062,8 +2153,9 @@ export function ExplorerSideRail({
                   lineHeight: 1.4,
                 }}
               >
-                Drag folders here to pin them. Open Manage when you want to
-                organize groups, tags, or colors.
+                {usesMinimalBookmarkChrome
+                  ? "Drag folders here to pin them."
+                  : "Drag folders here to pin them. Open Manage when you want to organize groups, tags, or colors."}
               </div>
             )}
 
@@ -2077,7 +2169,7 @@ export function ExplorerSideRail({
                 viewMode={railViewMode}
                 showSupportingMeta={showSupportingMeta}
                 treeIndentStep={railViewMode.treeIndentStep}
-                manageMode={isManageMode}
+                manageMode={effectiveManageMode}
                 currentPath={currentPath}
                 dropScopeId={dropScopeId}
                 row={row}
@@ -2107,9 +2199,10 @@ export function ExplorerSideRail({
             ))}
           </div>
         </RailSection>
+        </div>
       </OverlayScrollArea>
 
-      {editingNodeId && (
+      {!usesMinimalBookmarkChrome && editingNodeId && (
         <div
           style={{
             padding: dense ? "8px 10px" : "10px 12px",
@@ -2824,36 +2917,51 @@ function LocalFolderTreeRow({
 }
 
 function RailSection({
+  sectionId,
   title,
+  theme,
+  hidden = false,
+  order = 0,
   viewMode,
   collapsed,
   grow = false,
   onToggle,
   children,
 }: {
+  sectionId: ExplorerRailSectionId;
   title: string;
+  theme: ResolvedExplorerRailThemeRecipe;
+  hidden?: boolean;
+  order?: number;
   viewMode: ExplorerRailViewModeDefinition;
   collapsed: boolean;
   grow?: boolean;
   onToggle: () => void;
   children: React.ReactNode;
 }) {
+  const showHeader = theme.showSectionHeaders;
+  const contentCollapsed = showHeader ? collapsed : false;
   return (
-    <section style={railSectionStyle(viewMode, grow)}>
-      <button
-        type="button"
-        onClick={onToggle}
-        style={railSectionHeaderButtonStyle(viewMode)}
-      >
-        <span>{title}</span>
-        {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
-      </button>
+    <section
+      data-rail-section-id={sectionId}
+      style={railSectionStyle(viewMode, grow, theme, hidden, order)}
+    >
+      {showHeader ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          style={railSectionHeaderButtonStyle(viewMode, theme)}
+        >
+          <span>{title}</span>
+          {contentCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+        </button>
+      ) : null}
       <div
         style={{
           display: "grid",
-          gridTemplateRows: collapsed ? "0fr" : "1fr",
+          gridTemplateRows: contentCollapsed ? "0fr" : "1fr",
           transition: "grid-template-rows 180ms ease, opacity 180ms ease",
-          opacity: collapsed ? 0.55 : 1,
+          opacity: contentCollapsed ? 0.55 : 1,
           minHeight: 0,
         }}
       >
@@ -3092,6 +3200,56 @@ function pruneLocalFolderTreeState(
   return changed ? next : current;
 }
 
+function createThemedRailViewModeDefinition(
+  value: unknown,
+  railTheme: ResolvedExplorerRailThemeRecipe,
+): ExplorerRailViewModeDefinition {
+  const base = getExplorerRailViewModeDefinition(value);
+  const sectionChrome =
+    railTheme.sectionChrome ?? base.presentation.sectionChrome;
+  const rowChrome = railTheme.rowChrome ?? base.presentation.rowChrome;
+  const hideSupportingMeta =
+    railTheme.showSupportingMeta === true
+      ? false
+      : railTheme.showSupportingMeta === false
+        ? true
+        : base.hideSupportingMeta;
+  const hideDriveCapacity =
+    railTheme.showDriveCapacity === true
+      ? false
+      : railTheme.showDriveCapacity === false
+        ? true
+        : base.hideDriveCapacity;
+  const flattenDriveRows =
+    railTheme.flattenDriveRows ?? base.flattenDriveRows;
+
+  return {
+    ...base,
+    useCompactChrome:
+      base.useCompactChrome
+      || sectionChrome !== "carded"
+      || rowChrome !== "carded"
+      || hideSupportingMeta,
+    hideSupportingMeta,
+    flattenDriveRows,
+    hideDriveCapacity,
+    treeIndentStep: Math.max(
+      8,
+      Math.round(railTheme.treeIndentStep ?? base.treeIndentStep),
+    ),
+    presentation: {
+      sectionChrome,
+      rowChrome,
+      hierarchyGuideStyle:
+        railTheme.hierarchyGuideStyle
+        ?? base.presentation.hierarchyGuideStyle,
+      activeBranchStyle:
+        railTheme.activeBranchStyle ?? base.presentation.activeBranchStyle,
+      iconTone: railTheme.iconTone ?? base.presentation.iconTone,
+    },
+  };
+}
+
 type RailSelectableRowState = "idle" | "ancestor" | "active" | "drop-target";
 type RailTextEmphasis = "default" | "ancestor" | "active";
 
@@ -3220,11 +3378,17 @@ function categoryChipStyle(active: boolean): React.CSSProperties {
 function railSectionStyle(
   viewMode: ExplorerRailViewModeDefinition,
   grow: boolean,
+  theme: ResolvedExplorerRailThemeRecipe,
+  hidden: boolean,
+  order: number,
 ): React.CSSProperties {
   const sectionChrome = viewMode.presentation.sectionChrome;
   return {
-    marginBottom: sectionChrome === "compact" ? 4 : 8,
-    display: "flex",
+    display: hidden ? "none" : "flex",
+    order,
+    marginBottom:
+      theme.sectionGap
+      ?? (sectionChrome === "compact" ? 4 : sectionChrome === "plain" ? 6 : 8),
     flexDirection: "column",
     flex: grow ? 1 : undefined,
     minHeight: 0,
@@ -3233,6 +3397,8 @@ function railSectionStyle(
         ? 6
         : sectionChrome === "tree"
           ? "0 0 0 8px"
+          : sectionChrome === "plain"
+            ? 0
           : 0,
     borderRadius: sectionChrome === "carded" ? 14 : 0,
     border:
@@ -3240,38 +3406,53 @@ function railSectionStyle(
         ? "1px solid var(--overlay-explorer-chip-border)"
         : sectionChrome === "tree"
           ? "1px solid transparent"
+          : sectionChrome === "plain"
+            ? "none"
           : "none",
     background:
       sectionChrome === "carded"
         ? "rgba(255,255,255,0.025)"
         : sectionChrome === "tree"
           ? "linear-gradient(180deg, rgba(255,255,255,0.025), transparent)"
+          : sectionChrome === "plain"
+            ? "transparent"
           : "transparent",
   };
 }
 
 function railSectionHeaderButtonStyle(
   viewMode: ExplorerRailViewModeDefinition,
+  theme: ResolvedExplorerRailThemeRecipe,
 ): React.CSSProperties {
   const sectionChrome = viewMode.presentation.sectionChrome;
+  const uppercase = theme.sectionHeaderTextTransform === "uppercase";
   return {
     width: "100%",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
-    padding: sectionChrome === "compact" ? "3px 5px" : "4px 7px",
+    padding:
+      sectionChrome === "compact"
+        ? "3px 5px"
+        : sectionChrome === "plain"
+          ? "2px 1px 4px"
+          : "4px 7px",
     background: "transparent",
     border: "none",
     cursor: "pointer",
     color:
-      sectionChrome === "tree"
+      sectionChrome === "tree" || sectionChrome === "plain"
         ? "var(--overlay-text-primary)"
         : "var(--overlay-text-muted)",
-    textTransform: "uppercase",
-    letterSpacing: sectionChrome === "tree" ? "0.14em" : "0.1em",
+    textTransform: uppercase ? "uppercase" : "none",
+    letterSpacing: uppercase
+      ? sectionChrome === "tree"
+        ? "0.14em"
+        : "0.1em"
+      : "0.02em",
     fontSize: sectionChrome === "compact" ? 9 : 9.5,
-    fontWeight: sectionChrome === "tree" ? 800 : 700,
+    fontWeight: sectionChrome === "tree" ? 800 : sectionChrome === "plain" ? 700 : 700,
   };
 }
 
@@ -3317,28 +3498,48 @@ function getRailSelectableRowStyle(args: {
   const isActive = state === "active";
   const isAncestor = state === "ancestor";
   const isDropTarget = state === "drop-target";
-  const paddingY = dense ? 5 : rowChrome === "carded" ? 8 : 6;
-  const paddingX = dense ? 6 : rowChrome === "carded" ? 9 : 8;
+  const paddingY = dense
+    ? rowChrome === "plain"
+      ? 4
+      : 5
+    : rowChrome === "carded"
+      ? 8
+      : rowChrome === "plain"
+        ? 5
+        : 6;
+  const paddingX = dense
+    ? rowChrome === "plain"
+      ? 4
+      : 6
+    : rowChrome === "carded"
+      ? 9
+      : rowChrome === "plain"
+        ? 4
+        : 8;
   const baseBorder =
     rowChrome === "compact"
       ? "rgba(255,255,255,0.05)"
+      : rowChrome === "plain"
+        ? "transparent"
       : flattened || rowChrome === "tree"
         ? "transparent"
         : "var(--overlay-explorer-chip-border)";
   const baseBackground =
     rowChrome === "carded"
       ? "var(--overlay-explorer-chip-bg)"
-      : rowChrome === "compact"
+    : rowChrome === "compact"
         ? "rgba(255,255,255,0.015)"
+      : rowChrome === "plain"
+        ? "transparent"
         : "transparent";
   const stateBackground = isDropTarget
     ? `${accent}16`
     : isActive
-      ? rowChrome === "tree"
+      ? rowChrome === "tree" || rowChrome === "plain"
         ? `linear-gradient(90deg, ${accent}26, transparent 82%)`
         : `${accent}18`
       : isAncestor
-        ? rowChrome === "tree"
+        ? rowChrome === "tree" || rowChrome === "plain"
           ? `linear-gradient(90deg, ${accent}12, transparent 84%)`
           : `${accent}0d`
         : baseBackground;
@@ -3346,17 +3547,23 @@ function getRailSelectableRowStyle(args: {
   return {
     gap: rowChrome === "compact" ? 5 : 6,
     padding: `${paddingY}px ${paddingX}px`,
-    borderRadius: rowChrome === "carded" ? 12 : rowChrome === "tree" ? 10 : 8,
+    borderRadius:
+      rowChrome === "carded" ? 12 : rowChrome === "tree" ? 10 : rowChrome === "plain" ? 6 : 8,
     border: `1px solid ${isDropTarget ? `${accent}77` : isActive ? `${accent}55` : baseBorder}`,
     background: stateBackground,
     boxShadow:
-      viewMode.presentation.activeBranchStyle === "lane" || rowChrome === "tree"
+      viewMode.presentation.activeBranchStyle === "lane"
+      || rowChrome === "tree"
+      || rowChrome === "plain"
         ? `inset ${isActive ? 3 : isAncestor ? 1.5 : 0}px 0 0 ${isActive || isAncestor ? accent : "transparent"}`
         : viewMode.presentation.activeBranchStyle === "bold" && isActive
           ? `inset 0 0 0 1px ${accent}44`
           : "none",
     position: "relative",
-    marginLeft: rowChrome === "tree" ? Math.max(treeDepth - 1, 0) * 2 : 0,
+    marginLeft:
+      rowChrome === "tree" || rowChrome === "plain"
+        ? Math.max(treeDepth - 1, 0) * 2
+        : 0,
   };
 }
 
@@ -3371,11 +3578,17 @@ function treeIconButtonStyle(
       viewMode.presentation.rowChrome === "tree"
         ? 999
         : "var(--overlay-explorer-control-radius)",
-    border: `1px solid ${active ? "var(--overlay-explorer-chip-active-border)" : "var(--overlay-explorer-chip-border)"}`,
+    border: `1px solid ${active
+      ? "var(--overlay-explorer-chip-active-border)"
+      : viewMode.presentation.rowChrome === "plain"
+        ? "transparent"
+        : "var(--overlay-explorer-chip-border)"}`,
     background: active
       ? "var(--overlay-explorer-chip-active-bg)"
       : viewMode.presentation.rowChrome === "tree"
         ? "rgba(255,255,255,0.025)"
+        : viewMode.presentation.rowChrome === "plain"
+          ? "transparent"
         : "var(--overlay-explorer-chip-bg)",
     color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-dim)",
     display: "inline-flex",
