@@ -23,6 +23,29 @@
 - Next recommended step:
   - Add the native/Node `VSCODE_BRIDGE` runtime-host slice only after this rail ingress lands: sidecar process lifecycle, JSON-RPC bridge, command/provider registration, and Monaco/LSP wiring can then attach to the contributed lane/view records instead of inventing another UI placement model.
 
+# 2026-05-07 - Kain Control Plane Runtime v0
+
+- Added `src-kain/runtimes/greeblefs-kain-control-plane`, the first Kain-authored resident control-plane runtime for GreebleFS.
+  - `runtime.toml` declares a `kain-script` `native-sidecar` over `stdio-json-lines-v2`.
+  - `src/server.kn` handles `control-plane.describe`, `host.reflect`, `plugin.emit-proof`, `settings.emit-proof`, and `pipeline.plan`.
+  - `host.reflect` emits a nested `host-call` to `host.get_api_schema`.
+  - `plugin.emit-proof` and `settings.emit-proof` emit nested host filesystem calls to `files.create_directory` and `files.write_text`, keeping writes behind GreebleFS host permissions.
+  - `src/host_reflection.kn`, `src/plugin_authoring.kn`, `src/settings_authoring.kn`, and `src/pipeline_tools.kn` are compile-checked Kain authoring/reference modules that mirror the intended split.
+- Durable design decisions:
+  - For v0, `src/server.kn` stays self-contained. The current `kain run src/server.kn` path did not expose local module symbols reliably enough for the live server to import sibling files, although each sibling module compiles to KainScript on its own.
+  - The first control-plane pass deliberately returns proof artifacts rather than mutating the real plugin/settings systems. Next adoption should replace one proof artifact with one real consumed GreebleFS manifest.
+  - Kain `None` does not safely pass through the current JSON/`Any` helper path in this server shape; use explicit JSON objects or strings for absent values in protocol packets.
+- Validation:
+  - Passed: direct `kain run src/server.kn` smoke for `control-plane.describe`.
+  - Passed: direct `kain run src/server.kn` smoke for `pipeline.plan`.
+  - Passed: simulated host-response smoke for `host.reflect`.
+  - Passed: simulated host-response smokes for `plugin.emit-proof` and `settings.emit-proof`.
+  - Passed: `kain build src/server.kn --target ks` to a temp output.
+  - Passed: each sibling module builds to KainScript individually.
+  - Passed: `node scripts/kain/stage-kain-toolchain.mjs --verify-only`.
+  - Passed: `git diff --check -- src-kain\runtimes\greeblefs-kain-control-plane`.
+  - Not captured: `cargo check --manifest-path src-tauri\Cargo.toml --lib` exceeded the command timeout twice during background compilation; no cargo/rustc processes were left running afterward.
+
 # 2026-05-07 - Tauron Kain Bridge Opt-In
 
 - Wired GreebleFS to Tauron's generic `tauri-plugin-kain` instead of creating a GreebleFS-only Kain bridge.

@@ -1,0 +1,128 @@
+enum PipelineStage:
+    ReflectHost
+    AuthorManifests
+    EmitSettings
+    CompileKainScript
+    RouteFfi
+    BuildGpuArtifacts
+
+struct PipelinePlanStep:
+    id: String
+    stage: PipelineStage
+    label: String
+    command: String
+    summary: String
+    implemented: Bool
+
+fn pipeline_json_field_present(object, key: String) -> Bool:
+    if !json_has(object, key):
+        return false
+    return json_string(json_get(object, key)) != "null"
+
+fn pipeline_json_string_field(object, key: String, fallback: String) -> String:
+    if pipeline_json_field_present(object, key):
+        let value = json_get_string(object, key).trim()
+        if len(value) > 0:
+            return value
+    return fallback
+
+fn pipeline_stage_name(stage: PipelineStage) -> String:
+    match stage:
+        PipelineStage::ReflectHost => "reflect_host"
+        PipelineStage::AuthorManifests => "author_manifests"
+        PipelineStage::EmitSettings => "emit_settings"
+        PipelineStage::CompileKainScript => "compile_kainscript"
+        PipelineStage::RouteFfi => "route_ffi"
+        PipelineStage::BuildGpuArtifacts => "build_gpu_artifacts"
+        _ => "unknown"
+
+fn build_pipeline_step(id: String, stage: PipelineStage, label: String, command: String, summary: String, implemented: Bool) -> PipelinePlanStep:
+    return PipelinePlanStep {
+        id: id,
+        stage: stage,
+        label: label,
+        command: command,
+        summary: summary,
+        implemented: implemented,
+    }
+
+fn pipeline_step_to_json(step: PipelinePlanStep) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", step.id)
+    json_object_set(item, "stage", pipeline_stage_name(step.stage))
+    json_object_set(item, "label", step.label)
+    json_object_set(item, "command", step.command)
+    json_object_set(item, "summary", step.summary)
+    json_object_set(item, "implemented", step.implemented)
+    return item
+
+fn build_first_class_steps(runtime_root: String) -> Array<Any>:
+    let steps = json_array_new()
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "host.reflect",
+        PipelineStage::ReflectHost,
+        "Reflect Rust host schema",
+        "runtime sidecar action host.reflect",
+        "Ask GreebleFS Rust for its extension-host API schema, then let Kain plan around real capabilities.",
+        true,
+    )))
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "plugin.emit-proof",
+        PipelineStage::AuthorManifests,
+        "Emit plugin/action proof",
+        "runtime sidecar action plugin.emit-proof",
+        "Use Kain as the source of truth for plugin/action manifest intent.",
+        true,
+    )))
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "settings.emit-proof",
+        PipelineStage::EmitSettings,
+        "Emit settings proof schema",
+        "runtime sidecar action settings.emit-proof",
+        "Use Kain as the source of truth for settings schemas before replacing existing settings flows.",
+        true,
+    )))
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "kain.build.ks",
+        PipelineStage::CompileKainScript,
+        "Compile Kain to KainScript",
+        "kain build " + path_join(runtime_root, "src/server.kn") + " --target ks",
+        "Use the no-build-wall KainScript target for fast tool/runtime probes.",
+        false,
+    )))
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "ffi.node",
+        PipelineStage::RouteFfi,
+        "Route Node FFI tools",
+        "use std::javascript::bridge",
+        "Let Kain call Node/native packages when that is faster than Rust or direct Kain code.",
+        false,
+    )))
+    json_array_push(steps, pipeline_step_to_json(build_pipeline_step(
+        "gpu.spirv",
+        PipelineStage::BuildGpuArtifacts,
+        "Emit SPIR-V/GPU artifacts",
+        "kain gpu-artifacts src/shader.kn --output generated/gpu",
+        "Promote Kain shader and compute kernels into GreebleFS preview/lookdev/GPU lanes later.",
+        false,
+    )))
+    return steps
+
+fn build_pipeline_plan(payload, runtime_root: String) -> Any:
+    let focus = pipeline_json_string_field(payload, "focus", "first-class-greeblefs")
+    let plan = json_object_new()
+    json_object_set(plan, "id", "greeblefs-kain-control-plane-plan")
+    json_object_set(plan, "focus", focus)
+    json_object_set(plan, "runtimeRoot", runtime_root)
+    json_object_set(plan, "summary", "First pass keeps Kain live as a resident control plane, then uses generated artifacts as compatibility output.")
+    json_object_set(plan, "steps", build_first_class_steps(runtime_root))
+    return plan
+
+fn build_default_pipeline_plan(runtime_root: String) -> Any:
+    let plan = json_object_new()
+    json_object_set(plan, "id", "greeblefs-kain-control-plane-plan")
+    json_object_set(plan, "focus", "first-class-greeblefs")
+    json_object_set(plan, "runtimeRoot", runtime_root)
+    json_object_set(plan, "summary", "First pass keeps Kain live as a resident control plane, then uses generated artifacts as compatibility output.")
+    json_object_set(plan, "steps", build_first_class_steps(runtime_root))
+    return plan

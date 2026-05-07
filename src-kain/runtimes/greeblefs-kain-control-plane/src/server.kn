@@ -1,0 +1,389 @@
+struct ControlPlaneRuntimeSettings:
+    runtime_root: String
+    generated_root: String
+    default_timeout_ms: Int
+
+struct ControlPlaneRouterState:
+    settings: ControlPlaneRuntimeSettings
+    handled_calls: Int
+
+fn json_field_present(object: Any, key: String) -> Bool:
+    if !json_has(object, key):
+        return false
+    return json_string(json_get(object, key)) != "null"
+
+fn json_string_field(object: Any, key: String) -> String:
+    if json_field_present(object, key):
+        return json_get_string(object, key)
+    return ""
+
+fn control_plane_payload_json(packet: Any) -> String:
+    let payload_json = json_string_field(packet, "payloadJson")
+    if len(payload_json.trim()) == 0:
+        return "{}"
+    return payload_json
+
+fn write_protocol_packet(packet: Any) -> Int:
+    stdout_write(json_string(packet) + "\n")
+    return 0
+
+fn build_base_response(call_packet: Any, ok: Bool) -> Any:
+    let response = json_object_new()
+    json_object_set(response, "requestId", json_string_field(call_packet, "requestId"))
+    json_object_set(response, "kind", "response")
+    json_object_set(response, "ok", ok)
+    json_object_set(response, "actionId", json_string_field(call_packet, "actionId"))
+    return response
+
+fn write_error_response(call_packet: Any, message: String) -> Int:
+    let response = build_base_response(call_packet, false)
+    json_object_set(response, "error", message)
+    write_protocol_packet(response)
+    return 0
+
+fn write_success_response(call_packet: Any, result: Any) -> Int:
+    let response = build_base_response(call_packet, true)
+    json_object_set(response, "resultJson", json_string(result))
+    write_protocol_packet(response)
+    return 0
+
+fn build_host_call(call_packet: Any, method_id: String, payload: Any, suffix: String) -> Any:
+    let host_call = json_object_new()
+    json_object_set(host_call, "requestId", json_string_field(call_packet, "requestId") + ":" + suffix)
+    json_object_set(host_call, "kind", "host-call")
+    json_object_set(host_call, "methodId", method_id)
+    json_object_set(host_call, "payloadJson", json_string(payload))
+    return host_call
+
+fn read_host_response(call_packet: Any, method_id: String) -> Any:
+    let host_response_packet_text = read_line()
+    let result = json_object_new()
+    if len(host_response_packet_text.trim()) == 0:
+        json_object_set(result, "ok", false)
+        json_object_set(result, "error", "host closed before " + method_id + " responded")
+        return result
+
+    let packet = json_parse(host_response_packet_text)
+    if json_field_present(packet, "ok") and !json_get_bool(packet, "ok"):
+        json_object_set(result, "ok", false)
+        json_object_set(result, "error", json_string_field(packet, "error"))
+        return result
+
+    let result_json = json_string_field(packet, "resultJson")
+    json_object_set(result, "ok", true)
+    if len(result_json.trim()) == 0:
+        json_object_set(result, "value", json_object_new())
+    else:
+        json_object_set(result, "value", json_parse(result_json))
+    return result
+
+fn call_host_method(call_packet: Any, method_id: String, payload: Any, suffix: String) -> Any:
+    write_protocol_packet(build_host_call(call_packet, method_id, payload, suffix))
+    return read_host_response(call_packet, method_id)
+
+fn host_result_ok(host_result: Any) -> Bool:
+    if !json_field_present(host_result, "ok"):
+        return false
+    return json_get_bool(host_result, "ok")
+
+fn host_result_error(host_result: Any) -> String:
+    if json_field_present(host_result, "error"):
+        return json_get_string(host_result, "error")
+    return "host call failed without an error message"
+
+fn host_result_value(host_result: Any) -> Any:
+    if json_field_present(host_result, "value"):
+        return json_get(host_result, "value")
+    return json_object_new()
+
+fn resolve_settings() -> ControlPlaneRuntimeSettings:
+    let runtime_root = cwd()
+    return ControlPlaneRuntimeSettings {
+        runtime_root: runtime_root,
+        generated_root: path_join(runtime_root, "generated"),
+        default_timeout_ms: 120000,
+    }
+
+fn append_capability(items, id: String, lane: String, label: String, summary: String, implemented: Bool) -> Int:
+    let capability = json_object_new()
+    json_object_set(capability, "id", id)
+    json_object_set(capability, "lane", lane)
+    json_object_set(capability, "label", label)
+    json_object_set(capability, "summary", summary)
+    json_object_set(capability, "implemented", implemented)
+    json_array_push(items, capability)
+    return 0
+
+fn build_runtime_metadata(settings: ControlPlaneRuntimeSettings) -> Any:
+    let metadata = json_object_new()
+    json_object_set(metadata, "language", "kain")
+    json_object_set(metadata, "runtimeId", "greeblefs-kain-control-plane")
+    json_object_set(metadata, "compiler", "kain-script")
+    json_object_set(metadata, "transport", "stdio-json-lines-v2")
+    json_object_set(metadata, "runtimeRoot", settings.runtime_root)
+    json_object_set(metadata, "manifestPath", env("KAIN_RUNTIME_MANIFEST_PATH"))
+    json_object_set(metadata, "stdlibPath", env("KAIN_STDLIB_PATH"))
+    json_object_set(metadata, "payloadRoot", env("GREEBLEFS_KAIN_PAYLOAD_ROOT"))
+    return metadata
+
+fn build_control_plane_catalog(settings: ControlPlaneRuntimeSettings) -> Any:
+    let catalog = json_object_new()
+    let actions = json_array_new()
+    let modules = json_array_new()
+    let capabilities = json_array_new()
+
+    json_array_push(actions, "control-plane.describe")
+    json_array_push(actions, "host.reflect")
+    json_array_push(actions, "plugin.emit-proof")
+    json_array_push(actions, "settings.emit-proof")
+    json_array_push(actions, "pipeline.plan")
+
+    json_array_push(modules, "server.kn")
+    json_array_push(modules, "host_reflection.kn")
+    json_array_push(modules, "plugin_authoring.kn")
+    json_array_push(modules, "settings_authoring.kn")
+    json_array_push(modules, "pipeline_tools.kn")
+
+    append_capability(capabilities, "kain.sidecar.control-plane", "runtime", "Kain sidecar control plane", "Long-lived Kain process using GreebleFS stdio-json-lines-v2 packets.", true)
+    append_capability(capabilities, "kain.host.reflection", "bridge", "Host API reflection", "Kain can ask Rust for the host bridge schema and route decisions from that shape.", true)
+    append_capability(capabilities, "kain.plugin.authoring", "authoring", "Plugin manifest authoring", "Kain owns plugin/action intent and emits GreebleFS-compatible artifacts.", true)
+    append_capability(capabilities, "kain.settings.authoring", "settings", "Settings schema authoring", "Kain owns typed settings intent and emits compatibility output before deeper adoption.", true)
+    append_capability(capabilities, "kain.pipeline.orchestration", "pipeline", "Pipeline orchestration", "Kain coordinates Rust, Tauron, Node, C, GPU, codegen, sidecars, and generated outputs.", true)
+    append_capability(capabilities, "kain.node.ffi", "ffi", "Node FFI bridge", "Kain can call Node/native packages for fast authoring and build tools.", false)
+    append_capability(capabilities, "kain.c.runtime", "ffi", "C runtime bridge", "Kain can use C libraries, DLLs, SDKs, and legacy native tools behind explicit lanes.", false)
+    append_capability(capabilities, "kain.gpu.spirv", "gpu", "SPIR-V and shader artifacts", "Kain can emit GPU artifacts for future preview, lookdev, and compute pipelines.", false)
+
+    json_object_set(catalog, "id", "greeblefs-kain-control-plane")
+    json_object_set(catalog, "label", "GreebleFS Kain Control Plane")
+    json_object_set(catalog, "summary", "Kain-authored runtime brain for GreebleFS bridge, plugin, settings, and pipeline authoring.")
+    json_object_set(catalog, "runtime", build_runtime_metadata(settings))
+    json_object_set(catalog, "actions", actions)
+    json_object_set(catalog, "modules", modules)
+    json_object_set(catalog, "capabilities", capabilities)
+    return catalog
+
+fn build_host_schema_request_payload() -> Any:
+    return json_object_new()
+
+fn build_host_reflection_result(settings: ControlPlaneRuntimeSettings, host_schema: Any) -> Any:
+    let result = json_object_new()
+    json_object_set(result, "controlPlane", build_control_plane_catalog(settings))
+    json_object_set(result, "hostSchema", host_schema)
+    json_object_set(result, "routingRule", "Rust describes trusted host methods; Kain plans and emits typed boring glue; Tauron/GreebleFS enforce permissions.")
+    return result
+
+fn plugin_manifest_output_path(settings: ControlPlaneRuntimeSettings) -> String:
+    return path_join(settings.generated_root, "plugin-proof.json")
+
+fn settings_schema_output_path(settings: ControlPlaneRuntimeSettings) -> String:
+    return path_join(settings.generated_root, "settings-proof.json")
+
+fn build_plugin_manifest_text() -> String:
+    let manifest = json_object_new()
+    let package_meta = json_object_new()
+    let contributions = json_object_new()
+    let actions = json_array_new()
+    let action = json_object_new()
+    let kain = json_object_new()
+
+    json_object_set(package_meta, "id", "greeblefs-kain-authored-proof")
+    json_object_set(package_meta, "label", "Kain Authored Proof")
+    json_object_set(package_meta, "kind", "kain-authored-proof")
+
+    json_object_set(action, "id", "greeblefs-kain-authored-proof.inspect-selection")
+    json_object_set(action, "label", "Inspect Selection With Kain")
+    json_object_set(action, "description", "Kain-authored action proof that can become plugin JSON or direct bridge behavior.")
+    json_object_set(action, "runtimeId", "greeblefs-kain-control-plane")
+    json_object_set(action, "actionId", "control-plane.describe")
+    json_array_push(actions, action)
+    json_object_set(contributions, "actions", actions)
+
+    json_object_set(kain, "source", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn")
+    json_object_set(kain, "strategy", "Kain source of truth, generated GreebleFS compatibility output.")
+
+    json_object_set(manifest, "package", package_meta)
+    json_object_set(manifest, "contributions", contributions)
+    json_object_set(manifest, "kain", kain)
+    return json_string(manifest)
+
+fn build_plugin_emit_result(output_path: String, manifest_text: String) -> Any:
+    let result = json_object_new()
+    json_object_set(result, "artifactKind", "plugin-proof")
+    json_object_set(result, "pluginId", "greeblefs-kain-authored-proof")
+    json_object_set(result, "outputPath", output_path)
+    json_object_set(result, "bytes", len(manifest_text))
+    json_object_set(result, "manifestJson", json_parse(manifest_text))
+    return result
+
+fn build_settings_field(id: String, label: String, kind: String, default_value: String, summary: String) -> Any:
+    let field = json_object_new()
+    json_object_set(field, "id", id)
+    json_object_set(field, "label", label)
+    json_object_set(field, "kind", kind)
+    json_object_set(field, "defaultValue", default_value)
+    json_object_set(field, "summary", summary)
+    return field
+
+fn build_settings_schema_text() -> String:
+    let schema = json_object_new()
+    let fields = json_array_new()
+    let kain = json_object_new()
+
+    json_array_push(fields, build_settings_field("kain.controlPlane.enabled", "Kain control plane", "boolean", "true", "Enables the resident Kain control-plane runtime."))
+    json_array_push(fields, build_settings_field("kain.controlPlane.defaultTarget", "Default Kain target", "string", "ks", "Default emitted target for fast control-plane scripts."))
+    json_array_push(fields, build_settings_field("kain.controlPlane.generatedArtifactPolicy", "Generated artifact policy", "enum", "proof-only", "Keeps generated artifacts in proof mode until a host consumer adopts them."))
+
+    json_object_set(kain, "source", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn")
+    json_object_set(kain, "strategy", "Kain owns typed settings intent and emits GreebleFS-compatible schema artifacts.")
+
+    json_object_set(schema, "id", "greeblefs.kain.controlPlane")
+    json_object_set(schema, "label", "Kain Control Plane Settings")
+    json_object_set(schema, "scope", "runtime")
+    json_object_set(schema, "fields", fields)
+    json_object_set(schema, "kain", kain)
+    return json_string(schema)
+
+fn build_settings_emit_result(output_path: String, schema_text: String) -> Any:
+    let result = json_object_new()
+    json_object_set(result, "artifactKind", "settings-proof")
+    json_object_set(result, "schemaId", "greeblefs.kain.controlPlane")
+    json_object_set(result, "outputPath", output_path)
+    json_object_set(result, "bytes", len(schema_text))
+    json_object_set(result, "schemaJson", json_parse(schema_text))
+    return result
+
+fn append_pipeline_step(steps, id: String, stage: String, label: String, command: String, summary: String, implemented: Bool) -> Int:
+    let step = json_object_new()
+    json_object_set(step, "id", id)
+    json_object_set(step, "stage", stage)
+    json_object_set(step, "label", label)
+    json_object_set(step, "command", command)
+    json_object_set(step, "summary", summary)
+    json_object_set(step, "implemented", implemented)
+    json_array_push(steps, step)
+    return 0
+
+fn build_pipeline_plan(settings: ControlPlaneRuntimeSettings) -> Any:
+    let plan = json_object_new()
+    let steps = json_array_new()
+    append_pipeline_step(steps, "host.reflect", "reflect_host", "Reflect Rust host schema", "runtime sidecar action host.reflect", "Ask GreebleFS Rust for its extension-host API schema.", true)
+    append_pipeline_step(steps, "plugin.emit-proof", "author_manifests", "Emit plugin/action proof", "runtime sidecar action plugin.emit-proof", "Use Kain as the source of truth for plugin/action manifest intent.", true)
+    append_pipeline_step(steps, "settings.emit-proof", "emit_settings", "Emit settings proof schema", "runtime sidecar action settings.emit-proof", "Use Kain as the source of truth for settings schemas.", true)
+    append_pipeline_step(steps, "kain.build.ks", "compile_kainscript", "Compile Kain to KainScript", "kain build src/server.kn --target ks", "Use the no-build-wall KainScript target for fast tool/runtime probes.", false)
+    append_pipeline_step(steps, "ffi.node", "route_ffi", "Route Node FFI tools", "use std::javascript::bridge", "Let Kain call Node/native packages when faster than Rust or direct Kain code.", false)
+    append_pipeline_step(steps, "gpu.spirv", "build_gpu_artifacts", "Emit SPIR-V/GPU artifacts", "kain gpu-artifacts src/shader.kn --output generated/gpu", "Promote Kain shaders and compute kernels into GreebleFS GPU lanes later.", false)
+    json_object_set(plan, "id", "greeblefs-kain-control-plane-plan")
+    json_object_set(plan, "focus", "first-class-greeblefs")
+    json_object_set(plan, "runtimeRoot", settings.runtime_root)
+    json_object_set(plan, "summary", "First pass keeps Kain live as a resident control plane, then uses generated artifacts as compatibility output.")
+    json_object_set(plan, "steps", steps)
+    return plan
+
+fn parent_directory(path_name: String) -> String:
+    var index = len(path_name) - 1
+    while index >= 0:
+        let ch = char_at(path_name, index)
+        if ch == "/" or ch == "\\":
+            if index <= 0:
+                return path_name
+            return substring(path_name, 0, index)
+        index = index - 1
+    return "."
+
+fn write_text_through_host(call_packet: Any, output_path: String, file_text: String) -> String:
+    let create_payload = json_object_new()
+    json_object_set(create_payload, "path", parent_directory(output_path))
+    let create_result = call_host_method(call_packet, "files.create_directory", create_payload, "files.create_directory")
+    if !host_result_ok(create_result):
+        return host_result_error(create_result)
+
+    let write_payload = json_object_new()
+    json_object_set(write_payload, "path", output_path)
+    json_object_set(write_payload, "content", file_text)
+    let write_result = call_host_method(call_packet, "files.write_text", write_payload, "files.write_text")
+    if !host_result_ok(write_result):
+        return host_result_error(write_result)
+    return ""
+
+fn handle_describe(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    write_success_response(call_packet, build_control_plane_catalog(settings))
+    return 0
+
+fn handle_host_reflect(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    let host_result = call_host_method(call_packet, "host.get_api_schema", build_host_schema_request_payload(), "host.get_api_schema")
+    if !host_result_ok(host_result):
+        write_error_response(call_packet, host_result_error(host_result))
+        return 0
+
+    write_success_response(call_packet, build_host_reflection_result(settings, host_result_value(host_result)))
+    return 0
+
+fn handle_plugin_emit(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    let output_path = plugin_manifest_output_path(settings)
+    let manifest_text = build_plugin_manifest_text()
+    let write_error = write_text_through_host(call_packet, output_path, manifest_text)
+    if len(write_error.trim()) > 0:
+        write_error_response(call_packet, write_error)
+        return 0
+    write_success_response(call_packet, build_plugin_emit_result(output_path, manifest_text))
+    return 0
+
+fn handle_settings_emit(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    let output_path = settings_schema_output_path(settings)
+    let schema_text = build_settings_schema_text()
+    let write_error = write_text_through_host(call_packet, output_path, schema_text)
+    if len(write_error.trim()) > 0:
+        write_error_response(call_packet, write_error)
+        return 0
+    write_success_response(call_packet, build_settings_emit_result(output_path, schema_text))
+    return 0
+
+fn handle_pipeline_plan(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    write_success_response(call_packet, build_pipeline_plan(settings))
+    return 0
+
+fn route_call(settings: ControlPlaneRuntimeSettings, call_packet: Any) -> Int:
+    let action_id = json_string_field(call_packet, "actionId")
+    match action_id:
+        "control-plane.describe" => handle_describe(settings, call_packet)
+        "host.reflect" => handle_host_reflect(settings, call_packet)
+        "plugin.emit-proof" => handle_plugin_emit(settings, call_packet)
+        "settings.emit-proof" => handle_settings_emit(settings, call_packet)
+        "pipeline.plan" => handle_pipeline_plan(settings, call_packet)
+        _ => write_error_response(call_packet, "Unknown Kain control-plane action: " + action_id)
+
+fn route_packet(packet: Any, state: ControlPlaneRouterState) -> ControlPlaneRouterState:
+    let kind = json_string_field(packet, "kind")
+    if kind == "call":
+        let call_result = route_call(state.settings, packet)
+        return ControlPlaneRouterState {
+            settings: state.settings,
+            handled_calls: state.handled_calls + 1,
+        }
+    if kind == "shutdown":
+        return state
+    if kind != "call" and kind != "shutdown":
+        eprintln("GreebleFS Kain control plane ignored packet kind: " + kind)
+    return state
+
+fn main() -> Int:
+    let settings = resolve_settings()
+    var router_state = ControlPlaneRouterState {
+        settings: settings,
+        handled_calls: 0,
+    }
+
+    eprintln("GreebleFS Kain control plane ready at " + settings.runtime_root)
+
+    while true:
+        let packet_line = read_line()
+        if len(packet_line.trim()) == 0:
+            break
+
+        let packet = json_parse(packet_line)
+        let kind = json_string_field(packet, "kind")
+        if kind == "shutdown":
+            return 0
+        router_state = route_packet(packet, router_state)
+
+    return 0

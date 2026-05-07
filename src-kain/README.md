@@ -2,7 +2,7 @@
 
 `src-kain` is the repo-owned home for Kain-authored GreebleFS runtimes. The host treats these packages exactly like other runtime pipeline packages: each runtime owns a `runtime.toml`, declares its compiler as `kain-script`, and runs through the native sidecar protocol.
 
-The first runtime is `greeblefs-kain-host-smoke`, a tiny host-bridge proof that asks GreebleFS for `files.stat` and returns the result with Kain metadata. It is intentionally small so future settings, plugin, and pipeline work can copy the shape without inheriting a big example.
+The first tiny runtime is `greeblefs-kain-host-smoke`, a host-bridge proof that asks GreebleFS for `files.stat` and returns the result with Kain metadata. The first real control-plane runtime is `greeblefs-kain-control-plane`, a Kain-authored sidecar that exposes host reflection, plugin proof emission, settings proof emission, and pipeline planning actions.
 
 ## What Changed With The Tauron Kain Bridge
 
@@ -32,6 +32,22 @@ This means Kain can become a source-of-truth/orchestration layer while Tauron st
 ## What Is Possible Now
 
 These are capability lanes Kain can grow into inside GreebleFS. Some are active now, some are next-step architecture targets unlocked by the bridge.
+
+## Control Plane Runtime
+
+`src-kain/runtimes/greeblefs-kain-control-plane/` is the v0 Kain control-plane package.
+
+It declares these sidecar actions:
+
+- `control-plane.describe`
+- `host.reflect`
+- `plugin.emit-proof`
+- `settings.emit-proof`
+- `pipeline.plan`
+
+The runtime speaks GreebleFS `stdio-json-lines-v2` packets. It can emit normal action responses, send nested `host-call` packets such as `host.get_api_schema`, `files.create_directory`, and `files.write_text`, then read the matching `host-response` packet before completing the original action.
+
+Important implementation note: `src/server.kn` is intentionally self-contained for v0. The sibling files `host_reflection.kn`, `plugin_authoring.kn`, `settings_authoring.kn`, and `pipeline_tools.kn` are compile-checked authoring modules/reference shapes, but the current `kain run src/server.kn` path did not expose local module symbols reliably enough for the runtime server to depend on them. Promote those modules into the live server once Kain local module linkage is hardened for this shape.
 
 ### Node FFI Bridge
 
@@ -147,7 +163,7 @@ This is where Kain should reduce cross-domain slop: one orchestration source, ma
 
 ## First Next Passes
 
+- Promote the `greeblefs-kain-control-plane` proof actions into a consumed generated-artifact lane.
 - Add a Kain bridge manifest emitted from Kain and loaded by `tauri-plugin-kain`.
 - Add a tiny UI proof that calls `probeKainTauronBridge()` and shows bridge status in an existing developer surface.
-- Create a Kain-authored plugin/action manifest generator that emits current GreebleFS plugin JSON.
-- Prototype a Kain settings-source file that emits one small existing settings/profile artifact.
+- Replace the proof plugin/settings artifacts with one real GreebleFS plugin/action manifest and one real settings/profile artifact.

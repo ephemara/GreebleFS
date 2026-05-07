@@ -1,0 +1,104 @@
+type PluginId = String
+
+enum PluginProofSurface:
+    ActionManifest
+    WorkflowManifest
+    PreviewManifest
+
+struct PluginProofDescriptor:
+    id: PluginId
+    label: String
+    surface: PluginProofSurface
+    output_path: String
+
+fn plugin_json_field_present(object, key: String) -> Bool:
+    if !json_has(object, key):
+        return false
+    return json_string(json_get(object, key)) != "null"
+
+fn plugin_json_string_field(object, key: String, fallback: String) -> String:
+    if plugin_json_field_present(object, key):
+        let value = json_get_string(object, key).trim()
+        if len(value) > 0:
+            return value
+    return fallback
+
+fn plugin_proof_surface_name(surface: PluginProofSurface) -> String:
+    match surface:
+        PluginProofSurface::ActionManifest => "action_manifest"
+        PluginProofSurface::WorkflowManifest => "workflow_manifest"
+        PluginProofSurface::PreviewManifest => "preview_manifest"
+        _ => "unknown"
+
+fn default_plugin_output_path(runtime_root: String) -> String:
+    return path_join(path_join(runtime_root, "generated"), "plugin-proof.json")
+
+fn build_plugin_descriptor(payload, runtime_root: String) -> PluginProofDescriptor:
+    let plugin_id = plugin_json_string_field(payload, "pluginId", "greeblefs-kain-authored-proof")
+    let label = plugin_json_string_field(payload, "label", "Kain Authored Proof")
+    let output_path = plugin_json_string_field(payload, "outputPath", default_plugin_output_path(runtime_root))
+    return PluginProofDescriptor {
+        id: plugin_id,
+        label: label,
+        surface: PluginProofSurface::ActionManifest,
+        output_path: output_path,
+    }
+
+fn build_default_plugin_descriptor(runtime_root: String) -> PluginProofDescriptor:
+    return PluginProofDescriptor {
+        id: "greeblefs-kain-authored-proof",
+        label: "Kain Authored Proof",
+        surface: PluginProofSurface::ActionManifest,
+        output_path: default_plugin_output_path(runtime_root),
+    }
+
+fn build_plugin_manifest_text(descriptor: PluginProofDescriptor) -> String:
+    let manifest = json_object_new()
+    let package_meta = json_object_new()
+    let contributions = json_object_new()
+    let actions = json_array_new()
+    let action = json_object_new()
+    let payload_schema = json_object_new()
+    let schema_properties = json_object_new()
+    let path_property = json_object_new()
+    let kain = json_object_new()
+
+    json_object_set(package_meta, "id", descriptor.id)
+    json_object_set(package_meta, "label", descriptor.label)
+    json_object_set(package_meta, "kind", "kain-authored-proof")
+    json_object_set(package_meta, "authoringSurface", plugin_proof_surface_name(descriptor.surface))
+
+    json_object_set(path_property, "type", "string")
+    json_object_set(path_property, "description", "Optional path routed through the Kain control plane.")
+    json_object_set(schema_properties, "path", path_property)
+    json_object_set(payload_schema, "type", "object")
+    json_object_set(payload_schema, "properties", schema_properties)
+    json_object_set(payload_schema, "additionalProperties", true)
+
+    json_object_set(action, "id", descriptor.id + ".inspect-selection")
+    json_object_set(action, "label", "Inspect Selection With Kain")
+    json_object_set(action, "description", "Kain-authored action proof that can become real plugin/action JSON or direct bridge behavior.")
+    json_object_set(action, "runtimeId", "greeblefs-kain-control-plane")
+    json_object_set(action, "actionId", "control-plane.describe")
+    json_object_set(action, "payloadSchema", payload_schema)
+    json_array_push(actions, action)
+    json_object_set(contributions, "actions", actions)
+
+    json_object_set(kain, "source", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn")
+    json_object_set(kain, "strategy", "Kain source of truth, generated GreebleFS compatibility output.")
+    json_object_set(kain, "nextStep", "Wire this generated manifest into the plugin package discovery lane after the proof format stabilizes.")
+
+    json_object_set(manifest, "package", package_meta)
+    json_object_set(manifest, "contributions", contributions)
+    json_object_set(manifest, "kain", kain)
+    return json_string(manifest)
+
+fn build_plugin_emit_result(descriptor: PluginProofDescriptor, manifest_text: String) -> Any:
+    let result = json_object_new()
+    json_object_set(result, "artifactKind", "plugin-proof")
+    json_object_set(result, "pluginId", descriptor.id)
+    json_object_set(result, "outputPath", descriptor.output_path)
+    json_object_set(result, "bytes", len(manifest_text))
+    json_object_set(result, "surface", plugin_proof_surface_name(descriptor.surface))
+    json_object_set(result, "manifestJson", json_parse(manifest_text))
+    return result

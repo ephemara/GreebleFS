@@ -1,0 +1,45 @@
+id = "greeblefs-kain-control-plane"
+displayName = "GreebleFS Kain Control Plane"
+language = "kain"
+kind = "native-sidecar"
+compiler = "kain-script"
+moduleDir = "."
+entry = "src/server.kn"
+watchGlobs = ["src/**/*.kn"]
+args = ["run", "src/server.kn"]
+
+[permissions]
+fsWrite = true
+
+[sidecar]
+transport = "stdio-json-lines-v2"
+
+[[sidecar.actions]]
+id = "control-plane.describe"
+label = "Describe Kain Control Plane"
+description = "Return the Kain-authored control-plane catalog, module map, and first-class GreebleFS bridge intent."
+payloadExampleJson = "{}"
+
+[[sidecar.actions]]
+id = "host.reflect"
+label = "Reflect Host API"
+description = "Ask the GreebleFS host for its bridge schema and wrap it in Kain control-plane metadata."
+payloadExampleJson = "{}"
+
+[[sidecar.actions]]
+id = "plugin.emit-proof"
+label = "Emit Plugin Proof"
+description = "Generate a small Kain-authored plugin/action manifest proof through the host filesystem lane."
+payloadExampleJson = "{\"outputPath\":\"D:/GreebleFS/src-kain/runtimes/greeblefs-kain-control-plane/generated/plugin-proof.json\"}"
+
+[[sidecar.actions]]
+id = "settings.emit-proof"
+label = "Emit Settings Proof"
+description = "Generate a small Kain-authored settings schema proof through the host filesystem lane."
+payloadExampleJson = "{\"outputPath\":\"D:/GreebleFS/src-kain/runtimes/greeblefs-kain-control-plane/generated/settings-proof.json\"}"
+
+[[sidecar.actions]]
+id = "pipeline.plan"
+label = "Plan Kain Pipeline"
+description = "Return a Kain-authored pipeline plan for bridge, plugin, settings, FFI, GPU, and codegen lanes."
+payloadExampleJson = "{\"focus\":\"first-class-greeblefs\"}"
