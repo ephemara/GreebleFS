@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1,
+    "appZoom": 1.025,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -499,10 +499,10 @@
   },
   "dock": {
     "activePresentationId": "yakuake-workbench",
-    "defaultTerminalColumns": 87,
-    "defaultTerminalRows": 37,
+    "defaultTerminalColumns": 198,
+    "defaultTerminalRows": 21,
     "edgeSize": 500,
-    "edgeWidth": 768,
+    "edgeWidth": 1663,
     "floatingBounds": {
       "height": 824,
       "width": 2524,
@@ -1730,6 +1730,7 @@
       "standard": 0.4,
       "timeline-surface": 0.4
     },
+    "explorerWidgetStateByInstanceId": {},
     "folderClickMode": "double",
     "folderIconRules": [
       {
@@ -1926,7 +1927,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 1.1379999820676625,
+    "gridZoom": 1.1,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2055,11 +2056,11 @@
     "zoomAdjust": "Ctrl+Scroll"
   },
   "layout": {
-    "activeProfileId": "navigator-bottom",
+    "activeProfileId": "overlay-classic",
     "configPath": "",
     "followThemeDefaults": false,
     "lastProfileIdByShellFamily": {
-      "classic": "navigator-bottom",
+      "classic": "overlay-classic",
       "ide": "workbench-ide"
     },
     "panelStateByProfile": {
@@ -2328,7 +2329,7 @@
         "version": 3
       }
     },
-    "zenFocusMode": true
+    "zenFocusMode": false
   },
   "plugins": {
     "enablementByPluginId": {},
@@ -2348,7 +2349,7 @@
     "integratedHost": "xterm",
     "overlayAnchor": "bottom",
     "overlayHeight": 500,
-    "overlayWidth": 768,
+    "overlayWidth": 1663,
     "preferredOpenMode": "integrated",
     "scrollback": 10000,
     "shell": "pwsh.exe -NoLogo",
