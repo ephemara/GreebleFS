@@ -16,6 +16,7 @@ const defaultSourceRoot = process.platform === "win32"
 const executableName = process.platform === "win32" ? "kain.exe" : "kain";
 const optionalLauncherName = process.platform === "win32" ? "kn.exe" : "kn";
 const payloadDirectories = ["stdlib", "runtime", "toolchain", "docs"];
+const payloadSanitizerVersion = 1;
 
 const args = new Set(process.argv.slice(2));
 const force = args.has("--force");
@@ -140,13 +141,17 @@ async function payloadLooksComplete() {
   return true;
 }
 
+async function removePath(targetPath) {
+  await fs.rm(targetPath, { recursive: true, force: true });
+}
+
 async function removePayloadChild(childName) {
   const target = path.resolve(payloadRoot, childName);
   const relative = path.relative(payloadRoot, target);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`Refusing to remove path outside Kain payload: ${target}`);
   }
-  await fs.rm(target, { recursive: true, force: true });
+  await removePath(target);
 }
 
 async function copyDirectory(sourceRoot, directoryName) {
@@ -170,6 +175,78 @@ async function stageExecutable(sourcePath, targetName) {
   await fs.mkdir(path.join(payloadRoot, "bin"), { recursive: true });
   await fs.copyFile(sourcePath, path.join(payloadRoot, "bin", targetName));
   return true;
+}
+
+async function materializePayloadSymlink(symlinkPath, stats) {
+  const linkTarget = await fs.readlink(symlinkPath);
+  const resolvedTarget = path.resolve(path.dirname(symlinkPath), linkTarget);
+  let targetStats;
+  try {
+    targetStats = await fs.stat(resolvedTarget);
+  } catch {
+    await removePath(symlinkPath);
+    return {
+      action: "removed-missing-target",
+      path: normalizeForLogs(symlinkPath),
+      target: normalizeForLogs(resolvedTarget),
+    };
+  }
+
+  await removePath(symlinkPath);
+  if (targetStats.isDirectory()) {
+    await fs.cp(resolvedTarget, symlinkPath, {
+      recursive: true,
+      force: true,
+      errorOnExist: false,
+    });
+    return {
+      action: "materialized-directory",
+      path: normalizeForLogs(symlinkPath),
+      target: normalizeForLogs(resolvedTarget),
+    };
+  }
+
+  if (targetStats.isFile()) {
+    await fs.mkdir(path.dirname(symlinkPath), { recursive: true });
+    await fs.copyFile(resolvedTarget, symlinkPath);
+    return {
+      action: "materialized-file",
+      path: normalizeForLogs(symlinkPath),
+      target: normalizeForLogs(resolvedTarget),
+    };
+  }
+
+  await removePath(symlinkPath);
+  return {
+    action: "removed-unsupported-target",
+    path: normalizeForLogs(symlinkPath),
+    target: normalizeForLogs(resolvedTarget),
+    fileType: {
+      directory: stats.isDirectory(),
+      file: stats.isFile(),
+      symbolicLink: stats.isSymbolicLink(),
+    },
+  };
+}
+
+async function sanitizePayloadSymlinks(rootPath, records = []) {
+  if (!(await pathExists(rootPath))) {
+    return records;
+  }
+
+  const entries = await fs.readdir(rootPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(rootPath, entry.name);
+    const stats = await fs.lstat(entryPath);
+    if (stats.isSymbolicLink()) {
+      records.push(await materializePayloadSymlink(entryPath, stats));
+      continue;
+    }
+    if (stats.isDirectory()) {
+      await sanitizePayloadSymlinks(entryPath, records);
+    }
+  }
+  return records;
 }
 
 async function main() {
@@ -201,6 +278,7 @@ async function main() {
   if (
     !force
     && existingManifest?.fingerprint?.digest === fingerprint.digest
+    && existingManifest?.payloadSanitizerVersion === payloadSanitizerVersion
     && await payloadLooksComplete()
   ) {
     console.log("Kain toolchain payload up to date, skipping.");
@@ -223,6 +301,7 @@ async function main() {
       copiedDirectories.push(directoryName);
     }
   }
+  const symlinkSanitization = await sanitizePayloadSymlinks(payloadRoot);
 
   const doctor = spawnSync(kainExecutable, ["--version"], {
     encoding: "utf8",
@@ -245,6 +324,8 @@ async function main() {
       kn: optionalLauncher ? normalizeForLogs(optionalLauncher) : null,
     },
     copiedDirectories,
+    payloadSanitizerVersion,
+    symlinkSanitization,
     version: doctor.status === 0 ? doctor.stdout.trim() : null,
   };
   await fs.writeFile(payloadManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
