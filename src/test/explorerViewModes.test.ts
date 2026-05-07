@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adjustExplorerLayoutZoomState,
+  adjustExplorerLayoutZoomStateForWheelDelta,
   commitExplorerLayoutZoomState,
   createExplorerLayoutZoomState,
   getAdjacentExplorerGridMode,
@@ -139,6 +140,31 @@ describe('explorerViewModes', () => {
     const listState = adjustExplorerLayoutZoomState(tableState, -0.24);
     expect(listState.family).toBe('list');
     expect(commitExplorerLayoutZoomState(listState)).toEqual({ viewMode: 'list' });
+  });
+
+  it('uses stronger wheel detents when crossing row-mode boundaries', () => {
+    const compactGrid = createExplorerLayoutZoomState('icons-s', 0);
+    const listState = adjustExplorerLayoutZoomStateForWheelDelta(
+      compactGrid,
+      -0.12,
+    );
+    expect(listState.family).toBe('list');
+    expect(commitExplorerLayoutZoomState(listState)).toEqual({
+      viewMode: 'list',
+    });
+
+    const tableState = adjustExplorerLayoutZoomStateForWheelDelta(
+      listState,
+      0.12,
+    );
+    const gridState = adjustExplorerLayoutZoomStateForWheelDelta(
+      tableState,
+      0.12,
+    );
+    expect(gridState.family).toBe('grid');
+    expect(commitExplorerLayoutZoomState(gridState).viewMode).toMatch(
+      /^icons-/,
+    );
   });
 
   it('commits live grid zoom back to the nearest durable icon anchor', () => {

@@ -608,6 +608,7 @@ describe('useSettingsStore.updateExplorer()', () => {
 
     const { explorer } = useSettingsStore.getState().settings;
     expect(explorer.experimentalViewMode).toBe('adaptive-semantic-grid');
+    expect(explorer.activeExplorerViewId).toBe('adaptive-semantic-grid');
     expect(explorer.experimentalDensity).toBe(0.6);
     expect(explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
   });

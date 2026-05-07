@@ -154,10 +154,13 @@ import {
 } from "../config/explorerTheme";
 import {
   EXPLORER_LAYOUT_ZOOM_COMMIT_IDLE_MS,
+  createExplorerZoomWheelAccumulator,
+  explorerZoomBehavior,
   getExplorerLayoutZoomHudProgress,
   resolveExplorerGridItemPadding,
   resolveExplorerGridThumbnailRadius,
-  resolveExplorerLayoutZoomWheelDelta,
+  resetExplorerZoomWheelAccumulator,
+  resolveExplorerLayoutZoomWheelDeltaWithAccumulator,
   resolveExplorerRowThumbnailStageSize,
 } from "../config/explorerZoomBehavior";
 import {
@@ -212,6 +215,7 @@ import {
   getExplorerGridZoomAnchor,
   getExplorerGridZoomPercent,
   createExplorerLayoutZoomState,
+  adjustExplorerLayoutZoomStateForWheelDelta,
   commitExplorerLayoutZoomState,
   explorerViewModes,
   getExplorerViewModeDefinition,
@@ -10163,6 +10167,9 @@ export function FileExplorer({
   const layoutZoomFrameSampleRef = useRef<number[]>([]);
   const layoutZoomFrameRafRef = useRef<number | null>(null);
   const layoutZoomFrameLastAtRef = useRef<number | null>(null);
+  const layoutZoomWheelAccumulatorRef = useRef(
+    createExplorerZoomWheelAccumulator(),
+  );
   const layoutZoomPointerAnchorRef =
     useRef<ExplorerLayoutZoomPointerAnchor | null>(null);
   const [liveLayoutZoomState, setLiveLayoutZoomState] =
@@ -22589,13 +22596,25 @@ export function FileExplorer({
     });
   }
 
-  function applyStandardExplorerLayoutZoomValue(nextLayoutZoom: number): void {
+  function beginStandardExplorerLayoutZoomGesture(): void {
     ensureLayoutZoomPointerAnchorAtViewportCenter();
     if (!layoutZoomGestureActiveRef.current) {
       layoutZoomGestureActiveRef.current = true;
       setLayoutZoomGestureActive(true);
     }
+  }
 
+  function applyStandardExplorerLayoutZoomState(
+    nextState: ExplorerLayoutZoomState,
+  ): void {
+    beginStandardExplorerLayoutZoomGesture();
+    liveLayoutZoomTargetStateRef.current = nextState;
+    scheduleLiveLayoutZoomPublish();
+    showZoomHud();
+  }
+
+  function applyStandardExplorerLayoutZoomValue(nextLayoutZoom: number): void {
+    beginStandardExplorerLayoutZoomGesture();
     liveLayoutZoomTargetStateRef.current = resolveExplorerLayoutZoomStateAtValue(
       liveLayoutZoomTargetStateRef.current,
       Math.max(
@@ -27400,6 +27419,7 @@ export function FileExplorer({
       if (layoutZoomCommitTimerRef.current != null) {
         window.clearTimeout(layoutZoomCommitTimerRef.current);
       }
+      resetExplorerZoomWheelAccumulator(layoutZoomWheelAccumulatorRef.current);
       if (folderActivationPrimeTimerRef.current != null) {
         window.clearTimeout(folderActivationPrimeTimerRef.current);
       }
@@ -27607,7 +27627,7 @@ export function FileExplorer({
       }
 
       const nextRowMetrics = applyExplorerThemeToRowMetrics(
-        getExplorerViewModeDefinition("list").rows,
+        resolvedState.definition.rows ?? getExplorerViewModeDefinition("list").rows,
         explorerTheme,
       );
       const rowHeight = nextRowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
@@ -27661,6 +27681,11 @@ export function FileExplorer({
   const commitExplorerLayoutZoomGesture = useCallback(() => {
     const committedState = liveLayoutZoomTargetStateRef.current;
     const nextCommit = commitExplorerLayoutZoomState(committedState);
+    if (layoutZoomPublishFrameRef.current != null) {
+      window.cancelAnimationFrame(layoutZoomPublishFrameRef.current);
+      layoutZoomPublishFrameRef.current = null;
+    }
+    publishLiveLayoutZoomState();
     const frameDurations = [...layoutZoomFrameSampleRef.current];
     if (frameDurations.length > 0) {
       const sortedDurations = [...frameDurations].sort(
@@ -27688,6 +27713,7 @@ export function FileExplorer({
     layoutZoomGestureActiveRef.current = false;
     setLayoutZoomGestureActive(false);
     layoutZoomPointerAnchorRef.current = null;
+    resetExplorerZoomWheelAccumulator(layoutZoomWheelAccumulatorRef.current);
     layoutZoomCommitTimerRef.current = null;
 
     if (committedState.family === "list" || committedState.family === "table") {
@@ -27699,7 +27725,7 @@ export function FileExplorer({
       viewMode: nextCommit.viewMode,
       gridZoom: nextCommit.gridZoom ?? committedState.storedGridZoom,
     });
-  }, [updateExplorerSettings]);
+  }, [publishLiveLayoutZoomState, updateExplorerSettings]);
   const shouldHandleStandardExplorerLayoutZoomGesture = useCallback(
     (gesture: ExplorerZoomGesture) => {
       if (
@@ -27721,15 +27747,20 @@ export function FileExplorer({
       if (!isExplorerZoomGestureVerticalDominant(gesture)) {
         return false;
       }
-      return isExplorerZoomGestureMeaningful(gesture);
+      return isExplorerZoomGestureMeaningful(
+        gesture,
+        explorerZoomBehavior.wheel.minimumGestureDeltaPixels,
+      );
     },
     [effectiveExperimentalViewMode, isCompactDock, isSearchActive],
   );
   const applyStandardExplorerLayoutWheelZoom = useCallback(
     (gesture: ExplorerZoomGesture) => {
-      const rawDelta = resolveExplorerLayoutZoomWheelDelta(
+      const rawDelta = resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
         gesture.rawEvent,
         getExplorerZoomGestureViewportHeight(),
+        layoutZoomWheelAccumulatorRef.current,
+        gesture.rawEvent.timeStamp,
       );
       if (rawDelta === 0) {
         return true;
@@ -27738,9 +27769,11 @@ export function FileExplorer({
       layoutZoomPointerAnchorRef.current = createLayoutZoomPointerAnchor(
         gesture.rawEvent,
       );
-      applyStandardExplorerLayoutZoomValue(
-        liveLayoutZoomTargetStateRef.current.layoutZoom + rawDelta,
+      const nextState = adjustExplorerLayoutZoomStateForWheelDelta(
+        liveLayoutZoomTargetStateRef.current,
+        rawDelta,
       );
+      applyStandardExplorerLayoutZoomState(nextState);
 
       if (layoutZoomCommitTimerRef.current != null) {
         window.clearTimeout(layoutZoomCommitTimerRef.current);
@@ -27751,7 +27784,7 @@ export function FileExplorer({
       return true;
     },
     [
-      applyStandardExplorerLayoutZoomValue,
+      applyStandardExplorerLayoutZoomState,
       commitExplorerLayoutZoomGesture,
       createLayoutZoomPointerAnchor,
       getExplorerZoomGestureViewportHeight,
@@ -28502,20 +28535,6 @@ export function FileExplorer({
               justifyContent: "center",
               overflow: "hidden",
               flexShrink: 0,
-              borderRadius: thumbnail
-                ? "var(--overlay-explorer-grid-thumbnail-radius)"
-                : undefined,
-              border: thumbnail
-                ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                : undefined,
-              background: thumbnail
-                ? isSel
-                  ? "color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))"
-                  : "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                : undefined,
-              boxShadow: thumbnail
-                ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                : undefined,
               transition: explorerGridStageSizeTransition,
               ...(iconStagePresentation ?? {}),
             }}
@@ -28737,16 +28756,6 @@ export function FileExplorer({
                 alignItems: "center",
                 justifyContent: "center",
                 overflow: "hidden",
-                borderRadius: thumbnail ? 10 : undefined,
-                border: thumbnail
-                  ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                  : undefined,
-                background: thumbnail
-                  ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                  : undefined,
-                boxShadow: thumbnail
-                  ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                  : undefined,
                 flexShrink: 0,
                 ...(iconStagePresentation ?? {}),
               }}
@@ -28985,16 +28994,6 @@ export function FileExplorer({
                   alignItems: "center",
                   justifyContent: "center",
                   overflow: "hidden",
-                  borderRadius: thumbnail ? 10 : undefined,
-                  border: thumbnail
-                    ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                    : undefined,
-                  background: thumbnail
-                    ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                    : undefined,
-                  boxShadow: thumbnail
-                    ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                    : undefined,
                   flexShrink: 0,
                   ...(iconStagePresentation ?? {}),
                 }}
@@ -30738,16 +30737,6 @@ export function FileExplorer({
                 justifyContent: "center",
                 flexShrink: 0,
                 overflow: "hidden",
-                borderRadius: tableThumbnail ? 10 : undefined,
-                border: tableThumbnail
-                  ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                  : undefined,
-                background: tableThumbnail
-                  ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                  : undefined,
-                boxShadow: tableThumbnail
-                  ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                  : undefined,
                 ...(iconStagePresentation ?? {}),
               }}
             >
@@ -30934,18 +30923,10 @@ export function FileExplorer({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            borderRadius: isCards ? 16 : 12,
-            background: gridThumbnail
-              ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-              : "transparent",
+            borderRadius: gridThumbnail ? undefined : isCards ? 16 : 12,
+            background: "transparent",
             flexShrink: 0,
             overflow: "hidden",
-            border: gridThumbnail
-              ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-              : undefined,
-            boxShadow: gridThumbnail
-              ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-              : undefined,
             ...(getExplorerEntryIconStageStyle(
               entry,
               dragPresentation,
@@ -31370,17 +31351,20 @@ export function FileExplorer({
             width: node.size,
             height: node.size,
             minWidth: node.size,
-            borderRadius: 999,
+            borderRadius: thumbnail ? undefined : 999,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background:
-              node.emphasis === "anchor"
+            background: thumbnail
+              ? "transparent"
+              : node.emphasis === "anchor"
                 ? "rgba(255,255,255,0.11)"
                 : "rgba(255,255,255,0.07)",
             overflow: "hidden",
             boxShadow:
-              node.emphasis === "selected" ? `0 0 0 1px ${accent}55` : "none",
+              !thumbnail && node.emphasis === "selected"
+                ? `0 0 0 1px ${accent}55`
+                : "none",
             ...(iconStagePresentation ?? {}),
           }}
         >
@@ -32096,11 +32080,11 @@ export function FileExplorer({
           style={{
             width: 42,
             height: 42,
-            borderRadius: 14,
+            borderRadius: thumbnail ? undefined : 14,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            background: "rgba(255,255,255,0.05)",
+            background: thumbnail ? "transparent" : "rgba(255,255,255,0.05)",
             overflow: "hidden",
             ...(iconStagePresentation ?? {}),
           }}

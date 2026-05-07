@@ -479,7 +479,7 @@
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
     "uiFontFamily": "system-ui, sans-serif",
-    "useNativeOsIcons": true,
+    "useNativeOsIcons": false,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,
     "wallpaperOpacity": 1
@@ -1725,7 +1725,7 @@
     "experimentalDensity": 0.4,
     "experimentalViewMode": "off",
     "explorerViewDensityById": {
-      "adaptive-semantic-grid": 0.4,
+      "adaptive-semantic-grid": 1,
       "constellation": 0.4,
       "standard": 0.4,
       "timeline-surface": 0.4
@@ -1926,7 +1926,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.08799999673957483,
+    "gridZoom": 1.1379999820676625,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -1954,7 +1954,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-s"
+    "viewMode": "icons-xl"
   },
   "home": {
     "activePackId": null,
@@ -2328,7 +2328,7 @@
         "version": 3
       }
     },
-    "zenFocusMode": false
+    "zenFocusMode": true
   },
   "plugins": {
     "enablementByPluginId": {},

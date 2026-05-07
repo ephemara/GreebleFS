@@ -7990,3 +7990,33 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
 - Validation:
   - Passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "renders the footer view switcher and size slider as shared status-bar controls on the edge|commits standard explorer size changes through the shared footer slider|drives authored explorer density through the shared footer size slider|scales the explorer grid with ctrl-wheel without changing app zoom and only commits after idle|uses the saved built-in layout as the default-view proxy when leaving a unique footer mode|switches between default and built-in layouts from the footer toggles" --reporter=dot --testTimeout=30000`
+
+# 2026-05-07 - Explorer Zoom Hardening And Precision Wheel Polish
+
+- Smoothed the shared Explorer zoom system without adding new runtime libraries or Wasm. The research pass checked Directory Opus and Windows Explorer behavior plus Radix/Motion options; the chosen implementation keeps GreebleFS on the existing `PremiumSlider`/Radix surface and the existing RAF/CSS-variable hot path because the math is small, latency-sensitive, and already inside shared view-mode resolvers.
+- Durable implementation shape:
+  - `usr/profiles/default/explorer-zoom-behaviors/greeblefs-core/explorer-zoom-behavior.json` now authors wheel micro-delta accumulation, minimum gesture thresholds, row-mode detent strength, and interpolation curves.
+  - `src/config/explorerZoomBehavior.ts` owns precision wheel accumulation/reset rules and curve resolution (`linear`, `smoothstep`, `smootherstep`, `easeOutCubic`).
+  - `src/config/explorerViewModes.ts` owns the wheel-specific row/list/table detent ladder and eased grid/oversize interpolation. Do not reproduce that logic in `FileExplorer.tsx`.
+  - `src/components/FileExplorer.tsx` now applies full layout-zoom state for wheel detents so family transitions such as `list -> columns -> icons` are not collapsed back through hysteresis when only the numeric `layoutZoom` is applied.
+  - `src/store/settingsStore.ts` now keeps legacy `experimentalViewMode` updates synchronized with `activeExplorerViewId`, preserving compatibility with built-in experimental layouts and newer authored explorer layouts.
+- Current risks and rules:
+  - Precision trackpad deltas should accumulate through `resolveExplorerLayoutZoomWheelDeltaWithAccumulator(...)`; normal mouse notches should use row detents. Avoid lowering thresholds in component code.
+  - Deep virtualized anchoring tests should assert the actual visible anchor after scroll, not a fixed item number; the rendered band depends on live grid geometry.
+  - If future zoom work reaches for Motion springs, keep them out of the layout hot path unless they can update CSS variables without extra React renders. The current system intentionally commits after idle and publishes live state through RAF.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerZoomBehavior.test.ts src/test/explorerViewModes.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "(shared footer size slider|standard explorer size|authored explorer density|ctrl-wheel|compact list|deep-grid|already-visible|oversize icon band|details mode|constellation field)" --reporter=dot`
+  - Passed: `bunx vitest run src/test/settingsStore.test.ts -t "stores experimental explorer mode" --reporter=dot`
+  - Not clean: full `settingsStore.test.ts` still has unrelated baseline failures in default terminal/theme/context-menu expectations.
+  - Not completed: full `fileExplorer.viewModes.test.tsx` exceeded the local timeout window; use focused slices for this large suite unless you are intentionally doing a long CI-style run.
+
+# 2026-05-07 - Explorer Image Thumbnails Render Raw Instead Of In A Frame
+
+- Explorer thumbnail stages no longer add a bubble-like thumbnail frame for generated image/code/shader/media artifacts. `src/components/FileExplorer.tsx` now leaves thumbnail stages visually transparent across standard grid, list, table, adaptive-semantic grid/table, constellation, and timeline surfaces so PNG cutouts, SVG artifacts, and screenshots keep their own silhouette, transparency, and aspect identity.
+- Durable product rule:
+  - Thumbnail artifacts should be content-first. Do not add local panel backgrounds, borders, inset highlights, or rounded clipping to image/SVG/PNG thumbnail stages; selection, hover, and drag affordances belong on the surrounding tile/row/card.
+- Validation:
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "renders grid thumbnails for visible image entries in icon layouts" --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "overlays themed file-type badges on generated code thumbnails in icon layouts" --reporter=dot --testTimeout=30000`
+  - Not clean: touched-file TypeScript sweep still reports existing diagnostics in the broader uncommitted explorer-view work, including unused experimental-view imports/types, `Array.at` lib-target issues, and pre-existing test invoke typing.

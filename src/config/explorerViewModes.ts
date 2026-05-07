@@ -2,6 +2,8 @@ import type { ExplorerExperimentalViewMode } from './explorerExperimentalModes';
 import {
   explorerGridZoomAnchors,
   explorerZoomBehavior,
+  resolveExplorerGridSegmentProgress,
+  resolveExplorerOversizeProgress,
 } from './explorerZoomBehavior';
 
 export type ExplorerViewMode =
@@ -311,7 +313,9 @@ export function getExplorerGridVisualMetricsForZoom(
   const lowerMetrics = getExplorerViewModeDefinition(lowerAnchor.id).grid!;
   const upperMetrics = getExplorerViewModeDefinition(upperAnchor.id).grid!;
   const range = upperAnchor.zoom - lowerAnchor.zoom;
-  const t = range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range;
+  const t = resolveExplorerGridSegmentProgress(
+    range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range,
+  );
 
   return {
     iconSize: lerp(lowerMetrics.iconSize, upperMetrics.iconSize, t),
@@ -357,7 +361,9 @@ export function getExplorerGridLayoutMetricsForZoom(gridZoom: number): ExplorerG
   const lowerMetrics = getExplorerViewModeDefinition(lowerAnchor.id).grid!;
   const upperMetrics = getExplorerViewModeDefinition(upperAnchor.id).grid!;
   const range = upperAnchor.zoom - lowerAnchor.zoom;
-  const t = range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range;
+  const t = resolveExplorerGridSegmentProgress(
+    range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range,
+  );
 
   return {
     minWidth: lerp(lowerMetrics.minWidth, upperMetrics.minWidth, t),
@@ -423,6 +429,59 @@ export function adjustExplorerLayoutZoomState(
   delta: number,
 ): ExplorerLayoutZoomState {
   return resolveExplorerLayoutZoomStateAtValue(state, state.layoutZoom + delta);
+}
+
+export function adjustExplorerLayoutZoomStateForWheelDelta(
+  state: ExplorerLayoutZoomState,
+  delta: number,
+): ExplorerLayoutZoomState {
+  const projectedLayoutZoom = state.layoutZoom + delta;
+  const touchesRowDomain =
+    state.layoutZoom < EXPLORER_GRID_ZOOM_MIN ||
+    projectedLayoutZoom < EXPLORER_GRID_ZOOM_MIN;
+  const rowDetentMinimumDelta =
+    explorerZoomBehavior.wheel.maxPerEventZoomDelta /
+    Math.max(1, explorerZoomBehavior.wheel.rowModeZoomMultiplier);
+  const shouldUseRowDetent =
+    touchesRowDomain && Math.abs(delta) >= rowDetentMinimumDelta;
+
+  if (shouldUseRowDetent) {
+    if (
+      state.family === 'grid' &&
+      delta < 0 &&
+      projectedLayoutZoom <= EXPLORER_LAYOUT_ZOOM_TABLE_ENTER
+    ) {
+      return createExplorerLayoutZoomStateForWheelStep('list', state);
+    }
+
+    if (state.family !== 'grid') {
+      const resolvedState = resolveExplorerLayoutZoomState(state);
+      const direction = delta > 0 ? 'larger' : 'smaller';
+      return createExplorerLayoutZoomStateForWheelStep(
+        stepExplorerViewMode(resolvedState.viewMode, direction),
+        state,
+      );
+    }
+  }
+
+  return resolveExplorerLayoutZoomStateAtValue(state, projectedLayoutZoom);
+}
+
+function createExplorerLayoutZoomStateForWheelStep(
+  viewMode: ExplorerViewMode,
+  previousState: ExplorerLayoutZoomState,
+): ExplorerLayoutZoomState {
+  const gridZoom = isExplorerGridMode(viewMode)
+    ? Math.max(
+        getExplorerGridZoomAnchor(viewMode),
+        viewMode === 'icons-s' ? EXPLORER_GRID_ZOOM_STEP : 0,
+      )
+    : previousState.storedGridZoom;
+
+  return createExplorerLayoutZoomState(
+    viewMode,
+    gridZoom,
+  );
 }
 
 export function resolveExplorerLayoutZoomStateAtValue(
@@ -579,10 +638,6 @@ function lerp(start: number, end: number, t: number): number {
   return start + (end - start) * t;
 }
 
-function easeOutCubic(t: number): number {
-  return 1 - (1 - t) ** 3;
-}
-
 function getExplorerOversizedGridLayoutMetrics(gridZoom: number): ExplorerGridLayoutMetrics {
   const baseMetrics = getExplorerViewModeDefinition('icons-xl').grid!;
   const oversizeProgress = clamp(
@@ -591,7 +646,7 @@ function getExplorerOversizedGridLayoutMetrics(gridZoom: number): ExplorerGridLa
     0,
     1,
   );
-  const easedProgress = easeOutCubic(oversizeProgress);
+  const easedProgress = resolveExplorerOversizeProgress(oversizeProgress);
   const tileScale = lerp(
     1,
     explorerZoomBehavior.oversize.tileScaleMax,
@@ -651,7 +706,7 @@ function getExplorerOversizedGridVisualMetrics(
     0,
     1,
   );
-  const easedProgress = easeOutCubic(oversizeProgress);
+  const easedProgress = resolveExplorerOversizeProgress(oversizeProgress);
   const iconScale = lerp(
     1,
     explorerZoomBehavior.oversize.rowScaleMax,
@@ -669,6 +724,9 @@ function resolveExplorerLayoutZoomFamily(
   previousFamily: ExplorerLayoutZoomFamily,
 ): ExplorerLayoutZoomFamily {
   if (previousFamily === 'list') {
+    if (layoutZoom >= EXPLORER_LAYOUT_ZOOM_TABLE_EXIT) {
+      return 'grid';
+    }
     if (layoutZoom >= EXPLORER_LAYOUT_ZOOM_LIST_EXIT) {
       return 'table';
     }
@@ -684,6 +742,9 @@ function resolveExplorerLayoutZoomFamily(
     return 'table';
   }
   // previousFamily === 'grid'
+  if (layoutZoom <= EXPLORER_LAYOUT_ZOOM_LIST_ENTER) {
+    return 'list';
+  }
   if (layoutZoom <= EXPLORER_LAYOUT_ZOOM_TABLE_ENTER) {
     return 'table';
   }

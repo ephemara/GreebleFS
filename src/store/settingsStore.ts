@@ -805,10 +805,12 @@ function normalizeExplorerSettings(
   const hasExplicitGridZoom = updates != null && Object.prototype.hasOwnProperty.call(updates, 'gridZoom');
   const hasExplicitActiveExplorerViewId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeExplorerViewId');
+  const hasExplicitExperimentalViewMode = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'experimentalViewMode');
   const hasExplicitExplorerViewDensityById = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'explorerViewDensityById');
   const nextExperimentalViewMode = normalizeExplorerExperimentalViewMode(
-    hasExplicitActiveExplorerViewId && !Object.prototype.hasOwnProperty.call(updates ?? {}, 'experimentalViewMode')
+    hasExplicitActiveExplorerViewId && !hasExplicitExperimentalViewMode
       ? mapExplorerActiveViewIdToLegacyExperimentalMode(
           normalizeExplorerActiveViewId(updates?.activeExplorerViewId),
         )
@@ -820,7 +822,9 @@ function normalizeExplorerSettings(
   );
   const nextActiveExplorerViewId = hasExplicitActiveExplorerViewId
     ? normalizeExplorerActiveViewId(updates?.activeExplorerViewId)
-    : normalizeExplorerActiveViewId(base.activeExplorerViewId || base.experimentalViewMode);
+    : hasExplicitExperimentalViewMode
+      ? normalizeExplorerActiveViewId(nextExperimentalViewMode)
+      : normalizeExplorerActiveViewId(base.activeExplorerViewId || base.experimentalViewMode);
   const nextExplorerViewDensityById = normalizeExplorerViewDensityById(
     hasExplicitExplorerViewDensityById
       ? updates?.explorerViewDensityById

@@ -21,9 +21,12 @@
   "wheel": {
     "lineDeltaPixels": 40,
     "pageDeltaFallbackPixels": 320,
+    "minimumGestureDeltaPixels": 0.05,
     "zoomSensitivity": 0.001,
     "maxPerEventZoomDelta": 0.12,
+    "rowModeZoomMultiplier": 2.5,
     "minimumAbsoluteZoomDelta": 0.0005,
+    "microDeltaAccumulationMs": 120,
     "commitIdleMs": 160
   },
   "oversize": {
@@ -63,5 +66,9 @@
     "details": 10,
     "grid": 48,
     "oversize": 20
+  },
+  "curves": {
+    "gridSegmentCurve": "smootherstep",
+    "oversizeCurve": "easeOutCubic"
   }
 }

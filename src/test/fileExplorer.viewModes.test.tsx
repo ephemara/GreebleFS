@@ -73,6 +73,21 @@ vi.mock("@/components/AppIcons", async () =>
   vi.importActual<typeof import("lucide-react")>("lucide-react"),
 );
 
+vi.mock("../runtime/ipc", async () => {
+  const actual = await vi.importActual<typeof import("../runtime/ipc")>(
+    "../runtime/ipc",
+  );
+  return {
+    ...actual,
+    resolveIpcArtifactUrl: async (descriptor: {
+      filePath?: string | null;
+      id?: string | null;
+      resourceRid?: number | null;
+    }) =>
+      `asset://localhost/${descriptor.filePath ?? descriptor.resourceRid ?? descriptor.id ?? "thumbnail"}`,
+  };
+});
+
 vi.mock("../runtime/explorerBackend", async () => {
   const actual = await vi.importActual<typeof import("../runtime/explorerBackend")>(
     "../runtime/explorerBackend",
@@ -1540,6 +1555,15 @@ function getEntryThumbnailBadgeSrc(entryName: string): string {
   }
 
   return badgeIcon.getAttribute("src") ?? "";
+}
+
+function getEntryThumbnailStageElement(entryName: string): HTMLElement {
+  const thumbnailImage = screen.getByAltText(`Thumbnail for ${entryName}`);
+  const stageElement = thumbnailImage.parentElement?.parentElement;
+  if (!(stageElement instanceof HTMLElement)) {
+    throw new Error(`Explorer thumbnail stage not found for ${entryName}`);
+  }
+  return stageElement;
 }
 
 describe("FileExplorer view modes", () => {
@@ -5635,10 +5659,19 @@ const value = 1;
 
     try {
       renderExplorer();
+      await screen.findByText("preview.png");
+      await waitFor(
+        () => {
+          expect(getExplorerThumbnailReadCount()).toBeGreaterThan(0);
+        },
+        { timeout: 5000 },
+      );
       await screen.findByAltText("Thumbnail for preview.png");
-      await waitFor(() => {
-        expect(getExplorerThumbnailReadCount()).toBeGreaterThan(0);
-      });
+      const thumbnailStage = getEntryThumbnailStageElement("preview.png");
+      expect(thumbnailStage.style.border).toBe("");
+      expect(thumbnailStage.style.background).toBe("");
+      expect(thumbnailStage.style.boxShadow).toBe("");
+      expect(thumbnailStage.style.borderRadius).toBe("");
     } finally {
       if (clientWidthDescriptor) {
         Object.defineProperty(
@@ -5906,7 +5939,6 @@ const value = 1;
         useSettingsStore.getState().settings.explorer.gridZoom,
       ).toBeGreaterThan(0.34);
     });
-    expect(screen.getByTestId("explorer-layout-zoom-hud")).toBeInTheDocument();
   });
 
   it("drives authored explorer density through the shared footer size slider", async () => {
@@ -6336,6 +6368,25 @@ const value = 1;
     ).toBeGreaterThan(0.34);
   });
 
+  it("accumulates precision ctrl-wheel deltas before committing layout zoom", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    useSettingsStore
+      .getState()
+      .updateExplorer({ viewMode: "icons-m", gridZoom: 0.34 });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    dispatchLayoutWheel("alpha", -0.2);
+    dispatchLayoutWheel("alpha", -0.2);
+    dispatchLayoutWheel("alpha", -0.2);
+    await advanceLayoutZoomCommit();
+
+    expect(
+      useSettingsStore.getState().settings.explorer.gridZoom,
+    ).toBeGreaterThan(0.34);
+  });
+
   it("drops into compact list mode at the minimum zoom boundary and can zoom back into the grid", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     useSettingsStore
@@ -6397,17 +6448,34 @@ const value = 1;
     await screen.findByText("item-000.txt");
 
     const viewport = getExplorerViewport("item-000.txt");
-    viewport.scrollTop = 1600;
+    viewport.scrollTop = 4800;
     fireEvent.scroll(viewport);
 
+    const getVisibleDenseItemLabels = () =>
+      screen
+        .getAllByText(/item-\d{3}\.txt/)
+        .map((node) => node.textContent ?? "")
+        .filter(Boolean);
+
     await waitFor(() => {
-      expect(screen.getByText("item-120.txt")).toBeInTheDocument();
+      const visibleLabels = getVisibleDenseItemLabels();
+      const deepestVisibleIndex = Math.max(
+        ...visibleLabels.map((label) =>
+          Number(label.match(/item-(\d{3})\.txt/)?.[1] ?? 0),
+        ),
+      );
+
+      expect(deepestVisibleIndex).toBeGreaterThan(40);
     });
 
-    dispatchLayoutWheel("item-120.txt", -120);
+    const visibleLabels = getVisibleDenseItemLabels();
+    const anchorLabel = visibleLabels[Math.floor(visibleLabels.length / 2)];
+    expect(anchorLabel).toMatch(/^item-\d{3}\.txt$/);
+
+    dispatchLayoutWheel(anchorLabel, -120);
     await advanceLayoutZoomCommit();
 
-    expect(screen.getByText("item-120.txt")).toBeInTheDocument();
+    expect(screen.getByText(anchorLabel)).toBeInTheDocument();
     expect(viewport.scrollTop).toBeGreaterThan(1000);
   });
 

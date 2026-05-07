@@ -26,9 +26,12 @@ export interface ExplorerZoomLayoutDomain {
 export interface ExplorerZoomWheelBehavior {
   lineDeltaPixels: number;
   pageDeltaFallbackPixels: number;
+  minimumGestureDeltaPixels: number;
   zoomSensitivity: number;
   maxPerEventZoomDelta: number;
+  rowModeZoomMultiplier: number;
   minimumAbsoluteZoomDelta: number;
+  microDeltaAccumulationMs: number;
   commitIdleMs: number;
 }
 
@@ -79,6 +82,22 @@ export interface ExplorerZoomHudSegments {
   oversize: number;
 }
 
+export type ExplorerZoomInterpolationCurve =
+  | "linear"
+  | "smoothstep"
+  | "smootherstep"
+  | "easeOutCubic";
+
+export interface ExplorerZoomCurveBehavior {
+  gridSegmentCurve: ExplorerZoomInterpolationCurve;
+  oversizeCurve: ExplorerZoomInterpolationCurve;
+}
+
+export interface ExplorerZoomWheelAccumulator {
+  carriedZoomDelta: number;
+  lastEventAtMs: number | null;
+}
+
 interface ShippedExplorerZoomBehaviorManifest {
   version?: number;
   id?: string;
@@ -94,6 +113,7 @@ interface ShippedExplorerZoomBehaviorManifest {
     rowThumbnailStage?: Partial<ExplorerZoomRowThumbnailStageBehavior>;
   };
   hudSegments?: Partial<ExplorerZoomHudSegments>;
+  curves?: Partial<ExplorerZoomCurveBehavior>;
 }
 
 export interface ExplorerZoomBehaviorManifest {
@@ -107,6 +127,7 @@ export interface ExplorerZoomBehaviorManifest {
   oversize: ExplorerZoomOversizeBehavior;
   presentation: ExplorerZoomPresentationBehavior;
   hudSegments: ExplorerZoomHudSegments;
+  curves: ExplorerZoomCurveBehavior;
 }
 
 const defaultGridAnchors: ExplorerZoomGridAnchorMap = Object.freeze({
@@ -129,9 +150,12 @@ const defaultLayoutDomain: ExplorerZoomLayoutDomain = Object.freeze({
 const defaultWheelBehavior: ExplorerZoomWheelBehavior = Object.freeze({
   lineDeltaPixels: 40,
   pageDeltaFallbackPixels: 320,
+  minimumGestureDeltaPixels: 0.05,
   zoomSensitivity: 0.001,
   maxPerEventZoomDelta: 0.12,
+  rowModeZoomMultiplier: 2.5,
   minimumAbsoluteZoomDelta: 0.0005,
+  microDeltaAccumulationMs: 120,
   commitIdleMs: 160,
 });
 
@@ -174,6 +198,11 @@ const defaultHudSegments: ExplorerZoomHudSegments = Object.freeze({
   details: 10,
   grid: 48,
   oversize: 20,
+});
+
+const defaultCurveBehavior: ExplorerZoomCurveBehavior = Object.freeze({
+  gridSegmentCurve: "smootherstep",
+  oversizeCurve: "easeOutCubic",
 });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -289,6 +318,11 @@ function normalizeWheelBehavior(
       defaultWheelBehavior.pageDeltaFallbackPixels,
       { minimum: 1, maximum: 2000 },
     ),
+    minimumGestureDeltaPixels: asFiniteNumber(
+      value?.minimumGestureDeltaPixels,
+      defaultWheelBehavior.minimumGestureDeltaPixels,
+      { minimum: 0, maximum: 24 },
+    ),
     zoomSensitivity: asFiniteNumber(
       value?.zoomSensitivity,
       defaultWheelBehavior.zoomSensitivity,
@@ -299,10 +333,20 @@ function normalizeWheelBehavior(
       defaultWheelBehavior.maxPerEventZoomDelta,
       { minimum: 0.01, maximum: 1 },
     ),
+    rowModeZoomMultiplier: asFiniteNumber(
+      value?.rowModeZoomMultiplier,
+      defaultWheelBehavior.rowModeZoomMultiplier,
+      { minimum: 1, maximum: 8 },
+    ),
     minimumAbsoluteZoomDelta: asFiniteNumber(
       value?.minimumAbsoluteZoomDelta,
       defaultWheelBehavior.minimumAbsoluteZoomDelta,
       { minimum: 0, maximum: 0.1 },
+    ),
+    microDeltaAccumulationMs: asFiniteNumber(
+      value?.microDeltaAccumulationMs,
+      defaultWheelBehavior.microDeltaAccumulationMs,
+      { minimum: 0, maximum: 1000 },
     ),
     commitIdleMs: asFiniteNumber(
       value?.commitIdleMs,
@@ -461,6 +505,33 @@ function normalizeHudSegments(
   };
 }
 
+function normalizeInterpolationCurve(
+  value: unknown,
+  fallback: ExplorerZoomInterpolationCurve,
+): ExplorerZoomInterpolationCurve {
+  return value === "linear" ||
+    value === "smoothstep" ||
+    value === "smootherstep" ||
+    value === "easeOutCubic"
+    ? value
+    : fallback;
+}
+
+function normalizeCurveBehavior(
+  value: ShippedExplorerZoomBehaviorManifest["curves"],
+): ExplorerZoomCurveBehavior {
+  return {
+    gridSegmentCurve: normalizeInterpolationCurve(
+      value?.gridSegmentCurve,
+      defaultCurveBehavior.gridSegmentCurve,
+    ),
+    oversizeCurve: normalizeInterpolationCurve(
+      value?.oversizeCurve,
+      defaultCurveBehavior.oversizeCurve,
+    ),
+  };
+}
+
 function asTrimmedString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
@@ -490,6 +561,7 @@ function createExplorerZoomBehaviorManifest(
     oversize: normalizeOversizeBehavior(manifest?.oversize),
     presentation: normalizePresentationBehavior(manifest?.presentation),
     hudSegments: normalizeHudSegments(manifest?.hudSegments),
+    curves: normalizeCurveBehavior(manifest?.curves),
   });
 }
 
@@ -592,19 +664,81 @@ export function getNormalizedExplorerZoomWheelPixels(
   };
 }
 
-export function resolveExplorerLayoutZoomWheelDelta(
+function resolveExplorerLayoutZoomWheelRawDelta(
   event: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY">,
   viewportHeight: number,
 ): number {
   const { y } = getNormalizedExplorerZoomWheelPixels(event, viewportHeight);
-  const delta = clampNumber(
+  return clampNumber(
     -y * explorerZoomBehavior.wheel.zoomSensitivity,
     -explorerZoomBehavior.wheel.maxPerEventZoomDelta,
     explorerZoomBehavior.wheel.maxPerEventZoomDelta,
   );
+}
+
+export function resolveExplorerLayoutZoomWheelDelta(
+  event: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY">,
+  viewportHeight: number,
+): number {
+  const delta = resolveExplorerLayoutZoomWheelRawDelta(event, viewportHeight);
   return Math.abs(delta) < explorerZoomBehavior.wheel.minimumAbsoluteZoomDelta
     ? 0
     : delta;
+}
+
+export function createExplorerZoomWheelAccumulator(): ExplorerZoomWheelAccumulator {
+  return {
+    carriedZoomDelta: 0,
+    lastEventAtMs: null,
+  };
+}
+
+export function resetExplorerZoomWheelAccumulator(
+  accumulator: ExplorerZoomWheelAccumulator,
+): void {
+  accumulator.carriedZoomDelta = 0;
+  accumulator.lastEventAtMs = null;
+}
+
+export function resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
+  event: Pick<WheelEvent, "deltaMode" | "deltaX" | "deltaY">,
+  viewportHeight: number,
+  accumulator: ExplorerZoomWheelAccumulator,
+  eventAtMs = Date.now(),
+): number {
+  const rawDelta = resolveExplorerLayoutZoomWheelRawDelta(
+    event,
+    viewportHeight,
+  );
+  const minimumDelta = explorerZoomBehavior.wheel.minimumAbsoluteZoomDelta;
+  if (rawDelta === 0) {
+    return 0;
+  }
+
+  if (
+    accumulator.lastEventAtMs != null &&
+    eventAtMs - accumulator.lastEventAtMs >
+      explorerZoomBehavior.wheel.microDeltaAccumulationMs
+  ) {
+    resetExplorerZoomWheelAccumulator(accumulator);
+  }
+
+  if (
+    accumulator.carriedZoomDelta !== 0 &&
+    Math.sign(accumulator.carriedZoomDelta) !== Math.sign(rawDelta)
+  ) {
+    accumulator.carriedZoomDelta = 0;
+  }
+
+  const combinedDelta = accumulator.carriedZoomDelta + rawDelta;
+  accumulator.lastEventAtMs = eventAtMs;
+  if (Math.abs(combinedDelta) < minimumDelta) {
+    accumulator.carriedZoomDelta = combinedDelta;
+    return 0;
+  }
+
+  accumulator.carriedZoomDelta = 0;
+  return combinedDelta;
 }
 
 export function getExplorerLayoutZoomHudProgress(layoutZoom: number): number {
@@ -661,6 +795,37 @@ export function getExplorerLayoutZoomHudProgress(layoutZoom: number): number {
     oversizeSpan <= 0 ? 0 : (layoutZoom - 1) / oversizeSpan,
   );
   return cumulative + oversizeT * oversize;
+}
+
+export function resolveExplorerZoomCurveProgress(
+  value: number,
+  curve: ExplorerZoomInterpolationCurve,
+): number {
+  const t = clamp01(value);
+  if (curve === "smoothstep") {
+    return t * t * (3 - 2 * t);
+  }
+  if (curve === "smootherstep") {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+  if (curve === "easeOutCubic") {
+    return 1 - (1 - t) ** 3;
+  }
+  return t;
+}
+
+export function resolveExplorerGridSegmentProgress(value: number): number {
+  return resolveExplorerZoomCurveProgress(
+    value,
+    explorerZoomBehavior.curves.gridSegmentCurve,
+  );
+}
+
+export function resolveExplorerOversizeProgress(value: number): number {
+  return resolveExplorerZoomCurveProgress(
+    value,
+    explorerZoomBehavior.curves.oversizeCurve,
+  );
 }
 
 function clamp01(value: number): number {
