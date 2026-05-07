@@ -118,6 +118,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 26.1,
   },
+  explorerWidgets: {
+    label: "Explorer Widgets",
+    description:
+      "Author reusable Explorer widgets for chrome, authored view slots, and freeform Explorer surfaces here.",
+    keywords: [
+      "explorer widget",
+      "custom slider",
+      "chrome widget",
+      "view widget",
+      "freeform widget",
+    ],
+    order: 26.15,
+  },
   explorerChromeLayouts: {
     label: "Explorer Chrome Layouts",
     description:

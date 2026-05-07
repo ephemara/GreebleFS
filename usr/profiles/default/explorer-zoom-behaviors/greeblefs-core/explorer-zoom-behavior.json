@@ -21,13 +21,15 @@
   "wheel": {
     "lineDeltaPixels": 40,
     "pageDeltaFallbackPixels": 320,
-    "minimumGestureDeltaPixels": 0.05,
+    "minimumGestureDeltaPixels": 0.1,
+    "precisionMinimumGestureDeltaPixels": 1.2,
+    "detentMinimumGestureDeltaPixels": 6,
     "zoomSensitivity": 0.001,
     "maxPerEventZoomDelta": 0.12,
     "rowModeZoomMultiplier": 2.5,
-    "minimumAbsoluteZoomDelta": 0.0005,
-    "microDeltaAccumulationMs": 120,
-    "commitIdleMs": 160
+    "minimumAbsoluteZoomDelta": 0.001,
+    "microDeltaAccumulationMs": 80,
+    "commitIdleMs": 140
   },
   "oversize": {
     "tileScaleMax": 3.2,

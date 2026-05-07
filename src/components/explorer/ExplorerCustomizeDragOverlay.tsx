@@ -40,6 +40,12 @@ function getEntrySourceLabel(entry: ExplorerCustomizeCatalogEntry | null): strin
   if (entry.source === "missing-action") {
     return "Missing Action";
   }
+  if (entry.source === "widget") {
+    return entry.widget?.sourceLabel?.trim() || "Explorer Widget";
+  }
+  if (entry.source === "missing-widget") {
+    return "Missing Widget";
+  }
   return "Built-In Control";
 }
 

@@ -27,6 +27,8 @@ export interface ExplorerZoomWheelBehavior {
   lineDeltaPixels: number;
   pageDeltaFallbackPixels: number;
   minimumGestureDeltaPixels: number;
+  precisionMinimumGestureDeltaPixels: number;
+  detentMinimumGestureDeltaPixels: number;
   zoomSensitivity: number;
   maxPerEventZoomDelta: number;
   rowModeZoomMultiplier: number;
@@ -95,6 +97,7 @@ export interface ExplorerZoomCurveBehavior {
 
 export interface ExplorerZoomWheelAccumulator {
   carriedZoomDelta: number;
+  carriedPixelDelta: number;
   lastEventAtMs: number | null;
 }
 
@@ -150,13 +153,15 @@ const defaultLayoutDomain: ExplorerZoomLayoutDomain = Object.freeze({
 const defaultWheelBehavior: ExplorerZoomWheelBehavior = Object.freeze({
   lineDeltaPixels: 40,
   pageDeltaFallbackPixels: 320,
-  minimumGestureDeltaPixels: 0.05,
+  minimumGestureDeltaPixels: 0.1,
+  precisionMinimumGestureDeltaPixels: 1.2,
+  detentMinimumGestureDeltaPixels: 6,
   zoomSensitivity: 0.001,
   maxPerEventZoomDelta: 0.12,
   rowModeZoomMultiplier: 2.5,
-  minimumAbsoluteZoomDelta: 0.0005,
-  microDeltaAccumulationMs: 120,
-  commitIdleMs: 160,
+  minimumAbsoluteZoomDelta: 0.001,
+  microDeltaAccumulationMs: 80,
+  commitIdleMs: 140,
 });
 
 const defaultOversizeBehavior: ExplorerZoomOversizeBehavior = Object.freeze({
@@ -322,6 +327,17 @@ function normalizeWheelBehavior(
       value?.minimumGestureDeltaPixels,
       defaultWheelBehavior.minimumGestureDeltaPixels,
       { minimum: 0, maximum: 24 },
+    ),
+    precisionMinimumGestureDeltaPixels: asFiniteNumber(
+      value?.precisionMinimumGestureDeltaPixels,
+      value?.minimumGestureDeltaPixels ??
+        defaultWheelBehavior.precisionMinimumGestureDeltaPixels,
+      { minimum: 0, maximum: 24 },
+    ),
+    detentMinimumGestureDeltaPixels: asFiniteNumber(
+      value?.detentMinimumGestureDeltaPixels,
+      defaultWheelBehavior.detentMinimumGestureDeltaPixels,
+      { minimum: 0, maximum: 48 },
     ),
     zoomSensitivity: asFiniteNumber(
       value?.zoomSensitivity,
@@ -689,6 +705,7 @@ export function resolveExplorerLayoutZoomWheelDelta(
 export function createExplorerZoomWheelAccumulator(): ExplorerZoomWheelAccumulator {
   return {
     carriedZoomDelta: 0,
+    carriedPixelDelta: 0,
     lastEventAtMs: null,
   };
 }
@@ -697,6 +714,7 @@ export function resetExplorerZoomWheelAccumulator(
   accumulator: ExplorerZoomWheelAccumulator,
 ): void {
   accumulator.carriedZoomDelta = 0;
+  accumulator.carriedPixelDelta = 0;
   accumulator.lastEventAtMs = null;
 }
 
@@ -706,9 +724,14 @@ export function resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
   accumulator: ExplorerZoomWheelAccumulator,
   eventAtMs = Date.now(),
 ): number {
-  const rawDelta = resolveExplorerLayoutZoomWheelRawDelta(
+  const normalizedPixels = getNormalizedExplorerZoomWheelPixels(
     event,
     viewportHeight,
+  );
+  const rawDelta = clampNumber(
+    -normalizedPixels.y * explorerZoomBehavior.wheel.zoomSensitivity,
+    -explorerZoomBehavior.wheel.maxPerEventZoomDelta,
+    explorerZoomBehavior.wheel.maxPerEventZoomDelta,
   );
   const minimumDelta = explorerZoomBehavior.wheel.minimumAbsoluteZoomDelta;
   if (rawDelta === 0) {
@@ -727,17 +750,26 @@ export function resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
     accumulator.carriedZoomDelta !== 0 &&
     Math.sign(accumulator.carriedZoomDelta) !== Math.sign(rawDelta)
   ) {
-    accumulator.carriedZoomDelta = 0;
+    resetExplorerZoomWheelAccumulator(accumulator);
   }
 
+  const signedPixelDelta =
+    Math.sign(rawDelta) * Math.abs(normalizedPixels.y);
   const combinedDelta = accumulator.carriedZoomDelta + rawDelta;
+  const combinedPixelDelta = accumulator.carriedPixelDelta + signedPixelDelta;
   accumulator.lastEventAtMs = eventAtMs;
-  if (Math.abs(combinedDelta) < minimumDelta) {
+  if (
+    Math.abs(combinedDelta) < minimumDelta ||
+    Math.abs(combinedPixelDelta) <
+      explorerZoomBehavior.wheel.precisionMinimumGestureDeltaPixels
+  ) {
     accumulator.carriedZoomDelta = combinedDelta;
+    accumulator.carriedPixelDelta = combinedPixelDelta;
     return 0;
   }
 
   accumulator.carriedZoomDelta = 0;
+  accumulator.carriedPixelDelta = 0;
   return combinedDelta;
 }
 

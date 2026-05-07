@@ -66,6 +66,14 @@
       "profileMode": "shared-root"
     },
     {
+      "id": "explorerWidgets",
+      "relativeDirectory": "explorer-widgets",
+      "envVarSuffix": "EXPLORER_WIDGETS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
+    },
+    {
       "id": "explorerChromeLayouts",
       "relativeDirectory": "explorer-chrome-layouts",
       "envVarSuffix": "EXPLORER_CHROME_LAYOUTS",

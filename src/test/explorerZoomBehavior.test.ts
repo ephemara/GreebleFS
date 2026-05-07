@@ -40,8 +40,33 @@ describe("explorerZoomBehavior", () => {
         accumulator,
         32,
       ),
+    ).toBe(0);
+    expect(
+      resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
+        event,
+        800,
+        accumulator,
+        48,
+      ),
+    ).toBe(0);
+    expect(
+      resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
+        event,
+        800,
+        accumulator,
+        64,
+      ),
+    ).toBe(0);
+    expect(
+      resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
+        event,
+        800,
+        accumulator,
+        80,
+      ),
     ).toBeGreaterThan(0);
     expect(accumulator.carriedZoomDelta).toBe(0);
+    expect(accumulator.carriedPixelDelta).toBe(0);
   });
 
   it("drops stale or reversed wheel residue instead of leaking it into a later gesture", () => {
@@ -64,6 +89,7 @@ describe("explorerZoomBehavior", () => {
       0,
     );
     expect(accumulator.carriedZoomDelta).toBeGreaterThan(0);
+    expect(accumulator.carriedPixelDelta).toBeGreaterThan(0);
 
     resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
       smallZoomIn,
@@ -75,6 +101,7 @@ describe("explorerZoomBehavior", () => {
     expect(accumulator.carriedZoomDelta).toBeLessThan(
       explorerZoomBehavior.wheel.minimumAbsoluteZoomDelta,
     );
+    expect(accumulator.carriedPixelDelta).toBeGreaterThan(0);
 
     resolveExplorerLayoutZoomWheelDeltaWithAccumulator(
       smallZoomOut,
@@ -83,9 +110,11 @@ describe("explorerZoomBehavior", () => {
       explorerZoomBehavior.wheel.microDeltaAccumulationMs + 16,
     );
     expect(accumulator.carriedZoomDelta).toBeLessThan(0);
+    expect(accumulator.carriedPixelDelta).toBeLessThan(0);
 
     resetExplorerZoomWheelAccumulator(accumulator);
     expect(accumulator.carriedZoomDelta).toBe(0);
+    expect(accumulator.carriedPixelDelta).toBe(0);
     expect(accumulator.lastEventAtMs).toBeNull();
   });
 

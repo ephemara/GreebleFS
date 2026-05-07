@@ -1,3 +1,29 @@
+# 2026-05-07 - Explorer Widget Runtime And Zoom Smoothing Pass
+
+- Added first-class Explorer widget ingress instead of treating the status-bar size slider as a one-off JSX control.
+  - New authored widget lane: `usr/explorer-widgets/**/explorer-widget.json`, discovered through `src/config/explorerWidgets.ts` via the managed-content `explorerWidgets` directory stack in `usr/manifest.json`.
+  - New runtime contract: `src/components/explorer/explorerWidgetRuntime.tsx`, exposing `defineExplorerWidget(...)`, React and `wasm-panel` widget surfaces, shared host primitives (`PremiumSlider`, `OverlayScrollArea`), chrome/view/freeform surface metadata, sizing metadata, capabilities, and per-instance widget state stored under `settings.explorer.explorerWidgetStateByInstanceId`.
+  - Packaged plugins can now contribute `contributions.explorerWidgets`; discovery flows through `pluginPackages.ts`, `useFolderPluginRuntime.ts`, `App.tsx`, `panelRegistry.tsx`, `ExplorerWorkspace.tsx`, and `FileExplorer.tsx`.
+  - The customize catalog now includes widget and missing-widget entries, so authored widgets can be placed in Explorer chrome like built-in controls and authored actions.
+- Fixed the status-bar size slider collapse path.
+  - `ExplorerChromeSurface.tsx` now preserves explicit widths for interactive range controls (`statusViewSize` and widget chrome controls) instead of compact-row clamping them to icon-chip widths.
+  - `ExplorerViewSizeSliderControl.tsx` now lets the shared `PremiumSlider` claim real width inside the chrome control.
+- Hardened standard zoom feel.
+  - The `/usr` Explorer zoom behavior manifest now separates gesture capture (`minimumGestureDeltaPixels`) from pixel-domain precision release (`precisionMinimumGestureDeltaPixels`) and detent gestures (`detentMinimumGestureDeltaPixels`).
+  - `createExplorerZoomWheelAccumulator(...)` now tracks carried pixel delta as well as zoom delta, drops stale/reversed residue, and only publishes tiny precision-wheel deltas once enough movement accumulates inside the active gesture window.
+  - Live standard grid zoom now applies CSS vars and pointer scroll anchoring from the same RAF publish authority before React state updates, reducing one-frame scroll/virtualization jitter.
+- Durable rules:
+  - New Explorer UI controls that users should author/place belong in the widget/customize catalog pipeline, not as ad hoc footer/topbar JSX.
+  - Range widgets need sizing metadata and explicit chrome width preservation, otherwise compact chrome rows can collapse them to a thumb-only control.
+  - Tune zoom behavior through `usr/profiles/default/explorer-zoom-behaviors/greeblefs-core/explorer-zoom-behavior.json` first; avoid component-local wheel thresholds in `FileExplorer.tsx`.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerZoomBehavior.test.ts src/test/explorerCustomizeCatalog.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/explorerCustomizeCatalog.test.ts src/test/explorerZoomBehavior.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed key FileExplorer slices: `renders the footer view switcher and size slider`, `standard explorer size changes`, `authored explorer density`, and `accumulates precision ctrl-wheel deltas`.
+  - Filtered `tsc` no longer reports new widget-runtime diagnostics; repo-wide `tsc` still has the known pre-existing baseline across vendor tiptap, generated binding drift, and older App/FileExplorer unuseds.
+  - MCP live DOM proof was blocked because the dev Tauri session exited while Cargo was waiting on the build-directory lock; retry after clearing stale Cargo/GreebleFS processes if visual proof is needed.
+
 # 2026-05-07 - Secondary Window Lifecycle Hardening
 
 - Hardened the existing native secondary-window system so picker/task/plugin/IDE tear-off windows behave like reliable host primitives instead of best-effort popouts.

@@ -8,6 +8,10 @@ import type {
   ExplorerViewDescriptor,
 } from '../components/explorer/explorerViewRuntime';
 import type {
+  BoundExplorerWidgetComponent,
+  ExplorerWidgetDescriptor,
+} from '../components/explorer/explorerWidgetRuntime';
+import type {
   OverlayPluginPreviewLaneCapabilityFlags,
   OverlayPluginPreviewLaneDescriptor,
   OverlayPluginPreviewLaneMatchRule,
@@ -78,8 +82,19 @@ export interface OverlayPluginExplorerViewContribution
   extends ExplorerViewDescriptor {
   pluginId: string;
   pluginName: string;
+  sourceKind: 'plugin';
   sourceLabel: string;
   component: BoundExplorerViewComponent | null;
+  error: string | null;
+}
+
+export interface OverlayPluginExplorerWidgetContribution
+  extends ExplorerWidgetDescriptor {
+  pluginId: string;
+  pluginName: string;
+  sourceKind: 'plugin';
+  sourceLabel: string;
+  component: BoundExplorerWidgetComponent | null;
   error: string | null;
 }
 

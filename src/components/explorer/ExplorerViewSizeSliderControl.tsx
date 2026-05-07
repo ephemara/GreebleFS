@@ -49,6 +49,7 @@ export function ExplorerViewSizeSliderControl({
       display: "flex",
       alignItems: "center",
       gap: Math.max(metrics.gap, 6),
+      width: "100%",
       minWidth: 0,
       minHeight: metrics.minHeight,
       padding: `${Math.max(metrics.blockPadding - 1, 2)}px ${metrics.inlinePadding}px`,
@@ -112,7 +113,7 @@ export function ExplorerViewSizeSliderControl({
           display: "flex",
           alignItems: "center",
           flex: 1,
-          minWidth: 0,
+          minWidth: 72,
         }}
       >
         <PremiumSlider

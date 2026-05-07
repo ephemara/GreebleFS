@@ -169,6 +169,11 @@ import {
   type LoadedExplorerViewDefinition,
 } from './config/explorerViews';
 import {
+  discoverManagedExplorerWidgets,
+  explorerWidgetSystemConfig,
+  type LoadedExplorerWidgetDefinition,
+} from './config/explorerWidgets';
+import {
   createEmptyGlobalThemeBundleCatalogs,
   loadThemePackages as discoverThemePackages,
   resolveLoadedThemePackages,
@@ -793,6 +798,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const dockPresentationPackagesSignatureRef = useRef('');
   const explorerLayoutPackagesSignatureRef = useRef('');
   const explorerViewsSignatureRef = useRef('');
+  const explorerWidgetsSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
   const iconThemePackagesSignatureRef = useRef('');
   const soundPacksSignatureRef = useRef('');
@@ -814,6 +820,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const explorerLayoutPackagesRefreshQueuedRef = useRef(false);
   const explorerViewsRefreshInFlightRef = useRef(false);
   const explorerViewsRefreshQueuedRef = useRef(false);
+  const explorerWidgetsRefreshInFlightRef = useRef(false);
+  const explorerWidgetsRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
   const themePackagesRefreshQueuedRef = useRef(false);
   const iconThemePackagesRefreshInFlightRef = useRef(false);
@@ -862,6 +870,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [explorerViewsLoading, setExplorerViewsLoading] = useState(true);
   const [explorerViewsError, setExplorerViewsError] = useState<string | null>(null);
   const [explorerViewsWarnings, setExplorerViewsWarnings] = useState<string[]>([]);
+  const [authoredExplorerWidgets, setAuthoredExplorerWidgets] = useState<LoadedExplorerWidgetDefinition[]>([]);
+  const [explorerWidgetsLoading, setExplorerWidgetsLoading] = useState(true);
+  const [explorerWidgetsError, setExplorerWidgetsError] = useState<string | null>(null);
+  const [explorerWidgetsWarnings, setExplorerWidgetsWarnings] = useState<string[]>([]);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
@@ -1096,6 +1108,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     pluginExplorerActions,
     pluginContextMenuItems,
     pluginExplorerViews,
+    pluginExplorerWidgets,
     pluginPreviewLanes,
     pluginSettingsSlots,
     pluginWorkflows,
@@ -4370,7 +4383,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
           explorerViewsSignatureRef.current = nextSignature;
           const result = await discoverManagedExplorerViews();
-          setAuthoredExplorerViews(result.views);
+          setAuthoredExplorerViews(result.packages);
           setExplorerViewsError(result.sourceError);
           setExplorerViewsWarnings(result.warnings);
         } catch (error) {
@@ -4383,6 +4396,64 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       } while (explorerViewsRefreshQueuedRef.current);
     } finally {
       explorerViewsRefreshInFlightRef.current = false;
+    }
+  }, []);
+
+  const refreshExplorerWidgets = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredExplorerWidgets([]);
+      setExplorerWidgetsError(null);
+      setExplorerWidgetsWarnings([]);
+      setExplorerWidgetsLoading(false);
+      return;
+    }
+
+    if (force) {
+      explorerWidgetsRefreshQueuedRef.current = true;
+    }
+    if (explorerWidgetsRefreshInFlightRef.current) {
+      explorerWidgetsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    explorerWidgetsRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || explorerWidgetsRefreshQueuedRef.current;
+        explorerWidgetsRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          explorerWidgetsSignatureRef.current = '';
+        }
+
+        setExplorerWidgetsLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(getManagedContentPrimaryDirectory('explorerWidgets'));
+          const nextSignature = await buildManagedContentDirectoryStackSignature(
+            'explorerWidgets',
+          );
+
+          if (!nextForce && nextSignature === explorerWidgetsSignatureRef.current) {
+            setExplorerWidgetsLoading(false);
+            continue;
+          }
+
+          explorerWidgetsSignatureRef.current = nextSignature;
+          const result = await discoverManagedExplorerWidgets();
+          setAuthoredExplorerWidgets(result.packages);
+          setExplorerWidgetsError(result.sourceError);
+          setExplorerWidgetsWarnings(result.warnings);
+        } catch (error) {
+          setAuthoredExplorerWidgets([]);
+          setExplorerWidgetsError(String(error));
+          setExplorerWidgetsWarnings([]);
+        } finally {
+          setExplorerWidgetsLoading(false);
+        }
+      } while (explorerWidgetsRefreshQueuedRef.current);
+    } finally {
+      explorerWidgetsRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -4477,6 +4548,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       refreshTopBarPackages(true),
       refreshDockPresentationPackages(true),
       refreshExplorerLayoutPackages(true),
+      refreshExplorerWidgets(true),
       refreshHomePacks(true),
       refreshLookdevPresets(true),
       refreshMenuPacks(true),
@@ -4486,6 +4558,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     usrProfileRuntimeRevision,
     refreshDockPresentationPackages,
     refreshExplorerLayoutPackages,
+    refreshExplorerWidgets,
     refreshFolderPlugins,
     refreshHomePacks,
     refreshLookdevPresets,
@@ -5095,6 +5168,22 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerViews]);
 
   useEffect(() => {
+    void refreshExplorerWidgets(true);
+  }, [refreshExplorerWidgets]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !explorerWidgetSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void refreshExplorerWidgets();
+    }, explorerWidgetSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshExplorerWidgets]);
+
+  useEffect(() => {
     void refreshLookdevPresets(true);
   }, [refreshLookdevPresets]);
 
@@ -5128,6 +5217,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         pluginExplorerActions,
         pluginContextMenuItems,
         pluginExplorerViews,
+        pluginExplorerWidgets,
         pluginPreviewLanes,
         pluginSettingsSlots,
         pluginWorkflows,
@@ -5165,10 +5255,15 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         dockPresentationPackagesWarnings,
         explorerLayouts: combinedExplorerLayouts,
         explorerViews: authoredExplorerViews,
+        explorerWidgets: authoredExplorerWidgets,
         explorerLayoutsDirectory: getManagedContentPrimaryDirectory('explorerLayouts'),
         explorerLayoutsLoading: explorerLayoutPackagesLoading,
         explorerLayoutsError: explorerLayoutPackagesError,
         explorerLayoutsWarnings: explorerLayoutPackagesWarnings,
+        explorerWidgetsDirectory: getManagedContentPrimaryDirectory('explorerWidgets'),
+        explorerWidgetsLoading,
+        explorerWidgetsError,
+        explorerWidgetsWarnings,
         homePacks: combinedHomePacks,
         menuPacks: combinedMenuPacks,
         actionsDirectory: actionPackSystemConfig.actionsDirectory,
@@ -5340,6 +5435,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       combinedExplorerActions,
       combinedHomePacks,
       authoredExplorerViews,
+      authoredExplorerWidgets,
+      explorerWidgetsError,
+      explorerWidgetsLoading,
+      explorerWidgetsWarnings,
       pluginContributedShaders,
       pluginCommands,
       pluginActionPacks,
@@ -5347,6 +5446,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       pluginExplorerActions,
       pluginContextMenuItems,
       pluginExplorerViews,
+      pluginExplorerWidgets,
       pluginPreviewLanes,
       openAnimationsFolder,
       openAppearancePacksFolder,

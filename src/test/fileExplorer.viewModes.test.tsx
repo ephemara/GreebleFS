@@ -5878,6 +5878,7 @@ const value = 1;
       statusSurface?.closest('[data-overlay-explorer-plane="main"]'),
     ).toBeNull();
     expect(within(switcher).getAllByRole("button")).toHaveLength(2);
+    expect(sizeControl).toHaveStyle({ width: "220px", maxWidth: "220px" });
     expect(
       within(sizeControl).getByRole("slider", { name: /explorer size/i }),
     ).toBeInTheDocument();
@@ -5955,6 +5956,11 @@ const value = 1;
 
   it("drives authored explorer density through the shared footer size slider", async () => {
     const user = userEvent.setup();
+    useSettingsStore.getState().updateExplorer({
+      explorerViewDensityById: {
+        "adaptive-semantic-grid": 0.5,
+      },
+    });
     renderExplorer();
     await screen.findByText("alpha");
 
@@ -6389,7 +6395,12 @@ const value = 1;
     renderExplorer();
     await screen.findByText("alpha");
 
-    dispatchLayoutWheel("alpha", -0.2);
+    for (let index = 0; index < 5; index += 1) {
+      dispatchLayoutWheel("alpha", -0.2);
+    }
+
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(0.34);
+
     dispatchLayoutWheel("alpha", -0.2);
     dispatchLayoutWheel("alpha", -0.2);
     await advanceLayoutZoomCommit();

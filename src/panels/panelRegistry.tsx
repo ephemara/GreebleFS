@@ -7,6 +7,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
+  OverlayPluginExplorerWidgetContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
   OverlayPluginWorkflowContribution,
@@ -35,6 +36,7 @@ import type { LoadedOverlayTopBarPackage } from '../config/topBarPackages';
 import type { LoadedDockPresentationPackage } from '../config/dockPresentations';
 import type { LoadedExplorerLayoutDefinition } from '../config/explorerLayouts';
 import type { LoadedExplorerViewDefinition } from '../config/explorerViews';
+import type { LoadedExplorerWidgetDefinition } from '../config/explorerWidgets';
 import {
   iconThemeSystemConfig,
   type LoadedIconThemePackage,
@@ -222,6 +224,7 @@ export function createBuiltInPanelDefinitions({
   pluginExplorerActions,
   pluginContextMenuItems,
   pluginExplorerViews = [],
+  pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
   pluginSettingsSlots = [],
   pluginWorkflows = [],
@@ -259,6 +262,7 @@ export function createBuiltInPanelDefinitions({
   dockPresentationPackagesWarnings = [],
   explorerLayouts,
   explorerViews = [],
+  explorerWidgets = [],
   homePacks = [],
   menuPacks = [],
   actionsDirectory = '',
@@ -388,6 +392,7 @@ export function createBuiltInPanelDefinitions({
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
+  pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginSettingsSlots?: OverlayPluginSettingsSlotContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
@@ -428,10 +433,15 @@ export function createBuiltInPanelDefinitions({
   dockPresentationPackagesWarnings?: string[];
   explorerLayouts: LoadedExplorerLayoutDefinition[];
   explorerViews?: LoadedExplorerViewDefinition[];
+  explorerWidgets?: LoadedExplorerWidgetDefinition[];
   explorerLayoutsDirectory: string;
   explorerLayoutsLoading: boolean;
   explorerLayoutsError: string | null;
   explorerLayoutsWarnings: string[];
+  explorerWidgetsDirectory?: string;
+  explorerWidgetsLoading?: boolean;
+  explorerWidgetsError?: string | null;
+  explorerWidgetsWarnings?: string[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
   actionsDirectory?: string;
@@ -597,9 +607,11 @@ export function createBuiltInPanelDefinitions({
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
           pluginExplorerViews={pluginExplorerViews}
+          pluginExplorerWidgets={pluginExplorerWidgets}
           pluginPreviewLanes={pluginPreviewLanes}
           pluginWorkflows={pluginWorkflows}
           explorerViews={explorerViews}
+          explorerWidgets={explorerWidgets}
         />
       ),
     },

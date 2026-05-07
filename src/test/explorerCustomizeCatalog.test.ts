@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { LoadedExplorerAction } from "../config/actionPacks";
+import type { LoadedExplorerWidgetDefinition } from "../config/explorerWidgets";
 import {
   buildExplorerCustomizeCatalog,
   toExplorerActionChromeControlId,
@@ -35,9 +36,60 @@ const sampleExplorerAction: LoadedExplorerAction = {
     env: {},
   },
   presentation: {
+    kind: "command",
     outputTarget: "silent",
   },
   warnings: [],
+};
+
+const sampleExplorerWidget: LoadedExplorerWidgetDefinition = {
+  id: "workspace-size-widget",
+  title: "Workspace Size Widget",
+  shortLabel: "Size",
+  description: "Shows a custom size slider.",
+  category: "layout-tooling",
+  tags: [],
+  priority: 10,
+  available: true,
+  chromeControlId: "widget:workspace-size-widget",
+  rendererKind: "react",
+  rendererEntry: "index.tsx",
+  runtimeId: null,
+  runtimeSurfaceId: null,
+  buildTarget: null,
+  surfaces: {
+    chrome: ["explorerStatusBar", "workspaceHeader"],
+    view: [],
+    freeform: [],
+  },
+  sizing: {
+    sizeVariants: ["compact", "regular", "wide"],
+    supportsWidthPx: true,
+    supportsLabelVisibility: true,
+    supportsIconVisibility: false,
+    defaultWidthPx: 220,
+    minWidthPx: 160,
+    maxWidthPx: 360,
+    minInteractiveWidthPx: 150,
+  },
+  capabilities: {
+    interactive: true,
+    rangeInput: true,
+    duplicateInstances: true,
+    explorerMutations: false,
+    workflowLaunch: true,
+    panelLaunch: true,
+    keyboardCapture: false,
+  },
+  version: 1,
+  name: "Workspace Size Widget",
+  directoryPath: "/explorer-widgets/workspace-size-widget",
+  manifestPath: "/explorer-widgets/workspace-size-widget/explorer-widget.json",
+  sourceKind: "explorer-widget-directory",
+  sourceLabel: "Explorer Widgets",
+  warnings: [],
+  component: null,
+  error: null,
 };
 
 describe("explorer customize catalog", () => {
@@ -80,5 +132,30 @@ describe("explorer customize catalog", () => {
 
     expect(actionEntry).toBeTruthy();
     expect(actionEntry?.surfaces).toContain("workspaceHeader");
+  });
+
+  it("treats authored widgets as placeable chrome controls with sizing metadata", () => {
+    const catalog = buildExplorerCustomizeCatalog({
+      widgets: [sampleExplorerWidget],
+    });
+
+    const widgetEntry = catalog.find(
+      (entry) => entry.controlId === sampleExplorerWidget.chromeControlId,
+    );
+
+    expect(widgetEntry).toMatchObject({
+      commandId: sampleExplorerWidget.chromeControlId,
+      category: "widgets",
+      source: "widget",
+      supportsWidthPx: true,
+      supportsIconVisibility: false,
+      defaultWidthPx: 220,
+      minWidthPx: 160,
+      maxWidthPx: 360,
+    });
+    expect(widgetEntry?.surfaces).toEqual([
+      "explorerStatusBar",
+      "workspaceHeader",
+    ]);
   });
 });

@@ -45,6 +45,7 @@ const categoryLabels: Record<ExplorerCustomizeCatalogCategory, string> = {
   rail: "Rail",
   status: "Status",
   tasks: "Tasks",
+  widgets: "Widgets",
   "authored-actions": "Authored Actions",
   other: "Other",
 };
@@ -313,6 +314,7 @@ export function ExplorerActionsPane({
         entry.category,
         entry.controlId,
         entry.action?.packName,
+        entry.widget?.sourceLabel,
       ]
         .filter(Boolean)
         .join(" ")
@@ -379,7 +381,13 @@ export function ExplorerActionsPane({
     if (entry.source === "action") {
       return accent;
     }
+    if (entry.source === "widget") {
+      return "var(--overlay-explorer-accent)";
+    }
     if (entry.source === "missing-action") {
+      return "var(--overlay-danger)";
+    }
+    if (entry.source === "missing-widget") {
       return "var(--overlay-danger)";
     }
     return "color-mix(in srgb, var(--overlay-explorer-text) 74%, transparent)";

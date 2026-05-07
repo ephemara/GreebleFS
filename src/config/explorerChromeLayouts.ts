@@ -114,6 +114,7 @@ export type BuiltInExplorerChromeControlId =
 export type ExplorerChromeControlId =
   | BuiltInExplorerChromeControlId
   | `plugin:${string}`
+  | `widget:${string}`
   | `action:${string}`;
 
 export type ExplorerChromeSizeVariant = "compact" | "regular" | "wide";

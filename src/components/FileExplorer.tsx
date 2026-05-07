@@ -112,6 +112,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
+  OverlayPluginExplorerWidgetContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginWorkflowContribution,
 } from "../config/pluginContributions";
@@ -125,12 +126,12 @@ import {
   type LoadedExplorerLayoutDefinition,
 } from "../config/explorerLayouts";
 import type { LoadedExplorerViewDefinition } from "../config/explorerViews";
+import type { LoadedExplorerWidgetDefinition } from "../config/explorerWidgets";
 import { getExplorerRailWidthBounds } from "../config/explorerRail";
 import {
   adaptiveSemanticDensityStops,
   explorerExperimentalModes,
   getAdaptiveSemanticDensityPercent,
-  getAdaptiveSemanticDensityStopId,
   getAdaptiveSemanticDensityStop,
   getExplorerExperimentalDensityDescriptor,
   getExplorerExperimentalModeDefinition,
@@ -528,13 +529,16 @@ import {
 import {
   STANDARD_EXPLORER_VIEW_ID,
   normalizeExplorerViewDescriptor,
+  type BoundExplorerViewProps,
   type BoundExplorerViewComponent,
-  type ExplorerBuiltInSurfaceViewId,
   type ExplorerViewDescriptor,
-  type ExplorerViewHost,
-  type ExplorerViewProps,
-  type ExplorerViewSurfaceId,
 } from "./explorer/explorerViewRuntime";
+import {
+  type BoundExplorerWidgetProps,
+  type BoundExplorerWidgetComponent,
+  type ExplorerWidgetDescriptor,
+  type ExplorerWidgetHost,
+} from "./explorer/explorerWidgetRuntime";
 import {
   openExplorerTaskCenter,
   toggleExplorerTaskCenter,
@@ -8461,9 +8465,11 @@ interface FileExplorerProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
+  pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
   explorerViews?: LoadedExplorerViewDefinition[];
+  explorerWidgets?: LoadedExplorerWidgetDefinition[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -8548,6 +8554,13 @@ interface ExplorerRuntimeViewDefinition extends ExplorerViewDescriptor {
   sourceKind: "built-in" | "explorer-view-directory" | "plugin";
   sourceLabel: string;
   component: BoundExplorerViewComponent | null;
+  error: string | null;
+}
+
+interface ExplorerRuntimeWidgetDefinition extends ExplorerWidgetDescriptor {
+  sourceKind: "built-in" | "explorer-widget-directory" | "plugin";
+  sourceLabel: string;
+  component: BoundExplorerWidgetComponent | null;
   error: string | null;
 }
 
@@ -8852,9 +8865,11 @@ export function FileExplorer({
   pluginActions = [],
   pluginContextMenuItems = [],
   pluginExplorerViews = [],
+  pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
   pluginWorkflows = [],
   explorerViews = [],
+  explorerWidgets = [],
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
@@ -9329,7 +9344,8 @@ export function FileExplorer({
       ...explorerViews.map((view) => ({
         ...view,
         component: view.component
-          ? ((props) => React.createElement(view.component!, props))
+          ? ((props: BoundExplorerViewProps) =>
+              React.createElement(view.component!, props))
           : null,
       })),
       ...pluginExplorerViews,
@@ -9353,6 +9369,29 @@ export function FileExplorer({
     () => new Map(explorerViewCatalog.map((view) => [view.id, view] as const)),
     [explorerViewCatalog],
   );
+  const authoredExplorerWidgets = useMemo<ExplorerRuntimeWidgetDefinition[]>(
+    () => [
+      ...explorerWidgets.map((widget) => ({
+        ...widget,
+        component: widget.component
+          ? ((props: BoundExplorerWidgetProps) =>
+              React.createElement(widget.component!, props))
+          : null,
+      })),
+      ...pluginExplorerWidgets,
+    ],
+    [explorerWidgets, pluginExplorerWidgets],
+  );
+  const explorerWidgetCatalog = useMemo(() => {
+    const catalogById = new Map<string, ExplorerRuntimeWidgetDefinition>();
+    for (const widget of authoredExplorerWidgets) {
+      catalogById.set(widget.id, widget);
+    }
+    return [...catalogById.values()].sort(
+      (left, right) =>
+        right.priority - left.priority || left.title.localeCompare(right.title),
+    );
+  }, [authoredExplorerWidgets]);
   const activeExplorerViewDefinition =
     explorerViewCatalogById.get(activeExplorerViewId) ??
     explorerViewCatalogById.get(STANDARD_EXPLORER_VIEW_ID) ??
@@ -10176,6 +10215,9 @@ export function FileExplorer({
   );
   const layoutZoomPointerAnchorRef =
     useRef<ExplorerLayoutZoomPointerAnchor | null>(null);
+  const applyLayoutZoomPointerAnchorRef = useRef<
+    ((nextState: ExplorerLayoutZoomState) => void) | null
+  >(null);
   const [liveLayoutZoomState, setLiveLayoutZoomState] =
     useState<ExplorerLayoutZoomState>(() =>
       createExplorerLayoutZoomState(viewMode, gridZoom),
@@ -10219,6 +10261,9 @@ export function FileExplorer({
       explorerTheme,
       themedViewMode,
     );
+    if (layoutZoomGestureActiveRef.current) {
+      applyLayoutZoomPointerAnchorRef.current?.(nextState);
+    }
 
     setLiveLayoutZoomState((current) =>
       current.family === nextState.family &&
@@ -20900,12 +20945,20 @@ export function FileExplorer({
     () =>
       buildExplorerCustomizeCatalog({
         actions,
+        widgets: explorerWidgets,
+        pluginWidgets: pluginExplorerWidgets,
         persistedEntries:
           explorerChromeOverride?.entries ??
           persistedExplorerChromeOverride?.entries ??
           [],
       }),
-    [actions, explorerChromeOverride, persistedExplorerChromeOverride],
+    [
+      actions,
+      explorerChromeOverride,
+      explorerWidgets,
+      persistedExplorerChromeOverride,
+      pluginExplorerWidgets,
+    ],
   );
   const explorerCustomizeCatalogByCommandId = useMemo(
     () =>
@@ -23086,6 +23139,241 @@ export function FileExplorer({
             onCommit: updateActiveExplorerViewDensityValue,
           }
         : null;
+  const getExplorerWidgetInstanceId = useCallback(
+    (
+      widget: Pick<ExplorerWidgetDescriptor, "chromeControlId">,
+      placement?: ExplorerChromeResolvedControlPlacement | null,
+    ) =>
+      `${String(instanceId)}:${placement?.controlId ?? widget.chromeControlId}`,
+    [instanceId],
+  );
+  const patchExplorerWidgetInstanceState = useCallback(
+    (
+      widgetInstanceId: string,
+      patch:
+        | Record<string, unknown>
+        | ((current: Record<string, unknown>) => Record<string, unknown>),
+    ) => {
+      const normalizedInstanceId = widgetInstanceId.trim();
+      if (!normalizedInstanceId) {
+        return;
+      }
+      const store = useSettingsStore.getState();
+      const currentMap =
+        store.settings.explorer.explorerWidgetStateByInstanceId ?? {};
+      const currentState = currentMap[normalizedInstanceId] ?? {};
+      const nextState =
+        typeof patch === "function" ? patch(currentState) : { ...currentState, ...patch };
+      store.updateExplorer({
+        explorerWidgetStateByInstanceId: {
+          ...currentMap,
+          [normalizedInstanceId]: { ...nextState },
+        },
+      });
+    },
+    [],
+  );
+  const resetExplorerWidgetInstanceState = useCallback(
+    (widgetInstanceId: string) => {
+      const normalizedInstanceId = widgetInstanceId.trim();
+      if (!normalizedInstanceId) {
+        return;
+      }
+      const store = useSettingsStore.getState();
+      const currentMap =
+        store.settings.explorer.explorerWidgetStateByInstanceId ?? {};
+      if (!currentMap[normalizedInstanceId]) {
+        return;
+      }
+      const nextMap = { ...currentMap };
+      delete nextMap[normalizedInstanceId];
+      store.updateExplorer({ explorerWidgetStateByInstanceId: nextMap });
+    },
+    [],
+  );
+  const createExplorerWidgetHost = useCallback(
+    (
+      widget: ExplorerWidgetDescriptor,
+      placement?: ExplorerChromeResolvedControlPlacement | null,
+    ): ExplorerWidgetHost => {
+      const widgetInstanceId = getExplorerWidgetInstanceId(widget, placement);
+      return {
+        getInstanceState: () =>
+          useSettingsStore.getState().settings.explorer
+            .explorerWidgetStateByInstanceId?.[widgetInstanceId] ?? {},
+        setInstanceState: (nextState) =>
+          patchExplorerWidgetInstanceState(widgetInstanceId, () => nextState),
+        patchInstanceState: (patch) =>
+          patchExplorerWidgetInstanceState(widgetInstanceId, patch),
+        resetInstanceState: () =>
+          resetExplorerWidgetInstanceState(widgetInstanceId),
+        setDensity: (value) => {
+          if (activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID) {
+            applyStandardExplorerLayoutZoomValue(value);
+            commitStandardExplorerLayoutZoomValue(value);
+            return;
+          }
+          updateActiveExplorerViewDensityValue(value);
+        },
+        openPath: (path, options) => {
+          void navigate(path, options?.pushHistory ?? true);
+        },
+        openEntry: (entry) => {
+          void openEntry(entry as FileEntry);
+        },
+        refresh,
+        setSearch: (query) => {
+          setSearch(query);
+        },
+        setSort: (sortBy, sortOrder) => {
+          updateExplorerSettings({
+            sortBy,
+            sortOrder: sortOrder ?? explorerSettings.sortOrder,
+          });
+        },
+        setSelectedPaths: (paths, options) => {
+          const nextSelected = new Set(paths);
+          setSelected(nextSelected);
+          const focusPrimaryPath = options?.focusPrimary ? paths[0] : null;
+          if (focusPrimaryPath) {
+            lastSelected.current = focusPrimaryPath;
+            selectionRangeAnchorPathRef.current = focusPrimaryPath;
+            scrollExplorerEntryIntoView(focusPrimaryPath);
+          }
+        },
+        toggleSelectedPath: (path) => {
+          setSelected((current) => {
+            const nextSelected = new Set(current);
+            if (nextSelected.has(path)) {
+              nextSelected.delete(path);
+            } else {
+              nextSelected.add(path);
+            }
+            return nextSelected;
+          });
+        },
+        revealPath: scrollExplorerEntryIntoView,
+        openPanel: (panelId) => {
+          onOpenPanel(panelId);
+        },
+        openWorkflow: (workflowId, options) => {
+          void openExplorerWorkflow({
+            workflowId,
+            payload: options?.payload ?? null,
+            titleOverride: options?.titleOverride ?? null,
+          });
+        },
+      };
+    },
+    [
+      activeExplorerViewId,
+      applyStandardExplorerLayoutZoomValue,
+      commitStandardExplorerLayoutZoomValue,
+      explorerSettings.sortOrder,
+      getExplorerWidgetInstanceId,
+      navigate,
+      onOpenPanel,
+      openEntry,
+      openExplorerWorkflow,
+      patchExplorerWidgetInstanceState,
+      refresh,
+      resetExplorerWidgetInstanceState,
+      scrollExplorerEntryIntoView,
+      updateActiveExplorerViewDensityValue,
+      updateExplorerSettings,
+    ],
+  );
+  const explorerWidgetSession = useMemo(
+    () => ({
+      instanceId: String(instanceId),
+      workspaceTabId,
+      currentPath,
+      search,
+      sortBy: explorerSettings.sortBy,
+      sortOrder: explorerSettings.sortOrder,
+      standardViewMode: themedViewMode,
+      activeViewId: activeExplorerViewId,
+      currentDensity:
+        activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID
+          ? currentStandardLayoutZoomValue
+          : activeExplorerViewDensity,
+      currentViewState:
+        explorerViewStateById[activeExplorerViewId] ??
+        ({} as Record<string, unknown>),
+    }),
+    [
+      activeExplorerViewDensity,
+      activeExplorerViewId,
+      currentPath,
+      currentStandardLayoutZoomValue,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      explorerViewStateById,
+      instanceId,
+      search,
+      themedViewMode,
+      workspaceTabId,
+    ],
+  );
+  const explorerWidgetData = useMemo(
+    () => ({
+      entries,
+      visibleEntries,
+      selectedEntries,
+      selectedPaths: [...selected],
+      lastSelectedPath: lastSelected.current,
+      loading,
+      searchLoading,
+      currentPathIsHome,
+      currentPathIsArchiveVirtual,
+      currentPathIsCloud,
+    }),
+    [
+      currentPathIsArchiveVirtual,
+      currentPathIsCloud,
+      currentPathIsHome,
+      entries,
+      loading,
+      searchLoading,
+      selected,
+      selectedEntries,
+      visibleEntries,
+    ],
+  );
+  const explorerWidgetAppearance = useMemo(
+    () => appearance ?? resolveOverlayAppearance({}),
+    [appearance],
+  );
+  const renderExplorerWidgetControl = useCallback(
+    (
+      widget: ExplorerRuntimeWidgetDefinition,
+      placement: ExplorerChromeResolvedControlPlacement,
+    ) => {
+      if (!widget.component) {
+        return null;
+      }
+      const widgetInstanceId = getExplorerWidgetInstanceId(widget, placement);
+      const WidgetComponent = widget.component;
+      return (
+        <WidgetComponent
+          descriptor={widget}
+          instanceId={widgetInstanceId}
+          appearance={explorerWidgetAppearance}
+          session={explorerWidgetSession}
+          data={explorerWidgetData}
+          host={createExplorerWidgetHost(widget, placement)}
+          placement={placement}
+        />
+      );
+    },
+    [
+      createExplorerWidgetHost,
+      explorerWidgetAppearance,
+      explorerWidgetData,
+      explorerWidgetSession,
+      getExplorerWidgetInstanceId,
+    ],
+  );
   const constellationFieldLayout = useMemo(
     () =>
       effectiveExperimentalViewMode === "constellation"
@@ -26627,6 +26915,21 @@ export function FileExplorer({
       ),
     [externalChromeControls],
   );
+  const explorerWidgetChromeControls = useMemo<
+    ExplorerRenderedChromeControlDefinition[]
+  >(
+    () =>
+      explorerWidgetCatalog
+        .filter((widget) => widget.surfaces.chrome.length > 0)
+        .map((widget) => ({
+          id: widget.chromeControlId,
+          label: widget.title,
+          surfaces: widget.surfaces.chrome,
+          isVisible: () => widget.available && widget.component != null,
+          render: (placement) => renderExplorerWidgetControl(widget, placement),
+        })),
+    [explorerWidgetCatalog, renderExplorerWidgetControl],
+  );
   const explorerChromeControlRegistry = useMemo<
     ExplorerRenderedChromeControlDefinition[]
   >(
@@ -26634,11 +26937,13 @@ export function FileExplorer({
       ...explorerBuiltInChromeControlRegistry,
       ...explorerGlobalActionChromeControls,
       ...explorerExternalChromeControls,
+      ...explorerWidgetChromeControls,
     ],
     [
       explorerBuiltInChromeControlRegistry,
       explorerExternalChromeControls,
       explorerGlobalActionChromeControls,
+      explorerWidgetChromeControls,
     ],
   );
   const explorerChromeControlRegistryById = useMemo(
@@ -27662,13 +27967,17 @@ export function FileExplorer({
     ],
   );
 
-  useEffect(() => {
-    if (!layoutZoomGestureActiveRef.current) {
-      return;
-    }
-
-    applyLayoutZoomPointerAnchor(liveLayoutZoomState);
-  }, [applyLayoutZoomPointerAnchor, liveLayoutZoomState]);
+  useLayoutEffect(() => {
+    applyLayoutZoomPointerAnchorRef.current = applyLayoutZoomPointerAnchor;
+    return () => {
+      if (
+        applyLayoutZoomPointerAnchorRef.current ===
+        applyLayoutZoomPointerAnchor
+      ) {
+        applyLayoutZoomPointerAnchorRef.current = null;
+      }
+    };
+  }, [applyLayoutZoomPointerAnchor]);
   const getExplorerZoomGestureViewportHeight = useCallback(
     () =>
       explorerViewportRef.current?.clientHeight ??
@@ -27814,7 +28123,10 @@ export function FileExplorer({
       if (!isExplorerZoomGestureVerticalDominant(gesture)) {
         return false;
       }
-      return isExplorerZoomGestureMeaningful(gesture);
+      return isExplorerZoomGestureMeaningful(
+        gesture,
+        explorerZoomBehavior.wheel.detentMinimumGestureDeltaPixels,
+      );
     },
     [effectiveExperimentalViewMode],
   );
@@ -27853,7 +28165,10 @@ export function FileExplorer({
       if (!isExplorerZoomGestureVerticalDominant(gesture)) {
         return false;
       }
-      return isExplorerZoomGestureMeaningful(gesture, 2);
+      return isExplorerZoomGestureMeaningful(
+        gesture,
+        explorerZoomBehavior.wheel.precisionMinimumGestureDeltaPixels,
+      );
     },
     [constellationFieldLayout, effectiveExperimentalViewMode],
   );

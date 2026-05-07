@@ -35,12 +35,14 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
+  OverlayPluginExplorerWidgetContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginWorkflowContribution,
 } from "../../config/pluginContributions";
 import type { ExplorerLayoutMode } from "../../config/layoutProfiles";
 import type { LoadedExplorerLayoutDefinition } from "../../config/explorerLayouts";
 import type { LoadedExplorerViewDefinition } from "../../config/explorerViews";
+import type { LoadedExplorerWidgetDefinition } from "../../config/explorerWidgets";
 import type { LoadedExplorerHomePack } from "../../config/homePackages";
 import type { LoadedExplorerMenuPack } from "../../config/menuPacks";
 import {
@@ -131,10 +133,12 @@ interface ExplorerWorkspaceProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerViews?: OverlayPluginExplorerViewContribution[];
+  pluginExplorerWidgets?: OverlayPluginExplorerWidgetContribution[];
   pluginPreviewLanes?: OverlayPluginPreviewLaneContribution[];
   pluginWorkflows?: OverlayPluginWorkflowContribution[];
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
   explorerViews?: LoadedExplorerViewDefinition[];
+  explorerWidgets?: LoadedExplorerWidgetDefinition[];
   layoutMode?: ExplorerLayoutMode;
   dockPreviewPolicy?: ExplorerDockPreviewPolicy;
   defaultModeProfileId?: ExplorerModeProfileId | null;
@@ -335,10 +339,12 @@ export function ExplorerWorkspace({
   pluginActions = [],
   pluginContextMenuItems = [],
   pluginExplorerViews = [],
+  pluginExplorerWidgets = [],
   pluginPreviewLanes = [],
   pluginWorkflows = [],
   explorerLayouts = [],
   explorerViews = [],
+  explorerWidgets = [],
   layoutMode = "full",
   dockPreviewPolicy,
   defaultModeProfileId = null,
@@ -647,9 +653,11 @@ export function ExplorerWorkspace({
     () =>
       buildExplorerCustomizeCatalog({
         actions,
+        widgets: explorerWidgets,
+        pluginWidgets: pluginExplorerWidgets,
         persistedEntries: explorerChromeOverride?.entries ?? null,
       }),
-    [actions, explorerChromeOverride],
+    [actions, explorerChromeOverride, explorerWidgets, pluginExplorerWidgets],
   );
   const workspaceCustomizeCatalogByControlId = useMemo(
     () =>
@@ -2464,6 +2472,7 @@ export function ExplorerWorkspace({
             pluginActions={pluginActions}
             pluginContextMenuItems={pluginContextMenuItems}
             pluginExplorerViews={pluginExplorerViews}
+            pluginExplorerWidgets={pluginExplorerWidgets}
             pluginPreviewLanes={pluginPreviewLanes}
             pluginWorkflows={pluginWorkflows}
             explorerPicker={isActivePane ? explorerPicker : null}
@@ -2473,6 +2482,7 @@ export function ExplorerWorkspace({
             onAddBookmark={onAddBookmark}
             explorerLayouts={explorerLayouts}
             explorerViews={explorerViews}
+            explorerWidgets={explorerWidgets}
             homePacks={homePacks}
             menuPacks={menuPacks}
             onOpenPanel={onOpenPanel}
@@ -2500,6 +2510,7 @@ export function ExplorerWorkspace({
       defaultModeProfileId,
       explorerLayouts,
       explorerViews,
+      explorerWidgets,
       externalWorkspaceChromeControls,
       homePacks,
       onOpenInFilesystemAquarium,
@@ -2511,6 +2522,7 @@ export function ExplorerWorkspace({
       pluginActions,
       pluginContextMenuItems,
       pluginExplorerViews,
+      pluginExplorerWidgets,
       pluginPreviewLanes,
       pluginWorkflows,
       publishRuntimeSnapshot,

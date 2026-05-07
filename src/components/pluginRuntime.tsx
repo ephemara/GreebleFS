@@ -505,6 +505,7 @@ export interface OverlayPluginCapabilitySummary {
   explorerActions: number;
   contextMenuItems: number;
   explorerViews?: number;
+  explorerWidgets?: number;
   previewLanes: number;
   settingsSlots: number;
 }

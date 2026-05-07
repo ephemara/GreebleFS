@@ -13,6 +13,7 @@ import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
   OverlayPluginExplorerViewContribution,
+  OverlayPluginExplorerWidgetContribution,
   OverlayPluginPreviewLaneContribution,
   OverlayPluginSettingsSlotContribution,
   OverlayPluginWorkflowContribution,
@@ -78,6 +79,21 @@ import {
   type ExplorerViewProps,
   type ExplorerViewSurfaceOwnership,
 } from '../components/explorer/explorerViewRuntime';
+import {
+  ExplorerWasmWidgetSurface,
+  loadExplorerWidgetFromSource,
+  normalizeExplorerWidgetCapabilities,
+  normalizeExplorerWidgetDescriptor,
+  normalizeExplorerWidgetSizing,
+  normalizeExplorerWidgetSurfaces,
+  toExplorerWidgetChromeControlId,
+  type BoundExplorerWidgetComponent,
+  type ExplorerWidgetCapabilityFlags,
+  type ExplorerWidgetDescriptor,
+  type ExplorerWidgetProps,
+  type ExplorerWidgetSizingContract,
+  type ExplorerWidgetSurfaceContract,
+} from '../components/explorer/explorerWidgetRuntime';
 import type { OverlayPluginWorkflowDescriptor } from '../components/explorer/explorerWorkflowContracts';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -166,6 +182,29 @@ interface PluginPackageExplorerViewManifest {
   surfaceOwnership?: Partial<ExplorerViewSurfaceOwnership>;
   density?: Partial<ExplorerViewDensityContract>;
   capabilities?: Partial<ExplorerViewCapabilityFlags>;
+}
+
+interface PluginPackageExplorerWidgetManifest {
+  id?: string;
+  title?: string;
+  shortLabel?: string;
+  description?: string;
+  category?: string;
+  rendererKind?: 'react' | 'wasm-panel';
+  renderer?: string;
+  rendererEntry?: string;
+  runtimeId?: string;
+  runtimeRef?: string;
+  runtimeSurfaceId?: string;
+  runtimeSurfaceRef?: string;
+  buildTarget?: string;
+  priority?: number;
+  available?: boolean;
+  chromeControlId?: string;
+  tags?: string[];
+  surfaces?: Partial<ExplorerWidgetSurfaceContract>;
+  sizing?: Partial<ExplorerWidgetSizingContract>;
+  capabilities?: Partial<ExplorerWidgetCapabilityFlags>;
 }
 
 interface PluginPackagePreviewLaneManifest {
@@ -294,6 +333,7 @@ interface PluginPackageManifest {
     explorerActions?: PluginPackageExplorerActionManifest[];
     contextMenuItems?: PluginPackageContextMenuItemManifest[];
     explorerViews?: PluginPackageExplorerViewManifest[];
+    explorerWidgets?: PluginPackageExplorerWidgetManifest[];
     previewLanes?: PluginPackagePreviewLaneManifest[];
     settingsSlots?: PluginPackageSettingsSlotManifest[];
     workflows?: PluginPackageWorkflowManifest[];
@@ -342,6 +382,7 @@ export interface OverlayPluginDiscoveryResult {
   explorerActions: OverlayPluginExplorerActionContribution[];
   contextMenuItems: OverlayPluginContextMenuContribution[];
   explorerViews: OverlayPluginExplorerViewContribution[];
+  explorerWidgets: OverlayPluginExplorerWidgetContribution[];
   previewLanes: OverlayPluginPreviewLaneContribution[];
   settingsSlots: OverlayPluginSettingsSlotContribution[];
   workflows: OverlayPluginWorkflowContribution[];
@@ -731,6 +772,81 @@ function asExplorerViewManifestArray(
           record.capabilities as Partial<ExplorerViewCapabilityFlags>,
         ),
       } satisfies PluginPackageExplorerViewManifest,
+    ];
+  });
+}
+
+function asExplorerWidgetManifestArray(
+  value: unknown,
+): PluginPackageExplorerWidgetManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry, index) => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+    const rendererKind =
+      asString(record.rendererKind) === "wasm-panel" ||
+      ((!asString(record.renderer) && !asString(record.rendererEntry)) &&
+        Boolean(
+          asString(record.runtimeSurfaceId) ||
+            asString(record.runtimeSurfaceRef) ||
+            asString(record.runtimeId) ||
+            asString(record.runtimeRef),
+        ))
+        ? "wasm-panel"
+        : "react";
+    const renderer = asString(record.renderer) || asString(record.rendererEntry);
+    if (rendererKind === "react" && !renderer) {
+      return [];
+    }
+
+    const title =
+      asString(record.title) ||
+      deriveDisplayNameFromFilePath(
+        renderer ||
+          asString(record.runtimeSurfaceId) ||
+          asString(record.runtimeSurfaceRef) ||
+          asString(record.runtimeId) ||
+          asString(record.runtimeRef) ||
+          `explorer-widget-${index + 1}`,
+      );
+    return [
+      {
+        id: asString(record.id) || deriveIdFromName(title, "explorer-widget"),
+        title,
+        shortLabel: asString(record.shortLabel) || title,
+        description: asString(record.description) || undefined,
+        category: asString(record.category) || "widgets",
+        rendererKind,
+        renderer,
+        rendererEntry: asString(record.rendererEntry),
+        runtimeId: asString(record.runtimeId) || asString(record.runtimeRef),
+        runtimeRef: asString(record.runtimeRef),
+        runtimeSurfaceId:
+          asString(record.runtimeSurfaceId) || asString(record.runtimeSurfaceRef),
+        runtimeSurfaceRef: asString(record.runtimeSurfaceRef),
+        buildTarget: asString(record.buildTarget),
+        priority:
+          typeof record.priority === "number" && Number.isFinite(record.priority)
+            ? Math.round(record.priority)
+            : 0,
+        available: record.available !== false,
+        chromeControlId: asString(record.chromeControlId),
+        tags: asStringArray(record.tags),
+        surfaces: normalizeExplorerWidgetSurfaces(
+          record.surfaces as Partial<ExplorerWidgetSurfaceContract>,
+        ),
+        sizing: normalizeExplorerWidgetSizing(
+          record.sizing as Partial<ExplorerWidgetSizingContract>,
+        ),
+        capabilities: normalizeExplorerWidgetCapabilities(
+          record.capabilities as Partial<ExplorerWidgetCapabilityFlags>,
+        ),
+      } satisfies PluginPackageExplorerWidgetManifest,
     ];
   });
 }
@@ -1177,6 +1293,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       explorerActions: asExplorerActionManifestArray(contributions?.explorerActions),
       contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
       explorerViews: asExplorerViewManifestArray(contributions?.explorerViews),
+      explorerWidgets: asExplorerWidgetManifestArray(contributions?.explorerWidgets),
       previewLanes: asPreviewLaneManifestArray(contributions?.previewLanes),
       settingsSlots: asSettingsSlotManifestArray(contributions?.settingsSlots),
       workflows: asWorkflowManifestArray(contributions?.workflows),
@@ -1375,6 +1492,7 @@ function estimatePackageManifestCapabilities(
     explorerActions: contributions?.explorerActions?.length ?? 0,
     contextMenuItems: contributions?.contextMenuItems?.length ?? 0,
     explorerViews: contributions?.explorerViews?.length ?? 0,
+    explorerWidgets: contributions?.explorerWidgets?.length ?? 0,
     previewLanes: contributions?.previewLanes?.length ?? 0,
     settingsSlots: contributions?.settingsSlots?.length ?? 0,
   };
@@ -2121,6 +2239,7 @@ async function loadPluginPackage(
     explorerActions: [],
     contextMenuItems: [],
     explorerViews: [],
+    explorerWidgets: [],
     previewLanes: [],
     settingsSlots: [],
     workflows: [],
@@ -2250,6 +2369,7 @@ async function loadPluginPackage(
           explorerActions: 0,
           contextMenuItems: 0,
           explorerViews: 0,
+          explorerWidgets: 0,
           previewLanes: 0,
           settingsSlots: 0,
         },
@@ -2514,6 +2634,7 @@ async function loadPluginPackage(
               }),
               pluginId: packageId,
               pluginName: packageName,
+              sourceKind: 'plugin',
               sourceLabel: record.manifestPath,
               component: null,
               error: 'Missing wasm runtime id',
@@ -2536,6 +2657,7 @@ async function loadPluginPackage(
             ...descriptor,
             pluginId: packageId,
             pluginName: packageName,
+            sourceKind: 'plugin',
             sourceLabel: record.manifestPath,
             component: (props) =>
               React.createElement(ExplorerWasmRuntimeSurface, {
@@ -2560,6 +2682,7 @@ async function loadPluginPackage(
             }),
             pluginId: packageId,
             pluginName: packageName,
+            sourceKind: 'plugin',
             sourceLabel: record.manifestPath,
             component: null,
             error: 'Invalid renderer path',
@@ -2657,6 +2780,7 @@ async function loadPluginPackage(
           ...loadedDescriptor,
           pluginId: packageId,
           pluginName: packageName,
+          sourceKind: 'plugin',
           sourceLabel: record.manifestPath,
           component: boundComponent,
           error: errorMessage,
@@ -2669,6 +2793,246 @@ async function loadPluginPackage(
       (
         contribution,
       ): contribution is OverlayPluginExplorerViewContribution =>
+        contribution != null,
+    ),
+  );
+
+  const explorerWidgetModuleResolver = createPluginRelativeModuleSourceResolver(
+    record.directoryPath,
+  );
+  const explorerWidgetRendererCache = new Map<
+    string,
+    React.ComponentType<ExplorerWidgetProps>
+  >();
+  const loadedExplorerWidgets: Array<
+    OverlayPluginExplorerWidgetContribution | null
+  > = await Promise.all(
+    (record.manifest.contributions?.explorerWidgets ?? []).map(
+      async (explorerWidget) => {
+        const widgetTitle =
+          explorerWidget.title ||
+          deriveDisplayNameFromFilePath(
+            explorerWidget.renderer
+              || explorerWidget.rendererEntry
+              || explorerWidget.runtimeSurfaceId
+              || explorerWidget.runtimeSurfaceRef
+              || explorerWidget.runtimeId
+              || explorerWidget.runtimeRef
+              || 'explorer-widget',
+          );
+        const stableId =
+          explorerWidget.id || deriveIdFromName(widgetTitle, 'explorer-widget');
+        const widgetId = `${packageId}.explorer-widget.${stableId}`;
+        const defaultDescriptor: Partial<ExplorerWidgetDescriptor> = {
+          id: widgetId,
+          title: widgetTitle,
+          shortLabel: explorerWidget.shortLabel?.trim() || widgetTitle,
+          description: explorerWidget.description?.trim() || undefined,
+          category: explorerWidget.category?.trim() || 'widgets',
+          tags: explorerWidget.tags ?? [],
+          priority:
+            typeof explorerWidget.priority === 'number'
+              ? explorerWidget.priority
+              : 0,
+          available: explorerWidget.available !== false,
+          chromeControlId:
+            (explorerWidget.chromeControlId?.trim() as ExplorerWidgetDescriptor['chromeControlId'])
+            || toExplorerWidgetChromeControlId(widgetId),
+          rendererKind:
+            explorerWidget.rendererKind === 'wasm-panel'
+              ? 'wasm-panel'
+              : 'react',
+          runtimeId:
+            explorerWidget.runtimeId?.trim()
+            || explorerWidget.runtimeRef?.trim()
+            || explorerWidget.runtimeSurfaceId?.trim()
+            || explorerWidget.runtimeSurfaceRef?.trim()
+            || null,
+          runtimeSurfaceId:
+            explorerWidget.runtimeSurfaceId?.trim()
+            || explorerWidget.runtimeSurfaceRef?.trim()
+            || null,
+          buildTarget: explorerWidget.buildTarget?.trim() || null,
+          surfaces: normalizeExplorerWidgetSurfaces(explorerWidget.surfaces),
+          sizing: normalizeExplorerWidgetSizing(explorerWidget.sizing),
+          capabilities: normalizeExplorerWidgetCapabilities(
+            explorerWidget.capabilities,
+          ),
+        };
+
+        if (defaultDescriptor.rendererKind === 'wasm-panel') {
+          const runtimeId =
+            defaultDescriptor.runtimeSurfaceId || defaultDescriptor.runtimeId;
+          if (!runtimeId) {
+            packageWarnings.push(
+              `explorer widget ${widgetTitle}: wasm-panel widgets require runtimeSurfaceId, runtimeSurfaceRef, runtimeId, or runtimeRef`,
+            );
+            return {
+              ...normalizeExplorerWidgetDescriptor(defaultDescriptor, {
+                id: widgetId,
+                title: widgetTitle,
+              }),
+              pluginId: packageId,
+              pluginName: packageName,
+              sourceKind: 'plugin',
+              sourceLabel: record.manifestPath,
+              component: null,
+              error: 'Missing wasm runtime id',
+            } satisfies OverlayPluginExplorerWidgetContribution;
+          }
+
+          const descriptor = normalizeExplorerWidgetDescriptor(
+            {
+              ...defaultDescriptor,
+              runtimeId,
+              runtimeSurfaceId: runtimeId,
+            },
+            {
+              id: widgetId,
+              title: widgetTitle,
+            },
+          );
+
+          return {
+            ...descriptor,
+            pluginId: packageId,
+            pluginName: packageName,
+            sourceKind: 'plugin',
+            sourceLabel: record.manifestPath,
+            component: (props) =>
+              React.createElement(ExplorerWasmWidgetSurface, {
+                ...props,
+                runtimeId,
+                buildTarget: descriptor.buildTarget,
+              }),
+            error: null,
+          } satisfies OverlayPluginExplorerWidgetContribution;
+        }
+
+        const rendererEntryValue =
+          explorerWidget.rendererEntry?.trim() || explorerWidget.renderer?.trim() || null;
+        if (!rendererEntryValue || !isSafeRelativePath(rendererEntryValue)) {
+          packageWarnings.push(
+            `explorer widget ${widgetTitle}: invalid renderer path`,
+          );
+          return {
+            ...normalizeExplorerWidgetDescriptor(defaultDescriptor, {
+              id: widgetId,
+              title: widgetTitle,
+            }),
+            pluginId: packageId,
+            pluginName: packageName,
+            sourceKind: 'plugin',
+            sourceLabel: record.manifestPath,
+            component: null,
+            error: 'Invalid renderer path',
+          } satisfies OverlayPluginExplorerWidgetContribution;
+        }
+
+        const normalizedRendererEntry = normalizeRelativePath(
+          rendererEntryValue,
+        );
+        let rendererComponent =
+          explorerWidgetRendererCache.get(normalizedRendererEntry) ?? null;
+        let loadedDescriptor = normalizeExplorerWidgetDescriptor(
+          {
+            ...defaultDescriptor,
+            rendererEntry: normalizedRendererEntry,
+          },
+          {
+            id: widgetId,
+            title: widgetTitle,
+          },
+        );
+        let errorMessage: string | null = null;
+        if (!rendererComponent) {
+          const rendererEntry = await resolveRelativeFileEntry(
+            record.directoryPath,
+            normalizedRendererEntry,
+          );
+          if (
+            !rendererEntry ||
+            !pluginSystemConfig.frontendExtensions.includes(
+              rendererEntry.extension as never,
+            )
+          ) {
+            packageWarnings.push(
+              `explorer widget ${widgetTitle}: renderer ${normalizedRendererEntry} could not be resolved`,
+            );
+            errorMessage = 'Renderer entry could not be resolved';
+          } else {
+            try {
+              const source = await commands
+                .fsReadTextFile(rendererEntry.path)
+                .then(unwrapTauriResult);
+              const loadedWidget = await loadExplorerWidgetFromSource(
+                source,
+                rendererEntry as PluginFileEntry,
+                {
+                  descriptorDefaults: {
+                    ...defaultDescriptor,
+                    rendererEntry: normalizedRendererEntry,
+                  },
+                  resolveRelativeModuleSource: explorerWidgetModuleResolver,
+                },
+              );
+              loadedDescriptor = loadedWidget.descriptor;
+              errorMessage = loadedWidget.error;
+              if (loadedWidget.component) {
+                rendererComponent = loadedWidget.component;
+                explorerWidgetRendererCache.set(
+                  normalizedRendererEntry,
+                  rendererComponent,
+                );
+              }
+            } catch (error) {
+              errorMessage = String(error);
+            }
+          }
+        }
+
+        if (errorMessage) {
+          packageWarnings.push(
+            `explorer widget ${widgetTitle}: ${errorMessage}`,
+          );
+        }
+
+        const rendererFilePath = joinPlatformPath(
+          record.directoryPath,
+          normalizedRendererEntry,
+        );
+        const explorerWidgetContext: OverlayPluginContext = {
+          ...packagePreviewBaseContext,
+          filePath: rendererFilePath,
+        };
+        const explorerWidgetApi = hostApiFactory(explorerWidgetContext);
+        const boundComponent: BoundExplorerWidgetComponent | null =
+          rendererComponent
+            ? (props) =>
+                React.createElement(rendererComponent!, {
+                  ...props,
+                  api: explorerWidgetApi,
+                  plugin: explorerWidgetContext,
+                })
+            : null;
+
+        return {
+          ...loadedDescriptor,
+          pluginId: packageId,
+          pluginName: packageName,
+          sourceKind: 'plugin',
+          sourceLabel: record.manifestPath,
+          component: boundComponent,
+          error: errorMessage,
+        } satisfies OverlayPluginExplorerWidgetContribution;
+      },
+    ),
+  );
+  result.explorerWidgets.push(
+    ...loadedExplorerWidgets.filter(
+      (
+        contribution,
+      ): contribution is OverlayPluginExplorerWidgetContribution =>
         contribution != null,
     ),
   );
@@ -3098,6 +3462,7 @@ async function loadPluginPackage(
     explorerActions: result.explorerActions.length,
     contextMenuItems: result.contextMenuItems.length,
     explorerViews: result.explorerViews.length,
+    explorerWidgets: result.explorerWidgets.length,
     previewLanes: result.previewLanes.length,
     settingsSlots: result.settingsSlots.length,
   };
@@ -3146,6 +3511,7 @@ export async function discoverOverlayPlugins(
     explorerActions: [],
     contextMenuItems: [],
     explorerViews: [],
+    explorerWidgets: [],
     previewLanes: [],
     settingsSlots: [],
     workflows: [],
@@ -3180,6 +3546,7 @@ export async function discoverOverlayPlugins(
     explorerActions: [],
     contextMenuItems: [],
     explorerViews: [],
+    explorerWidgets: [],
     previewLanes: [],
     settingsSlots: [],
     workflows: [],
@@ -3266,6 +3633,7 @@ export async function discoverOverlayPlugins(
       aggregate.explorerActions.push(...packageResult.explorerActions);
       aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
       aggregate.explorerViews.push(...packageResult.explorerViews);
+      aggregate.explorerWidgets.push(...packageResult.explorerWidgets);
       aggregate.previewLanes.push(...packageResult.previewLanes);
       aggregate.settingsSlots.push(...packageResult.settingsSlots);
       aggregate.workflows.push(...packageResult.workflows);
@@ -3285,6 +3653,10 @@ export async function discoverOverlayPlugins(
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
   aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
   aggregate.explorerViews.sort(
+    (left, right) =>
+      right.priority - left.priority || left.title.localeCompare(right.title),
+  );
+  aggregate.explorerWidgets.sort(
     (left, right) =>
       right.priority - left.priority || left.title.localeCompare(right.title),
   );

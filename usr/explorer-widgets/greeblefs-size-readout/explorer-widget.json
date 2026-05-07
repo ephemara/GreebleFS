@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "id": "greeblefs-size-readout",
+  "name": "Size Readout",
+  "description": "A compact authored Explorer widget sample that proves chrome, view, and freeform widget loading.",
+  "author": "GreebleFS",
+  "tags": ["sample", "status", "density"],
+  "explorerWidget": {
+    "id": "greeblefs-size-readout",
+    "title": "Size Readout",
+    "shortLabel": "Readout",
+    "description": "Shows the active Explorer density value using the widget host state contract.",
+    "category": "status",
+    "rendererKind": "react",
+    "rendererEntry": "index.tsx",
+    "surfaces": {
+      "chrome": ["explorerStatusBar", "explorerToolbar"],
+      "view": ["status"],
+      "freeform": ["explorer-canvas"]
+    },
+    "sizing": {
+      "sizeVariants": ["compact", "regular", "wide"],
+      "supportsWidthPx": true,
+      "supportsLabelVisibility": true,
+      "supportsIconVisibility": false,
+      "defaultWidthPx": 148,
+      "minWidthPx": 96,
+      "maxWidthPx": 260,
+      "minInteractiveWidthPx": 96
+    },
+    "capabilities": {
+      "interactive": true,
+      "rangeInput": false,
+      "duplicateInstances": true,
+      "explorerMutations": false,
+      "workflowLaunch": false,
+      "panelLaunch": false,
+      "keyboardCapture": false
+    }
+  }
+}

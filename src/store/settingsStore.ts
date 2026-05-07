@@ -300,6 +300,7 @@ export interface ExplorerSettings {
   gridZoom: number;
   activeExplorerViewId: string;
   explorerViewDensityById: Record<string, number>;
+  explorerWidgetStateByInstanceId: Record<string, Record<string, unknown>>;
   experimentalViewMode: ExplorerExperimentalViewMode;
   experimentalDensity: number;
   folderClickMode: ExplorerFolderClickMode;
@@ -797,6 +798,39 @@ function normalizeExplorerViewDensityById(
   return normalized;
 }
 
+function normalizeExplorerWidgetStateByInstanceId(
+  value: unknown,
+): Record<string, Record<string, unknown>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([instanceId, instanceState]) => {
+        const normalizedInstanceId = instanceId.trim();
+        if (
+          !normalizedInstanceId ||
+          !instanceState ||
+          typeof instanceState !== 'object' ||
+          Array.isArray(instanceState)
+        ) {
+          return null;
+        }
+        return [
+          normalizedInstanceId,
+          { ...(instanceState as Record<string, unknown>) },
+        ] as const;
+      })
+      .filter(
+        (
+          entry,
+        ): entry is readonly [string, Record<string, unknown>] =>
+          entry != null,
+      ),
+  );
+}
+
 function normalizeExplorerSettings(
   base: ExplorerSettings,
   updates?: Partial<ExplorerSettings>,
@@ -809,6 +843,8 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'experimentalViewMode');
   const hasExplicitExplorerViewDensityById = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'explorerViewDensityById');
+  const hasExplicitExplorerWidgetStateByInstanceId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'explorerWidgetStateByInstanceId');
   const nextExperimentalViewMode = normalizeExplorerExperimentalViewMode(
     hasExplicitActiveExplorerViewId && !hasExplicitExperimentalViewMode
       ? mapExplorerActiveViewIdToLegacyExperimentalMode(
@@ -927,6 +963,11 @@ function normalizeExplorerSettings(
           : base.gridZoom),
     activeExplorerViewId: nextActiveExplorerViewId,
     explorerViewDensityById: nextExplorerViewDensityById,
+    explorerWidgetStateByInstanceId: hasExplicitExplorerWidgetStateByInstanceId
+      ? normalizeExplorerWidgetStateByInstanceId(
+          updates?.explorerWidgetStateByInstanceId,
+        )
+      : base.explorerWidgetStateByInstanceId,
     experimentalViewMode: nextExperimentalViewMode,
     experimentalDensity:
       nextExplorerViewDensityById[nextActiveExplorerViewId] ??
@@ -1806,6 +1847,7 @@ const runtimeFallbackDefaultSettings: Settings = {
     gridZoom: getExplorerGridZoomAnchor('icons-l'),
     activeExplorerViewId: STANDARD_EXPLORER_VIEW_ID,
     explorerViewDensityById: createDefaultExplorerViewDensityById(),
+    explorerWidgetStateByInstanceId: {},
     experimentalViewMode: 'off',
     experimentalDensity: DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: 'double',

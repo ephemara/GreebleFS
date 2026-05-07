@@ -253,6 +253,19 @@ export function ExplorerChromeSurface({
         return placement;
       }
 
+      const isInteractiveRangePlacement =
+        placement.controlId === "statusViewSize" ||
+        placement.controlId.startsWith("widget:");
+      if (isInteractiveRangePlacement && typeof placement.widthPx === "number") {
+        return {
+          ...placement,
+          sizeVariant: "compact",
+          widthPx: Math.max(150, placement.widthPx),
+          showLabel: false,
+          showIcon: placement.showIcon ?? true,
+        };
+      }
+
       const compactWidth =
         typeof placement.widthPx === "number"
           ? Math.max(72, Math.min(placement.widthPx, rowHeightPx <= 34 ? 112 : 148))
