@@ -1,3 +1,21 @@
+# 2026-05-07 - Tauri Dev Bootstrap Now Skips Repeated Pre-Native Rebuilds
+
+- Fixed the actual repeated `bun run tauri dev` bootstrap tax after the Tauron fork adoption.
+  - `scripts/tauron-preflight.mjs` no longer compares tauron API sources against static `packages/api/dist/package.json`; freshness is now based on generated dist JS files plus `crates/tauri/scripts/bundle.global.js`, so a clean `D:/tauron` fork does not run `pnpm build:api` every launch.
+  - `scripts/run-platform-tauri.mjs` now runs stale-process cleanup before the Tauron preflight, reuses the project-installed `@tauri-apps/cli-win32-x64-msvc` native package before installing into the VPS cache, fingerprints/caches Go runtime prep and `dist-mobile`, and defaults Specta prep to `GREEBLEFS_TAURI_BINDINGS_MODE=missing`.
+  - `scripts/run-export-bindings.mjs` skips its own Tauron preflight when the parent dev wrapper already completed it, avoiding the double `pnpm build:api` pass that showed up in startup logs.
+  - `scripts/cleanup-dev-processes.mjs` now explicitly recognizes standalone `bun run bindings:generate` and `target/debug/export-bindings.exe` process trees so abandoned bindings exports do not keep the Cargo target locked. It intentionally does not use a raw `node_modules/.bin/vite` substring marker because that also matches `vitest.exe`.
+- Operator notes:
+  - `GREEBLEFS_TAURI_PREP_ONLY=1 node scripts/run-platform-tauri.mjs dev` is the fast proof for pre-native startup. Expected clean output: Go runtime assets up to date, mobile share bundle up to date, Specta bindings present, prep-only exit.
+  - Force individual prep lanes with `GREEBLEFS_FORCE_GO_BOOTSTRAP=1`, `GREEBLEFS_FORCE_MOBILE_BUILD=1`, or `GREEBLEFS_TAURI_BINDINGS_MODE=auto|always`.
+  - MCP status/logs showed a stale session whose Cargo export was interrupted at 67/1256 with `STATUS_CONTROL_C_EXIT`; that was a real cold/shared-target compile from the old automatic bindings export, not an incremental skip. Future dev launches should not start that export unless bindings are missing or explicitly requested.
+- Validation:
+  - Passed: `node --check scripts/run-platform-tauri.mjs`
+  - Passed: `node --check scripts/run-export-bindings.mjs`
+  - Passed: `node --check scripts/tauron-preflight.mjs`
+  - Passed: `node --check scripts/cleanup-dev-processes.mjs`
+  - Passed twice after cleanup: `$env:GREEBLEFS_TAURI_PREP_ONLY='1'; node scripts/run-platform-tauri.mjs dev`
+
 # 2026-05-07 - Text Thumbnails Became Legible Document Snapshots
 
 - Reworked native text/code thumbnails in `src-tauri/src/thumbnail_commands.rs` so Explorer grid thumbnails prioritize readable file content instead of a tiny decorative dark editor frame.
