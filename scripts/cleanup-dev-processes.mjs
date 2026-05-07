@@ -31,12 +31,15 @@ function buildTargetCommandMarkers(projectRootPath) {
     "node scripts/run-platform-tauri.mjs",
     "node scripts/run-frontend-dev.mjs",
     "bun run tauri dev",
+    "bun run bindings:generate",
+    "bun.exe\" run tauri dev",
+    "bun.exe\" run bindings:generate",
     `${path.join(projectRootPath, "node_modules", "@tauri-apps", "cli", "tauri.js")} dev`,
-    `${path.join(projectRootPath, "node_modules", ".bin", "vite")}`,
     `${path.join(projectRootPath, "node_modules", "vite", "bin", "vite.js")}`,
     "node scripts/run-export-bindings.mjs",
     "cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings",
     `${path.join(projectRootPath, "target", "debug", "export-bindings")}`,
+    `${path.join(projectRootPath, "target", "debug", "export-bindings.exe")}`,
     "bun scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite",
     "bun scripts/sync-canonical-icons.mjs && bun run bindings:generate && vite",
   ];
@@ -44,6 +47,23 @@ function buildTargetCommandMarkers(projectRootPath) {
 
 function normalizeCommandForMatching(value) {
   return value.replace(/\\/g, "/").toLowerCase();
+}
+
+function shouldLogCleanupDetails() {
+  return process.env.GREEBLEFS_DEV_CLEANUP_DEBUG === "1"
+    || process.env.OVERLAYTERM_DEV_CLEANUP_DEBUG === "1";
+}
+
+function logKilledProcessDetails(killedProcesses, logger) {
+  if (!shouldLogCleanupDetails()) {
+    return;
+  }
+
+  for (const processEntry of killedProcesses) {
+    logger.log(
+      `  - pid=${processEntry.pid} ppid=${processEntry.parentPid} command=${processEntry.command || "<unknown>"}`
+    );
+  }
 }
 
 function isStoppedProcessState(stat) {
@@ -174,6 +194,7 @@ function cleanupWindowsGreeblefsDevProcesses({
     logger.log(
       `Cleaned ${killedProcesses.length} stale GreebleFS dev process${killedProcesses.length === 1 ? "" : "es"} before startup.`,
     );
+    logKilledProcessDetails(killedProcesses, logger);
   }
 
   return killedProcesses;
@@ -252,6 +273,7 @@ export function cleanupGreeblefsDevProcesses({
     logger.log(
       `Cleaned ${killedProcesses.length} stale GreebleFS dev process${killedProcesses.length === 1 ? "" : "es"} before startup.`,
     );
+    logKilledProcessDetails(killedProcesses, logger);
   }
 
   return killedProcesses;

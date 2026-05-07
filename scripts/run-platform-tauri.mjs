@@ -58,6 +58,10 @@ const spectaBindingsGeneratedPath = path.join(projectRoot, spectaBindingsGenerat
 const spectaBindingsCacheDirectory = path.join(tauriCargoTargetDir, "dev-cache");
 const spectaBindingsCachePath = path.join(spectaBindingsCacheDirectory, "specta-bindings-state.json");
 const spectaBindingsCacheVersion = 1;
+const goRuntimeAssetsCachePath = path.join(spectaBindingsCacheDirectory, "go-runtime-assets-state.json");
+const goRuntimeAssetsCacheVersion = 1;
+const mobileShareBundleCachePath = path.join(spectaBindingsCacheDirectory, "mobile-share-bundle-state.json");
+const mobileShareBundleCacheVersion = 1;
 const spectaBindingsFingerprintTargets = [
   { kind: "file", relativePath: "Cargo.toml" },
   { kind: "file", relativePath: "Cargo.lock" },
@@ -67,6 +71,18 @@ const spectaBindingsFingerprintTargets = [
   { kind: "directory", relativePath: path.join("crates", "overlay-contracts"), extension: ".rs" },
   { kind: "directory", relativePath: path.join("crates", "yazi-specta"), extension: ".rs" },
   { kind: "directory", relativePath: path.join("crates", "greeble-ipc-contracts"), extension: ".rs" },
+];
+const goRuntimeAssetsFingerprintTargets = [
+  { kind: "file", relativePath: path.join("scripts", "go", "bootstrap.sh") },
+  { kind: "file", relativePath: path.join("scripts", "go", "_common.sh") },
+  { kind: "directory", relativePath: "src-go" },
+];
+const mobileShareBundleFingerprintTargets = [
+  { kind: "file", relativePath: "package.json" },
+  { kind: "file", relativePath: "bun.lock" },
+  { kind: "file", relativePath: "vite.mobile.config.ts" },
+  { kind: "file", relativePath: "tsconfig.json" },
+  { kind: "directory", relativePath: "src-mobile" },
 ];
 
 const usrRootEnvironmentKeys = {
@@ -441,10 +457,10 @@ async function collectDirectoryFilesRecursively(rootPath, extension, matchingFil
   return matchingFiles;
 }
 
-async function resolveSpectaBindingsFingerprintFiles() {
+async function resolveFingerprintFiles(fingerprintTargets) {
   const resolvedFiles = new Set();
 
-  for (const target of spectaBindingsFingerprintTargets) {
+  for (const target of fingerprintTargets) {
     const absolutePath = path.join(projectRoot, target.relativePath);
     if (!(await pathExists(absolutePath))) {
       continue;
@@ -464,8 +480,8 @@ async function resolveSpectaBindingsFingerprintFiles() {
   return [...resolvedFiles].sort((left, right) => left.localeCompare(right));
 }
 
-async function computeSpectaBindingsFingerprint() {
-  const inputFiles = await resolveSpectaBindingsFingerprintFiles();
+async function computeFingerprintForTargets(fingerprintTargets) {
+  const inputFiles = await resolveFingerprintFiles(fingerprintTargets);
   const hash = createHash("sha256");
 
   for (const absolutePath of inputFiles) {
@@ -483,16 +499,109 @@ async function computeSpectaBindingsFingerprint() {
   };
 }
 
-async function readSpectaBindingsCacheState() {
-  if (!(await pathExists(spectaBindingsCachePath))) {
+async function computeSpectaBindingsFingerprint() {
+  return computeFingerprintForTargets(spectaBindingsFingerprintTargets);
+}
+
+async function readJsonCacheState(cachePath) {
+  if (!(await pathExists(cachePath))) {
     return null;
   }
 
   try {
-    return JSON.parse(await fs.readFile(spectaBindingsCachePath, "utf8"));
+    return JSON.parse(await fs.readFile(cachePath, "utf8"));
   } catch {
     return null;
   }
+}
+
+async function readSpectaBindingsCacheState() {
+  return readJsonCacheState(spectaBindingsCachePath);
+}
+
+async function outputPathsExist(outputPaths) {
+  for (const outputPath of outputPaths) {
+    if (!(await pathExists(outputPath))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function getNewestFileMtimeMs(filePaths) {
+  let newestMtimeMs = 0;
+  for (const filePath of filePaths) {
+    const stats = await fs.stat(filePath);
+    newestMtimeMs = Math.max(newestMtimeMs, stats.mtimeMs);
+  }
+  return newestMtimeMs;
+}
+
+async function getOldestFileMtimeMs(filePaths) {
+  let oldestMtimeMs = Number.POSITIVE_INFINITY;
+  for (const filePath of filePaths) {
+    const stats = await fs.stat(filePath);
+    oldestMtimeMs = Math.min(oldestMtimeMs, stats.mtimeMs);
+  }
+  return oldestMtimeMs;
+}
+
+async function shouldPrepareFingerprintCachedAsset({
+  cachePath,
+  cacheVersion,
+  fingerprintTargets,
+  outputPaths,
+  forceEnvKeys = [],
+  seedCacheWhenOutputsLookFresh = false,
+  seedCacheWhenOutputsArePresent = false,
+}) {
+  const forceRequested = forceEnvKeys.some((envKey) => hasExplicitEnvValue(process.env[envKey]));
+  const { fingerprint, inputFiles } = await computeFingerprintForTargets(fingerprintTargets);
+  const cachedState = await readJsonCacheState(cachePath);
+  const outputsArePresent = await outputPathsExist(outputPaths);
+  const cacheIsCurrent =
+    outputsArePresent
+    && cachedState?.version === cacheVersion
+    && cachedState?.fingerprint === fingerprint;
+  const outputsLookFresh = outputsArePresent
+    && inputFiles.length > 0
+    && await getNewestFileMtimeMs(inputFiles) <= await getOldestFileMtimeMs(outputPaths);
+  const shouldSeedCache = !forceRequested
+    && !cacheIsCurrent
+    && (
+      (seedCacheWhenOutputsLookFresh && outputsLookFresh)
+      || (seedCacheWhenOutputsArePresent && outputsArePresent)
+    );
+
+  return {
+    fingerprint,
+    inputFiles,
+    outputsArePresent,
+    shouldPrepare: forceRequested || (!cacheIsCurrent && !shouldSeedCache),
+    shouldSeedCache,
+  };
+}
+
+async function writeFingerprintCacheState({
+  cachePath,
+  cacheVersion,
+  fingerprint,
+  inputFiles,
+  outputPaths,
+}) {
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  await fs.writeFile(
+    cachePath,
+    `${JSON.stringify({
+      version: cacheVersion,
+      fingerprint,
+      inputFileCount: inputFiles.length,
+      outputPaths: outputPaths.map((outputPath) =>
+        normalizePathForLogs(path.relative(projectRoot, outputPath) || outputPath)
+      ),
+      updatedAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
 }
 
 async function writeSpectaBindingsCacheState({ fingerprint, inputFiles }) {
@@ -619,8 +728,23 @@ async function prepareTauriDevBindings(packageManagerCommand, tauriCommand, extr
     return;
   }
 
+  const bindingsMode = (
+    process.env.GREEBLEFS_TAURI_BINDINGS_MODE
+    || process.env.OVERLAYTERM_TAURI_BINDINGS_MODE
+    || "missing"
+  ).trim().toLowerCase();
+  const generatedBindingsExist = await pathExists(spectaBindingsGeneratedPath);
+  if (bindingsMode === "off" || bindingsMode === "skip") {
+    console.log("Specta bindings prep disabled, skipping.");
+    return;
+  }
+  if (bindingsMode === "missing" && generatedBindingsExist) {
+    console.log("Specta bindings present, skipping automatic export.");
+    return;
+  }
+
   const preparationState = await shouldPrepareSpectaBindings();
-  if (!preparationState.shouldPrepare) {
+  if (bindingsMode !== "always" && !preparationState.shouldPrepare) {
     console.log("Specta bindings up to date, skipping.");
     return;
   }
@@ -643,11 +767,41 @@ async function prepareGoRuntimeAssets(packageManagerCommand, tauriCommand) {
     return;
   }
 
+  const outputPaths = [path.join(projectRoot, "public", "runtime", "wasm_exec.js")];
+  const preparationState = await shouldPrepareFingerprintCachedAsset({
+    cachePath: goRuntimeAssetsCachePath,
+    cacheVersion: goRuntimeAssetsCacheVersion,
+    fingerprintTargets: goRuntimeAssetsFingerprintTargets,
+    outputPaths,
+    forceEnvKeys: ["GREEBLEFS_FORCE_GO_BOOTSTRAP", "OVERLAYTERM_FORCE_GO_BOOTSTRAP"],
+    seedCacheWhenOutputsArePresent: true,
+  });
+  if (!preparationState.shouldPrepare) {
+    if (preparationState.shouldSeedCache) {
+      await writeFingerprintCacheState({
+        cachePath: goRuntimeAssetsCachePath,
+        cacheVersion: goRuntimeAssetsCacheVersion,
+        fingerprint: preparationState.fingerprint,
+        inputFiles: preparationState.inputFiles,
+        outputPaths,
+      });
+    }
+    console.log("Go runtime assets up to date, skipping.");
+    return;
+  }
+
   console.log("Preparing Go runtime assets...");
   const bootstrapExitCode = await runCommand(packageManagerCommand, ["run", "go:bootstrap"]);
   if (bootstrapExitCode !== 0) {
     process.exit(bootstrapExitCode);
   }
+  await writeFingerprintCacheState({
+    cachePath: goRuntimeAssetsCachePath,
+    cacheVersion: goRuntimeAssetsCacheVersion,
+    fingerprint: preparationState.fingerprint,
+    inputFiles: preparationState.inputFiles,
+    outputPaths,
+  });
 }
 
 async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
@@ -656,8 +810,34 @@ async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
   }
 
   const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
+  const outputPaths = [
+    path.join(mobileShareBundleDist, "index.html"),
+    path.join(mobileShareBundleDist, "sw.js"),
+  ];
+  const preparationState = await shouldPrepareFingerprintCachedAsset({
+    cachePath: mobileShareBundleCachePath,
+    cacheVersion: mobileShareBundleCacheVersion,
+    fingerprintTargets: mobileShareBundleFingerprintTargets,
+    outputPaths,
+    forceEnvKeys: ["GREEBLEFS_FORCE_MOBILE_BUILD", "OVERLAYTERM_FORCE_MOBILE_BUILD"],
+    seedCacheWhenOutputsArePresent: true,
+  });
+  if (!preparationState.shouldPrepare) {
+    if (preparationState.shouldSeedCache) {
+      await writeFingerprintCacheState({
+        cachePath: mobileShareBundleCachePath,
+        cacheVersion: mobileShareBundleCacheVersion,
+        fingerprint: preparationState.fingerprint,
+        inputFiles: preparationState.inputFiles,
+        outputPaths,
+      });
+    }
+    console.log("Mobile share bundle up to date, skipping.");
+    return;
+  }
+
   console.log(
-    `Preparing mobile share bundle at ${normalizePathForLogs(path.relative(projectRoot, mobileShareBundleDist) || ".") }...`
+    `Preparing mobile share bundle at ${normalizePathForLogs(path.relative(projectRoot, mobileShareBundleDist) || ".")}...`
   );
   const mobileBundleExitCode = await runCommand(
     packageManagerCommand,
@@ -670,6 +850,13 @@ async function prepareMobileShareBundle(packageManagerCommand, tauriCommand) {
   if (mobileBundleExitCode !== 0) {
     process.exit(mobileBundleExitCode);
   }
+  await writeFingerprintCacheState({
+    cachePath: mobileShareBundleCachePath,
+    cacheVersion: mobileShareBundleCacheVersion,
+    fingerprint: preparationState.fingerprint,
+    inputFiles: preparationState.inputFiles,
+    outputPaths,
+  });
 }
 
 function runCommand(command, args, extraEnv = {}) {
@@ -882,6 +1069,11 @@ async function ensureNativeBindingAvailable() {
     return;
   }
 
+  const sharedBindingDir = path.join(sharedNodeModules, ...nativeBinding.split("/"));
+  if (await pathExists(sharedBindingDir)) {
+    return;
+  }
+
   const bindingDir = path.join(cacheNodeModules, ...nativeBinding.split("/"));
   if (await pathExists(bindingDir)) {
     return;
@@ -910,25 +1102,27 @@ async function main() {
     );
   }
 
-  assertTauronForkAvailable(projectRoot);
-  await ensureNativeBindingAvailable();
   const packageManagerCommand = getPackageManagerCommand();
   const cliArgs = process.argv.slice(2);
   const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
-  const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
-  await fs.mkdir(frontendDist, { recursive: true });
-  await fs.mkdir(mobileShareBundleDist, { recursive: true });
-  const windowsRustAccelerationEnvironment = buildWindowsRustAccelerationEnvironment();
-  const sharedRustBuildEnvironment = {
-    CARGO_TARGET_DIR: tauriCargoTargetDir,
-    ...windowsRustAccelerationEnvironment,
-  };
   if (tauriCommand === "dev") {
     cleanupGreeblefsDevProcesses({
       projectRootPath: projectRoot,
       includeRunning: true,
     });
   }
+  assertTauronForkAvailable(projectRoot);
+  await ensureNativeBindingAvailable();
+  const mobileShareBundleDist = resolveMobileShareBundleDist(tauriCommand);
+  await fs.mkdir(frontendDist, { recursive: true });
+  await fs.mkdir(mobileShareBundleDist, { recursive: true });
+  const windowsRustAccelerationEnvironment = buildWindowsRustAccelerationEnvironment();
+  const sharedRustBuildEnvironment = {
+    CARGO_TARGET_DIR: tauriCargoTargetDir,
+    GREEBLEFS_TAURON_PREFLIGHT_DONE: "1",
+    OVERLAYTERM_TAURON_PREFLIGHT_DONE: "1",
+    ...windowsRustAccelerationEnvironment,
+  };
   await prepareGoRuntimeAssets(packageManagerCommand, tauriCommand);
   await prepareMobileShareBundle(packageManagerCommand, tauriCommand);
   await prepareTauriDevBindings(
@@ -936,6 +1130,16 @@ async function main() {
     tauriCommand,
     sharedRustBuildEnvironment,
   );
+  if (
+    tauriCommand === "dev"
+    && (
+      hasExplicitEnvValue(process.env.GREEBLEFS_TAURI_PREP_ONLY)
+      || hasExplicitEnvValue(process.env.OVERLAYTERM_TAURI_PREP_ONLY)
+    )
+  ) {
+    console.log("Tauri dev prep complete; skipping native launch because prep-only mode is enabled.");
+    return;
+  }
   const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`

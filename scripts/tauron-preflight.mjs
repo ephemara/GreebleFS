@@ -24,11 +24,18 @@ const tauronApiSourceRelativePaths = [
   path.join("crates", "tauri", "scripts", "core.js"),
 ];
 
-const tauronApiDistRelativePaths = [
+const tauronApiDistRequiredRelativePaths = [
   path.join("packages", "api", "dist", "package.json"),
   path.join("packages", "api", "dist", "core.js"),
   path.join("packages", "api", "dist", "index.js"),
   path.join("packages", "api", "dist", "transport.js"),
+];
+
+const tauronApiDistGeneratedRelativePaths = [
+  path.join("packages", "api", "dist", "core.js"),
+  path.join("packages", "api", "dist", "index.js"),
+  path.join("packages", "api", "dist", "transport.js"),
+  path.join("crates", "tauri", "scripts", "bundle.global.js"),
 ];
 
 function normalizePathForLogs(value) {
@@ -65,24 +72,32 @@ function getOldestMtimeMs(absolutePaths) {
 }
 
 function ensureTauronApiDist(tauronRoot) {
-  const missingApiDistPaths = collectMissingAbsolutePaths(
+  const missingRequiredApiDistPaths = collectMissingAbsolutePaths(
     tauronRoot,
-    tauronApiDistRelativePaths,
+    tauronApiDistRequiredRelativePaths,
+  );
+  const missingGeneratedApiDistPaths = collectMissingAbsolutePaths(
+    tauronRoot,
+    tauronApiDistGeneratedRelativePaths,
   );
 
   const tauronApiSourcePaths = tauronApiSourceRelativePaths.map((relativePath) =>
     path.join(tauronRoot, relativePath),
   );
-  const tauronApiDistPaths = tauronApiDistRelativePaths.map((relativePath) =>
+  const tauronApiGeneratedDistPaths = tauronApiDistGeneratedRelativePaths.map((relativePath) =>
+    path.join(tauronRoot, relativePath),
+  );
+  const tauronApiRequiredDistPaths = tauronApiDistRequiredRelativePaths.map((relativePath) =>
     path.join(tauronRoot, relativePath),
   );
 
-  const apiDistIsStale = missingApiDistPaths.length > 0
-    || getNewestMtimeMs(tauronApiSourcePaths) > getOldestMtimeMs(tauronApiDistPaths);
+  const apiDistIsStale = missingRequiredApiDistPaths.length > 0
+    || missingGeneratedApiDistPaths.length > 0
+    || getNewestMtimeMs(tauronApiSourcePaths) > getOldestMtimeMs(tauronApiGeneratedDistPaths);
 
   if (!apiDistIsStale) {
     return {
-      apiDistPaths: tauronApiDistPaths,
+      apiDistPaths: tauronApiRequiredDistPaths,
       apiSourcePaths: tauronApiSourcePaths,
     };
   }
@@ -118,7 +133,7 @@ function ensureTauronApiDist(tauronRoot) {
 
   const missingApiDistPathsAfterBuild = collectMissingAbsolutePaths(
     tauronRoot,
-    tauronApiDistRelativePaths,
+    tauronApiDistRequiredRelativePaths,
   );
   if (missingApiDistPathsAfterBuild.length > 0) {
     throw new Error(
@@ -132,7 +147,7 @@ function ensureTauronApiDist(tauronRoot) {
   }
 
   return {
-    apiDistPaths: tauronApiDistPaths,
+    apiDistPaths: tauronApiRequiredDistPaths,
     apiSourcePaths: tauronApiSourcePaths,
   };
 }

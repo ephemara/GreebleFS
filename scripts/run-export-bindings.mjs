@@ -18,6 +18,8 @@ const defaultSharedBindingsCargoTargetDir = inheritedCargoTargetDir
 const bindingsCargoTargetDir = explicitBindingsCargoTargetDir
   ? path.resolve(explicitBindingsCargoTargetDir)
   : defaultSharedBindingsCargoTargetDir;
+const skipTauronPreflight = process.env.GREEBLEFS_TAURON_PREFLIGHT_DONE === "1"
+  || process.env.OVERLAYTERM_TAURON_PREFLIGHT_DONE === "1";
 
 function readMergedTauriConfigOverride() {
   let existingConfig = {};
@@ -52,7 +54,9 @@ function readMergedTauriConfigOverride() {
 }
 
 function run() {
-  assertTauronForkAvailable(projectRoot);
+  if (!skipTauronPreflight) {
+    assertTauronForkAvailable(projectRoot);
+  }
   const tauriConfigOverride = readMergedTauriConfigOverride();
   const child = spawn(
     "cargo",
