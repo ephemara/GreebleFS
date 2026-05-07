@@ -311,6 +311,7 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
       hostElementRef,
     } = props;
     const bridgeContextRef = useRef<Record<string, unknown> | null>(null);
+    const mountHostElementRef = useRef<HTMLDivElement | null>(null);
     const runtimeCleanupRef = useRef<(() => void | Promise<void>) | null>(null);
     const hostEventUnsubscribersRef = useRef<
       Map<string, () => Promise<void> | void>
@@ -462,6 +463,7 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
           const mutableContext = { ...context } as Record<string, unknown>;
           bridgeContextRef.current = mutableContext;
           bridgeTokenRef.current = token;
+          mountHostElementRef.current?.setAttribute('data-bridge-token', token);
           setBridgeToken(token);
 
           const storageKey = `greeblefs.runtime.${runtimeId}.storage`;
@@ -573,6 +575,10 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
           void Promise.resolve(dispose()).catch(() => {});
         }
         const token = bridgeTokenRef.current;
+        const mountHostElement = mountHostElementRef.current;
+        if (mountHostElement?.dataset.bridgeToken === token) {
+          delete mountHostElement.dataset.bridgeToken;
+        }
         bridgeTokenRef.current = null;
         bridgeContextRef.current = null;
         setBridgeToken(null);
@@ -627,6 +633,7 @@ export const WasmPanelHost = forwardRef<WasmPanelHostHandle, WasmPanelHostProps>
     return (
       <div
         ref={(element) => {
+          mountHostElementRef.current = element;
           if (hostElementRef) {
             hostElementRef.current = element;
           }

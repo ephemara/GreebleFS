@@ -469,9 +469,28 @@ fn string_property(value: &JsValue, property: &str) -> Option<String> {
 }
 
 fn container_id(bridge_token: &str) -> String {
-    format!("greeblefs-bevy-model3d-{bridge_token}")
+    format!(
+        "greeblefs-bevy-model3d-{}",
+        bridge_token_dom_fragment(bridge_token)
+    )
 }
 
 fn canvas_id(bridge_token: &str) -> String {
-    format!("greeblefs-bevy-model3d-canvas-{bridge_token}")
+    format!(
+        "greeblefs-bevy-model3d-canvas-{}",
+        bridge_token_dom_fragment(bridge_token)
+    )
+}
+
+fn bridge_token_dom_fragment(bridge_token: &str) -> String {
+    bridge_token
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
 }

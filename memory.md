@@ -16,6 +16,31 @@
   - Passed: `node --check scripts/cleanup-dev-processes.mjs`
   - Passed twice after cleanup: `$env:GREEBLEFS_TAURI_PREP_ONLY='1'; node scripts/run-platform-tauri.mjs dev`
 
+# 2026-05-07 - Bevy Rust/Wasm 3D Preview Workbench
+
+- Added the first Rust/Bevy `wasm-panel` model-preview runtime as the high-priority GLB/GLTF workbench path.
+  - `runtimes/bevy-model3d-viewer` is a `cargo-wasm-bindgen` Bevy 0.18 runtime that mounts a WebGPU/wgpu canvas into the `WasmPanelHost` bridge root, loads the selected model from `surfaceContext.file.assetUrl`, and provides orbit/pan/zoom, fit, grid toggle, HDR tonemapping, ambient/key lighting, and Bevy PBR material support.
+  - `usr/plugins/greeblefs-workbench-bevy-model3d` contributes `rendererKind = "wasm-panel"` with `runtimeSurfaceId = "bevy-model3d-viewer"` at priority 940 for `.glb` / `.gltf`, so Explorer's existing workbench switcher can choose Bevy while the older Three-backed `greeblefs-workbench-model3d` package remains fallback/alternate coverage for broader IO.
+  - The Bevy package entry panel intentionally renders `null`; the user-facing surface is the compact preview lane, not a separate placeholder plugin panel.
+- Durable design decisions:
+  - Keep this in managed-content `runtimes/` plus `usr/plugins/`, not `src-tauri`, because the runtime pipeline already owns Rust/Wasm panel compilation and lets preview workbenches swap through manifest priority/defaults without hardcoding renderer choices into native code.
+  - Do not enable Bevy's `basis-universal` feature until the Windows wasm C++ sysroot story is deliberate; it currently pulls `basis-universal-sys` and fails on missing wasm `stdlib.h`. Core GLB/GLTF PBR stays pure Rust/wgpu for now.
+  - Rust `cargo-wasm-bindgen` UI runtimes must keep exporting `default`/`init` plus `mountPanel(bridgeToken)` and should use unique bridge-token-derived DOM ids for canvases. Sanitize the token before using those ids in CSS selector strings; raw bridge tokens can contain punctuation that makes `#id` selectors invalid.
+  - `WasmPanelHost.tsx` should set `data-bridge-token` on the mount element imperatively as soon as the token is minted, before importing/booting the runtime module. Do not rely only on a React state commit for the attribute; Rust wasm panels can call `mountPanel(...)` and query `[data-bridge-token="..."]` before that render has landed.
+  - `src-tauri/src/runtime_pipeline/driver.rs` must parse `Cargo.toml` with `toml::from_str::<toml::Value>(...)`, not `text.parse::<toml::Value>()`. The latter parses a single TOML value, treats `[package]` as malformed value syntax, and causes `Failed to parse ... Cargo.toml: unexpected content` when a Cargo-backed runtime is prepared.
+- Validation:
+  - Passed: `cargo check --manifest-path runtimes/bevy-model3d-viewer/Cargo.toml --target wasm32-unknown-unknown`
+  - Passed after bridge-token DOM-id sanitization: `cargo check --manifest-path runtimes/bevy-model3d-viewer/Cargo.toml --target wasm32-unknown-unknown`
+  - Passed: `cargo build --manifest-path Cargo.toml --lib --target wasm32-unknown-unknown --target-dir target --release` from `runtimes/bevy-model3d-viewer`
+  - Passed: `wasm-bindgen --target web --out-dir runtimes/bevy-model3d-viewer/target/wasm-bindgen-web --out-name bevy_model3d_viewer ...`, and generated JS exports `default`, `mountPanel`, `mount_panel`, `unmountPanel`, and `unmount_panel`.
+  - Passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/explorerPreviewRegistry.test.ts --reporter=dot`
+  - Passed after host bridge-token attribute hardening: `bunx vitest run src/test/goPanelHost.test.tsx --reporter=dot`
+  - Passed: parsed the Bevy workbench manifest and verified `examples/pbr-cube.gltf` embedded buffer lengths/offsets.
+  - Passed compile-only regression: `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline::driver::tests::cargo_manifest_document_parser_reads_package_tables --lib --target-dir target-runtime-driver-test --no-run`
+  - Blocked by repo baseline: the same targeted Rust test without `--no-run` compiled but the test binary failed to launch with Windows `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`, matching the existing lib-test launch issue.
+- Current risk / next best step:
+  - Live native MCP host calls were unavailable because the attached surface was the browser fallback (`tauriAvailable=false`), so the viewer has not yet been visually smoke-tested inside the real Tauri preview pane. Next pass should open a `.glb` / `.gltf`, switch to `Bevy 3D Workbench`, and capture the pane once CDP/native automation is reachable.
+
 # 2026-05-07 - Text Thumbnails Became Legible Document Snapshots
 
 - Reworked native text/code thumbnails in `src-tauri/src/thumbnail_commands.rs` so Explorer grid thumbnails prioritize readable file content instead of a tiny decorative dark editor frame.

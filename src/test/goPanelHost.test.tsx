@@ -268,10 +268,14 @@ describe('GoPanelHost', () => {
     prepareRuntimePackageMock.mockRejectedValueOnce(new Error('toolchain missing'));
 
     const events: GoPanelHostEvent[] = [];
+    const context = {
+      ...makeContext(),
+      runtimeId: 'sample-panel-build-error',
+    };
     const { findByRole } = render(
       <GoPanelHost
-        runtimeId="sample-panel"
-        context={makeContext()}
+        runtimeId="sample-panel-build-error"
+        context={context}
         onEvent={event => events.push(event)}
       />,
     );

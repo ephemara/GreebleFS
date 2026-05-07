@@ -496,15 +496,7 @@ fn resolve_cargo_binary_name(
     cargo_manifest_path: &Path,
     manifest: &RuntimeManifest,
 ) -> Result<String, String> {
-    let text = std::fs::read_to_string(cargo_manifest_path).map_err(|error| {
-        format!(
-            "Failed to read cargo manifest {}: {error}",
-            cargo_manifest_path.display()
-        )
-    })?;
-    let parsed = text
-        .parse::<toml::Value>()
-        .map_err(|error| format!("Failed to parse {}: {error}", cargo_manifest_path.display()))?;
+    let parsed = read_cargo_manifest_document(cargo_manifest_path)?;
     if let Some(bins) = parsed.get("bin").and_then(|value| value.as_array()) {
         if let Some(configured_bin) = bins.iter().find_map(|entry| {
             entry.as_table().and_then(|table| {
@@ -543,15 +535,7 @@ fn resolve_cargo_library_stem(
     cargo_manifest_path: &Path,
     manifest: &RuntimeManifest,
 ) -> Result<String, String> {
-    let text = std::fs::read_to_string(cargo_manifest_path).map_err(|error| {
-        format!(
-            "Failed to read cargo manifest {}: {error}",
-            cargo_manifest_path.display()
-        )
-    })?;
-    let parsed = text
-        .parse::<toml::Value>()
-        .map_err(|error| format!("Failed to parse {}: {error}", cargo_manifest_path.display()))?;
+    let parsed = read_cargo_manifest_document(cargo_manifest_path)?;
     if let Some(lib_name) = parsed
         .get("lib")
         .and_then(|value| value.as_table())
@@ -569,6 +553,17 @@ fn resolve_cargo_library_stem(
         return Ok(package_name.replace('-', "_"));
     }
     Ok(manifest.id.replace('-', "_"))
+}
+
+fn read_cargo_manifest_document(cargo_manifest_path: &Path) -> Result<toml::Value, String> {
+    let text = std::fs::read_to_string(cargo_manifest_path).map_err(|error| {
+        format!(
+            "Failed to read cargo manifest {}: {error}",
+            cargo_manifest_path.display()
+        )
+    })?;
+    toml::from_str::<toml::Value>(&text)
+        .map_err(|error| format!("Failed to parse {}: {error}", cargo_manifest_path.display()))
 }
 
 fn resolve_cargo_built_artifact_path(
@@ -767,6 +762,54 @@ mod tests {
         assert_eq!(
             resolve_cargo_wasm_bindgen_bindgen_target("wasm-bindgen-web").unwrap(),
             "web"
+        );
+    }
+
+    #[test]
+    fn cargo_manifest_document_parser_reads_package_tables() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let cargo_manifest_path = temp.path().join("Cargo.toml");
+        std::fs::write(
+            &cargo_manifest_path,
+            r#"[package]
+name = "bevy-model3d-viewer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+"#,
+        )
+        .expect("write Cargo.toml");
+
+        let runtime_manifest = RuntimeManifest {
+            id: "fallback-runtime-id".to_string(),
+            display_name: "fallback-runtime-id".to_string(),
+            language: "rust".to_string(),
+            kind: crate::runtime_pipeline::manifest::RuntimeKind::WasmPanel,
+            compiler: RuntimeCompiler::CargoWasmBindgen,
+            manifest_dir: temp.path().to_string_lossy().to_string(),
+            module_dir: temp.path().to_string_lossy().to_string(),
+            entry: None,
+            watch_globs: Vec::new(),
+            env: Default::default(),
+            args: Vec::new(),
+            working_directory: None,
+            permissions: Default::default(),
+            panel: None,
+            command: None,
+            sidecar: None,
+            tui: None,
+            source_signature: "unsigned".to_string(),
+        };
+
+        assert_eq!(
+            resolve_cargo_library_stem(&cargo_manifest_path, &runtime_manifest).unwrap(),
+            "bevy_model3d_viewer"
+        );
+        assert_eq!(
+            resolve_cargo_binary_name(&cargo_manifest_path, &runtime_manifest).unwrap(),
+            "bevy-model3d-viewer"
         );
     }
 
