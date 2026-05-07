@@ -1,4 +1,4 @@
-import React, {
+import {
   useEffect,
   useId,
   useMemo,
@@ -7,6 +7,8 @@ import React, {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useMenu, useMenuItem } from "react-aria";
+import { Item, useTreeState, type TreeState } from "react-stately";
 
 import { ChevronDown } from "@/components/AppIcons";
 
@@ -70,6 +72,199 @@ function hasExplorerViewSwitcherOptions(
 ): boolean {
   return Boolean(
     groups?.some((group) => group.options.some((option) => option != null)),
+  );
+}
+
+function ExplorerViewSwitcherMenuOptionButton({
+  option,
+  state,
+  accent,
+  text,
+  muted,
+}: {
+  option: ExplorerViewSwitcherOption;
+  state: TreeState<ExplorerViewSwitcherOption>;
+  accent: string;
+  text: string;
+  muted: string;
+}) {
+  const itemRef = useRef<HTMLButtonElement | null>(null);
+  const {
+    menuItemProps,
+    labelProps,
+    isFocused,
+    isSelected,
+  } = useMenuItem(
+    { key: option.id },
+    state,
+    itemRef,
+  );
+  const isActive = isFocused || option.active || isSelected;
+
+  return (
+    <button
+      {...menuItemProps}
+      ref={itemRef}
+      type="button"
+      title={
+        option.description
+          ? `${option.label}: ${option.description}`
+          : option.label
+      }
+      style={{
+        display: "grid",
+        gridTemplateColumns: "16px minmax(0, 1fr)",
+        gap: 7,
+        alignItems: "center",
+        width: "100%",
+        border: "none",
+        borderRadius: 8,
+        padding: "5px 8px",
+        background: isActive
+          ? "var(--overlay-explorer-chip-active-bg)"
+          : "transparent",
+        color: isActive ? text : muted,
+        cursor: "pointer",
+        textAlign: "left",
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: option.active ? accent : muted,
+        }}
+      >
+        {option.icon}
+      </span>
+      <span style={{ minWidth: 0 }}>
+        <span
+          {...labelProps}
+          style={{
+            display: "block",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 11,
+            fontWeight: 700,
+            color: text,
+          }}
+        >
+          {option.label}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ExplorerViewSwitcherMenuPanel({
+  groups,
+  ariaLabel,
+  accent,
+  text,
+  muted,
+  muted2,
+  onClose,
+}: {
+  groups: readonly ExplorerViewSwitcherOptionGroup[];
+  ariaLabel: string;
+  accent: string;
+  text: string;
+  muted: string;
+  muted2: string;
+  onClose: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const options = useMemo(
+    () => groups.flatMap((group) => group.options),
+    [groups],
+  );
+  const optionById = useMemo(
+    () => new Map(options.map((option) => [option.id, option] as const)),
+    [options],
+  );
+  const activeOptionId = options.find((option) => option.active)?.id ?? null;
+  const menuState = useTreeState<ExplorerViewSwitcherOption>({
+    items: options,
+    selectionMode: "single",
+    selectedKeys: activeOptionId ? [activeOptionId] : [],
+    children: (option) => (
+      <Item key={option.id} textValue={option.label}>
+        {option.label}
+      </Item>
+    ),
+  });
+  const { menuProps } = useMenu<ExplorerViewSwitcherOption>({
+    "aria-label": ariaLabel,
+    autoFocus: "first",
+    shouldFocusWrap: true,
+    escapeKeyBehavior: "none",
+    onAction: (key) => {
+      const option = optionById.get(String(key));
+      if (!option) {
+        return;
+      }
+      option.onSelect();
+      onClose();
+    },
+    onClose,
+  }, menuState, menuRef);
+
+  useEffect(() => {
+    const frameId = window.requestAnimationFrame(() => {
+      menuRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
+
+  return (
+    <div
+      {...menuProps}
+      ref={menuRef}
+      style={{
+        display: "grid",
+        gap: 5,
+        outline: "none",
+        background: "var(--overlay-explorer-popup-bg)",
+      }}
+    >
+      {groups.map((group) => {
+        if (group.options.length === 0) {
+          return null;
+        }
+        return (
+          <div key={group.id} style={{ display: "grid", gap: 2 }}>
+            {group.label ? (
+              <div
+                style={{
+                  padding: "2px 8px 1px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: muted2,
+                }}
+              >
+                {group.label}
+              </div>
+            ) : null}
+            <div style={{ display: "grid", gap: 2 }}>
+              {group.options.map((option) => (
+                <ExplorerViewSwitcherMenuOptionButton
+                  key={option.id}
+                  option={option}
+                  state={menuState}
+                  accent={accent}
+                  text={text}
+                  muted={muted}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -234,100 +429,6 @@ export function ExplorerViewSwitcherControl({
       "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
   });
 
-  const menuItemStyle = (active: boolean): CSSProperties => ({
-    display: "grid",
-    gridTemplateColumns: "16px minmax(0, 1fr)",
-    gap: 7,
-    alignItems: "center",
-    width: "100%",
-    border: "none",
-    borderRadius: 8,
-    padding: "5px 8px",
-    background: active
-      ? "var(--overlay-explorer-chip-active-bg)"
-      : "transparent",
-    color: active ? text : muted,
-    cursor: "pointer",
-    textAlign: "left",
-  });
-
-  const renderMenuGroups = (
-    groups: readonly ExplorerViewSwitcherOptionGroup[],
-    onOptionSelected: () => void,
-  ) => (
-    <div style={{ display: "grid", gap: 5 }}>
-      {groups.map((group) => {
-        if (group.options.length === 0) {
-          return null;
-        }
-        return (
-          <div key={group.id} style={{ display: "grid", gap: 2 }}>
-            {group.label ? (
-              <div
-                style={{
-                  padding: "2px 8px 1px",
-                  fontSize: 9,
-                  fontWeight: 800,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: muted2,
-                }}
-              >
-                {group.label}
-              </div>
-            ) : null}
-            <div style={{ display: "grid", gap: 2 }}>
-              {group.options.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={option.active}
-                  title={
-                    option.description
-                      ? `${option.label}: ${option.description}`
-                      : option.label
-                  }
-                  onClick={() => {
-                    option.onSelect();
-                    onOptionSelected();
-                  }}
-                  style={menuItemStyle(option.active)}
-                >
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: option.active ? accent : muted,
-                    }}
-                  >
-                    {option.icon}
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span
-                      style={{
-                        display: "block",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: text,
-                      }}
-                    >
-                      {option.label}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-
   const renderTriggerLabel = (
     descriptor: ExplorerViewSwitcherButtonDescriptor,
   ): ReactNode => {
@@ -337,7 +438,6 @@ export function ExplorerViewSwitcherControl({
         : descriptor.shortLabel ?? descriptor.label;
     return <span style={triggerLabelStyle}>{triggerLabel}</span>;
   };
-
   return (
     <div
       ref={rootRef}
@@ -403,15 +503,20 @@ export function ExplorerViewSwitcherControl({
         side={menuSide}
         align="end"
         surfaceGroup={modeSurfaceGroup}
-        role="menu"
-        aria-label={modeMenuAriaLabel}
         minWidth={modeMenuMinWidth}
         maxWidth={viewSwitcherMenuMaxWidth}
         maxHeight={viewSwitcherMenuMaxHeight}
         padding={6}
-        style={{ display: "grid", gap: 5 }}
       >
-        {renderMenuGroups(modeGroups, () => setModeMenuOpen(false))}
+        <ExplorerViewSwitcherMenuPanel
+          groups={modeGroups}
+          ariaLabel={modeMenuAriaLabel}
+          accent={accent}
+          text={text}
+          muted={muted}
+          muted2={muted2}
+          onClose={() => setModeMenuOpen(false)}
+        />
       </ExplorerPopupSurface>
 
       {showsDensityButton && densityButton ? (
@@ -456,18 +561,20 @@ export function ExplorerViewSwitcherControl({
             side={menuSide}
             align="end"
             surfaceGroup={densitySurfaceGroup}
-            role="menu"
-            aria-label={densityMenuAriaLabel}
             minWidth={densityMenuMinWidth}
             maxWidth={viewSwitcherMenuMaxWidth}
             maxHeight={viewSwitcherMenuMaxHeight}
             padding={6}
-            style={{ display: "grid", gap: 5 }}
           >
-            {renderMenuGroups(
-              densityGroups ?? [],
-              () => setDensityMenuOpen(false),
-            )}
+            <ExplorerViewSwitcherMenuPanel
+              groups={densityGroups ?? []}
+              ariaLabel={densityMenuAriaLabel}
+              accent={accent}
+              text={text}
+              muted={muted}
+              muted2={muted2}
+              onClose={() => setDensityMenuOpen(false)}
+            />
           </ExplorerPopupSurface>
 
           {transientHud?.visible ? (

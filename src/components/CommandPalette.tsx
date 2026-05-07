@@ -1,6 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useComboBox,
+  useListBox,
+  useOption,
+} from 'react-aria';
+import {
+  Item,
+  useComboBoxState,
+  type ComboBoxState,
+} from 'react-stately';
 import { CornerDownLeft, Pin, Search } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { AppModalSurface } from './AppModal';
 import { OverlayScrollArea } from './OverlayScrollArea';
 
 export type OverlayCommandPaletteActionKind =
@@ -47,6 +58,12 @@ interface ScoredCommandPaletteAction {
 interface CommandPaletteQuickFilterDefinition {
   id: OverlayCommandPaletteQuickFilterId;
   label: string;
+}
+
+interface CommandPaletteCollectionItem {
+  id: string;
+  textValue: string;
+  actionEntry: ScoredCommandPaletteAction;
 }
 
 const commandPaletteQuickFilterCatalog: CommandPaletteQuickFilterDefinition[] = [
@@ -236,6 +253,211 @@ function resolveEmptyStateMessage(
   return 'No matching actions.';
 }
 
+function CommandPaletteOptionRow({
+  item,
+  state,
+  appearance,
+  accent,
+  text,
+  muted,
+  quickFilterId,
+  onTogglePinnedAction,
+}: {
+  item: CommandPaletteCollectionItem;
+  state: ComboBoxState<CommandPaletteCollectionItem>;
+  appearance: ResolvedOverlayAppearance;
+  accent: string;
+  text: string;
+  muted: string;
+  quickFilterId: OverlayCommandPaletteQuickFilterId;
+  onTogglePinnedAction?: (actionId: string) => void;
+}) {
+  const optionRef = useRef<HTMLLIElement | null>(null);
+  const { optionProps, labelProps, descriptionProps, isFocused } = useOption(
+    { key: item.id },
+    state,
+    optionRef,
+  );
+  const actionEntry = item.actionEntry;
+  const action = actionEntry.action;
+  const shortcutChipLabel = action.shortcutLabel && action.shortcutLabel !== 'Unassigned'
+    ? action.shortcutLabel
+    : null;
+  const showRecentBadge = actionEntry.isRecent && quickFilterId !== 'recent';
+
+  return (
+    <li
+      {...optionProps}
+      ref={optionRef}
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 6,
+        listStyle: 'none',
+        outline: 'none',
+        padding: '10px 12px',
+        borderRadius: 'var(--overlay-workbench-panel-radius)',
+        border: `1px solid ${isFocused ? `${accent}66` : 'var(--overlay-workbench-command-palette-border)'}`,
+        background: isFocused
+          ? 'var(--overlay-workbench-command-palette-item-active-bg)'
+          : 'var(--overlay-workbench-command-palette-item-bg)',
+        color: text,
+        cursor: 'pointer',
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'left',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span
+              {...labelProps}
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {action.title}
+            </span>
+            {action.badge && (
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--overlay-workbench-control-radius)',
+                  border: '1px solid var(--overlay-workbench-command-palette-border)',
+                  color: muted,
+                  background: 'transparent',
+                }}
+              >
+                {action.badge}
+              </span>
+            )}
+            {showRecentBadge && (
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  padding: '2px 6px',
+                  borderRadius: 'var(--overlay-workbench-control-radius)',
+                  border: '1px solid var(--overlay-workbench-command-palette-border)',
+                  color: muted,
+                  background: 'transparent',
+                }}
+              >
+                Recent
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              minWidth: 0,
+              fontSize: 10,
+              color: muted,
+            }}
+          >
+            <span
+              style={{
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}
+            >
+              {action.group}
+            </span>
+            {action.subtitle && (
+              <span
+                {...descriptionProps}
+                style={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  opacity: 0.92,
+                }}
+              >
+                {action.subtitle}
+              </span>
+            )}
+          </div>
+        </div>
+        {shortcutChipLabel && (
+          <kbd
+            style={{
+              fontSize: 10,
+              fontFamily: appearance.fonts.mono,
+              color: isFocused ? text : muted,
+              border: '1px solid var(--overlay-workbench-command-palette-border)',
+              borderRadius: 'var(--overlay-workbench-control-radius)',
+              padding: '3px 7px',
+              background: 'transparent',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {shortcutChipLabel}
+          </kbd>
+        )}
+      </div>
+      {onTogglePinnedAction && action.kind !== 'file' && (
+        <button
+          type="button"
+          aria-label={actionEntry.isPinned ? `Unpin ${action.title}` : `Pin ${action.title}`}
+          title={actionEntry.isPinned ? 'Unpin command' : 'Pin command to the top'}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onTogglePinnedAction(action.id);
+          }}
+          style={{
+            width: 34,
+            borderRadius: 'var(--overlay-workbench-panel-radius)',
+            border: `1px solid ${actionEntry.isPinned ? `${accent}66` : 'var(--overlay-workbench-command-palette-border)'}`,
+            background: actionEntry.isPinned
+              ? 'var(--overlay-workbench-command-palette-item-active-bg)'
+              : 'var(--overlay-workbench-command-palette-item-bg)',
+            color: actionEntry.isPinned ? accent : muted,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <Pin size={12} />
+        </button>
+      )}
+    </li>
+  );
+}
+
 export function CommandPalette({
   isOpen,
   appearance,
@@ -268,15 +490,16 @@ export function CommandPalette({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const [quickFilterId, setQuickFilterId] = useState<OverlayCommandPaletteQuickFilterId>(defaultQuickFilterId);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listBoxRef = useRef<HTMLUListElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setQuery('');
       onQueryChange?.('');
-      setSelectedIndex(0);
+      setQuickFilterId(defaultQuickFilterId);
       return;
     }
 
@@ -406,51 +629,94 @@ export function CommandPalette({
     [quickFilterId, visibleQuickFilters],
   );
 
-  useEffect(() => {
-    if (selectedIndex >= filteredActions.length) {
-      setSelectedIndex(Math.max(filteredActions.length - 1, 0));
+  const actionEntryById = useMemo(
+    () => new Map(filteredActions.map((actionEntry) => [actionEntry.action.id, actionEntry] as const)),
+    [filteredActions],
+  );
+  const comboBoxItems = useMemo<CommandPaletteCollectionItem[]>(
+    () => filteredActions.map((actionEntry) => ({
+      id: actionEntry.action.id,
+      textValue: actionEntry.action.title,
+      actionEntry,
+    })),
+    [filteredActions],
+  );
+
+  const runActionById = useCallback((actionId: string) => {
+    const actionEntry = actionEntryById.get(actionId);
+    if (!actionEntry) {
+      return;
     }
-  }, [filteredActions.length, selectedIndex]);
+
+    void Promise.resolve(actionEntry.action.onSelect());
+  }, [actionEntryById]);
+
+  const comboBoxState = useComboBoxState<CommandPaletteCollectionItem>({
+    items: comboBoxItems,
+    children: (item) => (
+      <Item key={item.id} textValue={item.textValue}>
+        {item.actionEntry.action.title}
+      </Item>
+    ),
+    inputValue: query,
+    onInputChange: (nextQuery) => {
+      setQuery(nextQuery);
+      onQueryChange?.(nextQuery);
+    },
+    defaultFilter: () => true,
+    allowsCustomValue: true,
+    allowsEmptyCollection: true,
+    menuTrigger: 'input',
+    shouldCloseOnBlur: false,
+    onOpenChange: (nextOpen) => {
+      if (!nextOpen) {
+        onClose();
+      }
+    },
+    onSelectionChange: (key) => {
+      if (typeof key === 'string') {
+        runActionById(key);
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!isOpen || comboBoxState.isOpen) {
+      return;
+    }
+
+    comboBoxState.open(comboBoxItems.length > 0 ? 'first' : null, 'manual');
+  }, [comboBoxItems.length, comboBoxState, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setSelectedIndex((current) => Math.min(current + 1, Math.max(filteredActions.length - 1, 0)));
-        return;
-      }
+    comboBoxState.selectionManager.setFocusedKey(comboBoxItems[0]?.id ?? null);
+  }, [comboBoxItems, comboBoxState, isOpen]);
 
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setSelectedIndex((current) => Math.max(current - 1, 0));
-        return;
-      }
-
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        const actionEntry = filteredActions[selectedIndex];
-        if (!actionEntry) {
-          return;
-        }
-        void Promise.resolve(actionEntry.action.onSelect()).finally(() => {
-          onClose();
-        });
-        return;
-      }
-
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [filteredActions, isOpen, onClose, selectedIndex]);
+  const {
+    inputProps,
+    listBoxProps: comboBoxListBoxProps,
+  } = useComboBox<CommandPaletteCollectionItem>({
+    inputRef,
+    listBoxRef,
+    popoverRef,
+    'aria-label': 'Command palette',
+    placeholder: queryPlaceholder,
+    shouldFocusWrap: true,
+    menuTrigger: 'input',
+  }, comboBoxState);
+  const { listBoxProps } = useListBox<CommandPaletteCollectionItem>({
+    ...comboBoxListBoxProps,
+    'aria-label': 'Command palette results',
+    autoFocus: false,
+    shouldFocusWrap: true,
+    shouldFocusOnHover: true,
+    shouldUseVirtualFocus: true,
+    escapeKeyBehavior: 'none',
+  }, comboBoxState, listBoxRef);
 
   if (!isOpen) {
     return null;
@@ -465,7 +731,11 @@ export function CommandPalette({
   const danger = appearance.theme.palette.danger;
   const workbench = appearance.workbenchTheme;
   const floatingPalette = workbench.commandPaletteStyle === 'floating' || workbench.commandPaletteStyle === 'glass';
-  const selectedActionEntry = filteredActions[selectedIndex] ?? null;
+  const focusedActionEntry = (
+    typeof comboBoxState.selectionManager.focusedKey === 'string'
+      ? actionEntryById.get(comboBoxState.selectionManager.focusedKey)
+      : null
+  ) ?? filteredActions[0] ?? null;
   const visibleResultCount = filteredActions.length;
   const resultCountLabel = visibleResultCount === 1 ? '1 result' : `${visibleResultCount} results`;
   const emptyStateMessage = resolveEmptyStateMessage(
@@ -485,15 +755,14 @@ export function CommandPalette({
   const summaryText = statusMessage?.text ?? 'Pinned and recent commands stay close.';
 
   return (
-    <div
-      style={{
-        position: 'absolute',
+    <AppModalSurface
+      onClose={onClose}
+      closeOnBackdrop
+      closeOnEscape
+      overlayStyle={{
+        position: 'fixed',
         inset: 0,
         zIndex: 120,
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: 'var(--overlay-workbench-command-palette-top-inset) 16px 16px',
         background: 'var(--overlay-workbench-command-palette-scrim-bg)',
         backdropFilter: blurEnabled
           ? (workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)')
@@ -502,13 +771,19 @@ export function CommandPalette({
           ? (workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)')
           : 'none',
       }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
+      containerStyle={{
+        width: '100%',
+        minHeight: '100%',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: 'var(--overlay-workbench-command-palette-top-inset) 16px 16px',
       }}
     >
       <div
+        ref={popoverRef}
+        role="dialog"
+        aria-label="Command palette"
         style={{
           width: 'min(var(--overlay-workbench-command-palette-width), calc(100% - 8px))',
           maxHeight: 'min(66vh, 680px)',
@@ -551,15 +826,8 @@ export function CommandPalette({
             <Search size={14} />
           </div>
           <input
+            {...inputProps}
             ref={inputRef}
-            value={query}
-            onChange={(event) => {
-              const nextQuery = event.target.value;
-              setQuery(nextQuery);
-              onQueryChange?.(nextQuery);
-              setSelectedIndex(0);
-            }}
-            placeholder={queryPlaceholder}
             style={{
               flex: 1,
               minWidth: 0,
@@ -643,8 +911,8 @@ export function CommandPalette({
                 type="button"
                 onClick={() => {
                   setQuickFilterId(filter.id);
-                  setSelectedIndex(0);
                   onQuickFilterChange?.(filter.id);
+                  inputRef.current?.focus();
                 }}
                 style={{
                   display: 'inline-flex',
@@ -669,8 +937,8 @@ export function CommandPalette({
         </div>
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 6 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {filteredActions.length === 0 && (
+          {filteredActions.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div
                 style={{
                   padding: 14,
@@ -683,192 +951,36 @@ export function CommandPalette({
               >
                 {emptyStateMessage}
               </div>
-            )}
-
-            {filteredActions.map((actionEntry, index) => {
-              const action = actionEntry.action;
-              const isSelected = index === selectedIndex;
-              const shortcutChipLabel = action.shortcutLabel && action.shortcutLabel !== 'Unassigned'
-                ? action.shortcutLabel
-                : null;
-              const showRecentBadge = actionEntry.isRecent && quickFilterId !== 'recent';
-
-              return (
-                <div
-                  key={action.id}
-                  onMouseEnter={() => setSelectedIndex(index)}
-                  onFocusCapture={() => setSelectedIndex(index)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'stretch',
-                    gap: 6,
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void Promise.resolve(action.onSelect()).finally(() => {
-                        onClose();
-                      });
-                    }}
-                    title={action.subtitle}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      textAlign: 'left',
-                      padding: '10px 12px',
-                      borderRadius: 'var(--overlay-workbench-panel-radius)',
-                      border: `1px solid ${isSelected ? `${accent}66` : 'var(--overlay-workbench-command-palette-border)'}`,
-                      background: isSelected
-                        ? 'var(--overlay-workbench-command-palette-item-active-bg)'
-                        : 'var(--overlay-workbench-command-palette-item-bg)',
-                      color: text,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          minWidth: 0,
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 700,
-                            minWidth: 0,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {action.title}
-                        </span>
-                        {action.badge && (
-                          <span
-                            style={{
-                              fontSize: 9,
-                              letterSpacing: '0.08em',
-                              textTransform: 'uppercase',
-                              padding: '2px 6px',
-                              borderRadius: 'var(--overlay-workbench-control-radius)',
-                              border: '1px solid var(--overlay-workbench-command-palette-border)',
-                              color: muted,
-                              background: 'transparent',
-                            }}
-                          >
-                            {action.badge}
-                          </span>
-                        )}
-                        {showRecentBadge && (
-                          <span
-                            style={{
-                              fontSize: 9,
-                              letterSpacing: '0.08em',
-                              textTransform: 'uppercase',
-                              padding: '2px 6px',
-                              borderRadius: 'var(--overlay-workbench-control-radius)',
-                              border: '1px solid var(--overlay-workbench-command-palette-border)',
-                              color: muted,
-                              background: 'transparent',
-                            }}
-                          >
-                            Recent
-                          </span>
-                        )}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          minWidth: 0,
-                          fontSize: 10,
-                          color: muted,
-                        }}
-                      >
-                        <span
-                          style={{
-                            letterSpacing: '0.08em',
-                            textTransform: 'uppercase',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {action.group}
-                        </span>
-                        {action.subtitle && (
-                          <span
-                            style={{
-                              minWidth: 0,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              opacity: 0.92,
-                            }}
-                          >
-                            {action.subtitle}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {shortcutChipLabel && (
-                      <kbd
-                        style={{
-                          fontSize: 10,
-                          fontFamily: appearance.fonts.mono,
-                          color: isSelected ? text : muted,
-                          border: '1px solid var(--overlay-workbench-command-palette-border)',
-                          borderRadius: 'var(--overlay-workbench-control-radius)',
-                          padding: '3px 7px',
-                          background: 'transparent',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {shortcutChipLabel}
-                      </kbd>
-                    )}
-                  </button>
-                  {onTogglePinnedAction && action.kind !== 'file' && (
-                    <button
-                      type="button"
-                      aria-label={actionEntry.isPinned ? `Unpin ${action.title}` : `Pin ${action.title}`}
-                      title={actionEntry.isPinned ? 'Unpin command' : 'Pin command to the top'}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onTogglePinnedAction(action.id);
-                      }}
-                      style={{
-                        width: 34,
-                        borderRadius: 'var(--overlay-workbench-panel-radius)',
-                        border: `1px solid ${actionEntry.isPinned ? `${accent}66` : 'var(--overlay-workbench-command-palette-border)'}`,
-                        background: actionEntry.isPinned
-                          ? 'var(--overlay-workbench-command-palette-item-active-bg)'
-                          : 'var(--overlay-workbench-command-palette-item-bg)',
-                        color: actionEntry.isPinned ? accent : muted,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Pin size={12} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+            </div>
+          ) : (
+            <ul
+              {...listBoxProps}
+              ref={listBoxRef}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                margin: 0,
+                padding: 0,
+                listStyle: 'none',
+                outline: 'none',
+              }}
+            >
+              {comboBoxItems.map((item) => (
+                <CommandPaletteOptionRow
+                  key={item.id}
+                  item={item}
+                  state={comboBoxState}
+                  appearance={appearance}
+                  accent={accent}
+                  text={text}
+                  muted={muted}
+                  quickFilterId={quickFilterId}
+                  onTogglePinnedAction={onTogglePinnedAction}
+                />
+              ))}
+            </ul>
+          )}
         </OverlayScrollArea>
 
         <div
@@ -908,10 +1020,10 @@ export function CommandPalette({
               textOverflow: 'ellipsis',
             }}
           >
-            {selectedActionEntry?.action.group ?? 'Ready'}
+            {focusedActionEntry?.action.group ?? 'Ready'}
           </div>
         </div>
       </div>
-    </div>
+    </AppModalSurface>
   );
 }

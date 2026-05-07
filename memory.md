@@ -1,3 +1,26 @@
+# 2026-05-06 - Overlay Accessibility, Theme Ingress Schemas, And Shared Color Runtime
+
+- Landed the first broad UI infrastructure modernization pass instead of continuing to duplicate overlay/menu/modal behavior across the shell.
+  - `package.json` now carries `@floating-ui/react`, `react-aria`, `react-stately`, `zod`, and `culori` as runtime dependencies, plus `react-scan` as a dev dependency.
+  - `src/main.tsx` wraps the shell in React Aria's `OverlayProvider` and conditionally installs `react-scan` through `src/runtime/devReactScan.ts` during dev or MCP-enabled sessions.
+- Shared overlay behavior now has real foundations:
+  - `src/components/AppModal.tsx` moved off the local focus-trap/escape handling and now uses `useModalOverlay`, `FocusScope`, `DismissButton`, and `OverlayContainer`.
+  - `src/components/explorer/ExplorerFloatingSurface.tsx` now uses Floating UI for anchored popup placement, flip/shift behavior, and auto-update instead of hand-rolled viewport clamping.
+  - `src/components/CommandPalette.tsx` now runs as a React Aria/Stately combobox + listbox inside `AppModalSurface` while preserving the authored GreebleFS visuals, quick filters, pinned/recent scoring, and compact command-center density.
+  - `src/components/explorer/ExplorerViewSwitcherControl.tsx` now mounts its popup menu contents through React Aria/Stately menu collections and menu items instead of raw clickable button grids.
+- Theme/runtime data ingress is now more explicit and reusable.
+  - `src/config/schemaSanitizers.ts` centralizes loose-record, string, number, array, and object-array sanitization.
+  - `src/config/uiTokenContract.ts`, `src/contracts/themeEngine.ts`, and `src/config/themePackages.ts` now lean on Zod-backed normalization at authored ingress boundaries instead of relying only on scattered local guards.
+  - Durable rule: keep Zod at `/usr` and theme-bundle ingress first; do not spray schema parsing across ordinary internal runtime objects unless there is a real boundary there.
+- Color parsing/transforms now have one shared implementation.
+  - `src/config/colorUtils.ts` uses `culori` for shell/background alpha handling and Monaco/theme color normalization.
+  - `src/App.tsx` and `src/config/explorerMonaco.ts` now consume that helper rather than maintaining separate hex/rgb parsing branches.
+- Remaining gap worth preserving for the next pass:
+  - `src/components/explorer/ExplorerContextMenu.tsx` is still the largest bespoke menu surface. Future menu work should extend the same React Aria/Floating UI seam there rather than adding more local keyboard or submenu logic.
+- Validation:
+  - Filtered `bunx tsc --noEmit --pretty false` no longer reports diagnostics for `AppModal`, `CommandPalette`, `ExplorerViewSwitcherControl`, `ExplorerFloatingSurface`, `colorUtils`, `uiTokenContract`, `themeEngine`, `themePackages`, `schemaSanitizers`, or `main.tsx`.
+  - Repo-wide TypeScript remains red on the pre-existing baseline outside this pass.
+
 # 2026-05-06 - Global Lookdev Overlay, Semantic Presets, And Shell Customize Catalog
 
 - Added a first-class semantic lookdev system over the live GreebleFS shell instead of continuing to scatter tweak flows across unrelated settings panes.

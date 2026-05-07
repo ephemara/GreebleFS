@@ -43,6 +43,14 @@ export function parseOverlayColor(color: string): ParsedOverlayColor | null {
     return null;
   }
 
+  if (
+    typeof parsedColor.r !== "number"
+    || typeof parsedColor.g !== "number"
+    || typeof parsedColor.b !== "number"
+  ) {
+    return null;
+  }
+
   return {
     red: clampByte(parsedColor.r * 255),
     green: clampByte(parsedColor.g * 255),

@@ -37,7 +37,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Main Entry Points
 
 - `src/main.tsx`
-  Frontend bootstrap. It now asks the host-owned secondary-window manager for the current window descriptor, rendering `App` for the main shell, `src/windows/PickerWindowApp.tsx` / `src/windows/FileOperationsWindowApp.tsx` for dedicated picker/task surfaces, and `App` with a `secondaryWindowDescriptor` prop for native workbench-surface windows. In dev/MCP mode it also installs the dev bridge before app initialization and marks the bridge render-complete after the root React render so external automation can tell whether the shell actually mounted.
+  Frontend bootstrap. It now asks the host-owned secondary-window manager for the current window descriptor, rendering `App` for the main shell, `src/windows/PickerWindowApp.tsx` / `src/windows/FileOperationsWindowApp.tsx` for dedicated picker/task surfaces, and `App` with a `secondaryWindowDescriptor` prop for native workbench-surface windows. The root is wrapped in React Aria's `OverlayProvider`, and dev/MCP sessions now also install `react-scan` through `src/runtime/devReactScan.ts` before the shell settles so render-hotspot investigation is part of the normal diagnostics stack rather than a one-off experiment. In dev/MCP mode it also installs the dev bridge before app initialization and marks the bridge render-complete after the root React render so external automation can tell whether the shell actually mounted.
 - `src/runtime/devMcpBridge.ts`
   Dev-only frontend automation bridge mounted at `window.__GREEBLEFS_DEV_MCP__`. It retains console/error history, exposes semantic UI snapshots, visible DOM node bounds/color metadata, resolved theme variables, explorer-performance summaries, usr-profile snapshots, and selected host/runtime seams. This bridge is browser-safe enough to light up on a fallback browser attach, but host-owned calls such as `getHostApiSchema`, `callHostMethod`, and event snapshots only work when the page is a real Tauri webview.
 - `MCP/greeblefs-dev-mcp/`
@@ -174,6 +174,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Standalone modular pack loaders for `appearance-packs/`, `interaction-motion/`, `shell-renderers/`, `theme-recipes/`, and `theme-engines/`. Appearance and motion packs load per-category `tokens/*.json` files; recipe packs load `presentation.json`, `layout.json`, `navigation.json`, `render.json`, `workbench.json`, `explorer.json`, and `mobile.json`; theme engines are thin composition manifests.
 - `src/config/uiTokenContract.ts`
   Shared UI-token contract for `color | typography | spacing | radius | border | shadow | opacity | blur | geometry | layer | motion | interaction`. It normalizes category files, emits shared `--gfs-ui-*` CSS variables, and flattens tokens into the Rust/TS theme engine snapshot.
+- `src/config/schemaSanitizers.ts` and `src/config/colorUtils.ts`
+  Shared frontend normalization seams. `schemaSanitizers.ts` is the preferred Zod-backed ingress layer for `/usr`, theme-bundle, and authored manifest sanitization before data becomes runtime state. `colorUtils.ts` is the shared Culori-backed path for shell/background alpha transforms and Monaco/theme color normalization; avoid reintroducing local hex/rgb parsing branches in feature files.
 - `src/config/topBarPackages.ts`
   Standalone top-bar package discovery and manifest loading from `top-bars/`.
 - `src/config/iconTheme.ts` and `src/config/iconThemePackages.ts`
@@ -764,6 +766,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/components/explorer/constellationGraph.ts` must keep relationship edge comparison capped before pairwise scoring, while preserving selected, pinned, and bookmarked workset nodes
   - `FileExplorer.tsx` owns memoized Constellation edge/adjacency lookups; hover explanation should reuse those maps instead of rebuilding graph indexes per pointer event
 - `App.tsx`, `CommandPalette.tsx`, `TerminalOverlay.tsx`, and `SettingsPage.tsx` now consume the resolved workbench recipe and apply it to shared command-center chrome.
+- `src/components/AppModal.tsx`, `src/components/explorer/ExplorerFloatingSurface.tsx`, and `src/components/explorer/ExplorerViewSwitcherControl.tsx` are now the preferred shared overlay/accessibility seams.
+  - `AppModalSurface` owns modal focus containment, restore-focus behavior, escape/backdrop dismissal, and portal mounting through React Aria.
+  - `ExplorerFloatingSurface` owns anchored popup geometry through Floating UI. New anchored explorer popups should extend this surface instead of re-implementing viewport clamping.
+  - `CommandPalette.tsx` and `ExplorerViewSwitcherControl.tsx` now prove the intended React Aria/Stately path for authored-but-accessible command palettes and compact popup menus. The major remaining bespoke menu island is `ExplorerContextMenu.tsx`; future work should push it onto the same seam rather than inventing another keyboard/dismiss stack.
 
 ## Important Folders
 
