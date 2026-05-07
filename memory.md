@@ -1,3 +1,18 @@
+# 2026-05-07 - Tauron Kain Bridge Opt-In
+
+- Wired GreebleFS to Tauron's generic `tauri-plugin-kain` instead of creating a GreebleFS-only Kain bridge.
+  - `src-tauri/Cargo.toml` now depends on `../../tauron/crates/tauri-plugin-kain`.
+  - `src-tauri/src/lib.rs` registers `.plugin(tauri_plugin_kain::init())`.
+  - `src-tauri/capabilities/default.json` grants `kain:default`.
+  - `src/runtime/kainTauronBridge.ts` wraps `@tauri-apps/api/kain` for bridge probes, manifest/reflection reads, dispatch/call, and reload.
+- Durable rule:
+  - Generic Kain/Tauri host behavior belongs in Tauron (`crates/tauri-plugin-kain`, `packages/api/src/kain.ts`). GreebleFS should consume it and reserve `runtime_pipeline` Kain code for app/runtime package behavior such as toolchain staging and sidecar execution.
+- Validation:
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bunx tsc --noEmit --pretty false --target ES2020 --module ESNext --moduleResolution bundler --strict --skipLibCheck src\runtime\kainTauronBridge.ts`
+  - Passed: `node scripts\kain\stage-kain-toolchain.mjs --verify-only`
+  - Not clean: repo-wide `bunx tsc --noEmit --pretty false` still reports the existing baseline across mobile ES lib, generated binding drift, vendor tiptap tests, and old app/component issues unrelated to this bridge.
+
 # 2026-05-07 - First-Class Kain Runtime Lane
 
 - Added the first GreebleFS-owned Kain integration pass so Kain can act as a private first-class runtime/toolchain instead of living outside the app.
