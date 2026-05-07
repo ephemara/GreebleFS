@@ -2154,6 +2154,15 @@ describe('SettingsPage behavior', () => {
       expect(useSettingsStore.getState().settings.keybindings.mobileShareToggle).toBe('Ctrl+Alt+M');
     });
 
+    const lookdevInput = screen.getByDisplayValue('Ctrl+Alt+L');
+    await user.clear(lookdevInput);
+    await user.type(lookdevInput, 'Ctrl + Alt + Shift + L');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.keybindings.toggleLookdevOverlay).toBe('Ctrl+Alt+Shift+L');
+    });
+
     const toggleHotkeyCard = screen.getByText('Toggle Main Window').closest('label');
     if (!toggleHotkeyCard) {
       throw new Error('Missing Toggle Main Window hotkey card');

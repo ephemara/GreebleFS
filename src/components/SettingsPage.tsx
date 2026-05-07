@@ -7941,9 +7941,10 @@ export function SettingsPage({
       zenFocusMode: settings.layout.zenFocusMode,
       hotkeyLabels: [
         settings.keybindings.terminalToggle,
-      settings.keybindings.windowModeToggle,
-      settings.keybindings.zenFocusModeToggle,
-      settings.keybindings.mobileShareToggle,
+        settings.keybindings.windowModeToggle,
+        settings.keybindings.zenFocusModeToggle,
+        settings.keybindings.mobileShareToggle,
+        settings.keybindings.toggleLookdevOverlay,
       ].map(formatHotkeyLabel),
       connectedCloudAccountCount,
       configuredCloudProviderCount,
@@ -8047,6 +8048,7 @@ export function SettingsPage({
       settings.explorer.viewMode,
       settings.keybindings.terminalToggle,
       settings.keybindings.mobileShareToggle,
+      settings.keybindings.toggleLookdevOverlay,
       settings.keybindings.windowModeToggle,
       settings.keybindings.zenFocusModeToggle,
       settings.layout.zenFocusMode,
@@ -13752,6 +13754,7 @@ export function SettingsPage({
                     definition.key === "appZoomIn" ||
                     definition.key === "appZoomOut" ||
                     definition.key === "mobileShareToggle" ||
+                    definition.key === "toggleLookdevOverlay" ||
                     definition.key === "windowModeToggle" ||
                     definition.key === "zenFocusModeToggle" ||
                     definition.key === "toggleDeveloperTelemetryHud",

@@ -26,6 +26,7 @@ describe('hotkey config helpers', () => {
       windowModeToggle: '   ',
       zenFocusModeToggle: '   ',
       mobileShareToggle: '   ',
+      toggleLookdevOverlay: '   ',
       zoomAdjust: 'Ctrl + Scroll',
     });
 
@@ -41,6 +42,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.closeTab).toBe('Ctrl+W');
     expect(defaults.mobileShareToggle).toBe('Ctrl+Alt+Shift+M');
     expect(normalized.mobileShareToggle).toBe(defaults.mobileShareToggle);
+    expect(defaults.toggleLookdevOverlay).toBe('Ctrl+Alt+L');
+    expect(normalized.toggleLookdevOverlay).toBe(defaults.toggleLookdevOverlay);
     expect(defaults.appZoomIn).toBe('Ctrl+=');
     expect(defaults.appZoomOut).toBe('Ctrl+-');
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');

@@ -41,6 +41,13 @@
       "scope": "local"
     },
     {
+      "key": "toggleLookdevOverlay",
+      "label": "Toggle Lookdev Overlay",
+      "description": "Open or close the immersive semantic lookdev overlay over the live shell.",
+      "defaultValue": "Ctrl+Alt+L",
+      "scope": "local"
+    },
+    {
       "key": "zoomAdjust",
       "label": "Zoom Overlay",
       "description": "Hold the modifier and scroll anywhere in the overlay to change zoom.",

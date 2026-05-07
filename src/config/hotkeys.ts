@@ -3,6 +3,7 @@ export type HotkeyBindingKey =
   | "toggleDeveloperTelemetryHud"
   | "commandPalette"
   | "mobileShareToggle"
+  | "toggleLookdevOverlay"
   | "appZoomIn"
   | "appZoomOut"
   | "terminalFocus"

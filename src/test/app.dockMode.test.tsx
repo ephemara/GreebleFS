@@ -280,6 +280,7 @@ import { LOCAL_APP_ZOOM_HOTKEY_SCOPE_ATTRIBUTE } from '../config/hotkeys';
 import { overlayVisualControls, panelWindowGeometry } from '../config/overlayWindow';
 import { overlayThemeRendererApiVersion } from '../components/themeRendererRuntime';
 import { commands } from '../runtime/tauriClient';
+import { useLookdevStore } from '../store/lookdevStore';
 import { resetMobileShareState } from '../store/mobileShareStore';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { SHOW_WINDOW_MODE_REQUEST_EVENT } from '../runtime/windowHost';
@@ -683,6 +684,19 @@ describe('App dock mode behavior', () => {
 
     await waitFor(() => {
       expect(vi.mocked(commands.lanShareStop)).toHaveBeenCalled();
+    });
+  });
+
+  it('opens the lookdev overlay from the local keybinding', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+    expect(useLookdevStore.getState().isOpen).toBe(false);
+
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(useLookdevStore.getState().isOpen).toBe(true);
     });
   });
 

@@ -6510,6 +6510,13 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         return;
       }
 
+      if (matchesKeybinding(event, keybindings.toggleLookdevOverlay)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToggleLookdevOverlay();
+        return;
+      }
+
       if (matchesKeybinding(event, keybindings.closeTab)) {
         event.preventDefault();
         event.stopPropagation();
@@ -6569,6 +6576,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     dispatchExplorerLayoutCommand,
     handleActivatePanel,
     handleTopBarClosePanel,
+    handleToggleLookdevOverlay,
     handleToggleMobileShare,
     handleToggleWindowMode,
     handleToggleZenFocusMode,
@@ -6578,6 +6586,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     keybindings.commandPalette,
     keybindings.mobileShareToggle,
     keybindings.openExplorerLayoutSwitcher,
+    keybindings.toggleLookdevOverlay,
     keybindings.toggleDeveloperTelemetryHud,
     keybindings.toggleExplorerCustomize,
     keybindings.windowModeToggle,
@@ -6811,6 +6820,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         kind: 'command',
         keywords: ['lookdev', 'theme', 'customize', 'shell', 'overlay', 'dock', 'app'],
         badge: 'Lookdev',
+        shortcutLabel: formatHotkeyLabel(keybindings.toggleLookdevOverlay),
         onSelect: () => handleOpenLookdevOverlay(),
       },
       {
@@ -6823,6 +6833,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         kind: 'command',
         keywords: ['lookdev', 'toggle', 'close', 'open', 'overlay', 'draft'],
         badge: lookdevIsOpen ? 'Close' : 'Lookdev',
+        shortcutLabel: formatHotkeyLabel(keybindings.toggleLookdevOverlay),
         onSelect: handleToggleLookdevOverlay,
       },
       ...((() => {
@@ -7114,6 +7125,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     handleToggleWindowMode,
     keybindings.mobileShareToggle,
     keybindings.openExplorerLayoutSwitcher,
+    keybindings.toggleLookdevOverlay,
     keybindings.toggleExplorerCustomize,
     keybindings.windowModeToggle,
     keybindings.zenFocusModeToggle,
