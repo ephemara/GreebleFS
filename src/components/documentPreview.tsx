@@ -332,12 +332,17 @@ export function TextDocumentPreview({
       className="overlay-native-scrollbar"
       data-testid="document-preview-root"
       data-document-preview-kind={kind}
+      data-native-text-selection-surface="true"
+      tabIndex={0}
       style={{
         height: '100%',
         overflowY: 'auto',
         overflowX: 'hidden',
         background: 'var(--overlay-explorer-preview-bg)',
         color: 'var(--overlay-text-primary)',
+        cursor: 'text',
+        userSelect: 'text',
+        WebkitUserSelect: 'text',
       }}
     >
       <style>{MARKDOWN_DOCUMENT_PREVIEW_STYLES}</style>
@@ -352,6 +357,8 @@ export function TextDocumentPreview({
           lineHeight: 1.7,
           fontSize: 13,
           transition: 'opacity 0.18s ease',
+          userSelect: 'text',
+          WebkitUserSelect: 'text',
         }}
       >
         <div

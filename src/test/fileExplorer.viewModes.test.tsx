@@ -4136,9 +4136,21 @@ const value = 1;
     expect(markdownPreviewRoot.style.background).toBe(
       "var(--overlay-explorer-preview-bg)",
     );
-    expect(
-      await screen.findByTestId("document-preview-article"),
-    ).toHaveTextContent("Ship Notes");
+    const markdownPreviewArticle = await screen.findByTestId(
+      "document-preview-article",
+    );
+    expect(markdownPreviewArticle).toHaveTextContent("Ship Notes");
+    const markdownSelectionRange = document.createRange();
+    markdownSelectionRange.selectNodeContents(markdownPreviewArticle);
+    const nativeSelection = window.getSelection();
+    nativeSelection?.removeAllRanges();
+    nativeSelection?.addRange(markdownSelectionRange);
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+
+    expect(useExplorerStore.getState().clipboard).toBeNull();
+    expect(screen.queryByText(/copy queue:/i)).toBeNull();
+    nativeSelection?.removeAllRanges();
     expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     expect(screen.queryByTestId("monaco-editor")).toBeNull();
   });

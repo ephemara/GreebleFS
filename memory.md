@@ -8020,3 +8020,16 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "renders grid thumbnails for visible image entries in icon layouts" --reporter=dot --testTimeout=30000`
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "overlays themed file-type badges on generated code thumbnails in icon layouts" --reporter=dot --testTimeout=30000`
   - Not clean: touched-file TypeScript sweep still reports existing diagnostics in the broader uncommitted explorer-view work, including unused experimental-view imports/types, `Array.at` lib-target issues, and pre-existing test invoke typing.
+
+# 2026-05-07 - Rendered Markdown Preview Allows Native Text Selection
+
+- The rendered text/document preview is now an explicit native text-selection surface inside the Explorer shell.
+  - `src/components/documentPreview.tsx` marks rendered document previews with `data-native-text-selection-surface="true"`, makes the preview focusable, and restores `user-select: text` on the scroll root/article.
+  - `src/runtime/documentInteractionGuards.ts` treats that authored surface like editors/code blocks for global `selectstart` and native context-menu allowance.
+  - `src/components/FileExplorer.tsx` yields clipboard/select-all chords back to the browser when the event target, active element, or current DOM selection is inside an allowed native text-selection surface. This prevents selected markdown prose from becoming an Explorer file-copy queue on `Ctrl+C`.
+- Durable product rule:
+  - GreebleFS can keep broad shell text-selection suppression for draggable/selectable chrome, but read-only rendered documents must opt into native selection and Explorer hotkeys must yield to that surface for copy/cut/paste/select-all chords.
+- Validation:
+  - Passed: `bunx vitest run src/test/documentInteractionGuards.test.ts src/test/documentPreview.test.tsx --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens markdown files in rendered preview mode with themed document surfaces" --reporter=dot --testTimeout=30000`
+  - MCP app status confirmed the live Tauri dev WebView was attachable/bridge-ready; full DOM snapshot was too heavy and timed out in the current Explorer state.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  hasNativeTextSelectionInAllowedSurface,
+  isNativeTextSelectionSurfaceTarget,
   resolveEventTargetElement,
   shouldAllowDocumentSelection,
   shouldAllowNativeContextMenu,
@@ -39,5 +41,28 @@ describe('document interaction guards', () => {
 
     expect(shouldAllowNativeContextMenu(textarea)).toBe(true);
     expect(shouldAllowDocumentSelection(textarea)).toBe(true);
+  });
+
+  it('allows native text selection surfaces to own prose selection and copy menus', () => {
+    const surface = document.createElement('div');
+    surface.dataset.nativeTextSelectionSurface = 'true';
+    const paragraph = document.createElement('p');
+    paragraph.textContent = 'Rendered markdown prose';
+    surface.appendChild(paragraph);
+    document.body.appendChild(surface);
+
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    expect(isNativeTextSelectionSurfaceTarget(paragraph.firstChild)).toBe(true);
+    expect(shouldAllowNativeContextMenu(paragraph.firstChild)).toBe(true);
+    expect(shouldAllowDocumentSelection(paragraph.firstChild)).toBe(true);
+    expect(hasNativeTextSelectionInAllowedSurface(selection)).toBe(true);
+
+    selection?.removeAllRanges();
+    surface.remove();
   });
 });

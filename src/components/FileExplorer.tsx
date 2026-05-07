@@ -254,6 +254,10 @@ import {
 } from "../config/shaders";
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
 import { buildExplorerExecutionContextSnapshot } from "../runtime/explorerExtensionContext";
+import {
+  hasNativeTextSelectionInAllowedSurface,
+  isNativeTextSelectionSurfaceTarget,
+} from "../runtime/documentInteractionGuards";
 import { callExtensionHostMethod } from "../runtime/extensionHostApi";
 import { subscribeToExplorerWorkflowRequests } from "../runtime/explorerWorkflowBridge";
 import {
@@ -29286,6 +29290,19 @@ export function FileExplorer({
         isTypingInEmbeddedEditor &&
         (matchesKeybinding(e, keybindings.pythonWorkbenchRunManaged) ||
           matchesKeybinding(e, keybindings.pythonWorkbenchRunInTerminal));
+      const nativeTextSelectionSurfaceOwnsClipboard =
+        isNativeTextSelectionSurfaceTarget(e.target) ||
+        isNativeTextSelectionSurfaceTarget(activeElement) ||
+        hasNativeTextSelectionInAllowedSurface();
+      if (
+        nativeTextSelectionSurfaceOwnsClipboard &&
+        (matchesKeybinding(e, keybindings.copySelection) ||
+          matchesKeybinding(e, keybindings.cutSelection) ||
+          matchesKeybinding(e, keybindings.pasteSelection) ||
+          matchesKeybinding(e, keybindings.selectAllExplorer))
+      ) {
+        return;
+      }
       if (
         isEditableKeyboardTarget(e.target) &&
         !allowsPythonWorkbenchHotkeyWhileEditing

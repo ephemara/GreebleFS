@@ -44,9 +44,13 @@ const value = 1;
     const styleTag = container.querySelector('style');
 
     expect(root).toHaveAttribute('data-document-preview-kind', 'markdown');
+    expect(root).toHaveAttribute('data-native-text-selection-surface', 'true');
     expect(root).toHaveClass('overlay-native-scrollbar');
     expect(root.style.background).toBe('var(--overlay-explorer-preview-bg)');
+    expect(root.style.userSelect).toBe('text');
+    expect(root.style.cursor).toBe('text');
     expect(article.style.color).toBe('var(--overlay-text-primary)');
+    expect(article.style.userSelect).toBe('text');
     expect(styleTag?.textContent).toContain(
       'background: var(--overlay-bg-panel-alt, var(--overlay-bg-panel));',
     );
