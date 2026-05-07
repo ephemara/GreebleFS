@@ -1,3 +1,14 @@
+# 2026-05-06 - Dev Bootstrap Scan Drift And Native Color Input Normalization
+
+- The dev-only React Scan bootstrap in `src/runtime/devReactScan.ts` must stay aligned with the runtime validator shipped inside the installed `react-scan` package, not only its README/types.
+  - In the current `0.5.6` install, `trackUnnecessaryRenders` is documented in types but rejected by the runtime option parser, so leaving it in app bootstrap produces noisy startup warnings.
+  - Durable rule: treat `react-scan` as optional diagnostics. Initialize it behind a local `try/catch` and do not let perf tooling become a shell boot risk.
+- Native `<input type="color">` controls in Settings cannot consume authored theme tokens like `rgba(...)`.
+  - `src/config/colorUtils.ts` now owns `normalizeOverlayColorInputValue(...)` and `mergeOverlayColorInputValue(...)` so settings surfaces can render a valid `#rrggbb` swatch while preserving any existing alpha channel in the saved token when the user adjusts the color picker.
+  - Durable rule: when a GreebleFS setting edits theme colors through a native color input, always normalize through the shared color utility instead of binding arbitrary CSS color strings directly to the DOM input value.
+- `usr/plugins/Greeble3D/index.tsx` should rely on the iframe `allow="fullscreen; ..."` capability string only.
+  - Keeping both `allow` and `allowFullScreen` adds React console noise without adding capability.
+
 # 2026-05-06 - Overlay Accessibility, Theme Ingress Schemas, And Shared Color Runtime
 
 - Landed the first broad UI infrastructure modernization pass instead of continuing to duplicate overlay/menu/modal behavior across the shell.

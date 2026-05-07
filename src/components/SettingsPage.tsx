@@ -109,6 +109,10 @@ import {
   shouldAutoInstallAccelerationPackages,
 } from "../config/python";
 import {
+  mergeOverlayColorInputValue,
+  normalizeOverlayColorInputValue,
+} from "../config/colorUtils";
+import {
   formatLocalModelEstimatedFootprint,
   getCapabilityModels,
   getLocalModelCapabilityDefinition,
@@ -2138,6 +2142,8 @@ function ColorToken({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const colorInputValue = normalizeOverlayColorInputValue(value);
+
   return (
     <label
       className="flex flex-col gap-1 rounded border p-2"
@@ -2152,8 +2158,10 @@ function ColorToken({
       <div className="flex items-center gap-2">
         <input
           type="color"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          value={colorInputValue}
+          onChange={(event) =>
+            onChange(mergeOverlayColorInputValue(event.target.value, value))
+          }
           className="h-7 w-9 rounded border-0 bg-transparent p-0"
         />
         <input

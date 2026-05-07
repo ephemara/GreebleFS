@@ -133,7 +133,6 @@ function Greeble3DWorkbenchPanel({ api, host, appearance }) {
         title="Greeble3D Workbench"
         src={panelUrl}
         allow="fullscreen; clipboard-read; clipboard-write"
-        allowFullScreen
         onLoad={() => setFrameLoaded(true)}
         style={{
           flex: 1,

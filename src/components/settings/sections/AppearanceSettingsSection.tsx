@@ -6,6 +6,10 @@ import {
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../../../config/appearance';
+import {
+  mergeOverlayColorInputValue,
+  normalizeOverlayColorInputValue,
+} from '../../../config/colorUtils';
 import type { LoadedOverlayThemePackage } from '../../../config/themePackages';
 import { clampOverlayVisualControlValue, formatOverlayVisualControlValue, overlayVisualControls } from '../../../config/overlayWindow';
 import type { InteractionMotionBinding } from '../../../animation/interactionMotion';
@@ -30,11 +34,18 @@ function ColorToken({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const colorInputValue = normalizeOverlayColorInputValue(value);
+
   return (
     <label className="flex flex-col gap-1 rounded border p-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <span className="text-[9px] font-semibold uppercase tracking-wide opacity-50">{label}</span>
       <div className="flex items-center gap-2">
-        <input type="color" value={value} onChange={event => onChange(event.target.value)} className="h-7 w-9 rounded border-0 bg-transparent p-0" />
+        <input
+          type="color"
+          value={colorInputValue}
+          onChange={event => onChange(mergeOverlayColorInputValue(event.target.value, value))}
+          className="h-7 w-9 rounded border-0 bg-transparent p-0"
+        />
         <input
           value={value}
           onChange={event => onChange(event.target.value)}

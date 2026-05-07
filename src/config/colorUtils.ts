@@ -72,6 +72,42 @@ export function getOverlayColorAlpha(color: string, fallback = 1): number {
   return parseOverlayColor(color)?.alpha ?? fallback;
 }
 
+function formatOverlayColorHexChannel(value: number): string {
+  return clampByte(value).toString(16).padStart(2, "0");
+}
+
+export function normalizeOverlayColorInputValue(
+  color: string | undefined,
+  fallback = "#000000",
+): string {
+  const parsedColor = typeof color === "string" ? parseOverlayColor(color) : null;
+  if (!parsedColor) {
+    return fallback;
+  }
+
+  return `#${formatOverlayColorHexChannel(parsedColor.red)}${formatOverlayColorHexChannel(parsedColor.green)}${formatOverlayColorHexChannel(parsedColor.blue)}`;
+}
+
+export function mergeOverlayColorInputValue(
+  nextColorInputValue: string,
+  previousColor: string | undefined,
+): string {
+  const parsedColor = parseOverlayColor(nextColorInputValue);
+  if (!parsedColor) {
+    return nextColorInputValue;
+  }
+
+  const previousAlpha = typeof previousColor === "string"
+    ? getOverlayColorAlpha(previousColor, 1)
+    : 1;
+
+  if (previousAlpha < 0.999) {
+    return `rgba(${parsedColor.red}, ${parsedColor.green}, ${parsedColor.blue}, ${previousAlpha.toFixed(3)})`;
+  }
+
+  return nextColorInputValue;
+}
+
 export function normalizeMonacoLiteralColor(color: string | undefined): string | undefined {
   if (typeof color !== "string") {
     return color;
