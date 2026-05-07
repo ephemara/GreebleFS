@@ -6,6 +6,8 @@ import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
 import * as WorkbenchAdapters from './pluginWorkbenchAdapters';
+import { OverlayScrollArea } from './OverlayScrollArea';
+import { PremiumSlider } from './PremiumSlider';
 import type { OverlayThemeDefinition } from '../config/appearance';
 import type { OverlayResolvedIconTheme } from '../config/iconTheme';
 import type { OverlayPluginPreviewLaneDescriptor } from '../config/pluginPreviewLanes';
@@ -548,6 +550,8 @@ export interface PluginBackendResult {
   status: number;
 }
 
+export { OverlayScrollArea, PremiumSlider };
+
 export interface LoadPluginFromSourceOptions {
   context?: Partial<OverlayPluginContext>;
   defaults?: Partial<
@@ -834,6 +838,8 @@ function executePluginModuleGraph(
       definePreviewLane,
       defineSettingsSlot,
       defineWorkflow,
+      OverlayScrollArea,
+      PremiumSlider,
       getPluginPanelOpenRequestEvent,
       readPluginPanelOpenRequest,
       requestPluginPanelOpen,

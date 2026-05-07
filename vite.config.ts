@@ -39,6 +39,8 @@ export default defineConfig(async () => ({
   resolve: {
     alias: [
       { find: "@", replacement: "/src" },
+      { find: "@greeblefs/ui", replacement: projectPath("usr/packages/greeblefs-ui/src/index.tsx") },
+      { find: "overlayterm-plugin", replacement: projectPath("src/components/pluginRuntime.tsx") },
       ...tiptapVendorAliases,
     ],
   },

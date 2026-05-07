@@ -1,3 +1,21 @@
+# 2026-05-07 - Shared DCC UI Library Assimilation
+
+- Started a package-safe DCC ingestion lane for the queued KOS UI library instead of copying its raw Tailwind surfaces directly into the app shell.
+  - `usr/packages/greeblefs-ui` is now `1.2.0` and exports `src/dcc/*` through the package root.
+  - The first shared controls are `NumericInput`, `VectorInput`, `VirtualizedList`, and `UniversalLayerPanel`.
+  - `UniversalLayerPanel` was normalized into the existing GreebleFS overlay grammar with inline CSS-var-driven styling, multi-select/search/merge/delete flows, opacity and blend-mode controls, context menu actions, and package-safe icon usage.
+- The app/plugin import contract was widened so the same shared package code can run on both sides.
+  - `tsconfig.json` and `vite.config.ts` now alias `@greeblefs/ui` to `usr/packages/greeblefs-ui/src/index.tsx` and `overlayterm-plugin` to `src/components/pluginRuntime.tsx` for first-party app builds.
+  - `src/components/pluginRuntime.tsx` now re-exports `OverlayScrollArea` and `PremiumSlider` through `overlayterm-plugin`, which is the preferred host-primitive seam for package code that needs shared scroll or slider behavior.
+  - `src/components/AppIcons.tsx` now exports the extra glyphs the DCC lane needs (`EyeOff`, `GripVertical`, `Headphones`, `Layers`, `Lock`, `LockOpen`) so package-side `lucide-react` imports stay valid inside the sandbox.
+- Durable rules:
+  - Shared package DCC code must stay plugin-safe. Prefer overlay CSS vars plus `overlayterm-plugin` host primitives; do not couple package components to ad hoc app-only imports or raw Tailwind utility strings.
+  - If package code imports a `lucide-react` icon, add the corresponding export to `src/components/AppIcons.tsx` in the same pass or plugin/runtime renders will fail.
+  - `NumericInput` drag commits now track the live scrubbed value locally before `onCommit`, so scrub-release and blur commits do not lag one frame behind parent state updates.
+  - `UniversalLayerPanel` context-menu rename now enters real inline rename mode, and layer reordering is intentionally hidden while search filtering is active so reorder indices cannot drift against the filtered view.
+- Validation:
+  - Passed: `bunx esbuild usr/packages/greeblefs-ui/src/index.tsx --bundle --platform=browser --format=esm --external:react --external:overlayterm-plugin --outfile=.tmp-greeblefs-ui-check.js`
+
 # 2026-05-06 - Dev Bootstrap Scan Drift And Native Color Input Normalization
 
 - The dev-only React Scan bootstrap in `src/runtime/devReactScan.ts` must stay aligned with the runtime validator shipped inside the installed `react-scan` package, not only its README/types.

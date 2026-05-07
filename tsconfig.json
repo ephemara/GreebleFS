@@ -16,6 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@greeblefs/ui": ["usr/packages/greeblefs-ui/src/index.tsx"],
+      "overlayterm-plugin": ["src/components/pluginRuntime.tsx"],
       "@tiptap/core": ["src/vendor/tiptap/core/src/index.ts"],
       "@tiptap/core/jsx-runtime": ["src/vendor/tiptap/core/src/jsx-runtime.ts"],
       "@tiptap/core/jsx-dev-runtime": ["src/vendor/tiptap/core/src/jsx-runtime.ts"],

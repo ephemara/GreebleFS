@@ -29,7 +29,9 @@ export {
   ExplorerWorkflowStatusNotice,
 };
 
-export const greebleUiVersion = '1.1.0';
+export const greebleUiVersion = '1.2.0';
+
+export * from './dcc';
 
 function mergeStyle(base, next) {
   return next ? { ...base, ...next } : base;
