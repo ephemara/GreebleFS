@@ -463,6 +463,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::secondary_windows::secondary_window_begin_drag_session,
             crate::secondary_windows::secondary_window_complete_drag_session,
             crate::secondary_windows::secondary_window_get_current_descriptor,
+            crate::secondary_windows::secondary_window_list_descriptors,
             crate::domain_commands::domain_list_shell_blueprints,
             crate::domain_commands::domain_list_theme_manifests,
             crate::domain_commands::domain_list_workbench_presets,

@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Mutex;
+use std::{thread, time::Duration};
 
+use log::warn;
 use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
@@ -16,6 +18,7 @@ pub const SECONDARY_ACTION_WIDGET_WINDOW_LABEL_PREFIX: &str = "secondary-action-
 pub const SECONDARY_WINDOW_DESCRIPTOR_EVENT: &str = "greeblefs:secondary-window:descriptor";
 pub const SECONDARY_WINDOW_CLOSED_EVENT: &str = "greeblefs:secondary-window:closed";
 pub const SECONDARY_WINDOW_DOCK_BACK_EVENT: &str = "greeblefs:secondary-window:dock-back";
+const SECONDARY_WINDOW_MAIN_THREAD_DEFER_MS: u64 = 35;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -78,6 +81,14 @@ pub struct SecondaryWindowDescriptor {
     pub payload_json: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SecondaryWindowClosedReason {
+    Closed,
+    OpenFailed,
+    StaleDescriptor,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SecondaryWindowDragSessionRequest {
@@ -92,6 +103,7 @@ pub struct SecondaryWindowDragSessionRequest {
 pub struct SecondaryWindowClosedEvent {
     pub window_id: String,
     pub window_label: String,
+    pub close_reason: SecondaryWindowClosedReason,
     pub descriptor: SecondaryWindowDescriptor,
 }
 
@@ -107,6 +119,7 @@ pub struct SecondaryWindowDockBackEvent {
 #[derive(Debug, Default)]
 pub struct SecondaryWindowManagerState {
     descriptors_by_window_id: Mutex<BTreeMap<String, SecondaryWindowDescriptor>>,
+    pending_window_labels: Mutex<HashSet<String>>,
     suppressed_closed_window_ids: Mutex<HashSet<String>>,
     active_drag_session: Mutex<Option<SecondaryWindowDragSessionRequest>>,
 }
@@ -129,24 +142,19 @@ pub fn secondary_window_open(
     request: SecondaryWindowOpenRequest,
 ) -> Result<SecondaryWindowDescriptor, String> {
     let descriptor = normalize_secondary_window_descriptor(request)?;
-    let existing_window = app.get_webview_window(&descriptor.window_label);
-    let window = if let Some(existing_window) = existing_window {
-        existing_window
-    } else {
-        build_secondary_window(&app, &descriptor)?
-    };
-
-    window
-        .set_title(&descriptor.title)
-        .map_err(|error| format!("failed to set secondary window title: {error}"))?;
-    window
-        .show()
-        .map_err(|error| format!("failed to show secondary window: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("failed to focus secondary window: {error}"))?;
-
     state.store_descriptor(descriptor.clone());
+
+    let existing_window = app.get_webview_window(&descriptor.window_label).is_some();
+    if existing_window {
+        schedule_secondary_window_activation(&app, descriptor.window_label.clone())?;
+    } else if state.mark_window_label_pending(&descriptor.window_label) {
+        if let Err(error) = schedule_secondary_window_launch(&app, descriptor.window_label.clone())
+        {
+            state.clear_pending_window_label(&descriptor.window_label);
+            state.remove_descriptor_by_window_label(&descriptor.window_label);
+            return Err(error);
+        }
+    }
     emit_optional_event(&app, SECONDARY_WINDOW_DESCRIPTOR_EVENT, descriptor.clone());
     Ok(descriptor)
 }
@@ -155,28 +163,62 @@ pub fn secondary_window_open(
 #[specta::specta]
 pub fn secondary_window_focus(app: AppHandle, window_id: String) -> Result<(), String> {
     let descriptor = resolve_descriptor_for_window_id(&app, &window_id)?;
-    let window = app
-        .get_webview_window(&descriptor.window_label)
-        .ok_or_else(|| format!("secondary window not found: {}", descriptor.window_id))?;
+    let state = app.state::<SecondaryWindowManagerState>();
+    let Some(window) = app.get_webview_window(&descriptor.window_label) else {
+        if state.is_window_label_pending(&descriptor.window_label) {
+            return Ok(());
+        }
+        let removed_descriptor = state
+            .remove_descriptor(&descriptor.window_id)
+            .unwrap_or_else(|| descriptor.clone());
+        state.clear_pending_window_label(&removed_descriptor.window_label);
+        emit_secondary_window_closed_event(
+            &app,
+            removed_descriptor.clone(),
+            SecondaryWindowClosedReason::StaleDescriptor,
+        );
+        return Err(format!(
+            "secondary window not found: {}",
+            removed_descriptor.window_id
+        ));
+    };
     window
         .show()
         .map_err(|error| format!("failed to show secondary window: {error}"))?;
-    window
-        .set_focus()
-        .map_err(|error| format!("failed to focus secondary window: {error}"))?;
+    if let Err(error) = window.set_focus() {
+        warn!(
+            "failed to focus secondary window {}: {error}",
+            descriptor.window_label
+        );
+    }
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn secondary_window_close(app: AppHandle, window_id: String) -> Result<(), String> {
-    let descriptor = resolve_descriptor_for_window_id(&app, &window_id)?;
-    let window = app
-        .get_webview_window(&descriptor.window_label)
-        .ok_or_else(|| format!("secondary window not found: {}", descriptor.window_id))?;
-    window
-        .close()
-        .map_err(|error| format!("failed to close secondary window: {error}"))?;
+    let Ok(descriptor) = resolve_descriptor_for_window_id(&app, &window_id) else {
+        return Ok(());
+    };
+    let Some(window) = app.get_webview_window(&descriptor.window_label) else {
+        let state = app.state::<SecondaryWindowManagerState>();
+        let removed_descriptor = state
+            .remove_descriptor(&descriptor.window_id)
+            .unwrap_or(descriptor);
+        state.clear_pending_window_label(&removed_descriptor.window_label);
+        emit_secondary_window_closed_event(
+            &app,
+            removed_descriptor,
+            SecondaryWindowClosedReason::Closed,
+        );
+        return Ok(());
+    };
+    window.close().map_err(|error| {
+        format!(
+            "failed to close secondary window {}: {error}",
+            descriptor.window_id
+        )
+    })?;
     Ok(())
 }
 
@@ -201,6 +243,7 @@ pub fn secondary_window_dock_back(
 
     state.suppress_closed_event(&descriptor.window_id);
     state.remove_descriptor(&descriptor.window_id);
+    state.clear_pending_window_label(&descriptor.window_label);
     emit_optional_event(
         &app,
         SECONDARY_WINDOW_DOCK_BACK_EVENT,
@@ -249,12 +292,45 @@ pub fn secondary_window_get_current_descriptor(
     state.find_descriptor_by_window_label(window.label())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn secondary_window_list_descriptors(
+    state: tauri::State<'_, SecondaryWindowManagerState>,
+) -> Vec<SecondaryWindowDescriptor> {
+    state.list_descriptors()
+}
+
 impl SecondaryWindowManagerState {
     pub fn store_descriptor(&self, descriptor: SecondaryWindowDescriptor) {
-        self.descriptors_by_window_id
+        let mut descriptors_by_window_id = self
+            .descriptors_by_window_id
             .lock()
-            .expect("secondary window descriptor registry poisoned")
-            .insert(descriptor.window_id.clone(), descriptor);
+            .expect("secondary window descriptor registry poisoned");
+        descriptors_by_window_id.retain(|_, existing_descriptor| {
+            existing_descriptor.window_label != descriptor.window_label
+        });
+        descriptors_by_window_id.insert(descriptor.window_id.clone(), descriptor);
+    }
+
+    pub fn mark_window_label_pending(&self, window_label: &str) -> bool {
+        self.pending_window_labels
+            .lock()
+            .expect("secondary window pending registry poisoned")
+            .insert(window_label.to_string())
+    }
+
+    pub fn clear_pending_window_label(&self, window_label: &str) {
+        self.pending_window_labels
+            .lock()
+            .expect("secondary window pending registry poisoned")
+            .remove(window_label);
+    }
+
+    pub fn is_window_label_pending(&self, window_label: &str) -> bool {
+        self.pending_window_labels
+            .lock()
+            .expect("secondary window pending registry poisoned")
+            .contains(window_label)
     }
 
     pub fn remove_descriptor(&self, window_id: &str) -> Option<SecondaryWindowDescriptor> {
@@ -262,6 +338,37 @@ impl SecondaryWindowManagerState {
             .lock()
             .expect("secondary window descriptor registry poisoned")
             .remove(window_id)
+    }
+
+    pub fn remove_descriptor_by_window_label(
+        &self,
+        window_label: &str,
+    ) -> Option<SecondaryWindowDescriptor> {
+        let mut descriptors_by_window_id = self
+            .descriptors_by_window_id
+            .lock()
+            .expect("secondary window descriptor registry poisoned");
+        let matching_window_ids = descriptors_by_window_id
+            .iter()
+            .filter_map(|(window_id, descriptor)| {
+                (descriptor.window_label == window_label).then(|| window_id.clone())
+            })
+            .collect::<Vec<_>>();
+
+        let mut removed_descriptor = None;
+        for window_id in matching_window_ids {
+            removed_descriptor = descriptors_by_window_id.remove(&window_id);
+        }
+        removed_descriptor
+    }
+
+    pub fn list_descriptors(&self) -> Vec<SecondaryWindowDescriptor> {
+        self.descriptors_by_window_id
+            .lock()
+            .expect("secondary window descriptor registry poisoned")
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub fn find_descriptor_by_window_id(
@@ -409,6 +516,7 @@ fn build_secondary_window(
     .map_err(|error| format!("failed to build secondary window: {error}"))?;
 
     let app_handle = app.clone();
+    let descriptor_window_label = descriptor.window_label.clone();
     let descriptor_for_event = descriptor.clone();
     window.on_window_event(move |event| {
         if !matches!(event, WindowEvent::Destroyed) {
@@ -416,25 +524,152 @@ fn build_secondary_window(
         }
 
         let state = app_handle.state::<SecondaryWindowManagerState>();
+        state.clear_pending_window_label(&descriptor_window_label);
         let removed_descriptor = state
-            .remove_descriptor(&descriptor_for_event.window_id)
+            .remove_descriptor_by_window_label(&descriptor_window_label)
             .unwrap_or_else(|| descriptor_for_event.clone());
         if !state.should_emit_closed_event(&removed_descriptor.window_id) {
             return;
         }
 
-        emit_optional_event(
+        emit_secondary_window_closed_event(
             &app_handle,
-            SECONDARY_WINDOW_CLOSED_EVENT,
-            SecondaryWindowClosedEvent {
-                window_id: removed_descriptor.window_id.clone(),
-                window_label: removed_descriptor.window_label.clone(),
-                descriptor: removed_descriptor,
-            },
+            removed_descriptor,
+            SecondaryWindowClosedReason::Closed,
         );
     });
 
     Ok(window)
+}
+
+fn schedule_secondary_window_launch(app: &AppHandle, window_label: String) -> Result<(), String> {
+    let app_handle = app.clone();
+    thread::Builder::new()
+        .name("greeblefs-secondary-window-launch".to_string())
+        .spawn(move || {
+            thread::sleep(Duration::from_millis(SECONDARY_WINDOW_MAIN_THREAD_DEFER_MS));
+            let app_for_error = app_handle.clone();
+            let app_for_main_thread = app_handle.clone();
+            let window_label_for_error = window_label.clone();
+            if let Err(error) = app_handle.run_on_main_thread(move || {
+                let state = app_for_main_thread.state::<SecondaryWindowManagerState>();
+                let Some(descriptor) = state.find_descriptor_by_window_label(&window_label) else {
+                    state.clear_pending_window_label(&window_label);
+                    return;
+                };
+
+                let result = open_or_focus_secondary_window_on_main_thread(
+                    &app_for_main_thread,
+                    &state,
+                    &descriptor,
+                );
+                state.clear_pending_window_label(&window_label);
+
+                if let Err(error) = result {
+                    warn!(
+                        "failed to open secondary window {}: {error}",
+                        descriptor.window_label
+                    );
+                    let removed_descriptor = state
+                        .remove_descriptor_by_window_label(&descriptor.window_label)
+                        .unwrap_or_else(|| descriptor.clone());
+                    emit_secondary_window_closed_event(
+                        &app_for_main_thread,
+                        removed_descriptor,
+                        SecondaryWindowClosedReason::OpenFailed,
+                    );
+                }
+            }) {
+                warn!("failed to schedule secondary window launch on main thread: {error}");
+                let state = app_for_error.state::<SecondaryWindowManagerState>();
+                state.clear_pending_window_label(&window_label_for_error);
+                if let Some(removed_descriptor) =
+                    state.remove_descriptor_by_window_label(&window_label_for_error)
+                {
+                    emit_secondary_window_closed_event(
+                        &app_for_error,
+                        removed_descriptor,
+                        SecondaryWindowClosedReason::OpenFailed,
+                    );
+                }
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("failed to spawn secondary window launcher: {error}"))
+}
+
+fn schedule_secondary_window_activation(
+    app: &AppHandle,
+    window_label: String,
+) -> Result<(), String> {
+    let app_handle = app.clone();
+    thread::Builder::new()
+        .name("greeblefs-secondary-window-activation".to_string())
+        .spawn(move || {
+            thread::sleep(Duration::from_millis(SECONDARY_WINDOW_MAIN_THREAD_DEFER_MS));
+            let app_for_main_thread = app_handle.clone();
+            if let Err(error) = app_handle.run_on_main_thread(move || {
+                let state = app_for_main_thread.state::<SecondaryWindowManagerState>();
+                let Some(descriptor) = state.find_descriptor_by_window_label(&window_label) else {
+                    return;
+                };
+
+                if let Err(error) = open_or_focus_secondary_window_on_main_thread(
+                    &app_for_main_thread,
+                    &state,
+                    &descriptor,
+                ) {
+                    warn!(
+                        "failed to activate secondary window {}: {error}",
+                        descriptor.window_label
+                    );
+                    let removed_descriptor = state
+                        .remove_descriptor_by_window_label(&descriptor.window_label)
+                        .unwrap_or_else(|| descriptor.clone());
+                    emit_secondary_window_closed_event(
+                        &app_for_main_thread,
+                        removed_descriptor,
+                        SecondaryWindowClosedReason::StaleDescriptor,
+                    );
+                }
+            }) {
+                warn!("failed to schedule secondary window activation on main thread: {error}");
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("failed to spawn secondary window activator: {error}"))
+}
+
+fn open_or_focus_secondary_window_on_main_thread(
+    app: &AppHandle,
+    state: &SecondaryWindowManagerState,
+    descriptor: &SecondaryWindowDescriptor,
+) -> Result<(), String> {
+    let window = if let Some(existing_window) = app.get_webview_window(&descriptor.window_label) {
+        existing_window
+    } else {
+        build_secondary_window(app, descriptor)?
+    };
+
+    if let Err(error) = window.set_title(&descriptor.title) {
+        warn!(
+            "failed to set secondary window title for {}: {error}",
+            descriptor.window_label
+        );
+    }
+    if let Err(error) = window.show() {
+        state.suppress_closed_event(&descriptor.window_id);
+        let _ = window.close();
+        return Err(format!("failed to show secondary window: {error}"));
+    }
+    if let Err(error) = window.set_focus() {
+        warn!(
+            "failed to focus secondary window {} after open: {error}",
+            descriptor.window_label
+        );
+    }
+
+    Ok(())
 }
 
 fn resolve_secondary_window_policy(
@@ -596,6 +831,23 @@ fn emit_optional_event<T: serde::Serialize + Clone>(app: &AppHandle, event: &str
     let _ = app.emit(event, payload);
 }
 
+fn emit_secondary_window_closed_event(
+    app: &AppHandle,
+    descriptor: SecondaryWindowDescriptor,
+    close_reason: SecondaryWindowClosedReason,
+) {
+    emit_optional_event(
+        app,
+        SECONDARY_WINDOW_CLOSED_EVENT,
+        SecondaryWindowClosedEvent {
+            window_id: descriptor.window_id.clone(),
+            window_label: descriptor.window_label.clone(),
+            close_reason,
+            descriptor,
+        },
+    );
+}
+
 pub fn should_window_label_remember_bounds(label: &str) -> bool {
     #[cfg(not(test))]
     let is_primary_shell_label = label == crate::window_commands::MAIN_WINDOW_LABEL
@@ -725,5 +977,79 @@ mod tests {
         assert!(!should_window_label_remember_bounds(
             "secondary-action-widget-clock"
         ));
+    }
+
+    #[test]
+    fn descriptor_registry_keeps_one_descriptor_per_window_label() {
+        let state = SecondaryWindowManagerState::default();
+        let first_descriptor = normalize_secondary_window_descriptor(SecondaryWindowOpenRequest {
+            window_id: "Settings!".to_string(),
+            surface_kind: SecondaryWindowSurfaceKind::Panel,
+            presentation: SecondaryWindowPresentation::ToolWindow,
+            title: "Settings".to_string(),
+            initial_size: None,
+            min_size: None,
+            source_window_label: Some("main".to_string()),
+            dock_target: Some(SecondaryWindowDockTarget {
+                surface_id: "settings".to_string(),
+                restore_placement: Some("right-sidebar".to_string()),
+            }),
+            payload_json: None,
+        })
+        .expect("first descriptor should normalize");
+        let second_descriptor = normalize_secondary_window_descriptor(SecondaryWindowOpenRequest {
+            window_id: "settings".to_string(),
+            surface_kind: SecondaryWindowSurfaceKind::Panel,
+            presentation: SecondaryWindowPresentation::ToolWindow,
+            title: "Settings".to_string(),
+            initial_size: None,
+            min_size: None,
+            source_window_label: Some("main".to_string()),
+            dock_target: Some(SecondaryWindowDockTarget {
+                surface_id: "settings".to_string(),
+                restore_placement: Some("right-sidebar".to_string()),
+            }),
+            payload_json: None,
+        })
+        .expect("second descriptor should normalize");
+
+        assert_eq!(
+            first_descriptor.window_label,
+            second_descriptor.window_label
+        );
+
+        state.store_descriptor(first_descriptor.clone());
+        state.store_descriptor(second_descriptor.clone());
+
+        assert!(state
+            .find_descriptor_by_window_id(&first_descriptor.window_id)
+            .is_none());
+        assert_eq!(state.list_descriptors().len(), 1);
+        assert_eq!(
+            state
+                .find_descriptor_by_window_label(&second_descriptor.window_label)
+                .expect("descriptor should be stored by label")
+                .window_id,
+            second_descriptor.window_id
+        );
+
+        let removed_descriptor = state
+            .remove_descriptor_by_window_label(&second_descriptor.window_label)
+            .expect("descriptor should be removable by label");
+        assert_eq!(removed_descriptor.window_id, second_descriptor.window_id);
+        assert!(state.list_descriptors().is_empty());
+    }
+
+    #[test]
+    fn pending_window_registry_deduplicates_by_window_label() {
+        let state = SecondaryWindowManagerState::default();
+        let window_label = "secondary-panel-settings";
+
+        assert!(state.mark_window_label_pending(window_label));
+        assert!(!state.mark_window_label_pending(window_label));
+        assert!(state.is_window_label_pending(window_label));
+
+        state.clear_pending_window_label(window_label);
+        assert!(!state.is_window_label_pending(window_label));
     }
 }

@@ -1,3 +1,24 @@
+# 2026-05-07 - Secondary Window Lifecycle Hardening
+
+- Hardened the existing native secondary-window system so picker/task/plugin/IDE tear-off windows behave like reliable host primitives instead of best-effort popouts.
+  - `src-tauri/src/secondary_windows.rs` now stores descriptors before native WebView construction, exposes `secondary_window_list_descriptors`, deduplicates descriptors by native window label, tracks pending launches, and uses a short background-thread deferral before scheduling native WebView creation on the main loop so `secondary_window_open` can return to the invoke lane first.
+  - `src/runtime/secondaryWindows.ts` now keeps descriptor access command-owned and exposes the descriptor list for shell reconciliation.
+  - `src/App.tsx` now tracks pending native opens, reconciles IDE externalized surfaces against the live descriptor registry, and restores a torn-off surface to the dock when focus/open proves the native window is stale or failed to launch.
+- Durable rules:
+  - Never block the Tauri invoke lane on Windows WebView2 secondary-window construction. Register the descriptor first, mark the window label pending, and schedule build/show/focus through the native main loop.
+  - Reused/sanitized labels must replace older descriptors in the registry, otherwise close/dock-back events can target stale window ids.
+  - Windows focus restrictions should not make `secondary_window_open` look failed after a real OS window was created; focus errors are telemetry, not open failure.
+  - Use the closed-event close reason: `open-failed` / `stale-descriptor` should restore dock state, while normal `closed` can hide the surface.
+  - On this machine, binding export and native checks can hit Windows incremental target-dir locks or leave stale child processes. If `bun run bindings:generate` or Cargo export aborts oddly, stop leftover `cargo` / `greeblefs` processes and retry with `$env:CARGO_INCREMENTAL='0'; cargo run --manifest-path src-tauri\Cargo.toml --bin export-bindings`.
+- Validation:
+  - Passed: `node_modules\.bin\vitest.exe run src/test/secondaryWindows.test.ts --reporter=verbose --testTimeout=30000`
+  - Passed: `node_modules\.bin\vitest.exe run src/test/explorerPicker.test.ts src/test/fileOperationsWindow.test.ts src/test/pluginPanelRequests.test.ts src/test/ideWorkbenchLayout.test.ts src/test/panelRegistry.test.tsx --reporter=verbose --testTimeout=30000 --pool=forks`
+  - Passed: `$env:CARGO_INCREMENTAL='0'; cargo check --manifest-path src-tauri\Cargo.toml --lib`
+  - Passed via GreebleFS dev MCP: `secondary_window_open` for `codex-secondary-window-smoke-3` resolved in 5 ms, `secondary_window_list_descriptors` stayed responsive, Tauron emitted `webview-create-success` for `secondary-panel-codex-secondary-window-smoke-3`, and `secondary_window_close` removed the descriptor.
+  - Note: generated bindings already include `secondary_window_list_descriptors`; the later closed-event reason is a native event payload and is typed locally in `src/runtime/secondaryWindows.ts`.
+  - TypeScript filtered clean for the touched secondary-window files; `src/App.tsx` still has older unrelated diagnostics in preexisting sections.
+  - Not clean: `cargo test --manifest-path src-tauri\Cargo.toml secondary_windows --lib` compiled but the Rust lib-test harness failed to launch with Windows `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` before these tests could run.
+
 # 2026-05-07 - Tauri Dev Bootstrap Now Skips Repeated Pre-Native Rebuilds
 
 - Fixed the actual repeated `bun run tauri dev` bootstrap tax after the Tauron fork adoption.

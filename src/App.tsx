@@ -306,6 +306,7 @@ import {
   focusSecondaryWindow,
   listenToSecondaryWindowClosed,
   listenToSecondaryWindowDockBack,
+  listSecondaryWindowDescriptors,
   openSecondaryWindow,
   parseSecondaryWindowPayload,
   type SecondaryWindowDescriptor,
@@ -775,6 +776,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
   const windowPresentationApplyGenerationRef = useRef(0);
+  const pendingExternalizedWindowIdsRef = useRef(new Set<string>());
   const lastWindowedMaximizedRef = useRef(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [dockResizeTelemetry, setDockResizeTelemetry] = useState<{
@@ -5507,6 +5509,63 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       },
     });
   }, [activeLayoutProfile.id, workbenchSurfaceSeeds]);
+  useEffect(() => {
+    if (isDedicatedSecondaryWindowHost || !activeShellUsesIdeWorkbench || !isTauri()) {
+      return undefined;
+    }
+
+    const externalizedSurfaceIds = collectExternalizedSurfaceIds(resolvedIdeWorkbenchLayoutState);
+    if (externalizedSurfaceIds.length === 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const reconcileTimer = window.setTimeout(() => {
+      void listSecondaryWindowDescriptors()
+        .then((descriptors) => {
+          if (cancelled) {
+            return;
+          }
+
+          const liveWindowIds = new Set(descriptors.map(descriptor => descriptor.windowId));
+          const pendingWindowIds = pendingExternalizedWindowIdsRef.current;
+          let nextLayoutState = resolvedIdeWorkbenchLayoutState;
+          let changed = false;
+
+          for (const surfaceId of externalizedSurfaceIds) {
+            const windowId = getExternalizedSurfaceWindowId(nextLayoutState, surfaceId);
+            if (!windowId || liveWindowIds.has(windowId) || pendingWindowIds.has(windowId)) {
+              continue;
+            }
+
+            nextLayoutState = restoreExternalizedDockSurface(
+              nextLayoutState,
+              surfaceId,
+              workbenchSurfaceSeeds,
+            );
+            changed = true;
+          }
+
+          if (changed) {
+            updateActiveIdeWorkbenchLayoutState(nextLayoutState);
+          }
+        })
+        .catch((error) => {
+          console.error('GreebleFS: failed to reconcile secondary workbench windows', error);
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(reconcileTimer);
+    };
+  }, [
+    activeShellUsesIdeWorkbench,
+    isDedicatedSecondaryWindowHost,
+    resolvedIdeWorkbenchLayoutState,
+    updateActiveIdeWorkbenchLayoutState,
+    workbenchSurfaceSeeds,
+  ]);
   const focusExternalizedWorkbenchSurface = useCallback((surfaceId: string): boolean => {
     if (!activeShellUsesIdeWorkbench || !isDockSurfaceExternalized(resolvedIdeWorkbenchLayoutState, surfaceId)) {
       return false;
@@ -5520,7 +5579,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     updateActiveIdeWorkbenchLayoutState(
       focusDockSurface(resolvedIdeWorkbenchLayoutState, surfaceId, workbenchSurfaceSeeds),
     );
-    void focusSecondaryWindow(windowId).catch(() => undefined);
+    void focusSecondaryWindow(windowId).catch((error) => {
+      console.error('GreebleFS: failed to focus externalized workbench surface', error);
+      updateActiveIdeWorkbenchLayoutState(
+        restoreExternalizedDockSurface(
+          resolvedIdeWorkbenchLayoutState,
+          surfaceId,
+          workbenchSurfaceSeeds,
+        ),
+      );
+    });
     return true;
   }, [
     activeShellUsesIdeWorkbench,
@@ -5582,6 +5650,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       : null;
 
     if (nextIdeLayoutState) {
+      pendingExternalizedWindowIdsRef.current.add(windowId);
       updateActiveIdeWorkbenchLayoutState(nextIdeLayoutState);
     }
 
@@ -5594,6 +5663,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         );
       }
       console.error('GreebleFS: failed to open native workbench surface window', error);
+    } finally {
+      pendingExternalizedWindowIdsRef.current.delete(windowId);
     }
   }, [
     activeShellUsesIdeWorkbench,
@@ -5692,12 +5763,21 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         return;
       }
 
+      pendingExternalizedWindowIdsRef.current.delete(detail.windowId);
+      const shouldRestoreExternalizedSurface = detail.closeReason === 'open-failed'
+        || detail.closeReason === 'stale-descriptor';
       updateActiveIdeWorkbenchLayoutState(
-        clearExternalizedDockSurface(
-          resolvedIdeWorkbenchLayoutState,
-          surfaceId,
-          { hidden: true },
-        ),
+        shouldRestoreExternalizedSurface
+          ? restoreExternalizedDockSurface(
+            resolvedIdeWorkbenchLayoutState,
+            surfaceId,
+            workbenchSurfaceSeeds,
+          )
+          : clearExternalizedDockSurface(
+            resolvedIdeWorkbenchLayoutState,
+            surfaceId,
+            { hidden: true },
+          ),
       );
     });
 

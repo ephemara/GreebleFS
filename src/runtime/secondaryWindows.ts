@@ -22,15 +22,24 @@ export type {
 import { commands, unwrapTauriResult } from './tauriClient';
 import { bindDeferredUnlisten } from './deferredUnlisten';
 
-export const SECONDARY_WINDOW_DESCRIPTOR_EVENT = 'greeblefs:secondary-window:descriptor';
-export const SECONDARY_WINDOW_CLOSED_EVENT = 'greeblefs:secondary-window:closed';
-export const SECONDARY_WINDOW_DOCK_BACK_EVENT = 'greeblefs:secondary-window:dock-back';
+export const SECONDARY_WINDOW_DESCRIPTOR_EVENT =
+  'greeblefs:secondary-window:descriptor';
+export const SECONDARY_WINDOW_CLOSED_EVENT =
+  'greeblefs:secondary-window:closed';
+export const SECONDARY_WINDOW_DOCK_BACK_EVENT =
+  'greeblefs:secondary-window:dock-back';
 export const EXPLORER_PICKER_SECONDARY_WINDOW_ID = 'explorer-picker';
 export const FILE_OPERATIONS_SECONDARY_WINDOW_ID = 'file-operations';
+
+export type SecondaryWindowClosedReason =
+  | 'closed'
+  | 'open-failed'
+  | 'stale-descriptor';
 
 export interface SecondaryWindowClosedEventDetail {
   windowId: string;
   windowLabel: string;
+  closeReason: SecondaryWindowClosedReason;
   descriptor: SecondaryWindowDescriptor;
 }
 
@@ -83,9 +92,23 @@ export async function getCurrentSecondaryWindowDescriptor(): Promise<SecondaryWi
   }
 }
 
-export function createWorkbenchSurfaceSecondaryWindowId(surfaceId: string): string {
+export async function listSecondaryWindowDescriptors(): Promise<
+  SecondaryWindowDescriptor[]
+> {
+  if (!isTauri()) {
+    return [];
+  }
+
+  return commands.secondaryWindowListDescriptors();
+}
+
+export function createWorkbenchSurfaceSecondaryWindowId(
+  surfaceId: string,
+): string {
   const trimmedSurfaceId = surfaceId.trim();
-  return trimmedSurfaceId ? `workbench-surface-${trimmedSurfaceId}` : 'workbench-surface';
+  return trimmedSurfaceId
+    ? `workbench-surface-${trimmedSurfaceId}`
+    : 'workbench-surface';
 }
 
 export function serializeSecondaryWindowPayload(value: unknown): string | null {
@@ -100,7 +123,9 @@ export function serializeSecondaryWindowPayload(value: unknown): string | null {
   }
 }
 
-export function parseSecondaryWindowPayload<TValue>(payloadJson: string | null | undefined): TValue | null {
+export function parseSecondaryWindowPayload<TValue>(
+  payloadJson: string | null | undefined,
+): TValue | null {
   if (!payloadJson) {
     return null;
   }
@@ -138,19 +163,28 @@ export function createSecondaryWindowOpenRequest(args: {
 export function listenToSecondaryWindowDescriptorUpdates(
   listener: (descriptor: SecondaryWindowDescriptor) => void,
 ): () => void {
-  return registerSecondaryWindowListener(SECONDARY_WINDOW_DESCRIPTOR_EVENT, listener);
+  return registerSecondaryWindowListener(
+    SECONDARY_WINDOW_DESCRIPTOR_EVENT,
+    listener,
+  );
 }
 
 export function listenToSecondaryWindowClosed(
   listener: (detail: SecondaryWindowClosedEventDetail) => void,
 ): () => void {
-  return registerSecondaryWindowListener(SECONDARY_WINDOW_CLOSED_EVENT, listener);
+  return registerSecondaryWindowListener(
+    SECONDARY_WINDOW_CLOSED_EVENT,
+    listener,
+  );
 }
 
 export function listenToSecondaryWindowDockBack(
   listener: (detail: SecondaryWindowDockBackEventDetail) => void,
 ): () => void {
-  return registerSecondaryWindowListener(SECONDARY_WINDOW_DOCK_BACK_EVENT, listener);
+  return registerSecondaryWindowListener(
+    SECONDARY_WINDOW_DOCK_BACK_EVENT,
+    listener,
+  );
 }
 
 function registerSecondaryWindowListener<TDetail>(

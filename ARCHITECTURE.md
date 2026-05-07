@@ -642,6 +642,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` rehydrate persisted state on `storage` events so the hidden host stays in sync with the active host during mode handoff
 - Native secondary windows are now a first-class host subsystem instead of feature-local `WebviewWindow` calls:
   - `src-tauri/src/secondary_windows.rs` owns all secondary-window spawn/focus/close/dock-back commands, per-surface policy defaults, duplicate-window registry behavior, and cross-window lifecycle events
+  - descriptors are registered before native WebView creation and `secondary_window_open` uses a short background-thread deferral before scheduling the OS/WebView launch on the main loop, so a slow WebView2 build cannot block the Tauri invoke response
+  - `secondary_window_list_descriptors` exposes the live native descriptor registry; shell code should use it to reconcile persisted externalized surfaces with actually live OS windows instead of assuming prior layout state is true after restart or failed focus/open attempts
+  - `greeblefs:secondary-window:closed` includes a close reason so shell code can distinguish a user close from an open failure or stale descriptor and dock the pane back instead of hiding it
   - `src/runtime/secondaryWindows.ts` is the only TS client that should talk to those commands directly
   - `src/config/ideWorkbenchLayout.ts`, `src/components/WorkbenchIdeShell.tsx`, and `src/App.tsx` treat IDE-native tear-off as an externalized surface over the same persisted dock graph, not as a second layout model
 - `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
