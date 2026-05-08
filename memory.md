@@ -1,3 +1,17 @@
+# 2026-05-08 - Native Control Facade For Tauron Host Objects
+
+- Added `src/runtime/nativeControl.ts` as GreebleFS's first frontend seam over Tauron's WebView2 host-object control plane.
+  - `callGreebleNative(namespace, method, args, options)` routes to `@tauri-apps/api/native-control` instead of generated Tauri command bindings.
+  - `getGreebleNativeControlCapabilities()` and `pingGreebleNative()` provide focused startup/proof helpers.
+  - `tsconfig.json` now mirrors the Tauron API dist aliases so TypeScript can resolve direct imports such as `@tauri-apps/api/native-control`, matching the existing Vite/Vitest alias boundary.
+- Added `src/test/nativeControl.test.ts` to lock the wrapper contract.
+- Durable rule:
+  - Use native control for compact Rust-owned control calls and handle creation. Do not send thumbnails, previews, frames, or long output through the host-object JSON envelope; return native-stream or transport handles for those payloads.
+- Validation:
+  - Passed: `bunx vitest run src/test/nativeControl.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Not clean: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports existing baseline TypeScript errors in unrelated app/vendor/test files. No native-control-specific errors were observed in that run.
+
 # 2026-05-08 - Tauron Native Byte Stream Proof In Terminal
 
 - Wired GreebleFS to Tauron's new Windows/WebView2 `native_stream` lane as the first live-byte consumer.
