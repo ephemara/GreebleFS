@@ -31,6 +31,10 @@ export interface OverlayPluginCommandContribution {
   command: string;
   description?: string;
   runOnSelect: boolean;
+  sourceKind?: 'plugin' | 'vscode-vsix';
+  vscodeCommand?: OverlayPluginVsCodeExtensionRuntimeMetadata & {
+    commandId: string;
+  };
 }
 
 export interface OverlayPluginExplorerActionContribution {
@@ -112,6 +116,9 @@ export interface OverlayPluginExplorerActivityLaneViewContribution
   runtimeId: string | null;
   runtimeSurfaceId: string | null;
   buildTarget: string | null;
+  vscode?: OverlayPluginVsCodeExtensionRuntimeMetadata & {
+    viewId: string;
+  };
   viewDescriptor: ExplorerViewDescriptor;
   component: BoundExplorerViewComponent | null;
 }
@@ -122,7 +129,18 @@ export interface OverlayPluginExplorerActivityLaneContribution
   pluginName: string;
   sourceKind: 'plugin' | 'vscode-vsix';
   sourceLabel: string;
+  vscode?: OverlayPluginVsCodeExtensionRuntimeMetadata;
   views: OverlayPluginExplorerActivityLaneViewContribution[];
+}
+
+export interface OverlayPluginVsCodeExtensionRuntimeMetadata {
+  extensionId: string;
+  extensionName: string;
+  extensionRootPath: string;
+  packageJsonPath: string;
+  originalPath: string;
+  main: string | null;
+  activationEvents: string[];
 }
 
 export interface OverlayPluginSettingsSlotContribution

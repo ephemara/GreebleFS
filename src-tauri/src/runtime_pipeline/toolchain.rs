@@ -21,6 +21,7 @@ pub struct RuntimeToolchainStatus {
     pub cc: ToolchainProbe,
     pub python: ToolchainProbe,
     pub kain: ToolchainProbe,
+    pub node: ToolchainProbe,
     pub manifest_path: Option<String>,
     pub kain_manifest_path: Option<String>,
 }
@@ -72,6 +73,7 @@ pub fn probe_runtime_toolchains_with_context(
         cc: probe_simple_command("cc", &["--version"], parse_cc_version),
         python: probe_simple_command("python3", &["--version"], parse_python_version),
         kain: probe_kain_toolchain(context),
+        node: probe_simple_command("node", &["--version"], parse_node_version),
         manifest_path: locate_pinned_toolchain_manifest(),
         kain_manifest_path: locate_pinned_kain_toolchain_manifest(),
     }
@@ -334,6 +336,15 @@ fn parse_python_version(output: &str) -> Option<String> {
         .map(|token| token.to_string())
 }
 
+fn parse_node_version(output: &str) -> Option<String> {
+    // `v22.19.0`
+    output
+        .split_whitespace()
+        .find_map(|token| token.strip_prefix('v').or(Some(token)))
+        .map(|token| token.to_string())
+        .filter(|token| !token.is_empty())
+}
+
 fn parse_cargo_version(output: &str) -> Option<String> {
     // `cargo 1.88.0 (873a06493 2025-05-10)`
     output
@@ -430,5 +441,10 @@ mod tests {
     #[test]
     fn parses_kain_version_string() {
         assert_eq!(parse_kain_version("kain 0.1.0"), Some("0.1.0".to_string()));
+    }
+
+    #[test]
+    fn parses_node_version_string() {
+        assert_eq!(parse_node_version("v22.19.0"), Some("22.19.0".to_string()));
     }
 }

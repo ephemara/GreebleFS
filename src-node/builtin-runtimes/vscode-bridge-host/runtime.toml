@@ -1,0 +1,50 @@
+id = "vscode-bridge-host"
+displayName = "VS Code Bridge Host"
+language = "node"
+kind = "vscode-bridge"
+compiler = "node-script"
+moduleDir = "."
+entry = "index.cjs"
+
+[sidecar]
+transport = "stdio-json-lines-v2"
+
+[[sidecar.actions]]
+id = "vscode.activateExtension"
+label = "Activate VS Code Extension"
+description = "Load and activate one trusted VS Code extension inside the Node bridge host."
+
+[[sidecar.actions]]
+id = "vscode.executeCommand"
+label = "Execute VS Code Command"
+description = "Execute a command registered by a bridged VS Code extension."
+
+[[sidecar.actions]]
+id = "vscode.getTreeView"
+label = "Get VS Code Tree View"
+description = "Resolve one contributed VS Code tree view into Explorer activity-tree items."
+
+[[sidecar.actions]]
+id = "vscode.refreshTreeView"
+label = "Refresh VS Code Tree View"
+description = "Request a tree-view refresh event from the VS Code bridge host."
+
+[[sidecar.actions]]
+id = "vscode.listLoadedExtensions"
+label = "List Loaded VS Code Extensions"
+description = "Return loaded extension and provider diagnostics."
+
+[permissions]
+fsRead = true
+fsWrite = true
+fsWatch = true
+network = true
+spawnProcesses = true
+terminalInteraction = true
+repoRead = true
+repoWrite = true
+taskExecution = true
+hostEvents = true
+clipboardRead = true
+clipboardWrite = true
+launchIntents = ["open-explorer", "open-terminal"]

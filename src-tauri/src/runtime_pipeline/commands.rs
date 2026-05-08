@@ -81,6 +81,8 @@ const BUILTIN_RUNTIMES_ROOT_ID: &str = "builtin";
 const MANAGED_RUNTIMES_ROOT_ID: &str = "managed";
 const RUNTIMES_MANAGED_DIR_NAME: &str = "runtimes";
 const BUILTIN_RUNTIMES_REPO_RELATIVE: &str = "../src-go/builtin-runtimes";
+const BUILTIN_NODE_RUNTIMES_REPO_RELATIVE: &str = "../src-node/builtin-runtimes";
+const BUILTIN_NODE_RUNTIMES_RESOURCE_RELATIVE: &str = "runtimes/node";
 const BUILTIN_KAIN_RUNTIMES_REPO_RELATIVE: &str = "../src-kain/runtimes";
 const BUILTIN_KAIN_RUNTIMES_RESOURCE_RELATIVE: &str = "runtimes/kain";
 const EXPLORER_ARCHIVE_VIRTUAL_SCHEME: &str = "greeblefs://archive";
@@ -2447,9 +2449,12 @@ pub async fn runtime_call(
     request: RuntimeCallRequest,
 ) -> Result<ExternalRuntimeSidecarCallResponse, String> {
     let package = require_package(&registry, &app, &request.runtime_id)?;
-    if !matches!(package.manifest.kind, RuntimeKind::NativeSidecar) {
+    if !matches!(
+        package.manifest.kind,
+        RuntimeKind::NativeSidecar | RuntimeKind::VscodeBridge
+    ) {
         return Err(format!(
-            "runtime_call requires a native-sidecar runtime (got kind = {})",
+            "runtime_call requires a long-lived sidecar runtime (got kind = {})",
             package.manifest.kind.as_str()
         ));
     }
@@ -2658,6 +2663,15 @@ fn build_default_discovery_roots(app: &AppHandle) -> Vec<RuntimeDiscoveryRoot> {
             ));
         }
     }
+    for node_root in builtin_node_runtimes_roots(app) {
+        if node_root.exists() {
+            roots.push(RuntimeDiscoveryRoot::new(
+                BUILTIN_RUNTIMES_ROOT_ID,
+                RuntimePackageOrigin::Builtin,
+                node_root,
+            ));
+        }
+    }
     for kain_root in builtin_kain_runtimes_roots(app) {
         if kain_root.exists() {
             roots.push(RuntimeDiscoveryRoot::new(
@@ -2704,6 +2718,17 @@ fn repo_python_sidecar_root() -> Option<PathBuf> {
 fn repo_builtin_runtimes_root() -> Option<PathBuf> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok()?;
     Some(PathBuf::from(manifest_dir).join(BUILTIN_RUNTIMES_REPO_RELATIVE))
+}
+
+fn builtin_node_runtimes_roots(app: &AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        roots.push(PathBuf::from(manifest_dir).join(BUILTIN_NODE_RUNTIMES_REPO_RELATIVE));
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        roots.push(resource_dir.join(BUILTIN_NODE_RUNTIMES_RESOURCE_RELATIVE));
+    }
+    roots
 }
 
 fn builtin_kain_runtimes_roots(app: &AppHandle) -> Vec<PathBuf> {

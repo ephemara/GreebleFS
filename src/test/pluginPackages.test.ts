@@ -233,6 +233,8 @@ describe('plugin package discovery', () => {
           displayName: 'GitLens',
           description: 'Git superpowers',
           version: '1.2.3',
+          main: './dist/extension.js',
+          activationEvents: ['onView:gitlens.repositories'],
           contributes: {
             viewsContainers: {
               activitybar: [
@@ -282,14 +284,46 @@ describe('plugin package discovery', () => {
       id: 'vscode:eamodio.gitlens:gitlens',
       label: 'GitLens',
       sourceKind: 'vscode-vsix',
+      vscode: expect.objectContaining({
+        extensionId: 'eamodio.gitlens',
+        extensionName: 'GitLens',
+        extensionRootPath: '/cache/gitlens',
+        packageJsonPath: expect.stringMatching(/\/cache\/gitlens[\\/]package\.json$/),
+        originalPath: `${pluginSystemConfig.pluginsDirectory}/gitlens.vsix`,
+        main: './dist/extension.js',
+        activationEvents: ['onView:gitlens.repositories'],
+      }),
       views: [
         expect.objectContaining({
+          id: 'vscode:eamodio.gitlens:gitlens.view.gitlens.repositories',
           title: 'Repositories',
           rendererKind: 'tree',
           providerPending: true,
+          sourceKind: 'vscode-vsix',
+          vscode: expect.objectContaining({
+            extensionId: 'eamodio.gitlens',
+            viewId: 'gitlens.repositories',
+          }),
         }),
       ],
     });
+    expect(result.commands).toEqual([
+      expect.objectContaining({
+        id: 'vscode-command:eamodio.gitlens:gitlens.open',
+        pluginId: 'eamodio.gitlens',
+        pluginName: 'GitLens',
+        name: 'Open GitLens',
+        command: 'gitlens.open',
+        sourceKind: 'vscode-vsix',
+        vscodeCommand: expect.objectContaining({
+          extensionId: 'eamodio.gitlens',
+          extensionName: 'GitLens',
+          commandId: 'gitlens.open',
+          main: './dist/extension.js',
+          activationEvents: ['onView:gitlens.repositories'],
+        }),
+      }),
+    ]);
   });
 
   it('loads declared module dependencies from usr packages and catalogs library packages', async () => {

@@ -1855,6 +1855,8 @@ interface VsCodeExtensionManifest {
   displayName?: string;
   description?: string;
   version?: string;
+  main?: string;
+  activationEvents?: string[];
   icon?: string;
   contributes?: {
     viewsContainers?: {
@@ -1875,6 +1877,8 @@ interface ResolvedVsCodeExtensionForRail {
   extensionName: string;
   extensionDescription?: string;
   versionLabel: string;
+  main: string | null;
+  activationEvents: string[];
   modified: number;
 }
 
@@ -1961,7 +1965,28 @@ async function resolveVsCodeExtensionForRail(
     extensionName,
     extensionDescription: asString(manifest.description) || undefined,
     versionLabel: asString(manifest.version) || '0.0.0',
+    main: asString(manifest.main) || null,
+    activationEvents: Array.isArray(manifest.activationEvents)
+      ? manifest.activationEvents.flatMap((entry) => {
+        const value = asString(entry);
+        return value ? [value] : [];
+      })
+      : [],
     modified: entry.modified,
+  };
+}
+
+function buildVsCodeRuntimeMetadata(
+  extension: ResolvedVsCodeExtensionForRail,
+) {
+  return {
+    extensionId: extension.extensionId,
+    extensionName: extension.extensionName,
+    extensionRootPath: extension.extensionRootPath,
+    packageJsonPath: extension.packageJsonPath,
+    originalPath: extension.originalPath,
+    main: extension.main,
+    activationEvents: extension.activationEvents,
   };
 }
 
@@ -2089,6 +2114,10 @@ function mapVsixManifestToGreebleActivityLanes(
             runtimeId: null,
             runtimeSurfaceId: null,
             buildTarget: null,
+            vscode: {
+              ...buildVsCodeRuntimeMetadata(extension),
+              viewId: asString(view.id) || stableViewId,
+            },
             viewDescriptor,
             component: null,
           } satisfies OverlayPluginExplorerActivityLaneViewContribution,
@@ -2106,7 +2135,36 @@ function mapVsixManifestToGreebleActivityLanes(
       views,
       pluginId: extension.extensionId,
       pluginName: extension.extensionName,
+      vscode: buildVsCodeRuntimeMetadata(extension),
     } satisfies OverlayPluginExplorerActivityLaneContribution;
+  });
+}
+
+function mapVsixManifestToGreebleCommands(
+  extension: ResolvedVsCodeExtensionForRail,
+): OverlayPluginCommandContribution[] {
+  const commandEntries = extension.manifest.contributes?.commands ?? [];
+  return commandEntries.flatMap((entry, index) => {
+    const commandId = asString(entry.command);
+    if (!commandId) {
+      return [];
+    }
+    const title = asString(entry.title) || commandId;
+    const category = asString(entry.category);
+    return [{
+      id: `vscode-command:${extension.extensionId}:${normalizeVsCodeExtensionNamespace(commandId, `command-${index}`)}`,
+      pluginId: extension.extensionId,
+      pluginName: extension.extensionName,
+      name: category ? `${category}: ${title}` : title,
+      command: commandId,
+      description: extension.extensionDescription || commandId,
+      runOnSelect: false,
+      sourceKind: 'vscode-vsix',
+      vscodeCommand: {
+        ...buildVsCodeRuntimeMetadata(extension),
+        commandId,
+      },
+    } satisfies OverlayPluginCommandContribution];
   });
 }
 
@@ -4356,9 +4414,11 @@ export async function discoverOverlayPlugins(
     }
     const disabled = isPluginDisabled(disabledPluginIds, resolved.extensionId);
     const lanes = disabled ? [] : mapVsixManifestToGreebleActivityLanes(resolved);
+    const commands = disabled ? [] : mapVsixManifestToGreebleCommands(resolved);
     return {
       plugin: createVsCodeExtensionMetadataPlugin(resolved, lanes, disabled),
       lanes,
+      commands,
     };
   }));
 
@@ -4366,6 +4426,7 @@ export async function discoverOverlayPlugins(
     if (result.status === 'fulfilled') {
       aggregate.plugins.push(result.value.plugin);
       aggregate.explorerActivityLanes.push(...result.value.lanes);
+      aggregate.commands.push(...result.value.commands);
       return;
     }
     const vsixEntry = vsixFiles[index];

@@ -119,6 +119,13 @@ const KAIN_SCRIPT_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
     build_invoker: invoke_kain_script_build,
 };
 
+const NODE_SCRIPT_DRIVER: RuntimeCompilerDriver = RuntimeCompilerDriver {
+    default_target_resolver: default_node_host_target,
+    toolchain_version_resolver: resolve_node_toolchain_version,
+    artifact_name_builder: build_node_launcher_artifact_name,
+    build_invoker: invoke_node_script_build,
+};
+
 pub fn default_target_for_compiler(compiler: RuntimeCompiler) -> String {
     require_runtime_compiler_driver(compiler).default_target()
 }
@@ -160,6 +167,7 @@ fn require_runtime_compiler_driver(compiler: RuntimeCompiler) -> &'static Runtim
         RuntimeCompiler::CargoWasmBindgen => &CARGO_WASM_BINDGEN_DRIVER,
         RuntimeCompiler::PythonSidecar => &PYTHON_SIDECAR_DRIVER,
         RuntimeCompiler::KainScript => &KAIN_SCRIPT_DRIVER,
+        RuntimeCompiler::NodeScript => &NODE_SCRIPT_DRIVER,
     }
 }
 
@@ -195,6 +203,10 @@ fn default_kain_host_target() -> String {
     "kain-host".to_string()
 }
 
+fn default_node_host_target() -> String {
+    "node-host".to_string()
+}
+
 fn resolve_probe_version(probe: &ToolchainProbe) -> Result<String, String> {
     resolve_installed_toolchain_version(probe)
 }
@@ -227,6 +239,11 @@ fn resolve_python_toolchain_version(context: &RuntimeToolchainContext) -> Result
 fn resolve_kain_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
     let probe = probe_runtime_toolchains_with_context(context);
     resolve_probe_version(&probe.kain)
+}
+
+fn resolve_node_toolchain_version(context: &RuntimeToolchainContext) -> Result<String, String> {
+    let probe = probe_runtime_toolchains_with_context(context);
+    resolve_probe_version(&probe.node)
 }
 
 fn resolve_cargo_wasm_bindgen_toolchain_version(
@@ -272,6 +289,10 @@ fn build_javascript_artifact_name(runtime_id: &str) -> String {
 
 fn build_python_sidecar_artifact_name(_: &str) -> String {
     "python-sidecar.entry".to_string()
+}
+
+fn build_node_launcher_artifact_name(runtime_id: &str) -> String {
+    format!("{runtime_id}.cjs")
 }
 
 fn skip_host_build(
@@ -325,6 +346,60 @@ fn invoke_kain_script_build(
         stdout: format!(
             "staged Kain launcher {} -> {}",
             executable_path.display(),
+            artifact_path.display()
+        ),
+        stderr: String::new(),
+    })
+}
+
+fn invoke_node_script_build(
+    manifest: &RuntimeManifest,
+    artifact_path: &Path,
+    _: &str,
+    _: &str,
+    context: &RuntimeToolchainContext,
+) -> Result<RuntimeCompilerBuildOutput, String> {
+    let probe = probe_runtime_toolchains_with_context(context).node;
+    resolve_probe_version(&probe)?;
+    let entry = manifest.entry.as_deref().ok_or_else(|| {
+        format!(
+            "node-script runtime {} must declare an entry script.",
+            manifest.id
+        )
+    })?;
+    let entry_path = PathBuf::from(entry);
+    if !entry_path.exists() {
+        return Err(format!(
+            "node-script runtime entry {} does not exist.",
+            entry_path.display()
+        ));
+    }
+    if let Some(parent) = artifact_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create Node runtime artifact directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let escaped_entry = entry_path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('\'', "\\'");
+    let launcher = format!(
+        "'use strict';\nprocess.env.GREEBLEFS_NODE_RUNTIME_ENTRY = '{escaped_entry}';\nrequire('{escaped_entry}');\n"
+    );
+    std::fs::write(artifact_path, launcher).map_err(|error| {
+        format!(
+            "failed to stage Node launcher {}: {error}",
+            artifact_path.display()
+        )
+    })?;
+
+    Ok(RuntimeCompilerBuildOutput {
+        stdout: format!(
+            "staged Node launcher {} -> {}",
+            entry_path.display(),
             artifact_path.display()
         ),
         stderr: String::new(),
@@ -816,6 +891,10 @@ mod tests {
             default_target_for_compiler(RuntimeCompiler::KainScript),
             "kain-host"
         );
+        assert_eq!(
+            default_target_for_compiler(RuntimeCompiler::NodeScript),
+            "node-host"
+        );
     }
 
     #[test]
@@ -850,6 +929,10 @@ mod tests {
         } else {
             assert_eq!(kain_artifact, "greeblefs-kain-host-smoke");
         }
+        assert_eq!(
+            artifact_name_for_compiler(RuntimeCompiler::NodeScript, "vscode-bridge-host"),
+            "vscode-bridge-host.cjs"
+        );
     }
 
     #[test]

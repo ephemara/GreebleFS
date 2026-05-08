@@ -1,3 +1,33 @@
+# 2026-05-07 - VS Code Extension Bridge Runtime v1
+
+- Added the first executable VS Code extension pipeline on top of the existing VSIX rail ingress.
+  - `RuntimeKind::VscodeBridge` and `RuntimeCompiler::NodeScript` are first-class runtime-pipeline values. The compiler driver stages a `.cjs` launcher, toolchain status now probes `node --version`, and the sidecar manager launches Node runtimes as `node <cached-launcher>` while preserving the existing stdio JSON-lines sidecar contract.
+  - `src-node/builtin-runtimes/vscode-bridge-host` is the built-in trusted Node extension host. It loads extracted VSIX extension entrypoints with a minimal `vscode` API shim for commands, tree data providers, output channels, notifications, `workspace.fs`, and host events over `stdio-json-lines-v2`.
+  - `scripts/run-platform-tauri.mjs` bundles `src-node/builtin-runtimes` to `runtimes/node/` for release resources, and runtime discovery checks both the repo root and that resource root.
+  - `src/config/pluginPackages.ts` now maps VSIX `contributes.commands` into command-palette contributions and carries VS Code runtime metadata on lanes, views, and commands.
+  - `src/runtime/vscodeBridgeBackend.ts` is the frontend action wrapper for `vscode.activateExtension`, `vscode.executeCommand`, `vscode.getTreeView`, and `vscode.refreshTreeView`.
+  - `src/components/explorer/VsCodeActivityTreeView.tsx` renders compact VSIX tree views inside existing Explorer activity panes, lazy-loads children, refreshes on `ext.vscode-bridge-host.tree.changed`, and executes tree item commands through the Node sidecar.
+  - `App.tsx` routes VSIX-backed command-palette actions to the bridge instead of shelling their command id.
+- Durable design decisions:
+  - V1 intentionally targets Activity + Commands. LSP, debug adapters, editor/Monaco providers, and VS Code webviews remain future slices.
+  - VSIX execution is trusted for this solo-dev pipeline. Do not add modal permission prompts before there is a concrete user-facing trust model; keep privilege behind the runtime/extension-host host-call surface.
+  - Keep Explorer rail layout, placement, and persistence owned by GreebleFS. VS Code extensions supply providers/commands; they do not own the rail chrome.
+  - The bridge publishes under `ext.vscode-bridge-host.*` because Rust sidecar event publishing constrains topics to the caller runtime namespace.
+- Validation:
+  - Passed: `node --check src-node\builtin-runtimes\vscode-bridge-host\index.cjs`
+  - Passed: `node --check scripts\run-platform-tauri.mjs`
+  - Passed: `cargo check --manifest-path src-tauri\Cargo.toml --lib`
+  - Passed: `bun run bindings:generate`
+  - Passed: `bun run vitest run src/test/pluginPackages.test.ts src/test/vscodeBridgeBackend.test.ts`
+  - Passed: filtered `bunx tsc --noEmit --project tsconfig.json --pretty false` found no diagnostics for `VsCodeActivityTreeView`, `vscodeBridgeBackend`, or the touched VSIX contribution files.
+  - Passed: direct Node sidecar protocol smoke with a temporary fake VS Code extension registering a tree provider and command; returned one tree item and command args round-tripped.
+  - Not clean: repo-wide `bunx tsc --noEmit --project tsconfig.json` still reports the existing unrelated baseline across mobile ES lib, older App/image-cutout/storage/explorerViews/test/vendor surfaces.
+  - Not clean: `bun run test:ui-literals` still reports the existing repo baseline (624 entries; first hits are existing CSS/App/CommandPalette literals).
+  - Not clean: targeted Rust lib tests compile but the Windows test binary fails to launch with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`, matching the existing native lib-test harness issue.
+- Next recommended step:
+  - Build a small real VSIX smoke package under `usr/plugins` that contributes one activity tree and one command, then live-test it inside the real Tauri Explorer rail through the dev MCP once the app session is up.
+  - Next larger slice: add editor/Monaco provider plumbing or an LSP lane only after the command/tree host proves stable under a real extension.
+
 # 2026-05-07 - VSIX And Plugin Activity Lanes For Explorer
 
 - Added the first real VS Code-style activity-rail ingress for Explorer.

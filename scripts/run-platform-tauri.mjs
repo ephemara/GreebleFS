@@ -64,6 +64,7 @@ const mobileShareBundleCachePath = path.join(spectaBindingsCacheDirectory, "mobi
 const mobileShareBundleCacheVersion = 1;
 const kainToolchainPayloadRoot = path.join(projectRoot, "toolchains", "kain", "payload");
 const kainRuntimeSourceRoot = path.join(projectRoot, "src-kain", "runtimes");
+const nodeRuntimeSourceRoot = path.join(projectRoot, "src-node", "builtin-runtimes");
 const spectaBindingsFingerprintTargets = [
   { kind: "file", relativePath: "Cargo.toml" },
   { kind: "file", relativePath: "Cargo.lock" },
@@ -717,6 +718,9 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
     }
     if (await pathExists(kainRuntimeSourceRoot)) {
       config.bundle.resources[formatBundleDirectoryResourcePathForTauriProject(kainRuntimeSourceRoot)] = "runtimes/kain/";
+    }
+    if (await pathExists(nodeRuntimeSourceRoot)) {
+      config.bundle.resources[formatBundleDirectoryResourcePathForTauriProject(nodeRuntimeSourceRoot)] = "runtimes/node/";
     }
   }
 

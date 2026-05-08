@@ -29,7 +29,8 @@ use crate::runtime_pipeline::host_events::{
 use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimeManifest};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
 use crate::runtime_pipeline::toolchain::{
-    apply_kain_payload_environment, resolve_kain_payload_root, RuntimeToolchainContext,
+    apply_kain_payload_environment, probe_runtime_toolchains_with_context,
+    resolve_kain_payload_root, RuntimeToolchainContext,
 };
 
 const SIDECAR_TRANSPORT_V1: &str = "stdio-json-lines";
@@ -162,9 +163,12 @@ impl ExternalSidecarManager {
         manifest: &RuntimeManifest,
         binary_path: &PathBuf,
     ) -> Result<ExternalRuntimeSidecarStatus, String> {
-        if !matches!(manifest.kind, RuntimeKind::NativeSidecar) {
+        if !matches!(
+            manifest.kind,
+            RuntimeKind::NativeSidecar | RuntimeKind::VscodeBridge
+        ) {
             return Err(format!(
-                "runtime {} is not a native-sidecar (kind = {})",
+                "runtime {} is not a long-lived sidecar runtime (kind = {})",
                 manifest.id,
                 manifest.kind.as_str()
             ));
@@ -183,7 +187,13 @@ impl ExternalSidecarManager {
             }
         }
 
-        let mut command = Command::new(binary_path);
+        let mut command = if manifest.compiler == RuntimeCompiler::NodeScript {
+            let mut command = Command::new(resolve_node_executable_for_sidecar(&app));
+            command.arg(binary_path);
+            command
+        } else {
+            Command::new(binary_path)
+        };
         if manifest.compiler == RuntimeCompiler::KainScript {
             apply_kain_sidecar_environment(&app, &mut command);
         }
@@ -531,6 +541,17 @@ fn apply_kain_sidecar_environment(app: &AppHandle, command: &mut Command) {
     if let Some(payload_root) = payload_root.as_deref() {
         command.env("GREEBLEFS_KAIN_PAYLOAD_ROOT", payload_root);
     }
+}
+
+fn resolve_node_executable_for_sidecar(app: &AppHandle) -> PathBuf {
+    let context = RuntimeToolchainContext {
+        resource_dir: app.path().resource_dir().ok(),
+    };
+    probe_runtime_toolchains_with_context(&context)
+        .node
+        .executable_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("node"))
 }
 
 fn resolve_pending_sidecar_response(

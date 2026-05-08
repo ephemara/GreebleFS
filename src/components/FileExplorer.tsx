@@ -354,6 +354,7 @@ import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
 import { ExplorerActivityRail } from "./explorer/ExplorerActivityRail";
+import { VsCodeActivityTreeView } from "./explorer/VsCodeActivityTreeView";
 import {
   createOverlayContextMenuCommandNode,
   createOverlayContextMenuSeparatorNode,
@@ -34607,6 +34608,10 @@ export function FileExplorer({
             {hasViews ? (
               lane.views.map((view) => {
                 const ViewComponent = view.component;
+                const isVsCodeTreeView =
+                  view.rendererKind === "tree" &&
+                  view.sourceKind === "vscode-vsix" &&
+                  Boolean(view.vscode);
                 return (
                   <section
                     key={view.id}
@@ -34614,7 +34619,7 @@ export function FileExplorer({
                     style={{
                       display: "flex",
                       flexDirection: "column",
-                      minHeight: ViewComponent ? 180 : 0,
+                      minHeight: ViewComponent || isVsCodeTreeView ? 180 : 0,
                       borderBottom:
                         "1px solid var(--overlay-explorer-panel-border)",
                     }}
@@ -34637,7 +34642,12 @@ export function FileExplorer({
                       <ExplorerBoundedText>{view.title}</ExplorerBoundedText>
                       <span>{view.rendererKind}</span>
                     </div>
-                    {ViewComponent ? (
+                    {isVsCodeTreeView && view.vscode ? (
+                      <VsCodeActivityTreeView
+                        vscode={view.vscode}
+                        executionContext={pluginPreviewExecutionContext}
+                      />
+                    ) : ViewComponent ? (
                       <div
                         style={{
                           display: "flex",
@@ -34710,6 +34720,7 @@ export function FileExplorer({
       explorerWidgetAppearance,
       explorerWidgetData,
       explorerWidgetSession,
+      pluginPreviewExecutionContext,
     ],
   );
   const renderExplorerActivityDockLaneContent = useCallback(

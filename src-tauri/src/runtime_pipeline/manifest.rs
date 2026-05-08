@@ -22,6 +22,7 @@ pub enum RuntimeKind {
     NativeTui,
     WasmPanel,
     WasmWorker,
+    VscodeBridge,
 }
 
 impl Default for RuntimeKind {
@@ -38,12 +39,13 @@ impl RuntimeKind {
             RuntimeKind::NativeTui => "native-tui",
             RuntimeKind::WasmPanel => "wasm-panel",
             RuntimeKind::WasmWorker => "wasm-worker",
+            RuntimeKind::VscodeBridge => "vscode-bridge",
         }
     }
 
     /// True for kinds that produce a long-lived process owned by the host.
     pub fn is_long_lived(&self) -> bool {
-        matches!(self, RuntimeKind::NativeSidecar)
+        matches!(self, RuntimeKind::NativeSidecar | RuntimeKind::VscodeBridge)
     }
 
     /// True for kinds that compile to Wasm bytes consumed by the frontend.
@@ -77,6 +79,8 @@ pub enum RuntimeCompiler {
     PythonSidecar,
     /// Kain-authored runtime scripts launched through the bundled Kain CLI.
     KainScript,
+    /// Node.js script runtimes launched as long-lived stdio sidecars.
+    NodeScript,
 }
 
 impl Default for RuntimeCompiler {
@@ -96,6 +100,7 @@ impl RuntimeCompiler {
             RuntimeCompiler::CargoWasmBindgen => "cargo-wasm-bindgen",
             RuntimeCompiler::PythonSidecar => "python-sidecar",
             RuntimeCompiler::KainScript => "kain-script",
+            RuntimeCompiler::NodeScript => "node-script",
         }
     }
 
@@ -114,6 +119,7 @@ impl RuntimeCompiler {
                 | RuntimeCompiler::CNative
                 | RuntimeCompiler::PythonSidecar
                 | RuntimeCompiler::KainScript
+                | RuntimeCompiler::NodeScript
         )
     }
 
@@ -365,6 +371,7 @@ impl RuntimeManifest {
         let language = raw.language.unwrap_or_else(|| match raw.compiler {
             RuntimeCompiler::PythonSidecar => "python".to_string(),
             RuntimeCompiler::KainScript => "kain".to_string(),
+            RuntimeCompiler::NodeScript => "node".to_string(),
             RuntimeCompiler::CargoNative | RuntimeCompiler::CargoWasmBindgen => "rust".to_string(),
             RuntimeCompiler::CNative => "c".to_string(),
             _ => "go".to_string(),
@@ -426,6 +433,8 @@ fn validate_kind_compiler_pairing(
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::CNative)
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::PythonSidecar)
         | (RuntimeKind::NativeSidecar, RuntimeCompiler::KainScript)
+        | (RuntimeKind::NativeSidecar, RuntimeCompiler::NodeScript)
+        | (RuntimeKind::VscodeBridge, RuntimeCompiler::NodeScript)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::GoNative)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::CargoNative)
         | (RuntimeKind::NativeCommand, RuntimeCompiler::CNative)
@@ -511,6 +520,30 @@ transport = "stdio-json-lines-v2"
         assert_eq!(manifest.language, "kain");
         assert_eq!(manifest.compiler, RuntimeCompiler::KainScript);
         assert_eq!(manifest.kind, RuntimeKind::NativeSidecar);
+    }
+
+    #[test]
+    fn parses_vscode_bridge_node_script_manifest() {
+        let dir = tempdir().expect("tempdir");
+        write_manifest(
+            dir.path(),
+            r#"
+id = "vscode-bridge-host"
+kind = "vscode-bridge"
+compiler = "node-script"
+entry = "index.cjs"
+
+[sidecar]
+transport = "stdio-json-lines-v2"
+            "#,
+        );
+
+        let manifest = RuntimeManifest::from_dir(dir.path()).expect("parse");
+        assert_eq!(manifest.language, "node");
+        assert_eq!(manifest.kind, RuntimeKind::VscodeBridge);
+        assert_eq!(manifest.compiler, RuntimeCompiler::NodeScript);
+        assert!(manifest.kind.is_long_lived());
+        assert!(manifest.compiler.is_native_host_compiler());
     }
 
     #[test]

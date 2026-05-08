@@ -326,6 +326,7 @@ import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
+import { executeVsCodeCommand } from './runtime/vscodeBridgeBackend';
 import { sendNativeNotification } from './runtime/nativeNotifications';
 import {
   applyLookdevScopedOverridesToSettings,
@@ -7326,7 +7327,15 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       kind: 'plugin',
       keywords: [command.pluginName, command.command, command.description ?? ''],
       badge: command.pluginName,
-      onSelect: () => dispatchTerminalCommand(command.command, command.runOnSelect),
+      onSelect: () => {
+        if (command.vscodeCommand) {
+          void executeVsCodeCommand(command.vscodeCommand).catch((error) => {
+            console.error('Failed to execute VS Code command', error);
+          });
+          return;
+        }
+        dispatchTerminalCommand(command.command, command.runOnSelect);
+      },
     }));
 
     const globalSearchFileActions = commandPaletteQuery.trim().length > 0
