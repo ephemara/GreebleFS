@@ -1031,13 +1031,13 @@
       "surfaces": ["explorerStatusBar"],
       "source": "built-in",
       "supportsSizeVariant": true,
-      "supportsWidthPx": false,
+      "supportsWidthPx": true,
       "supportsLabelVisibility": false,
       "supportsIconVisibility": false,
       "sizeVariants": ["compact", "regular", "wide"],
-      "defaultWidthPx": null,
-      "minWidthPx": null,
-      "maxWidthPx": null
+      "defaultWidthPx": 292,
+      "minWidthPx": 220,
+      "maxWidthPx": 420
     },
     {
       "controlId": "terminalDrawerToggle",

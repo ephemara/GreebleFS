@@ -1,3 +1,19 @@
+# 2026-05-08 - Static Explorer Chrome Slots For Slider Scrubbing
+
+- Tightened the Explorer status-bar slider/view-switcher chrome so live value changes no longer resize neighboring controls.
+  - Fixed-width Explorer chrome controls now keep `flex-shrink: 0`, a fixed `min-width`, and layout/paint/style containment in `ExplorerChromeSurface.tsx`, so slider/widget internals cannot push adjacent buttons around.
+  - `statusViewToggles` now has authored sizing metadata (`widthPx` / `defaultWidthPx` / min/max width) in the core chrome layout and customize-control manifest, matching `statusViewSize` as a real reserved slot.
+  - `ExplorerViewSizeSliderControl` and `ExplorerViewSwitcherControl` now use tabular numeric labels plus stable character-width reservations for live density/zoom values, preventing `99% -> 100%` style label-width jitter from changing the usable slider track while dragging.
+  - Catalog-dragged Explorer widgets now derive their preview/drop placement from the dragged control id and catalog default width instead of a possibly stale selected-control preview, so newly placed widgets start with stable sizing immediately.
+- Durable rule:
+  - Any live-updating Explorer chrome control needs a reserved slot and stable internal numeric label widths. Do not let slider readouts, density labels, task counts, or widget state text participate in sibling flex sizing while the user is interacting.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts src/test/ExplorerChromeSurface.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "renders the footer view switcher and size slider|standard explorer size changes|authored explorer density|accumulates precision ctrl-wheel deltas" --reporter=dot --testTimeout=30000`
+  - Passed: `git diff --check` for touched files, with only normal CRLF warnings.
+  - Filtered TypeScript scan produced no diagnostics for the touched Explorer files.
+  - Live MCP status was bridge-ready, but WebView screenshot capture timed out and native capture did not provide a clean status-bar visual proof.
+
 # 2026-05-08 - Dev MCP Console Loop And Greeble3D CSP Hardening
 
 - Fixed the console flood path reported as `devMcpBridge.ts:253`.

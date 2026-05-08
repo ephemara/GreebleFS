@@ -24,6 +24,7 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
   { id: 'statusTaskBadge', label: 'Status Task Badge', surfaces: ['explorerStatusBar'] },
   { id: 'terminalDrawerToggle', label: 'Terminal Drawer Toggle', surfaces: ['explorerStatusBar'] },
+  { id: 'statusViewSize', label: 'Status View Size', surfaces: ['explorerStatusBar'] },
   { id: 'statusViewToggles', label: 'Status View Toggles', surfaces: ['explorerStatusBar'] },
   { id: 'statusClipboardQueue', label: 'Status Clipboard Queue', surfaces: ['explorerStatusBar'] },
   { id: 'statusPreviewLoading', label: 'Status Preview Loading', surfaces: ['explorerStatusBar'] },
@@ -140,8 +141,25 @@ describe('explorer chrome layout resolver', () => {
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
       'statusTaskBadge',
       'terminalDrawerToggle',
+      'statusViewSize',
       'statusViewToggles',
     ]);
+  });
+
+  it('reserves static status view-control slots so live slider values cannot shift adjacent chrome', () => {
+    const statusBar = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'explorerStatusBar',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+
+    const endControls = statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls ?? [];
+    const sizeControl = endControls.find((control) => control.controlId === 'statusViewSize');
+    const viewToggleControl = endControls.find((control) => control.controlId === 'statusViewToggles');
+
+    expect(sizeControl?.widthPx).toBe(220);
+    expect(viewToggleControl?.widthPx).toBe(292);
   });
 
   it('rebuilds override snapshots when a control moves across chrome surfaces and preserves width overrides', () => {

@@ -39,6 +39,8 @@ export interface ExplorerViewSwitcherButtonDescriptor {
   shortLabel?: string;
   icon?: ReactNode;
   disabled?: boolean;
+  stableLabelMinWidthCh?: number;
+  stableLabelTextAlign?: CSSProperties["textAlign"];
 }
 
 export interface ExplorerViewSwitcherTransientHud {
@@ -363,6 +365,7 @@ export function ExplorerViewSwitcherControl({
       whiteSpace: "nowrap",
       fontSize: metrics.fontSize,
       fontWeight: 800,
+      fontVariantNumeric: "tabular-nums",
       letterSpacing: "0.08em",
       textTransform: "uppercase",
     }),
@@ -405,6 +408,11 @@ export function ExplorerViewSwitcherControl({
       border: "1px solid var(--overlay-explorer-chip-border)",
       background: "rgba(255,255,255,0.03)",
       boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+      width: "100%",
+      minWidth: 0,
+      boxSizing: "border-box",
+      justifyContent: "space-between",
+      overflow: "hidden",
     }),
     [metrics.blockPadding, metrics.gap],
   );
@@ -436,7 +444,20 @@ export function ExplorerViewSwitcherControl({
       variant === "mode-and-density"
         ? descriptor.label
         : descriptor.shortLabel ?? descriptor.label;
-    return <span style={triggerLabelStyle}>{triggerLabel}</span>;
+    return (
+      <span
+        style={{
+          ...triggerLabelStyle,
+          minWidth:
+            descriptor.stableLabelMinWidthCh != null
+              ? `${descriptor.stableLabelMinWidthCh}ch`
+              : triggerLabelStyle.minWidth,
+          textAlign: descriptor.stableLabelTextAlign,
+        }}
+      >
+        {triggerLabel}
+      </span>
+    );
   };
   return (
     <div

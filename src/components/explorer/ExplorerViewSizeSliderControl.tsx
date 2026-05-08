@@ -13,6 +13,7 @@ export interface ExplorerViewSizeSliderControlProps {
   valueLabel: string;
   ariaLabel: string;
   ariaValueText?: string;
+  valueLabelMinWidthCh?: number;
   value: number;
   min: number;
   max: number;
@@ -32,6 +33,7 @@ export function ExplorerViewSizeSliderControl({
   valueLabel,
   ariaLabel,
   ariaValueText,
+  valueLabelMinWidthCh = 6,
   value,
   min,
   max,
@@ -84,13 +86,16 @@ export function ExplorerViewSizeSliderControl({
   const valueStyle = useMemo<CSSProperties>(
     () => ({
       flexShrink: 0,
+      width: `${valueLabelMinWidthCh}ch`,
       fontSize: metrics.fontSize,
       fontWeight: 800,
+      fontVariantNumeric: "tabular-nums",
       letterSpacing: "0.04em",
       color: text,
+      textAlign: "right",
       whiteSpace: "nowrap",
     }),
-    [metrics.fontSize, text],
+    [metrics.fontSize, text, valueLabelMinWidthCh],
   );
 
   const sliderStyle = useMemo<CSSProperties>(

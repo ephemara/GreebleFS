@@ -874,15 +874,31 @@ export function ExplorerChromeSurface({
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            minWidth: 0,
-                            position: "relative",
-                            flexGrow: hasExplicitWidth ? 0 : responsivePlacement.grow ?? 0,
-                            flexShrink: useWrappedOverflow
-                              ? responsivePlacement.shrink ?? 0
+                            minWidth: hasExplicitWidth
+                              ? responsivePlacement.widthPx
                               : 0,
-                            flexBasis: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
-                            width: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
-                            maxWidth: hasExplicitWidth ? responsivePlacement.widthPx : undefined,
+                            position: "relative",
+                            boxSizing: "border-box",
+                            contain: hasExplicitWidth
+                              ? "layout paint style"
+                              : undefined,
+                            flexGrow: hasExplicitWidth
+                              ? 0
+                              : responsivePlacement.grow ?? 0,
+                            flexShrink: hasExplicitWidth
+                              ? 0
+                              : useWrappedOverflow
+                                ? responsivePlacement.shrink ?? 0
+                                : 0,
+                            flexBasis: hasExplicitWidth
+                              ? responsivePlacement.widthPx
+                              : undefined,
+                            width: hasExplicitWidth
+                              ? responsivePlacement.widthPx
+                              : undefined,
+                            maxWidth: hasExplicitWidth
+                              ? responsivePlacement.widthPx
+                              : undefined,
                             marginLeft:
                               (placement.offsetPx ?? 0) > 0
                                 ? `${placement.offsetPx}px`

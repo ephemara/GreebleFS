@@ -8862,6 +8862,19 @@ function findNearestExplorerViewDensityStop(
   return closest;
 }
 
+function resolveStableExplorerChromeLabelWidthCh(
+  labels: readonly string[],
+  options: { minimumCh?: number; maximumCh?: number } = {},
+): number {
+  const minimumCh = options.minimumCh ?? 4;
+  const maximumCh = options.maximumCh ?? 14;
+  const longestLabelLength = labels.reduce((longestLength, label) => {
+    const trimmedLabel = label.trim();
+    return Math.max(longestLength, trimmedLabel.length);
+  }, 0);
+  return Math.max(minimumCh, Math.min(maximumCh, longestLabelLength));
+}
+
 export function FileExplorer({
   theme,
   appearance,
@@ -21585,6 +21598,60 @@ export function FileExplorer({
       findRegisteredExplorerChromePlacement,
       selectedExplorerCustomizePlacement,
     ]);
+  const createExplorerCustomizeCatalogPreviewPlacement = useCallback(
+    (
+      controlId: ExplorerChromeControlId,
+    ): ExplorerChromeResolvedControlPlacement | null => {
+      const catalogEntry = explorerCustomizeCatalogByControlId.get(controlId);
+      const visiblePlacement = findRegisteredExplorerChromePlacement(controlId);
+      const explicitEntry =
+        getLiveExplorerChromeEditSession()?.draftOverride.entries.find(
+          (entry) => entry.controlId === controlId,
+        ) ?? null;
+      const surfaceId =
+        explicitEntry?.surfaceId ??
+        visiblePlacement?.surfaceId ??
+        catalogEntry?.surfaces[0] ??
+        "explorerToolbar";
+      const surfaceDefinition = getExplorerChromeSurfaceDefinition(surfaceId);
+      const zone =
+        explicitEntry?.zone ??
+        visiblePlacement?.zone ??
+        surfaceDefinition.rows[0]?.zones[0] ??
+        "primaryStart";
+
+      return {
+        controlId,
+        surfaceId,
+        zone,
+        order: explicitEntry?.order ?? visiblePlacement?.order ?? 9990,
+        bandId: explicitEntry?.bandId ?? visiblePlacement?.bandId,
+        anchorX: explicitEntry?.anchorX ?? visiblePlacement?.anchorX,
+        anchorY: explicitEntry?.anchorY ?? visiblePlacement?.anchorY,
+        offsetPx:
+          explicitEntry?.offsetPx ?? visiblePlacement?.offsetPx ?? 0,
+        grow: visiblePlacement?.grow,
+        shrink: visiblePlacement?.shrink,
+        collapsePriority: visiblePlacement?.collapsePriority,
+        overflowEligible: visiblePlacement?.overflowEligible,
+        hidden: explicitEntry?.hidden ?? false,
+        sizeVariant:
+          explicitEntry?.sizeVariant ?? visiblePlacement?.sizeVariant,
+        widthPx:
+          explicitEntry?.widthPx ??
+          visiblePlacement?.widthPx ??
+          catalogEntry?.defaultWidthPx ??
+          undefined,
+        showLabel: explicitEntry?.showLabel ?? visiblePlacement?.showLabel,
+        showIcon: explicitEntry?.showIcon ?? visiblePlacement?.showIcon,
+      };
+    },
+    [
+      explorerCustomizeCatalogByControlId,
+      findRegisteredExplorerChromePlacement,
+      getLiveExplorerChromeEditSession,
+    ],
+  );
   const beginPlacedExplorerChromePointerDrag = useCallback(
     (args: {
       controlId: ExplorerChromeControlId;
@@ -21779,7 +21846,8 @@ export function FileExplorer({
           commitExplorerChromePointerDrop({
             controlId: dragControlId,
             sourceKind,
-            catalogPreviewPlacement: selectedExplorerCustomizePreviewPlacement,
+            catalogPreviewPlacement:
+              createExplorerCustomizeCatalogPreviewPlacement(dragControlId),
             target,
           });
         },
@@ -21791,6 +21859,7 @@ export function FileExplorer({
     },
     [
       commitExplorerChromePointerDrop,
+      createExplorerCustomizeCatalogPreviewPlacement,
       effectiveChromeLayoutId,
       explorerChromeThemeId,
       getLiveExplorerChromeEditSession,
@@ -23096,10 +23165,16 @@ export function FileExplorer({
         activeExplorerViewDefinition?.density &&
         activeExplorerViewDensityDescriptor
       ) {
+        const stableLabelMinWidthCh = resolveStableExplorerChromeLabelWidthCh(
+          activeExplorerViewDefinition.density.stops.map(
+            (stop) => stop.shortLabel || stop.label,
+          ),
+        );
         return {
           ariaLabel: `${activeExplorerViewDefinition.density.axisLabel}: ${activeExplorerViewDensityDescriptor.label}`,
           title: `${activeExplorerViewDefinition.density.axisLabel}: ${activeExplorerViewDensityDescriptor.label}`,
           label: activeExplorerViewDensityDescriptor.shortLabel,
+          stableLabelMinWidthCh,
         };
       }
       if (activeExplorerViewId !== STANDARD_EXPLORER_VIEW_ID) {
@@ -23113,6 +23188,8 @@ export function FileExplorer({
         ariaLabel: `Explorer density: ${gridZoomPercentLabel ?? selectedViewModeDefinition.label}`,
         title: `Explorer density: ${gridZoomPercentLabel ?? selectedViewModeDefinition.label}`,
         label: gridZoomPercentLabel ?? layoutZoomBadgeLabel,
+        stableLabelMinWidthCh: 4,
+        stableLabelTextAlign: "right",
       };
     }, [
       activeExplorerViewDefinition,
