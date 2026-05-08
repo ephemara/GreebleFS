@@ -1,3 +1,39 @@
+# 2026-05-08 - Kain UI Graph Runtime Overlay
+
+- Added the first app-level Kain UI graph lane so the theme/settings simplification work has a live source of truth instead of another JSON pack layer.
+  - `D:/Kain-Lang` now has `kain bridge serve --entry <file.kn> --dispatch-function kain_bridge_dispatch`, compiling a Kain file once and serving JSON-line dispatch requests from a resident interpreter.
+  - `D:/tauron/crates/tauri-plugin-kain` can now own a resident Kain runtime process, ignore non-JSON Kain stdout noise, and route non-built-in bridge dispatches through the Kain entrypoint.
+  - GreebleFS registers the Tauron Kain plugin with `src-kain/app/main.kn`, bundles `src-kain/app`, normalizes the graph through `src/runtime/kainUiGraph.ts`, applies theme overrides in `src/App.tsx`, and lets `SettingsPage.tsx` render Kain-authored Settings categories while preserving legacy JSON-backed sections.
+  - `usr/kain-ui/main.kn` and `usr/profiles/default/kain-ui/main.kn` are now profile overlay anchors for future per-user Kain UI overrides.
+- Durable rules:
+  - Treat Kain UI graph output as a live overlay and orchestration layer first. Do not delete existing JSON packs until a specific consumer has moved to a Kain-authored field with fallback behavior.
+  - Generic Kain process lifecycle belongs in Tauron; GreebleFS should configure the app entrypoint and consume typed graph results.
+  - Kain bridge protocol readers must tolerate banner/log stdout around JSON packets.
+- Validation:
+  - Passed: Kain bridge smoke for `src-kain/app/main.kn` returning `greeblefs.ui.graph`.
+  - Passed: `bunx vitest run src/test/externalRuntimeBackend.test.ts`.
+  - Passed: `node --check scripts/run-platform-tauri.mjs`.
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`.
+  - Not clean: repo-wide TypeScript still has the existing baseline diagnostics in unrelated App, mobile, Explorer/image-cutout/storage, tests, and vendored Tiptap surfaces.
+  - Native check initially exposed a current secondary-window drift where `Lookdev` lacked a dev MCP kind string; `src-tauri/src/dev_mcp_native_automation.rs` now maps it to `lookdev`.
+
+# 2026-05-08 - Stable Explorer Workflow And Widget Hosts
+
+- Fixed a `Maximum update depth exceeded` loop in the Explorer workflow/widget host layer that surfaced when opening `Batch Rename` and could also hit authored Explorer widgets or activity views.
+  - `src/components/FileExplorer.tsx` now keeps the active workflow host controls stable by workflow session id instead of recreating them from the full `activeWorkflowSession` object every render.
+  - Workflow host setters for `title`, `status`, `busy`, and `size` now no-op when the requested value already matches the live session, which prevents effect-driven writeback churn.
+  - Explorer widget hosts and authored Explorer view hosts now cache one host object per instance/view id and route their imperative methods through a live runtime ref, so React effects can safely depend on `host` without retriggering themselves just because the parent rerendered.
+  - Widget instance state patches and authored view state patches now bail out when the next shallow record is identical to the current one, preventing pointless Zustand writes from becoming render loops.
+- Durable rule:
+  - Any imperative host object passed into Explorer workflows, widgets, or authored views must be stable for the lifetime of that session/instance/view. If a child effect depends on `host` and the parent recreates that object on every render, React will eventually eat itself.
+  - For settings-backed or session-backed patch helpers, no-op identical updates before writing into Zustand. The TS/React layer should be a thin wrapper around stable state transitions, not a source of synthetic churn.
+- Validation:
+  - Passed: `bunx vitest run src/test/ExplorerBuiltInWorkflowViews.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `git diff --check -- src/components/FileExplorer.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - Passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` produced `NO_TOUCHED_FILE_DIAGNOSTICS` for `src/components/FileExplorer.tsx` and `src/test/fileExplorer.viewModes.test.tsx`.
+  - Not clean: standalone Vitest runs that pull in broader Tauri-backed frontend suites still hit the existing repo baseline where Vite cannot resolve `@tauri-apps/api/*` imports in some test environments.
+  - Not clean: local `tauri dev` is currently blocked before mount by an existing Vite watcher crash on the missing `D:\\GreebleFS\\skills\\greeblefs-explorer-customize` path.
+
 # 2026-05-08 - VS Code Bridge Editor Shim
 
 - Expanded `src-node/builtin-runtimes/vscode-bridge-host/index.cjs` beyond the initial Activity/Commands slice so extensions that expect editor/document hooks can activate without crashing.
@@ -402,7 +438,24 @@
   - `src/components/explorer/ExplorerContextMenu.tsx` is still the largest bespoke menu surface. Future menu work should extend the same React Aria/Floating UI seam there rather than adding more local keyboard or submenu logic.
 - Validation:
   - Filtered `bunx tsc --noEmit --pretty false` no longer reports diagnostics for `AppModal`, `CommandPalette`, `ExplorerViewSwitcherControl`, `ExplorerFloatingSurface`, `colorUtils`, `uiTokenContract`, `themeEngine`, `themePackages`, `schemaSanitizers`, or `main.tsx`.
-  - Repo-wide TypeScript remains red on the pre-existing baseline outside this pass.
+- Repo-wide TypeScript remains red on the pre-existing baseline outside this pass.
+
+# 2026-05-08 - Lookdev Tool Window Instead Of Blocking Full-Screen Overlay
+
+- Moved lookdev off the blocking full-screen shell overlay and onto the native secondary-window system so the live workbench stays visible while authoring.
+  - `src-tauri/src/secondary_windows.rs` now has a dedicated `lookdev` secondary-window surface kind with persistent bounds, compact tool-window defaults, and its own stable label prefix for remember-bounds behavior.
+  - `src/runtime/lookdevWindow.ts` is the new TS seam for the lookdev tool-window request/payload contract. It owns the canonical `lookdev` window id plus the serialized preset payload used when opening/focusing the tool window.
+  - `src/App.tsx` no longer treats lookdev as Tauri-only in-app chrome. In desktop mode it opens/focuses/closes the dedicated lookdev window, renders a dedicated secondary-host body when that surface kind is active, and tracks live lookdev-window presence through the host-owned secondary-window descriptor feed.
+  - `src/components/lookdev/LookdevOverlay.tsx` is now dual-hosted: browser fallback can still render the immersive overlay, but the normal desktop path renders the same semantic editor inside a compact secondary window with drag chrome, window controls, responsive stacking, and source-shell focus affordances.
+- Durable behavior rules worth preserving:
+  - The lookdev draft session still lives in `useLookdevStore`, but in Tauri it belongs to the dedicated lookdev window renderer, not the main shell renderer.
+  - Live preview still works across windows because settings persistence already rehydrates the other renderer through the storage-sync lane; do not replace that with ad hoc cross-window shadow state unless the settings sync contract changes.
+  - `Cancel` from the lookdev tool window must restore the captured baseline before closing the native window. `Apply To Profile` intentionally keeps the live settings and then closes the tool window.
+  - Browser/jsdom fallback still uses the in-app overlay path so tests and non-Tauri surfaces do not require the secondary-window host.
+- Validation and environment notes:
+  - `bun run bindings:generate` is still blocked by the existing `D:/tauron/packages/api` failure (`rollup` missing under the sibling Tauron API workspace), so the `SecondaryWindowSurfaceKind` TS union was patched manually for this slice.
+  - Focused Vitest runs that touch `@tauri-apps/api/*` remain blocked by that same sibling Tauron JS API resolution problem.
+  - Rust compiled far enough to finish the `greeblefs` lib-test build while exercising the secondary-window changes, but the test binary still aborts in this environment with `STATUS_ENTRYPOINT_NOT_FOUND` after link, so runtime Rust test execution is not currently trustworthy.
 
 # 2026-05-06 - Global Lookdev Overlay, Semantic Presets, And Shell Customize Catalog
 

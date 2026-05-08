@@ -857,6 +857,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const lookdevPresetsRefreshInFlightRef = useRef(false);
   const lookdevPresetsRefreshQueuedRef = useRef(false);
   const lookdevSecondaryWindowSessionInitializedRef = useRef(false);
+  const allowLookdevWindowCloseRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -3457,6 +3458,33 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       },
     );
   }, [hideOverlay, isDedicatedSecondaryWindowHost]);
+
+  useEffect(() => {
+    if (!isTauri() || !isDedicatedLookdevSecondaryWindow) {
+      return;
+    }
+
+    return bindDeferredUnlisten(
+      getCurrentWindow().onCloseRequested(async event => {
+        if (allowLookdevWindowCloseRef.current) {
+          return;
+        }
+
+        event.preventDefault();
+        handleRestoreLookdevBaseline();
+        await closeDedicatedLookdevWindow();
+      }),
+      {
+        onError: error => {
+          console.warn('GreebleFS: failed to intercept lookdev close requests', error);
+        },
+      },
+    );
+  }, [
+    closeDedicatedLookdevWindow,
+    handleRestoreLookdevBaseline,
+    isDedicatedLookdevSecondaryWindow,
+  ]);
 
   useEffect(() => {
     if (!overlayVisibleRef.current || windowMode !== 'overlay' || !isCurrentWindowPresentationHost) {
@@ -6513,7 +6541,12 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       return;
     }
 
-    await closeSecondaryWindow(secondaryWindowDescriptor.windowId).catch(() => undefined);
+    allowLookdevWindowCloseRef.current = true;
+    try {
+      await closeSecondaryWindow(secondaryWindowDescriptor.windowId).catch(() => undefined);
+    } finally {
+      allowLookdevWindowCloseRef.current = false;
+    }
   }, [isDedicatedLookdevSecondaryWindow, secondaryWindowDescriptor]);
 
   const handleApplyLookdevPresetById = useCallback((presetId?: string | null) => {
