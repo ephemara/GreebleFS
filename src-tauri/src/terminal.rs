@@ -914,6 +914,18 @@ impl TerminalManager {
                             let visible_output = hidden_host_command_echo_suppressor
                                 .consume(&parsed_chunk.visible_output);
                             if !visible_output.is_empty() {
+                                if let Err(error) = tauri::native_stream::publish_byte_stream(
+                                    &app,
+                                    &stream_handle.id,
+                                    "terminal-output",
+                                    &visible_output,
+                                ) {
+                                    log::trace!(
+                                        "native terminal stream publish skipped for {}: {}",
+                                        terminal_id,
+                                        error
+                                    );
+                                }
                                 let data = String::from_utf8_lossy(&visible_output).to_string();
                                 let host_event_packet =
                                     match tauri::transport::publish_stream_payload(

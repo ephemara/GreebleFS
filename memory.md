@@ -1,3 +1,17 @@
+# 2026-05-08 - Tauron Native Byte Stream Proof In Terminal
+
+- Wired GreebleFS to Tauron's new Windows/WebView2 `native_stream` lane as the first live-byte consumer.
+  - `src-tauri/src/terminal.rs` now publishes raw PTY bytes with `tauri::native_stream::publish_byte_stream(...)` before converting them into the existing string stream.
+  - The existing IPC stream and host-event terminal metadata stay active for fallback, replay, compatibility, and non-Windows/runtime-missing cases.
+  - `src/components/TerminalOverlay.tsx` tries `subscribeNativeByteStream(...)` first, decodes `Uint8Array` chunks through a streaming `TextDecoder`, warns on sequence gaps, and falls back to `subscribeIpcStream<string>(...)` if the native bridge is unavailable or subscription fails.
+- Added terminal overlay coverage for the new preference/fallback behavior.
+  - `src/test/terminalOverlay.test.tsx` mocks `@tauri-apps/api/native-stream`, proves native byte chunks write decoded text into xterm, and proves rejected native subscription falls back to the retained IPC stream path.
+- Durable rule:
+  - Native stream is a live hot lane, not a replacement for transport replay/control. Keep compatibility subscriptions and replay on the Tauron transport ring until a future native lane explicitly owns retention and reset recovery.
+- Validation:
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/terminalOverlay.test.tsx --reporter=dot --testTimeout=30000`
+
 # 2026-05-08 - Kain App Manifest First-Class Proof
 
 - Added the first consumed Kain app manifest lane on top of the Tauron resident bridge.

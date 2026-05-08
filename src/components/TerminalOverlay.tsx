@@ -46,6 +46,10 @@ import {
   SquarePlus,
 } from '@/components/AppIcons';
 import { listen } from '@tauri-apps/api/event';
+import {
+  isNativeStreamAvailable,
+  subscribeNativeByteStream,
+} from '@tauri-apps/api/native-stream';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -747,20 +751,43 @@ const XTermPane = memo(function XTermPane({
       outputFrameRef.current = window.requestAnimationFrame(flushBufferedOutput);
     };
 
+    const appendOutputChunk = (chunk: string) => {
+      if (!chunk) {
+        return;
+      }
+      bufferedOutputRef.current += chunk;
+      scheduleBufferedFlush();
+    };
     const outputStream = unwrapTauriResult(
       await commands.terminalOpenOutputStream(id),
     );
-    const unlisten = await subscribeIpcStream<TerminalOutputStreamChunk>(
+    const subscribeIpcFallback = () => subscribeIpcStream<TerminalOutputStreamChunk>(
       outputStream,
-      chunk => {
-        bufferedOutputRef.current += chunk;
-        scheduleBufferedFlush();
-      },
+      appendOutputChunk,
       {
         replayFromSequence: 0,
         releaseOnUnsubscribe: false,
       },
     );
+    const unlisten = isNativeStreamAvailable()
+      ? await subscribeNativeByteStream(
+        outputStream,
+        (() => {
+          const decoder = new TextDecoder();
+          let expectedSequence = 0;
+          return packet => {
+            if (packet.sequence !== expectedSequence) {
+              console.warn(
+                `native terminal stream sequence gap for ${id}: expected ${expectedSequence}, received ${packet.sequence}`,
+              );
+              expectedSequence = packet.sequence;
+            }
+            expectedSequence += 1;
+            appendOutputChunk(decoder.decode(packet.bytes, { stream: true }));
+          };
+        })(),
+      ).catch(() => subscribeIpcFallback())
+      : await subscribeIpcFallback();
     term.onData(data => {
       onFocusRef.current?.(id);
       onDataRef.current?.(id, data);

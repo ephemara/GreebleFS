@@ -10,6 +10,9 @@ import { useExplorerStore } from '../store/explorerStore';
 const {
   mockWebglAddonInstances,
   mockXtermInstances,
+  isNativeStreamAvailableMock,
+  nativeStreamHandlers,
+  subscribeNativeByteStreamMock,
   subscribeTransportStreamMock,
   transportStreamHandlers,
 } = vi.hoisted(() => ({
@@ -26,9 +29,17 @@ const {
     reset: ReturnType<typeof vi.fn>;
     emitData: (data: string) => void;
   }[],
+  isNativeStreamAvailableMock: vi.fn(),
+  nativeStreamHandlers: new Map<string, (packet: { sequence: number; bytes: Uint8Array }) => void>(),
+  subscribeNativeByteStreamMock: vi.fn(),
   subscribeTransportStreamMock: vi.fn(),
   transportStreamHandlers: new Map<string, (payload: unknown) => void>(),
 })); 
+
+vi.mock('@tauri-apps/api/native-stream', () => ({
+  isNativeStreamAvailable: isNativeStreamAvailableMock,
+  subscribeNativeByteStream: subscribeNativeByteStreamMock,
+}));
 
 vi.mock('@tauri-apps/api/transport', () => ({
   subscribeStreamPackets: subscribeTransportStreamMock,
@@ -132,7 +143,23 @@ describe('TerminalOverlay', () => {
     mockWebglAddonInstances.length = 0;
     mockXtermInstances.length = 0;
     transportStreamHandlers.clear();
+    nativeStreamHandlers.clear();
     resetTerminalWebglSupportCacheForTests();
+    isNativeStreamAvailableMock.mockReset();
+    isNativeStreamAvailableMock.mockReturnValue(false);
+    subscribeNativeByteStreamMock.mockReset();
+    subscribeNativeByteStreamMock.mockImplementation(async (handle, listener) => {
+      const streamId =
+        typeof handle === 'string'
+          ? handle
+          : typeof handle === 'object' && handle !== null && 'id' in handle
+            ? String(handle.id)
+            : 'unknown-stream';
+      nativeStreamHandlers.set(streamId, listener as (packet: { sequence: number; bytes: Uint8Array }) => void);
+      return async () => {
+        nativeStreamHandlers.delete(streamId);
+      };
+    });
     subscribeTransportStreamMock.mockReset();
     subscribeTransportStreamMock.mockImplementation(async (handle, listener) => {
       const streamId =
@@ -235,6 +262,36 @@ describe('TerminalOverlay', () => {
         'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json',
       );
     });
+  }, 20000);
+
+  it('uses the native byte stream when WebView2 shared buffers are available', async () => {
+    isNativeStreamAvailableMock.mockReturnValue(true);
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => expect(nativeStreamHandlers.has('stream-overlay-0')).toBe(true));
+    expect(transportStreamHandlers.has('stream-overlay-0')).toBe(false);
+
+    const outputHandler = nativeStreamHandlers.get('stream-overlay-0');
+    if (!outputHandler) {
+      throw new Error('Missing native output stream handler');
+    }
+    outputHandler({
+      sequence: 0,
+      bytes: new TextEncoder().encode('native bytes landed'),
+    });
+
+    await waitFor(() => {
+      expect(mockXtermInstances[0]?.write).toHaveBeenCalledWith('native bytes landed');
+    });
+  }, 20000);
+
+  it('falls back to the IPC stream when native byte stream subscription fails', async () => {
+    isNativeStreamAvailableMock.mockReturnValue(true);
+    subscribeNativeByteStreamMock.mockRejectedValueOnce(new Error('shared buffer unavailable'));
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => expect(transportStreamHandlers.has('stream-overlay-0')).toBe(true));
   }, 20000);
 
   it('replays retained xterm output without releasing terminal-owned streams on teardown', async () => {
