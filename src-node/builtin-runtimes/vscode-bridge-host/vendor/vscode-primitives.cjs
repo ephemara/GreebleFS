@@ -364,6 +364,10 @@ class FileSystemError extends Error {
     return new FileSystemError(message, 'FileNotFound');
   }
 
+  static FileNotADirectory(message = 'File not a directory') {
+    return new FileSystemError(message, 'FileNotADirectory');
+  }
+
   static FileIsADirectory(message = 'File is a directory') {
     return new FileSystemError(message, 'FileIsADirectory');
   }
@@ -374,6 +378,10 @@ class FileSystemError extends Error {
 
   static NoPermissions(message = 'Insufficient permissions') {
     return new FileSystemError(message, 'NoPermissions');
+  }
+
+  static Unavailable(message = 'Unavailable') {
+    return new FileSystemError(message, 'Unavailable');
   }
 }
 

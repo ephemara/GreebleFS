@@ -775,7 +775,7 @@ function matchesGlob(uri, pattern) {
 }
 
 async function publishFileSystemChange(kind, uri) {
-  const normalizedUri = uri instanceof Uri ? uri : Uri.file(String(uri || ''));
+  const normalizedUri = normalizeWorkspaceUri(uri);
   const eventKind = kind === 'created' ? 2 : kind === 'deleted' ? 3 : 1;
   await publishEvent('ext.vscode-bridge-host.files.changed', {
     changes: [{
@@ -948,6 +948,176 @@ async function findWorkspaceFiles(includePattern, excludePattern, maxResults) {
   return matches;
 }
 
+function normalizeWorkspaceUri(uri) {
+  if (uri instanceof Uri) {
+    return uri;
+  }
+  if (uri && typeof uri === 'object' && typeof uri.scheme === 'string') {
+    return new Uri(uri.scheme, uri.authority || '', uri.path || uri.fsPath || '', uri.query || '', uri.fragment || '');
+  }
+  return Uri.parse(uri);
+}
+
+function fileSystemProviderForUri(uri) {
+  return bridgeRuntimeState.fileSystemProviders.get(uri.scheme)?.provider || null;
+}
+
+function assertHostFileSystemUri(uri, operationName) {
+  if (!uri.scheme || uri.scheme === 'file') {
+    return;
+  }
+  throw FileSystemError.Unavailable(`No filesystem provider is registered for ${uri.scheme}: ${operationName}`);
+}
+
+function normalizeFileStatFromNode(stat) {
+  return {
+    type: stat.isFile() ? 1 : stat.isDirectory() ? 2 : stat.isSymbolicLink() ? 64 : 0,
+    ctime: stat.ctimeMs,
+    mtime: stat.mtimeMs,
+    size: stat.size,
+  };
+}
+
+async function readWorkspaceFile(uri) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  if (provider?.readFile) {
+    return provider.readFile(normalizedUri);
+  }
+  assertHostFileSystemUri(normalizedUri, 'readFile');
+  try {
+    return Buffer.from(await hostCall('files.read_text', { path: toFsPath(normalizedUri) }), 'utf8');
+  } catch (_hostError) {
+    return fs.readFileSync(toFsPath(normalizedUri));
+  }
+}
+
+async function writeWorkspaceFile(uri, content) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  const bytes = Buffer.isBuffer(content) || content instanceof Uint8Array
+    ? content
+    : Buffer.from(String(content ?? ''), 'utf8');
+  if (provider?.writeFile) {
+    await provider.writeFile(normalizedUri, bytes, { create: true, overwrite: true });
+    await publishFileSystemChange('changed', normalizedUri);
+    return;
+  }
+  assertHostFileSystemUri(normalizedUri, 'writeFile');
+  const filePath = toFsPath(normalizedUri);
+  try {
+    await hostCall('files.write_text', {
+      path: filePath,
+      content: Buffer.from(bytes).toString('utf8'),
+    });
+  } catch (_hostError) {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, bytes);
+  }
+  await publishFileSystemChange('changed', normalizedUri);
+}
+
+async function statWorkspaceFile(uri) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  if (provider?.stat) {
+    return provider.stat(normalizedUri);
+  }
+  assertHostFileSystemUri(normalizedUri, 'stat');
+  try {
+    return await hostCall('files.stat', { path: toFsPath(normalizedUri) });
+  } catch (_hostError) {
+    return normalizeFileStatFromNode(fs.statSync(toFsPath(normalizedUri)));
+  }
+}
+
+async function readWorkspaceDirectory(uri) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  if (provider?.readDirectory) {
+    return provider.readDirectory(normalizedUri);
+  }
+  assertHostFileSystemUri(normalizedUri, 'readDirectory');
+  try {
+    const listing = await hostCall('files.list_directory', { path: toFsPath(normalizedUri), showHidden: true });
+    return (listing.entries || []).map((entry) => [entry.name, entry.is_dir ? 2 : 1]);
+  } catch (_hostError) {
+    return fs.readdirSync(toFsPath(normalizedUri), { withFileTypes: true }).map((entry) => [
+      entry.name,
+      entry.isFile() ? 1 : entry.isDirectory() ? 2 : entry.isSymbolicLink() ? 64 : 0,
+    ]);
+  }
+}
+
+async function createWorkspaceDirectory(uri) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  if (provider?.createDirectory) {
+    await provider.createDirectory(normalizedUri);
+    await publishFileSystemChange('created', normalizedUri);
+    return;
+  }
+  assertHostFileSystemUri(normalizedUri, 'createDirectory');
+  try {
+    await hostCall('files.create_directory', { path: toFsPath(normalizedUri) });
+  } catch (_hostError) {
+    fs.mkdirSync(toFsPath(normalizedUri), { recursive: true });
+  }
+  await publishFileSystemChange('created', normalizedUri);
+}
+
+async function deleteWorkspaceFile(uri, options = {}) {
+  const normalizedUri = normalizeWorkspaceUri(uri);
+  const provider = fileSystemProviderForUri(normalizedUri);
+  if (provider?.delete) {
+    await provider.delete(normalizedUri, options);
+    removeOpenDocumentByUri(normalizedUri);
+    await publishFileSystemChange('deleted', normalizedUri);
+    return;
+  }
+  assertHostFileSystemUri(normalizedUri, 'delete');
+  try {
+    await hostCall('files.delete', {
+      path: toFsPath(normalizedUri),
+      recursive: options.recursive === true,
+    });
+  } catch (_hostError) {
+    fs.rmSync(toFsPath(normalizedUri), { recursive: options.recursive === true, force: true });
+  }
+  removeOpenDocumentByUri(normalizedUri);
+  await publishFileSystemChange('deleted', normalizedUri);
+}
+
+async function renameWorkspaceFile(oldUri, newUri, options = {}) {
+  const normalizedOldUri = normalizeWorkspaceUri(oldUri);
+  const normalizedNewUri = normalizeWorkspaceUri(newUri);
+  const provider = fileSystemProviderForUri(normalizedOldUri);
+  if (provider?.rename) {
+    await provider.rename(normalizedOldUri, normalizedNewUri, options);
+    removeOpenDocumentByUri(normalizedOldUri);
+    await publishFileSystemChange('deleted', normalizedOldUri);
+    await publishFileSystemChange('created', normalizedNewUri);
+    return;
+  }
+  assertHostFileSystemUri(normalizedOldUri, 'rename');
+  assertHostFileSystemUri(normalizedNewUri, 'rename');
+  try {
+    await hostCall('files.rename', {
+      oldPath: toFsPath(normalizedOldUri),
+      newPath: toFsPath(normalizedNewUri),
+    });
+  } catch (_hostError) {
+    fs.mkdirSync(path.dirname(toFsPath(normalizedNewUri)), { recursive: true });
+    if (options.overwrite === true && fs.existsSync(toFsPath(normalizedNewUri))) {
+      fs.rmSync(toFsPath(normalizedNewUri), { recursive: true, force: true });
+    }
+    fs.renameSync(toFsPath(normalizedOldUri), toFsPath(normalizedNewUri));
+  }
+  removeOpenDocumentByUri(normalizedOldUri);
+  await publishFileSystemChange('deleted', normalizedOldUri);
+  await publishFileSystemChange('created', normalizedNewUri);
+}
+
 function createMemento() {
   const store = new Map();
   return {
@@ -1071,6 +1241,10 @@ function normalizeTreeItem(viewRecord, element, treeItem) {
   };
 }
 
+function errorToBridgeString(error) {
+  return String(error && error.stack ? error.stack : error);
+}
+
 async function resolveTreeItems(extensionId, viewId, parentHandle) {
   const key = `${extensionId}:${viewId}`;
   const viewRecord = treeProviders.get(key);
@@ -1083,12 +1257,34 @@ async function resolveTreeItems(extensionId, viewId, parentHandle) {
     viewRecord.handleCounter = 0;
   }
   const provider = viewRecord.provider;
-  const children = await Promise.resolve(provider.getChildren ? provider.getChildren(parent) : []);
+  let children = [];
+  try {
+    children = await Promise.resolve(provider.getChildren ? provider.getChildren(parent) : []);
+  } catch (error) {
+    publishOutput(
+      'vscode-bridge',
+      `tree provider failed for ${extensionId}:${viewId}: ${errorToBridgeString(error)}`,
+    );
+    return {
+      extensionId,
+      viewId,
+      items: [],
+      missingProvider: false,
+      providerError: String(error?.message || error),
+    };
+  }
   const entries = Array.isArray(children) ? children : [];
   const items = [];
   for (const element of entries) {
-    const treeItem = await Promise.resolve(provider.getTreeItem ? provider.getTreeItem(element) : element);
-    items.push(normalizeTreeItem(viewRecord, element, treeItem));
+    try {
+      const treeItem = await Promise.resolve(provider.getTreeItem ? provider.getTreeItem(element) : element);
+      items.push(normalizeTreeItem(viewRecord, element, treeItem));
+    } catch (error) {
+      publishOutput(
+        'vscode-bridge',
+        `tree item failed for ${extensionId}:${viewId}: ${errorToBridgeString(error)}`,
+      );
+    }
   }
   return { extensionId, viewId, items, missingProvider: false };
 }
@@ -1217,47 +1413,20 @@ function createVscodeApi(extension) {
     },
     workspace: {
       fs: {
-        readFile: async (uri) => Buffer.from(await hostCall('files.read_text', { path: toFsPath(uri) }), 'utf8'),
-        writeFile: async (uri, content) => {
-          await hostCall('files.write_text', {
-            path: toFsPath(uri),
-            content: Buffer.from(content).toString('utf8'),
-          });
-          await publishFileSystemChange('changed', uri);
-        },
-        stat: (uri) => hostCall('files.stat', { path: toFsPath(uri) }),
-        readDirectory: async (uri) => {
-          const listing = await hostCall('files.list_directory', { path: toFsPath(uri), showHidden: true });
-          return (listing.entries || []).map((entry) => [entry.name, entry.is_dir ? 2 : 1]);
-        },
-        createDirectory: async (uri) => {
-          await hostCall('files.create_directory', { path: toFsPath(uri) });
-          await publishFileSystemChange('created', uri);
-        },
-        delete: async (uri, options = {}) => {
-          await hostCall('files.delete', {
-            path: toFsPath(uri),
-            recursive: options.recursive === true,
-          });
-          removeOpenDocumentByUri(uri);
-          await publishFileSystemChange('deleted', uri);
-        },
-        rename: async (oldUri, newUri) => {
-          await hostCall('files.rename', {
-            oldPath: toFsPath(oldUri),
-            newPath: toFsPath(newUri),
-          });
-          removeOpenDocumentByUri(oldUri);
-          await publishFileSystemChange('deleted', oldUri);
-          await publishFileSystemChange('created', newUri);
-        },
+        readFile: readWorkspaceFile,
+        writeFile: writeWorkspaceFile,
+        stat: statWorkspaceFile,
+        readDirectory: readWorkspaceDirectory,
+        createDirectory: createWorkspaceDirectory,
+        delete: deleteWorkspaceFile,
+        rename: renameWorkspaceFile,
       },
-        getConfiguration: () => ({
-          get: (_key, fallback) => fallback,
-          has: () => false,
-          inspect: () => undefined,
-          update: async () => undefined,
-        }),
+      getConfiguration: () => ({
+        get: (_key, fallback) => fallback,
+        has: () => false,
+        inspect: () => undefined,
+        update: async () => undefined,
+      }),
       get rootPath() {
         return bridgeRuntimeState.workspaceFolders[0]?.uri.fsPath || undefined;
       },
@@ -1267,6 +1436,9 @@ function createVscodeApi(extension) {
       get textDocuments() {
         return bridgeRuntimeState.textDocuments;
       },
+      get isTrusted() {
+        return true;
+      },
       onDidChangeConfiguration: bridgeRuntimeState.emitters.didChangeConfiguration.event,
       onDidChangeWorkspaceFolders: bridgeRuntimeState.emitters.didChangeWorkspaceFolders.event,
       onDidChangeTextDocument: bridgeRuntimeState.emitters.didChangeTextDocument.event,
@@ -1274,6 +1446,13 @@ function createVscodeApi(extension) {
       onDidCloseTextDocument: bridgeRuntimeState.emitters.didCloseTextDocument.event,
       onWillSaveTextDocument: bridgeRuntimeState.emitters.willSaveTextDocument.event,
       onDidSaveTextDocument: bridgeRuntimeState.emitters.didSaveTextDocument.event,
+      onDidGrantWorkspaceTrust(listener) {
+        if (typeof listener === 'function') {
+          queueMicrotask(() => listener());
+        }
+        return makeDisposable();
+      },
+      requestWorkspaceTrust: async () => true,
       openTextDocument: async (resource) => openTextDocument(resource),
       applyEdit: async (edit) => applyWorkspaceEdit(edit),
       findFiles: async (include, exclude, maxResults) => findWorkspaceFiles(include, exclude, maxResults),
@@ -1288,13 +1467,22 @@ function createVscodeApi(extension) {
           bridgeRuntimeState.textDocumentContentProviders.delete(normalizedScheme);
         });
       },
-      registerFileSystemProvider(scheme, provider) {
+      registerFileSystemProvider(scheme, provider, options = {}) {
         const normalizedScheme = String(scheme || '').trim();
         if (!normalizedScheme || !provider) {
           return makeDisposable();
         }
-        bridgeRuntimeState.fileSystemProviders.set(normalizedScheme, provider);
+        bridgeRuntimeState.fileSystemProviders.set(normalizedScheme, { provider, options });
+        const changeSubscription = typeof provider.onDidChangeFile === 'function'
+          ? provider.onDidChangeFile((changes) => {
+              for (const change of Array.isArray(changes) ? changes : []) {
+                const kind = change.type === 2 ? 'created' : change.type === 3 ? 'deleted' : 'changed';
+                void publishFileSystemChange(kind, change.uri);
+              }
+            })
+          : null;
         return makeDisposable(() => {
+          changeSubscription?.dispose?.();
           bridgeRuntimeState.fileSystemProviders.delete(normalizedScheme);
         });
       },

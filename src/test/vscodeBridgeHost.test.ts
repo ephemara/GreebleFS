@@ -67,10 +67,12 @@ function createBridgeFixture(): BridgeFixture {
     main: './extension.cjs',
     activationEvents: [
       'onView:jsonOutline',
+      'onView:permissionTree',
       'onCommand:tree-test.hello',
       'onCommand:tree-test.returnUri',
       'onCommand:tree-test.showPackage',
       'onCommand:tree-test.workspaceAuthority',
+      'onCommand:tree-test.trustAndProvider',
     ],
     contributes: {
       viewsContainers: {
@@ -86,6 +88,10 @@ function createBridgeFixture(): BridgeFixture {
           {
             id: 'jsonOutline',
             name: 'JSON Outline',
+          },
+          {
+            id: 'permissionTree',
+            name: 'Permission Tree',
           },
         ],
       },
@@ -105,6 +111,10 @@ function createBridgeFixture(): BridgeFixture {
         {
           command: 'tree-test.workspaceAuthority',
           title: 'Workspace Authority',
+        },
+        {
+          command: 'tree-test.trustAndProvider',
+          title: 'Trust And Provider',
         },
       ],
     },
@@ -166,6 +176,16 @@ class JsonOutlineProvider {
     for (const disposable of this._subscriptions) {
       disposable?.dispose?.();
     }
+  }
+}
+
+class PermissionTreeProvider {
+  getChildren() {
+    throw vscode.FileSystemError.NoPermissions();
+  }
+
+  getTreeItem() {
+    return new vscode.TreeItem('never rendered', vscode.TreeItemCollapsibleState.None);
   }
 }
 
@@ -237,7 +257,62 @@ function activate(context) {
       };
     }),
   );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('tree-test.trustAndProvider', async () => {
+      let grantCount = 0;
+      const trustDisposable = vscode.workspace.onDidGrantWorkspaceTrust(() => {
+        grantCount += 1;
+      });
+
+      const files = new Map();
+      const provider = {
+        readFile(uri) {
+          return Buffer.from(files.get(uri.path) || '');
+        },
+        writeFile(uri, content) {
+          files.set(uri.path, Buffer.from(content).toString('utf8'));
+        },
+        stat(uri) {
+          return {
+            type: files.has(uri.path) ? vscode.FileType.File : vscode.FileType.Directory,
+            ctime: 1,
+            mtime: 2,
+            size: files.get(uri.path)?.length || 0,
+          };
+        },
+        readDirectory() {
+          return [...files.keys()].map((filePath) => [path.basename(filePath), vscode.FileType.File]);
+        },
+      };
+      const providerDisposable = vscode.workspace.registerFileSystemProvider('memfs', provider, { isCaseSensitive: true });
+      const uri = vscode.Uri.parse('memfs:/note.txt');
+      await vscode.workspace.fs.writeFile(uri, Buffer.from('trusted virtual file'));
+      const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+      const stat = await vscode.workspace.fs.stat(uri);
+      const directory = await vscode.workspace.fs.readDirectory(vscode.Uri.parse('memfs:/'));
+      const requestedTrust = await vscode.workspace.requestWorkspaceTrust();
+      let unavailableCode = null;
+      try {
+        await vscode.workspace.fs.writeFile(vscode.Uri.parse('ghostfs:/blocked.txt'), Buffer.from('blocked'));
+      } catch (error) {
+        unavailableCode = error.code || error.name;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      trustDisposable.dispose();
+      providerDisposable.dispose();
+      return {
+        isTrusted: vscode.workspace.isTrusted,
+        requestedTrust,
+        grantCount,
+        content,
+        statType: stat.type,
+        directory,
+        unavailableCode,
+      };
+    }),
+  );
   vscode.window.createTreeView('jsonOutline', { treeDataProvider: provider });
+  vscode.window.createTreeView('permissionTree', { treeDataProvider: new PermissionTreeProvider() });
   return { activated: true };
 }
 
@@ -462,10 +537,12 @@ describe('vscode bridge host', () => {
         main: './extension.cjs',
         activationEvents: [
           'onView:jsonOutline',
+          'onView:permissionTree',
           'onCommand:tree-test.hello',
           'onCommand:tree-test.returnUri',
           'onCommand:tree-test.showPackage',
           'onCommand:tree-test.workspaceAuthority',
+          'onCommand:tree-test.trustAndProvider',
         ],
       };
 
@@ -490,8 +567,9 @@ describe('vscode bridge host', () => {
         'tree-test.returnUri',
         'tree-test.showPackage',
         'tree-test.workspaceAuthority',
+        'tree-test.trustAndProvider',
       ]));
-      expect(activation.treeViews).toEqual(['jsonOutline']);
+      expect(activation.treeViews).toEqual(expect.arrayContaining(['jsonOutline', 'permissionTree']));
 
       const treeView = await harness.call('vscode.getTreeView', {
         ...extensionPayload,
@@ -506,6 +584,23 @@ describe('vscode bridge host', () => {
       expect(treeView.missingProvider).toBe(false);
       expect(treeView.items).toHaveLength(1);
       expect(treeView.items?.[0]?.label).toBe('json-outline-root');
+
+      const permissionTree = await harness.call('vscode.getTreeView', {
+        ...extensionPayload,
+        viewId: 'permissionTree',
+        parentHandle: null,
+        activationEvent: 'onView:permissionTree',
+      }) as {
+        items?: Array<{ label?: string }>;
+        missingProvider?: boolean;
+        providerError?: string;
+      };
+
+      expect(permissionTree).toMatchObject({
+        missingProvider: false,
+        items: [],
+      });
+      expect(permissionTree.providerError).toContain('Insufficient permissions');
 
       const commandResult = await harness.call('vscode.executeCommand', {
         ...extensionPayload,
@@ -577,6 +672,30 @@ describe('vscode bridge host', () => {
       });
       expect(workspaceAuthority.matches).toContain('workspace-target.txt');
       expect(readFileSync(fixture.workspaceTargetPath, 'utf8')).toBe('alpha\nBETA\n');
+
+      const trustAndProvider = await harness.call('vscode.executeCommand', {
+        ...extensionPayload,
+        commandId: 'tree-test.trustAndProvider',
+        args: [],
+      }) as {
+        isTrusted?: boolean;
+        requestedTrust?: boolean;
+        grantCount?: number;
+        content?: string;
+        statType?: number;
+        directory?: Array<[string, number]>;
+        unavailableCode?: string;
+      };
+
+      expect(trustAndProvider).toEqual({
+        isTrusted: true,
+        requestedTrust: true,
+        grantCount: 1,
+        content: 'trusted virtual file',
+        statType: 1,
+        directory: [['note.txt', 1]],
+        unavailableCode: 'Unavailable',
+      });
     } finally {
       harness.close();
       fixture.cleanup();

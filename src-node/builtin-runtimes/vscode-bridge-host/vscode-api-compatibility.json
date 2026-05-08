@@ -64,7 +64,10 @@
       "workspace.onDidCloseTextDocument",
       "workspace.onWillSaveTextDocument",
       "workspace.onDidSaveTextDocument",
-      "workspace.onDidChangeWorkspaceFolders"
+      "workspace.onDidChangeWorkspaceFolders",
+      "workspace.isTrusted",
+      "workspace.onDidGrantWorkspaceTrust",
+      "workspace.requestWorkspaceTrust"
     ],
     "languages": [
       "languages.createDiagnosticCollection"
@@ -87,6 +90,12 @@
       "ExtensionContext.secrets.store",
       "ExtensionContext.secrets.delete"
     ]
+  },
+  "trustModel": {
+    "workspaceTrust": "always-allowed",
+    "reason": "GreebleFS is a file explorer and the user manually imports VSIX packages. A loaded VSIX is treated as trusted runtime code rather than gated by VS Code workspace trust prompts.",
+    "filesystemProviders": "trusted",
+    "permissionBehavior": "The bridge catches tree/provider failures, reports them through ext.vscode-bridge-host.output, returns empty tree results instead of crashing Explorer panes, and reports unregistered custom filesystem schemes as FileSystemError.Unavailable."
   },
   "planned": {
     "aiChatExtensions": [

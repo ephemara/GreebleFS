@@ -60,6 +60,22 @@
   - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`.
   - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib` with existing warning noise and Windows incremental GC access warnings.
 
+# 2026-05-08 - VS Code Bridge Always-Trusted FS Hardening
+
+- Hardened the VS Code bridge after `tree-test` surfaced `FileSystemError.NoPermissions` from a sample filesystem provider.
+  - `workspace.isTrusted` is now always `true`, `workspace.requestWorkspaceTrust()` resolves `true`, and `workspace.onDidGrantWorkspaceTrust` fires immediately for listeners.
+  - `workspace.fs` now routes through registered custom filesystem providers before host/local file fallbacks, so virtual schemes can read/write/stat/list like VS Code expects.
+  - Unregistered custom URI schemes now fail as `FileSystemError.Unavailable` instead of falling through into local path IO.
+  - `registerFileSystemProvider` stores provider options and relays provider file-change events into the bridge file-change stream.
+  - Tree provider failures are contained: the bridge logs provider/item errors to `ext.vscode-bridge-host.output` and returns an empty tree result instead of throwing into the Explorer pane.
+  - `FileSystemError` gained `FileNotADirectory` and `Unavailable` statics to match more of VS Code's filesystem error surface.
+- Validation:
+  - Passed: `node --check src-node\\builtin-runtimes\\vscode-bridge-host\\index.cjs`
+  - Passed: `node --check src-node\\builtin-runtimes\\vscode-bridge-host\\vendor\\vscode-primitives.cjs`
+  - Passed: `bun run vitest run src/test/pluginPackages.test.ts src/test/vscodeBridgeBackend.test.ts src/test/vscodeBridgeHost.test.ts --reporter=dot`
+- Durable rule:
+  - A manually imported VSIX is trusted in GreebleFS. Do not add VS Code-style workspace trust prompts unless the user explicitly asks for a trust UI; permission failures should reflect actual host/OS failure only and should be contained at provider/tree boundaries.
+
 # 2026-05-08 - VS Code Bridge Workspace Authority
 
 - Added the first real VS Code workspace-authority slice for AI/agent-style extensions.
@@ -8390,3 +8406,14 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `cargo check --manifest-path src-tauri\Cargo.toml --lib`
 - Current risk:
   - Live MCP/Tauri screenshot validation was not available in this pass because the dev app session was not running. The narrow tests cover the previous gating bug, but a real Windows desktop smoke pass should still inspect `.lnk`, `.exe`, `.url`, and `.msi` tiles visually.
+
+# 2026-05-08 - Native Icon Live Smoke And Shortcut Presentation
+
+- Closed the real native-icon gap that mocked Vitest missed: the Windows resolver worked through Tauron, but the active Explorer UI was not reliably hydrating app-like entries from the rendered viewport. `FileExplorer.tsx` now resolves native app icons from both rendered viewport candidates and a bounded directory prefetch for app-like entries, while `.lnk`, `.exe`, `.url`, `.website`, `.msi`, and `.appref-ms` remain native-icon-first.
+- Added `scripts/smoke-native-icons.mjs` and `package.json` script `test:proof:native-icons`. This is a live WebView/CDP proof, not a mocked Vitest test: it calls `fs_resolve_native_icons` through the real Tauron/Tauri bridge, navigates the live Explorer to the Windows Desktop, and asserts `.lnk/.exe/.url` entries render PNG data icons instead of `/icons/*.svg` placeholders.
+- Shortcut presentation is now Explorer-owned display polish, not filesystem mutation.
+  - `.lnk` entries keep their real path/name for operations, but visible Explorer labels use `getExplorerDisplayName(...)` so `Google Chrome.lnk` displays as `Google Chrome`.
+  - `.lnk` type labels now display `Shortcut` instead of `LNK File` in inline metadata and type columns.
+  - Shortcut icons get a bottom-right themed badge via the icon-theme UI slot `explorer_shortcut_badge`, backed by canonical `shortcut_arrow`.
+- Durable rule:
+  - Do not test native Explorer icon behavior solely with Vitest mocks. Use `bun run test:proof:native-icons` against a live Tauron/WebView session for regressions involving native icon resolution, shortcut label hiding, and shortcut badges.
