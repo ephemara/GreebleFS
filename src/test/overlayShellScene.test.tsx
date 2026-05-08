@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OverlayShellScene } from '../components/OverlayShellScene';
 import { resolveOverlayAppearance } from '../config/appearance';
@@ -116,5 +116,44 @@ describe('OverlayShellScene', () => {
 
     requestAnimationFrameSpy.mockRestore();
     cancelAnimationFrameSpy.mockRestore();
+  });
+
+  it('publishes real shell zoom to the transform layer for runtime automation', () => {
+    vi.useRealTimers();
+
+    render(
+      <OverlayShellScene
+        animation={null}
+        phase="open"
+        direction="enter"
+        durationMs={0}
+        baseOpacity={1}
+        intensity={1}
+        verticalOrigin="top"
+        accentColor="#fff"
+        blurStrength={0}
+        zoom={0.85}
+        theme={{} as never}
+        viewportWidth={1200}
+        viewportHeight={800}
+        frameStyle={{ width: `${100 / 0.85}%`, height: `${100 / 0.85}%` }}
+        transformOrigin="top left"
+        containerStyle={{ width: '100%', height: '100%' }}
+        backgroundLayers={null}
+        contentLayer={<div data-testid="shell-content" />}
+        showAnimationOverlay={false}
+      />,
+    );
+
+    const frame = document.querySelector('[data-gfs-shell-scene-frame="true"]');
+    const transformLayer = document.querySelector('[data-gfs-shell-scene-transform="true"]') as HTMLElement | null;
+    const container = document.querySelector('[data-gfs-shell-scene-container="true"]');
+
+    expect(screen.getByTestId('shell-content')).toBeInTheDocument();
+    expect(frame).toHaveAttribute('data-gfs-shell-zoom', '0.85');
+    expect(transformLayer).toHaveAttribute('data-gfs-shell-zoom', '0.85');
+    expect(container).toHaveAttribute('data-gfs-shell-zoom', '0.85');
+    expect(transformLayer?.style.transform).toBe('scale(0.85)');
+    expect(transformLayer?.style.transformOrigin).toBe('top left');
   });
 });

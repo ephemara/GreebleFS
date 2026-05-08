@@ -152,6 +152,22 @@ vi.mock('../components/shaderRuntime', () => ({
   resolveShaderControlValues: () => ({}),
 }));
 
+const kainUiGraphMock = vi.hoisted(() => ({
+  graph: null as unknown,
+}));
+
+vi.mock('../runtime/kainUiGraph', async importOriginal => {
+  const actual = await importOriginal<typeof import('../runtime/kainUiGraph')>();
+
+  return {
+    ...actual,
+    loadKainUiGraph: vi.fn(async () => ({
+      graph: kainUiGraphMock.graph,
+      error: null,
+    })),
+  };
+});
+
 vi.mock('../config/themePackages', async importOriginal => {
   const actual = await importOriginal<typeof import('../config/themePackages')>();
   const dependencyCatalogs = actual.createEmptyGlobalThemeBundleCatalogs();
@@ -355,6 +371,7 @@ function setNavigatorPlatform(platform: string) {
 describe('App dock mode behavior', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    kainUiGraphMock.graph = null;
     useSettingsStore.getState().resetToDefaults();
     resetMobileShareState();
     mainHostWindow = createMockWebviewWindow('main');
@@ -726,6 +743,56 @@ describe('App dock mode behavior', () => {
         baselineZoom,
         5,
       );
+    });
+  });
+
+  it('adjusts the global app zoom from ctrl-wheel outside explorer-owned zoom surfaces', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+    const baselineZoom = useSettingsStore.getState().settings.appearance.appZoom;
+
+    fireEvent.keyDown(window, { key: 'Control', ctrlKey: true });
+    fireEvent.wheel(window, { deltaY: -120, ctrlKey: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.appearance.appZoom).toBeCloseTo(
+        baselineZoom + overlayVisualControls.zoom.step,
+        5,
+      );
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute(
+        'data-zoom',
+        String(baselineZoom + overlayVisualControls.zoom.step),
+      );
+    });
+  });
+
+  it('keeps user app zoom authoritative when a Kain UI graph supplies theme defaults', async () => {
+    kainUiGraphMock.graph = {
+      schemaVersion: 1,
+      kind: 'greeblefs.ui.graph',
+      source: 'test',
+      theme: {
+        activeThemeId: defaultSettings.appearance.activeThemeId,
+        appZoom: 1,
+      },
+      chrome: {},
+      layout: {},
+      motion: {},
+      settings: {
+        categories: [],
+        hiddenSectionKeys: [],
+        primarySectionKeys: [],
+      },
+      profile: {},
+    };
+    useSettingsStore.getState().updateAppearance({ appZoom: 0.82 });
+
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '0.82');
     });
   });
 

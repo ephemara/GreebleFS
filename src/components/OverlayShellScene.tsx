@@ -120,8 +120,14 @@ export const OverlayShellScene = memo(function OverlayShellScene({
     : `scale(${zoom})`;
 
   return (
-    <div style={frameStyle}>
+    <div
+      data-gfs-shell-scene-frame="true"
+      data-gfs-shell-zoom={String(zoom)}
+      style={frameStyle}
+    >
       <div
+        data-gfs-shell-scene-transform="true"
+        data-gfs-shell-zoom={String(zoom)}
         style={{
           width: '100%',
           height: '100%',
@@ -130,7 +136,11 @@ export const OverlayShellScene = memo(function OverlayShellScene({
           transformOrigin,
         }}
       >
-        <div style={containerStyle}>
+        <div
+          data-gfs-shell-scene-container="true"
+          data-gfs-shell-zoom={String(zoom)}
+          style={containerStyle}
+        >
           {backgroundLayers}
           {showAnimationOverlay ? (
             <AnimationOverlayLayer animation={animation} context={animationContext} />

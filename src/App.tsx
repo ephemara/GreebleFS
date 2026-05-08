@@ -1722,7 +1722,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const shouldSkipTaskbar = !systemPresentationState.taskbarVisible;
   const appOpacity = kainUiTheme?.appOpacity ?? appearance.appOpacity ?? 1.0;
   const panelTransparency = effectivePanelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
-  const appZoom = kainUiTheme?.appZoom ?? appearance.appZoom ?? 1.0;
+  const appZoom = appearance.appZoom ?? kainUiTheme?.appZoom ?? 1.0;
   const appBlur = appearance.appBlur ?? true;
   const appBlurStrength = kainUiTheme?.blurStrengthPx ?? appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
   const animationsEnabled = appearance.animations ?? false;
@@ -3513,7 +3513,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   ]);
 
   useEffect(() => {
-    if (!isOverlayVisible || typeof window === 'undefined' || !isTauri()) {
+    if ((!isOverlayVisible && !isWindowedMode) || typeof window === 'undefined' || !isTauri()) {
       return;
     }
 
@@ -3638,7 +3638,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       window.removeEventListener('keyup', handleWheelShortcutKeyChange, keyboardListenerOptions);
       window.removeEventListener('blur', handleWheelShortcutBlur);
     };
-  }, [isOverlayVisible, keybindings.opacityAdjust, keybindings.zoomAdjust]);
+  }, [isOverlayVisible, isWindowedMode, keybindings.opacityAdjust, keybindings.zoomAdjust]);
 
   // ── Persist resize ──
   useEffect(() => {

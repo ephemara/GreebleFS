@@ -1,3 +1,16 @@
+# 2026-05-08 - App Zoom Runtime Hardening
+
+- Fixed the live app-mode zoom regression that tests had missed.
+  - `src/App.tsx` now treats persisted `settings.appearance.appZoom` as authoritative over Kain/theme graph `appZoom` defaults, so custom profiles, selected themes, and Kain UI graph output cannot mask the user's global scale back to `1`.
+  - The global visual-control wheel listener now runs in application/windowed mode as well as visible dock/overlay mode. Previously it was gated on `isOverlayVisible`, which made Ctrl+wheel work in dock mode but not application mode.
+  - `src/components/OverlayShellScene.tsx` now publishes `data-gfs-shell-scene-*` and `data-gfs-shell-zoom` attributes so MCP/browser automation can assert the real transform layer, not just React props.
+- Validation:
+  - Passed: focused `app.dockMode` coverage for Ctrl+/Ctrl-, Ctrl+wheel outside Explorer zoom scope, Kain graph masking, app-mode visual zoom, dock zoom, and local zoom-scope opt-out.
+  - Passed: `bunx vitest run src/test/overlayShellScene.test.tsx src/test/hotkeys.test.ts --reporter=dot --testTimeout=30000`.
+  - Passed: MCP live app proof after HMR: `data-gfs-shell-zoom` moved `0.875 -> 0.9` on `Control+=`, then `0.9 -> 0.875` on Ctrl+wheel, and computed transform moved between `matrix(0.875, ...)` and `matrix(0.9, ...)`.
+- Durable rule:
+  - Global app zoom is a user DPI/scale control. Theme engines, Kain graph defaults, and custom profiles may seed defaults, but live user `appearance.appZoom` must win at render time.
+
 # 2026-05-08 - Tauron API Vite Boundary And Clean Dev Boot
 
 - Fixed the dev boot lane where frontend imports from `@tauri-apps/api/*` could fail under Vite even though Node could resolve the package.
