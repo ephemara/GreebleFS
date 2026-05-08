@@ -1,9 +1,9 @@
 /**
  * ExplorerVideoEditor — shell-owned video preview/editor for the GreebleFS preview pane.
  *
- * Playback still rides a browser `<video>` element, but source resolution and preview-proxy
- * generation go through the typed Rust backend so the shell can fall back to a safer proxy when
- * the current desktop webview cannot decode the original file directly.
+ * Playback rides the desktop webview's native `<video>` stack directly from a local asset URL.
+ * Rust only enters the first-frame path when the webview rejects the source and needs a generated
+ * H.264 preview proxy.
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   AudioWaveform,
   Clapperboard,
@@ -34,9 +35,6 @@ import {
 } from '@/components/AppIcons';
 import {
   createExplorerVideoPreviewProxy,
-  EXPLORER_VIDEO_PREVIEW_MAX_BYTES,
-  readExplorerVideoPreviewBytes,
-  resolveExplorerVideoPreviewSource,
   type ExplorerVideoPreviewSource,
 } from '../runtime/videoEditorBackend';
 import {
@@ -130,14 +128,28 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-function describeErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
+function localPathToFileUrl(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  return normalized.startsWith('/')
+    ? `file://${encodeURI(normalized)}`
+    : `file:///${encodeURI(normalized)}`;
+}
+
+function resolveNativeVideoPlaybackUrl(sourcePath: string, preferredPlaybackUrl?: string | null): string {
+  const trimmedPreferredUrl = preferredPlaybackUrl?.trim();
+  if (trimmedPreferredUrl) {
+    return trimmedPreferredUrl;
   }
-  if (typeof error === 'string') {
-    return error;
+
+  if (typeof window === 'undefined') {
+    return sourcePath;
   }
-  return 'Unknown playback transport failure.';
+
+  try {
+    return convertFileSrc(sourcePath);
+  } catch {
+    return localPathToFileUrl(sourcePath);
+  }
 }
 
 /** Convert AudioBuffer → WAV Blob without any server or ffmpeg dependency */
@@ -265,6 +277,7 @@ function ControlSlider({ label, value, min, max, reset, onChange }: ControlSlide
 export function ExplorerVideoEditor({
   videoPath,
   videoName,
+  videoSource,
   videoExtension,
   videoMimeType,
   videoSize,
@@ -275,7 +288,7 @@ export function ExplorerVideoEditor({
   // ── Proxy resolution state ──
   const [playSrc, setPlaySrc] = useState<string | null>(null);
   const [playbackMimeType, setPlaybackMimeType] = useState<string | null>(videoMimeType);
-  const [isProxying, setIsProxying] = useState(true);
+  const [isProxying, setIsProxying] = useState(false);
   const [proxyError, setProxyError] = useState('');
   const [resolvedSourceKind, setResolvedSourceKind] =
     useState<ExplorerVideoPreviewSource['sourceKind'] | null>(null);
@@ -321,98 +334,28 @@ export function ExplorerVideoEditor({
     setIsPreviewDragging(false);
   }, []);
 
-  const applyResolvedPreviewSource = useCallback(
-    async (
-      resolvedSource: ExplorerVideoPreviewSource,
-      allowProxyFallback = true,
-    ) => {
-      const loadGeneration = loadGenerationRef.current;
+  const applyNativePlaybackSource = useCallback(
+    (resolvedSource: ExplorerVideoPreviewSource, playbackUrl: string) => {
       setResolvedSourceKind(resolvedSource.sourceKind);
       setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
-      setPlaySrc(null);
       setProxyError('');
-      setIsProxying(true);
+      setIsProxying(false);
       setIsPlaybackReady(false);
       setIsPlaying(false);
       revokePlaybackObjectUrl();
-
-      try {
-        const previewBytes = await readExplorerVideoPreviewBytes(
-          resolvedSource.sourcePath,
-          EXPLORER_VIDEO_PREVIEW_MAX_BYTES,
-        );
-        if (loadGenerationRef.current !== loadGeneration) {
-          return;
-        }
-
-        const playbackObjectUrl = URL.createObjectURL(
-          new Blob([previewBytes], {
-            type: resolvedSource.mimeType ?? videoMimeType ?? 'application/octet-stream',
-          }),
-        );
-
-        if (loadGenerationRef.current !== loadGeneration) {
-          URL.revokeObjectURL(playbackObjectUrl);
-          return;
-        }
-
-        playbackObjectUrlRef.current = playbackObjectUrl;
-        setPlaySrc(playbackObjectUrl);
-      } catch (error) {
-        if (loadGenerationRef.current !== loadGeneration) {
-          return;
-        }
-
-        const errorMessage = describeErrorMessage(error);
-        console.error('[VideoEditor] Native playback transport failed', {
-          resolvedSource,
-          error,
-        });
-
-        if (resolvedSource.sourceKind === 'direct' && allowProxyFallback) {
-          setHasAttemptedRuntimeProxyFallback(true);
-          try {
-            const proxySource = await createExplorerVideoPreviewProxy(videoPath);
-            if (loadGenerationRef.current !== loadGeneration) {
-              return;
-            }
-            await applyResolvedPreviewSource(proxySource, false);
-            return;
-          } catch (proxyFallbackError) {
-            if (loadGenerationRef.current !== loadGeneration) {
-              return;
-            }
-            console.error('[VideoEditor] preview proxy fallback failed', proxyFallbackError);
-            setProxyError(
-              `Preview proxy generation failed after native video transport failed. ${describeErrorMessage(proxyFallbackError)}`,
-            );
-            return;
-          }
-        }
-
-        setProxyError(
-          resolvedSource.sourceKind === 'proxy'
-            ? `Native preview proxy transport failed before playback could begin. ${errorMessage}`
-            : `Native video transport failed before playback could begin. ${errorMessage}`,
-        );
-      } finally {
-        if (loadGenerationRef.current === loadGeneration) {
-          setIsProxying(false);
-        }
-      }
+      playbackObjectUrlRef.current = playbackUrl;
+      setPlaySrc(playbackUrl);
     },
-    [revokePlaybackObjectUrl, videoMimeType, videoPath],
+    [revokePlaybackObjectUrl, videoMimeType],
   );
 
-  // Reset on file change and resolve source
+  // Reset on file change and enter WebView2's native local-media path immediately.
   useEffect(() => {
-    let isMounted = true;
-    const loadGeneration = loadGenerationRef.current + 1;
-    loadGenerationRef.current = loadGeneration;
+    loadGenerationRef.current += 1;
     revokePlaybackObjectUrl();
     setPlaySrc(null);
     setPlaybackMimeType(videoMimeType);
-    setIsProxying(true);
+    setIsProxying(false);
     setProxyError('');
     setResolvedSourceKind(null);
     setHasAttemptedRuntimeProxyFallback(false);
@@ -428,41 +371,26 @@ export function ExplorerVideoEditor({
     setAudioExtractMsg('');
     cancelAnimationFrame(rafRef.current);
 
-    (async () => {
-      try {
-        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
-        if (isMounted && loadGenerationRef.current === loadGeneration) {
-          await applyResolvedPreviewSource(resolvedSource);
-        }
-      } catch (err: any) {
-        if (isMounted && loadGenerationRef.current === loadGeneration) {
-          console.warn(
-            '[VideoEditor] Backend resolve failed, falling back to native byte transport:',
-            err,
-          );
-          await applyResolvedPreviewSource(
-            {
-              sourcePath: videoPath,
-              sourceKind: 'direct',
-              mimeType: videoMimeType,
-              generatedFromPath: null,
-            },
-            true,
-          );
-        }
-      }
-    })();
+    applyNativePlaybackSource(
+      {
+        sourcePath: videoPath,
+        sourceKind: 'direct',
+        mimeType: videoMimeType,
+        generatedFromPath: null,
+      },
+      resolveNativeVideoPlaybackUrl(videoPath, videoSource),
+    );
 
     return () => {
-      isMounted = false;
       revokePlaybackObjectUrl();
     };
   }, [
-    applyResolvedPreviewSource,
+    applyNativePlaybackSource,
     resetPreviewViewport,
     revokePlaybackObjectUrl,
     videoMimeType,
     videoPath,
+    videoSource,
   ]);
 
   useEffect(() => {
@@ -499,7 +427,10 @@ export function ExplorerVideoEditor({
       if (loadGenerationRef.current !== loadGeneration) {
         return;
       }
-      await applyResolvedPreviewSource(proxySource, false);
+      applyNativePlaybackSource(
+        proxySource,
+        resolveNativeVideoPlaybackUrl(proxySource.sourcePath),
+      );
     } catch (error) {
       if (loadGenerationRef.current !== loadGeneration) {
         return;
@@ -511,7 +442,7 @@ export function ExplorerVideoEditor({
         setIsProxying(false);
       }
     }
-  }, [applyResolvedPreviewSource, hasAttemptedRuntimeProxyFallback, videoPath]);
+  }, [applyNativePlaybackSource, hasAttemptedRuntimeProxyFallback, videoPath]);
 
   useEffect(() => () => {
     revokePlaybackObjectUrl();
@@ -969,7 +900,7 @@ export function ExplorerVideoEditor({
           ) : null}
 
           {/* No-video overlay */}
-          {(!playSrc || !isPlaybackReady || Boolean(proxyError)) && (
+          {(!playSrc || isProxying || Boolean(proxyError)) && (
             <div style={{
               position: 'absolute',
               inset: 0,
@@ -989,7 +920,7 @@ export function ExplorerVideoEditor({
                   <Film size={28} style={{ opacity: 0.4 }} />
                 )}
                 <span style={{ fontSize: 11, opacity: 0.7, maxWidth: 200, textAlign: 'center', lineHeight: 1.4 }}>
-                  {isProxying ? 'Resolving native video...' : proxyError ? proxyError : 'Loading video…'}
+                  {isProxying ? 'Building preview proxy…' : proxyError ? proxyError : 'No video source'}
                 </span>
               </div>
             </div>
@@ -1245,8 +1176,8 @@ export function ExplorerVideoEditor({
                 : proxyError
                   ? proxyError
                   : resolvedSourceKind === 'proxy'
-                    ? 'Proxy playback (native bytes)'
-                    : 'Direct playback (native bytes)'}
+                    ? 'Proxy local playback'
+                    : 'Direct local playback'}
             </div>
           </div>
         )}

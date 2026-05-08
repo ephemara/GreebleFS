@@ -8435,3 +8435,19 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Shortcut icons get a bottom-right themed badge via the icon-theme UI slot `explorer_shortcut_badge`, backed by canonical `shortcut_arrow`.
 - Durable rule:
   - Do not test native Explorer icon behavior solely with Vitest mocks. Use `bun run test:proof:native-icons` against a live Tauron/WebView session for regressions involving native icon resolution, shortcut label hiding, and shortcut badges.
+
+# 2026-05-08 - Video Preview Uses Direct Local Asset Playback First
+
+- Explorer video preview no longer waits on Rust compatibility probing, preview-byte reads, or blob URL construction before first paint.
+  - `src/components/ExplorerVideoEditor.tsx` now consumes the `videoSource` asset URL already produced by `FileExplorer.tsx` and feeds it straight into the `<video>` element.
+  - The previous hot path was `video_resolve_preview_source` / `ffprobe` -> `readExplorerPreviewBytes` up to 256 MB -> `Blob` -> `URL.createObjectURL`, which made local files feel like remote buffering.
+  - Direct playback now shows the native media surface immediately and removes the preview overlay while metadata loads.
+- Proxy fallback still exists, but it is now demand-driven.
+  - If WebView2 rejects the direct source, `ExplorerVideoEditor.tsx` calls `createExplorerVideoPreviewProxy(...)`.
+  - The generated MP4/H.264 proxy is played through `convertFileSrc(...)` as a local asset URL rather than being read back through IPC as bytes.
+- Durable rule:
+  - Do not reintroduce preview-byte reads or `video_resolve_preview_source` on the local video first-frame path. Rust proxy generation is the fallback after real media error, not the startup gate.
+  - Keep Tauri asset protocol enabled for local media. If direct video playback breaks globally, inspect asset URL generation/scope before falling back to IPC blob transport.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "defaults videos to playback preview and only enters video edit mode when requested" --reporter=dot --testTimeout=30000`
