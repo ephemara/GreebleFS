@@ -16,6 +16,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@tauri-apps/api": ["../tauron/packages/api/dist/index.d.ts"],
+      "@tauri-apps/api/*": ["../tauron/packages/api/dist/*.d.ts"],
       "@greeblefs/ui": ["usr/packages/greeblefs-ui/src/index.tsx"],
       "overlayterm-plugin": ["src/components/pluginRuntime.tsx"],
       "@tiptap/core": ["src/vendor/tiptap/core/src/index.ts"],
