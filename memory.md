@@ -14,6 +14,22 @@
 - Next recommended step:
   - Add webview hosting and terminal/task support next; those are the major blockers for real VS Code AI chat/agent extensions.
 
+# 2026-05-08 - Tauron Stream Envelope Fast Path Adoption
+
+- Adopted the new tauron transport fast path across the GreebleFS hot stream surfaces that were paying the old JSON churn tax.
+  - `src/runtime/ipc/streams.ts` now subscribes through tauron `subscribeStreamPackets(...)`, dedupes on transport `metadata.sequence`, and forwards only `packet.payload` to app listeners.
+  - `src-tauri/src/terminal.rs` now publishes terminal transport output through `tauri::transport::publish_stream_payload(...)`, so the hot transport payload is the raw output string instead of a metadata-mirroring struct.
+  - `src-tauri/src/runtime_pipeline/host_events.rs` now uses the same fast publish helper for host-event IPC streams.
+  - `src/components/TerminalOverlay.tsx` now consumes raw terminal output string chunks from the transport stream, while richer `TerminalOutputStreamPacket` metadata still flows through host events for other runtime consumers.
+- Durable rules:
+  - Treat tauron transport metadata as the source of truth for replay and dedupe sequencing. Do not stuff `metadata.sequence` back into every app payload just so the frontend can dedupe.
+  - For transport hot paths that only need app payload semantics, prefer `publish_stream_payload(...)` in tauron and `subscribeStreamPackets(...)` on the frontend. Reserve metadata-embedded payload structs for consumers that truly need both layers fused together.
+  - Terminal transport should stay as lean as possible: raw output over the IPC stream lane, richer lifecycle or diagnostic packets over host events.
+- Validation:
+  - Passed: `bunx vitest run src/test/ipcStreamsRuntime.test.ts src/test/terminalOverlay.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `cargo fmt --manifest-path D:/GreebleFS/src-tauri/Cargo.toml`
+  - Not clean: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib` still stops later on the existing unrelated `src-tauri/src/desktop_integration.rs` Windows shell compile error (`IShellLinkW::GetPath`).
+
 # 2026-05-08 - Kain UI Graph Runtime Overlay
 
 - Added the first app-level Kain UI graph lane so the theme/settings simplification work has a live source of truth instead of another JSON pack layer.

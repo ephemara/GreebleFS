@@ -31,7 +31,7 @@ const {
 })); 
 
 vi.mock('@tauri-apps/api/transport', () => ({
-  subscribeStream: subscribeTransportStreamMock,
+  subscribeStreamPackets: subscribeTransportStreamMock,
 }));
 
 class MockXtermLine {
@@ -223,7 +223,10 @@ describe('TerminalOverlay', () => {
     if (!outputHandler) {
       throw new Error('Missing output stream handler');
     }
-    outputHandler({ data: 'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json' });
+    outputHandler({
+      metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1, byteLength: 52 },
+      payload: 'PS M:\\\\OverlayTerm> dir\nsrc  src-tauri  package.json',
+    });
 
     await userEvent.click(copyButton);
 
@@ -292,9 +295,8 @@ describe('TerminalOverlay', () => {
         closeOnUnsubscribe: false,
       });
       (listener as (payload: unknown) => void)({
-        terminalId: 'overlay-0',
-        metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1 },
-        data: 'PS C:\\Dev\\GreebleFS> ',
+        metadata: { streamId: 'stream-overlay-0', sequence: 0, emittedAtEpochMs: 1, byteLength: 22 },
+        payload: 'PS C:\\Dev\\GreebleFS> ',
       });
       return transportUnlisten;
     });

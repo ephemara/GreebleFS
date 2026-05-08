@@ -60,7 +60,6 @@ import {
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
 import type {
-  TerminalOutputStreamPacket,
   TerminalShellIntegrationStateEvent,
 } from '../generated/tauri';
 import type { ResolvedWorkbenchThemeRecipe } from '../config/workbenchTheme';
@@ -139,6 +138,8 @@ import {
   registerTerminalPaneHostEntry,
   unregisterTerminalPaneHostEntry,
 } from './terminal/terminalHostRegistry';
+
+type TerminalOutputStreamChunk = string;
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -749,10 +750,10 @@ const XTermPane = memo(function XTermPane({
     const outputStream = unwrapTauriResult(
       await commands.terminalOpenOutputStream(id),
     );
-    const unlisten = await subscribeIpcStream<TerminalOutputStreamPacket>(
+    const unlisten = await subscribeIpcStream<TerminalOutputStreamChunk>(
       outputStream,
-      packet => {
-        bufferedOutputRef.current += packet.data;
+      chunk => {
+        bufferedOutputRef.current += chunk;
         scheduleBufferedFlush();
       },
       {

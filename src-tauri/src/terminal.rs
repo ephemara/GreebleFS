@@ -915,28 +915,29 @@ impl TerminalManager {
                                 .consume(&parsed_chunk.visible_output);
                             if !visible_output.is_empty() {
                                 let data = String::from_utf8_lossy(&visible_output).to_string();
-                                let packet = match tauri::transport::publish_stream_packet(
-                                    &app,
-                                    &stream_handle.id,
-                                    |metadata| {
-                                        Ok(TerminalOutputStreamPacket {
+                                let host_event_packet =
+                                    match tauri::transport::publish_stream_payload(
+                                        &app,
+                                        &stream_handle.id,
+                                        data.clone(),
+                                    ) {
+                                        Ok((_payload, outcome)) => TerminalOutputStreamPacket {
                                             terminal_id: terminal_id.clone(),
-                                            metadata: to_ipc_stream_packet_metadata(metadata),
+                                            metadata: to_ipc_stream_packet_metadata(
+                                                outcome.metadata,
+                                            ),
                                             data,
-                                        })
-                                    },
-                                ) {
-                                    Ok((packet, _outcome)) => packet,
-                                    Err(error) => {
-                                        log::warn!(
+                                        },
+                                        Err(error) => {
+                                            log::warn!(
                                             "failed to publish terminal stream packet for {}: {}",
                                             terminal_id,
                                             error
                                         );
-                                        continue;
-                                    }
-                                };
-                                publish_terminal_output_host_event(&app, &packet);
+                                            continue;
+                                        }
+                                    };
+                                publish_terminal_output_host_event(&app, &host_event_packet);
                             }
 
                             for reported_cwd in parsed_chunk.reported_cwds {

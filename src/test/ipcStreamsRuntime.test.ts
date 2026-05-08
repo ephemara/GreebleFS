@@ -5,7 +5,7 @@ const { subscribeStreamMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/transport", () => ({
-  subscribeStream: subscribeStreamMock,
+  subscribeStreamPackets: subscribeStreamMock,
 }));
 
 import { resetDeferredUnlistenForTests } from "../runtime/deferredUnlisten";
@@ -52,9 +52,11 @@ describe("ipc stream runtime", () => {
     }
 
     transportListener({
-      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-      terminalId: "preview-pane-0",
-      data: "hello world",
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1, byteLength: 13 },
+      payload: {
+        terminalId: "preview-pane-0",
+        data: "hello world",
+      },
     });
 
     expect(payloadListener).toHaveBeenCalledWith(
@@ -104,19 +106,25 @@ describe("ipc stream runtime", () => {
     }
 
     transportListener({
-      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-      terminalId: "preview-pane-0",
-      data: "retained",
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1, byteLength: 8 },
+      payload: {
+        terminalId: "preview-pane-0",
+        data: "retained",
+      },
     });
     transportListener({
-      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1 },
-      terminalId: "preview-pane-0",
-      data: "duplicate-live",
+      metadata: { streamId: "stream-1", sequence: 0, emittedAtEpochMs: 1, byteLength: 14 },
+      payload: {
+        terminalId: "preview-pane-0",
+        data: "duplicate-live",
+      },
     });
     transportListener({
-      metadata: { streamId: "stream-1", sequence: 1, emittedAtEpochMs: 2 },
-      terminalId: "preview-pane-0",
-      data: "live",
+      metadata: { streamId: "stream-1", sequence: 1, emittedAtEpochMs: 2, byteLength: 4 },
+      payload: {
+        terminalId: "preview-pane-0",
+        data: "live",
+      },
     });
 
     expect(payloadListener).toHaveBeenCalledTimes(2);
