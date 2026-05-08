@@ -52,6 +52,7 @@ import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
 import type { UsrProfileRuntimeSnapshot } from '../runtime/usrProfiles';
 import type { KainUiGraph } from '../runtime/kainUiGraph';
+import type { KainAppManifest } from '../runtime/kainManifest';
 import type { UsrProfileSettingsVariantDefinition } from '../config/usrProfileSettingsVariants';
 import type {
   LoadedOverlayPlugin,
@@ -252,6 +253,8 @@ export function createBuiltInPanelDefinitions({
   usrProfileSettingsVariants = [],
   kainUiGraph = null,
   kainUiGraphError = null,
+  kainManifest = null,
+  kainManifestError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -423,6 +426,8 @@ export function createBuiltInPanelDefinitions({
   usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
   kainUiGraph?: KainUiGraph | null;
   kainUiGraphError?: string | null;
+  kainManifest?: KainAppManifest | null;
+  kainManifestError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -813,6 +818,8 @@ export function createBuiltInPanelDefinitions({
             usrProfileSettingsVariants={usrProfileSettingsVariants}
             kainUiGraph={kainUiGraph}
             kainUiGraphError={kainUiGraphError}
+            kainManifest={kainManifest}
+            kainManifestError={kainManifestError}
             onSwitchUsrProfile={onSwitchUsrProfile}
             onCreateUsrProfile={onCreateUsrProfile}
             onCreateUsrProfileFromVariant={onCreateUsrProfileFromVariant}

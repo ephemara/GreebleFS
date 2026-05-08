@@ -15,6 +15,7 @@ Current hard wiring:
 - GreebleFS registers `tauri_plugin_kain::init()` in `src-tauri/src/lib.rs`.
 - GreebleFS grants `kain:default` in `src-tauri/capabilities/default.json`.
 - GreebleFS wraps the API in `src/runtime/kainTauronBridge.ts`.
+- GreebleFS normalizes the app-level Kain contribution manifest in `src/runtime/kainManifest.ts`.
 - First-party Kain runtime packages still live here under `src-kain/runtimes/**`.
 
 Simple model:
@@ -28,6 +29,37 @@ Webview UI
 ```
 
 This means Kain can become a source-of-truth/orchestration layer while Tauron stays the native window/app host and GreebleFS stays the product consuming that power.
+
+## App Manifest Dispatch
+
+`src-kain/app/main.kn` now exposes two app-level dispatch lanes through `kain_bridge_dispatch`:
+
+- `greeblefs.ui.graph`
+  Returns the Kain-authored UI graph consumed by Settings and app defaults.
+- `greeblefs.kain.manifest`
+  Returns the first-class Kain contribution manifest consumed by `src/runtime/kainManifest.ts` and surfaced in Settings > Kain UI.
+
+The manifest shape is intentionally small and additive:
+
+- `schemaVersion`
+- `kind = "greeblefs.kain.manifest"`
+- `bridge`
+- `capabilities`
+- `dispatch`
+- `generatedArtifacts`
+- `settingsSchemas`
+- `pipelines`
+- `ffiLanes`
+- `consumers`
+
+Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove the live app is consuming the Kain manifest instead of only passing CLI tests:
+
+- `data-kain-manifest-proof`
+- `data-kain-manifest-kind`
+- `data-kain-manifest-capabilities`
+- `data-kain-manifest-dispatch`
+
+If the Kain file changes while the app is already running, restart or reload the resident Tauron Kain runtime before judging the in-app proof. The old process can otherwise keep serving the previous `src-kain/app/main.kn` dispatch table.
 
 ## What Is Possible Now
 
@@ -164,6 +196,6 @@ This is where Kain should reduce cross-domain slop: one orchestration source, ma
 ## First Next Passes
 
 - Promote the `greeblefs-kain-control-plane` proof actions into a consumed generated-artifact lane.
-- Add a Kain bridge manifest emitted from Kain and loaded by `tauri-plugin-kain`.
-- Add a tiny UI proof that calls `probeKainTauronBridge()` and shows bridge status in an existing developer surface.
+- Convert one proof artifact from `greeblefs.kain.manifest.generatedArtifacts` into a real generated plugin/action manifest loaded by the plugin system.
 - Replace the proof plugin/settings artifacts with one real GreebleFS plugin/action manifest and one real settings/profile artifact.
+- Feed Rust/Tauron reflection into the manifest so `kain.host.reflection` can move from planned to live.

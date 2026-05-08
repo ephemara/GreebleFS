@@ -339,6 +339,10 @@ import {
   loadKainUiGraph,
   type KainUiGraph,
 } from './runtime/kainUiGraph';
+import {
+  loadKainManifest,
+  type KainAppManifest,
+} from './runtime/kainManifest';
 import { sendNativeNotification } from './runtime/nativeNotifications';
 import {
   applyLookdevScopedOverridesToSettings,
@@ -930,6 +934,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   );
   const [kainUiGraph, setKainUiGraph] = useState<KainUiGraph | null>(null);
   const [kainUiGraphError, setKainUiGraphError] = useState<string | null>(null);
+  const [kainManifest, setKainManifest] = useState<KainAppManifest | null>(null);
+  const [kainManifestError, setKainManifestError] = useState<string | null>(null);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -1066,6 +1072,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
       setKainUiGraph(result.graph);
       setKainUiGraphError(result.error);
+    });
+    void loadKainManifest({
+      profileId: usrProfileRuntimeActiveProfileId,
+      revision: usrProfileRuntimeRevision,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setKainManifest(result.manifest);
+      setKainManifestError(result.error);
     });
 
     return () => {
@@ -5329,6 +5345,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         usrProfileSettingsVariants,
         kainUiGraph,
         kainUiGraphError,
+        kainManifest,
+        kainManifestError,
         onSwitchUsrProfile: handleSwitchUsrProfile,
         onCreateUsrProfile: handleCreateUsrProfile,
         onCreateUsrProfileFromVariant: handleCreateUsrProfileFromVariant,
@@ -5606,6 +5624,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       refreshMenuPacks,
       kainUiGraph,
       kainUiGraphError,
+      kainManifest,
+      kainManifestError,
       usrProfileRuntimeSnapshot,
     ],
   );

@@ -149,6 +149,7 @@ import {
 import { openExplorerPicker } from "../runtime/explorerPicker";
 import type { UsrProfileRuntimeSnapshot } from "../runtime/usrProfiles";
 import type { KainUiGraph } from "../runtime/kainUiGraph";
+import type { KainAppManifest } from "../runtime/kainManifest";
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
@@ -2713,6 +2714,7 @@ interface SettingsSectionContentContext {
   kainUiGraphSource: string;
   kainUiSettingsMode: string;
   kainUiCategoryCount: number;
+  kainManifestCapabilityCount: number;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: "windows" | "macos" | "linux" | "unknown";
   presentationWindowMode: PresentationWindowMode;
@@ -2807,7 +2809,7 @@ function getSettingsSectionContent(
       };
     case "kain-ui":
       return {
-        summary: `${context.kainUiSettingsMode} · ${context.kainUiCategoryCount} groups`,
+        summary: `${context.kainUiSettingsMode} · ${context.kainUiCategoryCount} groups · ${context.kainManifestCapabilityCount} capabilities`,
         detail: `Live UI graph source: ${context.kainUiGraphSource}.`,
       };
     case "models":
@@ -3191,6 +3193,8 @@ export function SettingsPage({
   usrProfileSettingsVariants = [],
   kainUiGraph = null,
   kainUiGraphError = null,
+  kainManifest = null,
+  kainManifestError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -3329,6 +3333,8 @@ export function SettingsPage({
   usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
   kainUiGraph?: KainUiGraph | null;
   kainUiGraphError?: string | null;
+  kainManifest?: KainAppManifest | null;
+  kainManifestError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -7938,6 +7944,7 @@ export function SettingsPage({
       kainUiGraphSource: kainUiGraph?.source ?? kainUiGraphError ?? "settings store fallback",
       kainUiSettingsMode: kainUiGraph?.settings.mode ?? "fallback",
       kainUiCategoryCount: kainUiGraph?.settings.categories.length ?? 0,
+      kainManifestCapabilityCount: kainManifest?.capabilities.length ?? 0,
       systemPresentationState,
       platform: platform as SettingsSectionContentContext["platform"],
       presentationWindowMode: settings.presentation.windowMode,
@@ -8039,6 +8046,7 @@ export function SettingsPage({
       kainUiGraph?.settings.mode,
       kainUiGraph?.source,
       kainUiGraphError,
+      kainManifest?.capabilities.length,
       activeMenuPack?.name,
       appearancePackSelectionSummary,
       availableAppearancePackEntries.length,
@@ -15274,6 +15282,8 @@ export function SettingsPage({
           <KainUiSettingsSection
             graph={kainUiGraph}
             error={kainUiGraphError}
+            manifest={kainManifest}
+            manifestError={kainManifestError}
           />
         )}
 

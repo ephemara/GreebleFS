@@ -149,6 +149,132 @@ fn build_ui_profile() -> Any:
     json_object_set(profile, "overlays", string_array_2("usr/kain-ui/main.kn", "usr/profiles/<active>/kain-ui/main.kn"))
     return profile
 
+fn append_manifest_capability(items, id: String, lane: String, label: String, summary: String, status: String, implemented: Bool) -> Int:
+    let capability = json_object_new()
+    json_object_set(capability, "id", id)
+    json_object_set(capability, "lane", lane)
+    json_object_set(capability, "label", label)
+    json_object_set(capability, "summary", summary)
+    json_object_set(capability, "status", status)
+    json_object_set(capability, "implemented", implemented)
+    json_array_push(items, capability)
+    return 0
+
+fn append_manifest_dispatch(items, dispatch_namespace: String, method: String, summary: String, consumed_by: String) -> Int:
+    let endpoint = json_object_new()
+    json_object_set(endpoint, "namespace", dispatch_namespace)
+    json_object_set(endpoint, "method", method)
+    json_object_set(endpoint, "summary", summary)
+    json_object_set(endpoint, "consumedBy", consumed_by)
+    json_array_push(items, endpoint)
+    return 0
+
+fn append_manifest_artifact(items, id: String, artifact_kind: String, source: String, target: String, status: String) -> Int:
+    let artifact = json_object_new()
+    json_object_set(artifact, "id", id)
+    json_object_set(artifact, "kind", artifact_kind)
+    json_object_set(artifact, "source", source)
+    json_object_set(artifact, "target", target)
+    json_object_set(artifact, "status", status)
+    json_array_push(items, artifact)
+    return 0
+
+fn append_manifest_schema(items, id: String, label: String, source: String, consumer: String, status: String) -> Int:
+    let schema = json_object_new()
+    json_object_set(schema, "id", id)
+    json_object_set(schema, "label", label)
+    json_object_set(schema, "source", source)
+    json_object_set(schema, "consumer", consumer)
+    json_object_set(schema, "status", status)
+    json_array_push(items, schema)
+    return 0
+
+fn append_manifest_pipeline(items, id: String, label: String, summary: String, status: String) -> Int:
+    let pipeline = json_object_new()
+    json_object_set(pipeline, "id", id)
+    json_object_set(pipeline, "label", label)
+    json_object_set(pipeline, "summary", summary)
+    json_object_set(pipeline, "status", status)
+    json_array_push(items, pipeline)
+    return 0
+
+fn append_manifest_ffi_lane(items, id: String, label: String, summary: String, status: String) -> Int:
+    let lane = json_object_new()
+    json_object_set(lane, "id", id)
+    json_object_set(lane, "label", label)
+    json_object_set(lane, "summary", summary)
+    json_object_set(lane, "status", status)
+    json_array_push(items, lane)
+    return 0
+
+fn build_kain_manifest(request: Any) -> Any:
+    let manifest = json_object_new()
+    let bridge = json_object_new()
+    let capabilities = json_array_new()
+    let dispatch = json_array_new()
+    let generated_artifacts = json_array_new()
+    let settings_schemas = json_array_new()
+    let pipelines = json_array_new()
+    let ffi_lanes = json_array_new()
+    let consumers = json_array_new()
+
+    json_object_set(bridge, "runtimeId", "greeblefs-kain-app")
+    json_object_set(bridge, "entry", "src-kain/app/main.kn")
+    json_object_set(bridge, "dispatchFunction", "kain_bridge_dispatch")
+    json_object_set(bridge, "transport", "tauron.kain.bridge.json-lines")
+    json_object_set(bridge, "supervisor", "tauri-plugin-kain")
+
+    append_manifest_capability(capabilities, "kain.app.manifest", "bridge", "Kain app manifest", "Kain can describe the app-level features it contributes to GreebleFS.", "live", true)
+    append_manifest_capability(capabilities, "kain.ui.graph", "ui", "Kain UI graph", "Kain supplies theme, chrome, layout, motion, settings, and profile intent.", "live", true)
+    append_manifest_capability(capabilities, "kain.settings.navigation", "settings", "Settings navigation ownership", "Kain can author Settings groups and hide compatibility lanes while GreebleFS keeps fallbacks.", "consumed", true)
+    append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can emit GreebleFS-compatible plugin and action artifacts from typed intent.", "planned", false)
+    append_manifest_capability(capabilities, "kain.host.reflection", "rust", "Rust host reflection", "Rust/Tauron can describe host capabilities for Kain to route or generate wrappers.", "planned", false)
+    append_manifest_capability(capabilities, "kain.shader.spirv", "gpu", "SPIR-V shader artifacts", "Kain can compile GPU/shader artifacts for lookdev, preview, and compute pipelines.", "available-in-kain", false)
+    append_manifest_capability(capabilities, "kain.node.ffi", "ffi", "Node FFI bridge", "Kain can call Node/native packages when that is the fastest authoring path.", "available-in-kain", false)
+    append_manifest_capability(capabilities, "kain.c.runtime", "ffi", "C runtime bridge", "Kain can talk to C libraries, DLLs, compiled tools, SDKs, and legacy code.", "available-in-kain", false)
+
+    append_manifest_dispatch(dispatch, "greeblefs.ui", "graph", "Return the Kain-authored UI graph consumed by Settings and app defaults.", "src/runtime/kainUiGraph.ts")
+    append_manifest_dispatch(dispatch, "greeblefs.ui", "ping", "Smoke-test the resident bridge process.", "dev/mcp smoke")
+    append_manifest_dispatch(dispatch, "greeblefs.kain", "manifest", "Return the Kain app manifest that declares first-class GreebleFS contributions.", "src/runtime/kainManifest.ts")
+
+    append_manifest_artifact(generated_artifacts, "kain.plugin.proof", "plugin-manifest", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn", "generated/plugin-proof.json", "proof")
+    append_manifest_artifact(generated_artifacts, "kain.settings.proof", "settings-schema", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated/settings-proof.json", "proof")
+    append_manifest_artifact(generated_artifacts, "kain.ui.graph", "runtime-graph", "src-kain/app/main.kn", "src/runtime/kainUiGraph.ts", "live")
+
+    append_manifest_schema(settings_schemas, "greeblefs.kain.ui", "Kain UI Settings", "src-kain/app/main.kn", "Settings > Kain UI", "live")
+    append_manifest_schema(settings_schemas, "greeblefs.kain.controlPlane", "Kain Control Plane Settings", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated proof", "proof")
+
+    append_manifest_pipeline(pipelines, "kain.settings.first-class", "Settings ownership", "Kain authors Settings grouping now, then graduates schema/default/migration ownership per section.", "active")
+    append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Plugin manifest generation", "Kain emits plugin/action manifests that GreebleFS can load as compatibility artifacts.", "next")
+    append_manifest_pipeline(pipelines, "kain.reflection.codegen", "Rust reflection codegen", "Kain consumes Rust/Tauron host shape and emits wrapper glue instead of hand-maintained mappings.", "planned")
+    append_manifest_pipeline(pipelines, "kain.gpu.artifacts", "GPU artifact lane", "Kain compiles SPIR-V/shader artifacts for preview/lookdev pipelines.", "planned")
+
+    append_manifest_ffi_lane(ffi_lanes, "node", "Node FFI", "Use Node/native npm packages for authoring, codegen, and asset tooling.", "available-in-kain")
+    append_manifest_ffi_lane(ffi_lanes, "c-runtime", "C runtime", "Use native C libraries, DLLs, SDKs, and compiled tools behind explicit host lanes.", "available-in-kain")
+    append_manifest_ffi_lane(ffi_lanes, "rust-reflection", "Rust reflection", "Let Rust describe trusted host capabilities and let Kain generate or route calls.", "planned")
+    append_manifest_ffi_lane(ffi_lanes, "spirv", "SPIR-V", "Compile shader/compute artifacts that GreebleFS can cache and consume.", "available-in-kain")
+
+    json_array_push(consumers, "src/runtime/kainManifest.ts")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+    json_array_push(consumers, "MCP greeblefs-dev-mcp smoke")
+
+    json_object_set(manifest, "schemaVersion", 1)
+    json_object_set(manifest, "kind", "greeblefs.kain.manifest")
+    json_object_set(manifest, "source", "src-kain/app/main.kn")
+    json_object_set(manifest, "label", "GreebleFS Kain Manifest")
+    json_object_set(manifest, "summary", "Kain-authored contribution map for UI, Settings, plugins, pipelines, FFI, GPU, and generated compatibility artifacts.")
+    json_object_set(manifest, "namespace", json_string_field(request, "namespace"))
+    json_object_set(manifest, "method", json_string_field(request, "method"))
+    json_object_set(manifest, "bridge", bridge)
+    json_object_set(manifest, "capabilities", capabilities)
+    json_object_set(manifest, "dispatch", dispatch)
+    json_object_set(manifest, "generatedArtifacts", generated_artifacts)
+    json_object_set(manifest, "settingsSchemas", settings_schemas)
+    json_object_set(manifest, "pipelines", pipelines)
+    json_object_set(manifest, "ffiLanes", ffi_lanes)
+    json_object_set(manifest, "consumers", consumers)
+    return manifest
+
 fn build_ui_graph(request: Any) -> Any:
     let graph = json_object_new()
     json_object_set(graph, "schemaVersion", 1)
@@ -183,5 +309,8 @@ fn kain_bridge_dispatch(request_json: String) -> Any:
         json_object_set(result, "ok", true)
         json_object_set(result, "source", "src-kain/app/main.kn")
         return result
+
+    if request_namespace == "greeblefs.kain" and request_method == "manifest":
+        return build_kain_manifest(request)
 
     return build_error("Unknown GreebleFS Kain UI request: " + request_namespace + "." + request_method)

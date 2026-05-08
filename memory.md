@@ -1,3 +1,21 @@
+# 2026-05-08 - Kain App Manifest First-Class Proof
+
+- Added the first consumed Kain app manifest lane on top of the Tauron resident bridge.
+  - `src-kain/app/main.kn` now dispatches `greeblefs.kain.manifest` beside `greeblefs.ui.graph`, returning a Kain-authored contribution map for UI graph ownership, Settings, plugin/action generation, Rust reflection, Node/C FFI, SPIR-V/GPU artifacts, pipelines, generated artifacts, and downstream consumers.
+  - `src/runtime/kainManifest.ts` normalizes the manifest in TypeScript, and `src/App.tsx` loads it with the existing Kain UI graph so React consumes the same resident Kain bridge process.
+  - `SettingsPage.tsx`, `panelRegistry.tsx`, and `KainUiSettingsSection.tsx` now surface the manifest in Settings > Kain UI with MCP-proof attributes: `data-kain-manifest-proof`, `data-kain-manifest-kind`, `data-kain-manifest-capabilities`, and `data-kain-manifest-dispatch`.
+- Durable rule:
+  - After editing `src-kain/app/main.kn`, reload the resident Tauron Kain runtime or restart the app before trusting in-app proof. CLI `bridge serve` runs the current file, but a live Tauron process can still hold the old dispatch table until refreshed.
+- Validation:
+  - Passed: staged Kain CLI smoke for `greeblefs.kain.manifest` and `greeblefs.ui.graph`.
+  - Passed: `node --check scripts/kain/stage-kain-toolchain.mjs`.
+  - Passed: `node scripts/kain/stage-kain-toolchain.mjs --verify-only`.
+  - Passed: `bunx vitest run src/test/kainManifest.test.ts src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`.
+  - Passed: GreebleFS MCP native-CDP app proof in Settings > Kain UI after `plugin:kain|reload`: `data-kain-manifest-proof="live"`, kind `greeblefs.kain.manifest`, `8` capabilities, `3` dispatch endpoints. Screenshot: `D:/GreebleFS/MCP/.state/screenshots/D-GreebleFS-MCP-.state-kain-manifest-proof.png.png`.
+  - Not clean: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports existing baseline TypeScript errors outside this lane; no new errors were observed for `src/runtime/kainManifest.ts`, `KainUiSettingsSection.tsx`, `SettingsPage.tsx`, or `panelRegistry.tsx`.
+- Next recommended step:
+  - Make one manifest-advertised lane real by having Kain emit a small plugin/action manifest artifact and loading it through the existing plugin/action discovery path.
+
 # 2026-05-08 - App Zoom Runtime Hardening
 
 - Fixed the live app-mode zoom regression that tests had missed.
