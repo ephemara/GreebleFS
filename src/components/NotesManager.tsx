@@ -1399,7 +1399,9 @@ export function NotesManager({
                 style={{
                   width: '100%',
                   height: '100%',
-                  border: 'none',
+                  borderTop: 'none',
+                  borderBottom: 'none',
+                  borderLeft: 'none',
                   outline: 'none',
                   resize: 'none',
                   padding: '24px 28px 96px',

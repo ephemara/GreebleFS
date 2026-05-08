@@ -1,7 +1,10 @@
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
+import { projectPath, tauronApiDistPath, tauronApiViteAliases } from "./vite.shared.ts";
+
+const repoSkillsMirrorPath = projectPath("skills");
 
 const ignoredWatchGlobs = [
   "**/.git/**",
@@ -16,12 +19,12 @@ const ignoredWatchGlobs = [
   "**/target-tests*/**",
   "**/MCP/.state/**",
   "**/plugins/**/node_modules/**",
+  "skills",
+  "skills/**",
+  repoSkillsMirrorPath,
+  `${repoSkillsMirrorPath}/**`,
   "**/usr/profiles/**/settings.json",
 ];
-
-function projectPath(...segments: string[]): string {
-  return path.resolve(...segments).replace(/\\/g, "/");
-}
 
 const tiptapVendorAliases = [
   { find: "@tiptap/core/jsx-runtime", replacement: projectPath("src/vendor/tiptap/core/src/jsx-runtime.ts") },
@@ -41,6 +44,7 @@ export default defineConfig(async () => ({
       { find: "@", replacement: "/src" },
       { find: "@greeblefs/ui", replacement: projectPath("usr/packages/greeblefs-ui/src/index.tsx") },
       { find: "overlayterm-plugin", replacement: projectPath("src/components/pluginRuntime.tsx") },
+      ...tauronApiViteAliases,
       ...tiptapVendorAliases,
     ],
   },
@@ -51,6 +55,9 @@ export default defineConfig(async () => ({
   cacheDir: process.env.GREEBLEFS_VITE_CACHE_DIR
     ?? process.env.OVERLAYTERM_VITE_CACHE_DIR
     ?? path.resolve("node_modules/.vite"),
+  optimizeDeps: {
+    entries: ["index.html"],
+  },
   build: {
     outDir: process.env.OVERLAYTERM_VITE_OUT_DIR ?? "dist",
     emptyOutDir: true,
@@ -63,6 +70,9 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: true, // listen on all addresses
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), tauronApiDistPath],
+    },
     watch: {
       // 3. keep large artifact trees and plugin dependency folders out of the live watcher.
       ignored: ignoredWatchGlobs,

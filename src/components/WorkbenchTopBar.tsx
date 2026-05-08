@@ -2305,8 +2305,9 @@ export function WorkbenchTopBar({
               background: isSettingsActive
                 ? 'var(--overlay-workbench-chrome-tab-active-bg)'
                 : 'var(--overlay-workbench-chrome-tab-bg)',
-              border: 'none',
+              borderTop: 'none',
               borderRight: `1px solid ${borderColor}`,
+              borderBottom: 'none',
               borderLeft: `1px solid ${isSettingsActive ? 'var(--overlay-workbench-chrome-button-active-border)' : borderColor}`,
               color: isSettingsActive ? text : muted,
               cursor: 'pointer',
@@ -2347,8 +2348,10 @@ export function WorkbenchTopBar({
               background: isExplorerActive
                 ? 'var(--overlay-workbench-chrome-tab-active-bg)'
                 : 'var(--overlay-workbench-chrome-tab-bg)',
-              border: 'none',
+              borderTop: 'none',
               borderRight: `1px solid ${borderColor}`,
+              borderBottom: 'none',
+              borderLeft: 'none',
               color: isExplorerActive ? text : muted,
               cursor: 'pointer',
               flexShrink: 0,
@@ -2694,9 +2697,6 @@ export function WorkbenchTopBar({
                   : usesWindowsTabChrome
                     ? 'var(--overlay-workbench-chrome-tab-bg)'
                     : 'transparent',
-              border: usesWindowsTabChrome
-                ? `1px solid ${borderColor}`
-                : 'none',
               borderBottom: usesWindowsTabChrome
                 ? `1px solid ${isActive ? 'var(--overlay-workbench-chrome-bg)' : borderColor}`
                 : isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
@@ -2704,6 +2704,9 @@ export function WorkbenchTopBar({
                 ? `1px solid ${borderColor}`
                 : isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
               borderRight: `1px solid ${borderColor}`,
+              borderLeft: usesWindowsTabChrome
+                ? `1px solid ${borderColor}`
+                : 'none',
               color: isActive ? text : muted,
               fontSize: 'var(--overlay-workbench-tab-label-size)',
               fontWeight: isActive ? 700 : 500,
@@ -2746,6 +2749,7 @@ export function WorkbenchTopBar({
                   event.stopPropagation();
                   onPanelClose(panel.id);
                 }}
+                aria-label="Close panel tab"
                 title={`Close ${panel.label}`}
                 style={{
                   display: 'flex',
@@ -2948,13 +2952,18 @@ export function WorkbenchTopBar({
         background: effectiveTopBarStyle === 'minimal'
           ? 'transparent'
           : `linear-gradient(180deg, var(--overlay-workbench-chrome-bg), ${appearance.theme.palette.appBackgroundAlt})`,
-        borderBottom: usesFloatingTopBar || effectiveTopBarStyle === 'minimal'
+        borderBottom: usesFloatingTopBar
+          ? '1px solid var(--overlay-workbench-chrome-border)'
+          : effectiveTopBarStyle === 'minimal'
           ? 'none'
           : (isBottomBar ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
-        borderTop: usesFloatingTopBar || effectiveTopBarStyle === 'minimal'
+        borderTop: usesFloatingTopBar
+          ? '1px solid var(--overlay-workbench-chrome-border)'
+          : effectiveTopBarStyle === 'minimal'
           ? 'none'
           : (isBottomBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
-        border: usesFloatingTopBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+        borderRight: usesFloatingTopBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+        borderLeft: usesFloatingTopBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
         borderRadius: usesInsetTopBar ? workbench.metrics.panelRadius : 0,
         boxShadow: usesFloatingTopBar
           ? 'var(--overlay-workbench-shell-shadow)'

@@ -1,3 +1,21 @@
+# 2026-05-08 - Tauron API Vite Boundary And Clean Dev Boot
+
+- Fixed the dev boot lane where frontend imports from `@tauri-apps/api/*` could fail under Vite even though Node could resolve the package.
+  - `vite.shared.ts` now owns the shared Tauron API dist path and aliases `@tauri-apps/api` / `@tauri-apps/api/*` directly to `D:/tauron/packages/api/dist`.
+  - Desktop Vite and Vitest configs consume that shared alias; browser-serving configs also allow the sibling dist directory through `server.fs.allow`.
+  - Desktop Vite keeps `optimizeDeps.entries = ["index.html"]` so stale `dist/index.html` and reference app HTML are not scanned as extra app entries.
+- Fixed the live React boot crash by moving the dedicated Lookdev close-request effect below the callbacks it depends on, avoiding the `Cannot access 'closeDedicatedLookdevWindow' before initialization` TDZ path.
+- Cleaned the remaining React dev console noise from shorthand/longhand border style collisions across the active shell/explorer chrome path. Prefer explicit border side properties whenever a style object also sets `borderTop`, `borderRight`, `borderBottom`, or `borderLeft`.
+- Durable validation:
+  - Passed: Vite resolved config shows Tauron API aliases into `D:/tauron/packages/api/dist`, `server.fs.allow` includes that sibling dist path, and `optimizeDeps.entries` is pinned to `index.html`.
+  - Passed: `bun run dev:cleanup -- --include-running`, then exact `bun run tauri dev` cold start. Native app reached `D:/GreebleFS/target/debug/greeblefs.exe`.
+  - Passed: GreebleFS MCP doctor reports `attachMode: "native-cdp"`, `bridgeReady: true`, `startupPhase: "bridge-ready"`, `rootRendered: true`, and `tauriAvailable: true`.
+  - Passed: reload probe captured `rootChildren: 1` and zero `console.error` entries after the border-style cleanup.
+  - Screenshot proof: `D:/GreebleFS/MCP/.state/screenshots/D-GreebleFS-MCP-.state-screenshots-tauri-dev-final-proof.png.png`.
+  - Passed focused tests: `app.dockMode` zoom slice, `interactionMotion.test.ts`, `explorerVideoEditor.test.tsx`, `fileExplorer.viewModes` thumbnail slice, `workbenchTopBar.test.tsx`, `notesManager.test.tsx`, `notesMarkdownDocument.test.ts`, `gitManager.history.test.tsx`, and `gitManager.behavior.test.tsx`.
+- Current caveat:
+  - The cold-start Rust build still prints existing dead-code warnings in native modules; they do not block launch.
+
 # 2026-05-08 - Application Mode Visual Zoom Restored
 
 - Restored global app zoom in application/windowed mode.

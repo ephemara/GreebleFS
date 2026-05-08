@@ -1,6 +1,6 @@
-import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { projectPath, tauronApiViteAliases } from './vite.shared.ts';
 
 const ignoredWatchGlobs = [
   '**/.git/**',
@@ -13,10 +13,6 @@ const ignoredWatchGlobs = [
   '**/target-tests*/**',
   '**/plugins/**/node_modules/**',
 ];
-
-function projectPath(...segments: string[]): string {
-  return path.resolve(...segments).replace(/\\/g, '/');
-}
 
 const tiptapVendorAliases = [
   { find: '@tiptap/core/jsx-runtime', replacement: projectPath('src/vendor/tiptap/core/src/jsx-runtime.ts') },
@@ -63,6 +59,7 @@ export default defineConfig({
     alias: [
       { find: '@', replacement: '/src' },
       { find: '@img-editor-runtime', replacement: projectPath('packages/img-editor/src/main.ts') },
+      ...tauronApiViteAliases,
       ...tiptapVendorAliases,
     ],
   },

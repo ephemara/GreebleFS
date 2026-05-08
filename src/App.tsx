@@ -3458,33 +3458,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [hideOverlay, isDedicatedSecondaryWindowHost]);
 
   useEffect(() => {
-    if (!isTauri() || !isDedicatedLookdevSecondaryWindow) {
-      return;
-    }
-
-    return bindDeferredUnlisten(
-      getCurrentWindow().onCloseRequested(async event => {
-        if (allowLookdevWindowCloseRef.current) {
-          return;
-        }
-
-        event.preventDefault();
-        handleRestoreLookdevBaseline();
-        await closeDedicatedLookdevWindow();
-      }),
-      {
-        onError: error => {
-          console.warn('GreebleFS: failed to intercept lookdev close requests', error);
-        },
-      },
-    );
-  }, [
-    closeDedicatedLookdevWindow,
-    handleRestoreLookdevBaseline,
-    isDedicatedLookdevSecondaryWindow,
-  ]);
-
-  useEffect(() => {
     if (!overlayVisibleRef.current || windowMode !== 'overlay' || !isCurrentWindowPresentationHost) {
       return;
     }
@@ -6546,6 +6519,33 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       allowLookdevWindowCloseRef.current = false;
     }
   }, [isDedicatedLookdevSecondaryWindow, secondaryWindowDescriptor]);
+
+  useEffect(() => {
+    if (!isTauri() || !isDedicatedLookdevSecondaryWindow) {
+      return;
+    }
+
+    return bindDeferredUnlisten(
+      getCurrentWindow().onCloseRequested(async event => {
+        if (allowLookdevWindowCloseRef.current) {
+          return;
+        }
+
+        event.preventDefault();
+        handleRestoreLookdevBaseline();
+        await closeDedicatedLookdevWindow();
+      }),
+      {
+        onError: error => {
+          console.warn('GreebleFS: failed to intercept lookdev close requests', error);
+        },
+      },
+    );
+  }, [
+    closeDedicatedLookdevWindow,
+    handleRestoreLookdevBaseline,
+    isDedicatedLookdevSecondaryWindow,
+  ]);
 
   const handleApplyLookdevPresetById = useCallback((presetId?: string | null) => {
     const lookdevState = useLookdevStore.getState();

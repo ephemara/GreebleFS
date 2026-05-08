@@ -1286,7 +1286,9 @@ export function ExplorerVideoEditor({
                 style={{
                   flex: 1,
                   background: 'none',
-                  border: 'none',
+                  borderTop: 'none',
+                  borderRight: 'none',
+                  borderLeft: 'none',
                   borderBottom: activeTab === id ? '2px solid var(--overlay-accent, #63b3ed)' : '2px solid transparent',
                   color: activeTab === id ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
                   cursor: 'pointer',

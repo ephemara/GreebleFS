@@ -524,7 +524,9 @@ export function ExplorerActionsPane({
         }}
         style={{
           width: "100%",
-          border: 0,
+          borderRight: 0,
+          borderBottom: 0,
+          borderLeft: 0,
           borderTop: options?.groupBorder
             ? "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 90%, transparent)"
             : "none",
@@ -631,7 +633,9 @@ export function ExplorerActionsPane({
       onClick={() => setOpenRuntimeSubmenuPath([...panelPath, item.id])}
       style={{
         width: "100%",
-        border: 0,
+        borderRight: 0,
+        borderBottom: 0,
+        borderLeft: 0,
         borderTop: options?.groupBorder
           ? "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 90%, transparent)"
           : "none",

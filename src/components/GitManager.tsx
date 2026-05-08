@@ -1106,7 +1106,7 @@ export function GitManager({
             const active = repo === selectedRepo;
             const badge = repoBadges[repo];
             return (
-              <button key={repo} onClick={() => setSelectedRepo(repo)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 'none', borderBottom: `1px solid ${palette.border}`, background: active ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
+              <button key={repo} onClick={() => setSelectedRepo(repo)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 10px', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: `1px solid ${palette.border}`, background: active ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
                 <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
                   <FolderGit2 size={13} style={{ color: active ? palette.accent : palette.muted, marginTop: 1, flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
@@ -1378,7 +1378,7 @@ export function GitManager({
                         <>
                           <div style={{ height: changeListVirtualWindow.topSpacer }} />
                           {virtualizedFilteredFiles.map(file => (
-                            <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', height: CHANGE_LIST_ROW_HEIGHT, display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
+                            <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', height: CHANGE_LIST_ROW_HEIGHT, display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', borderTop: 'none', borderRight: 'none', borderLeft: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
                               <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
                               <span style={{ minWidth: 0 }}>
                                 <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>

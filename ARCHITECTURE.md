@@ -30,6 +30,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Desktop host: Tauri 2 + Rust
 - Rust-side Tauri source: sibling `D:/tauron` fork consumed through root Cargo `[patch.crates-io]`
 - JS Tauri tooling: upstream `@tauri-apps/cli` plus sibling `D:/tauron` `@tauri-apps/api` dist consumed through `file:../tauron/packages/api/dist`
+- Vite/Vitest Tauron API boundary: `vite.shared.ts` owns the `@tauri-apps/api/*` aliases into `D:/tauron/packages/api/dist`, and desktop/browser Vite configs must allow that sibling dist path through `server.fs.allow` because the file dependency resolves outside the repo root.
 - Python runtime: managed virtualenv + persistent stdio JSON sidecar + embedded `pyo3` helpers
 - Visual system: CSS variables, theme bundles, appearance packs, icon themes, top bars, shaders, animations
 - Tests: Vitest unit/browser, Rust tests
@@ -1072,6 +1073,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run tauri dev` is now also allowed to reclaim older live GreebleFS frontend/dev siblings before startup. `scripts/cleanup-dev-processes.mjs` recognizes the real running commands (`node .../@tauri-apps/cli/tauri.js dev`, `node .../vite/bin/vite.js`, `node scripts/run-frontend-dev.mjs`, `target/debug/export-bindings`) and skips the current process ancestry so it kills stale siblings without murdering the launch in progress. If the boot fails with `Port 1420 is already in use`, rerun `bun run tauri dev` or manually run `bun run dev:cleanup -- --include-running`.
 - GreebleFS now assumes the sibling `D:/tauron` fork is present for every Cargo-backed workflow. If `cargo`, `bun run tauri ...`, `bun run bindings:generate`, or `bun run test:rust` suddenly fail before compilation starts, inspect `scripts/tauron-preflight.mjs` output and verify the required crate manifests still exist under `../tauron/crates/*` before changing crate versions or npm packages.
 - The fork boundary is now split by responsibility: keep `@tauri-apps/cli` on the upstream npm package, but treat `@tauri-apps/api` as a sibling-fork artifact loaded from `../tauron/packages/api/dist`. Framework transport changes should land in `../tauron` first, then flow back into GreebleFS through the root Cargo patch block plus the file-based JS API dependency.
+- If Vite or Vitest reports that it cannot resolve or serve `@tauri-apps/api/*`, inspect `vite.shared.ts` before changing imports. The sibling file dependency resolves to `D:/tauron/packages/api/dist`, so configs need both the explicit subpath alias and `server.fs.allow` for that dist directory. Keep desktop `optimizeDeps.entries` pinned to `["index.html"]`; otherwise Vite can scan stale generated HTML such as `dist/index.html` or reference app pages and surface unrelated import/decorator errors.
 - The dev MCP stack now has two runtimes on purpose:
   - `bun run --cwd MCP/greeblefs-dev-mcp typecheck` stays on Bun.
   - `bun run mcp:dev`, `bun run mcp:http`, `bun run mcp:doctor`, and `bun run mcp:smoke` now execute through Node + `tsx`.
