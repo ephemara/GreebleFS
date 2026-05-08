@@ -49,6 +49,15 @@ interface DevMcpBridgeConsoleEntry {
   values: unknown[];
 }
 
+type DevMcpBridgeConsoleEntryInput = Omit<DevMcpBridgeConsoleEntry, 'id'>;
+type CapturedConsoleMethod = (...values: unknown[]) => void;
+
+interface DevMcpConsoleCaptureState {
+  appendEntry: (entry: DevMcpBridgeConsoleEntryInput) => void;
+  originalMethods: Partial<Record<ConsoleEntryLevel, CapturedConsoleMethod>>;
+  globalListenersInstalled: boolean;
+}
+
 interface DevMcpBridgeDomNodeSnapshot {
   path: string;
   tagName: string;
@@ -149,6 +158,7 @@ declare global {
   interface Window {
     __GREEBLEFS_DEV_MCP__?: DevMcpBridgeApi;
     __GREEBLEFS_DEV_MCP_ROOT_RENDERED__?: boolean;
+    __GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__?: DevMcpConsoleCaptureState;
   }
 }
 
@@ -162,7 +172,7 @@ function nextConsoleEntryId(): string {
   return `gfs-dev-mcp-console-${consoleEntrySequence}`;
 }
 
-function appendConsoleEntry(entry: Omit<DevMcpBridgeConsoleEntry, 'id'>): void {
+function appendConsoleEntry(entry: DevMcpBridgeConsoleEntryInput): void {
   consoleEntries.push({
     id: nextConsoleEntryId(),
     ...entry,
@@ -239,23 +249,42 @@ function buildConsoleMessage(values: unknown[]): string {
 }
 
 function installConsoleCapture(): void {
+  const captureState = window.__GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__ ?? {
+    appendEntry: appendConsoleEntry,
+    originalMethods: {},
+    globalListenersInstalled: false,
+  };
+  captureState.appendEntry = appendConsoleEntry;
+  window.__GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__ = captureState;
+
   const consoleMethods: ConsoleEntryLevel[] = ['debug', 'info', 'log', 'warn', 'error'];
   for (const level of consoleMethods) {
-    const original = console[level].bind(console);
+    if (captureState.originalMethods[level]) {
+      continue;
+    }
+
+    const original = console[level].bind(console) as CapturedConsoleMethod;
+    captureState.originalMethods[level] = original;
     console[level] = (...values: unknown[]) => {
-      appendConsoleEntry({
+      const activeCaptureState = window.__GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__;
+      activeCaptureState?.appendEntry({
         level,
         source: 'console',
         createdAt: Date.now(),
         message: buildConsoleMessage(values),
         values: values.map((value) => summarizeUnknownValue(value)),
       });
-      original(...values);
+      (activeCaptureState?.originalMethods[level] ?? original)(...values);
     };
   }
 
+  if (captureState.globalListenersInstalled) {
+    return;
+  }
+  captureState.globalListenersInstalled = true;
+
   window.addEventListener('error', (event) => {
-    appendConsoleEntry({
+    window.__GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__?.appendEntry({
       level: 'error',
       source: 'window-error',
       createdAt: Date.now(),
@@ -272,7 +301,7 @@ function installConsoleCapture(): void {
   });
 
   window.addEventListener('unhandledrejection', (event) => {
-    appendConsoleEntry({
+    window.__GREEBLEFS_DEV_MCP_CONSOLE_CAPTURE__?.appendEntry({
       level: 'error',
       source: 'unhandled-rejection',
       createdAt: Date.now(),

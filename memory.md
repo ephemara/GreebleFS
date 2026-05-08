@@ -1,3 +1,20 @@
+# 2026-05-08 - Dev MCP Console Loop And Greeble3D CSP Hardening
+
+- Fixed the console flood path reported as `devMcpBridge.ts:253`.
+  - `src/runtime/devMcpBridge.ts` now installs console/error/rejection capture through a global HMR-stable state object, so Fast Refresh or repeated bridge installs update the active append sink instead of wrapping `console.*` and window listeners again.
+  - `src/App.tsx` now handles `usrProfileRuntimeRevision` with a one-shot timer and callback refs, and refreshes managed-content/plugin catalogs without forcing signature resets. Profile stack changes still reload content, while ordinary profile/settings persistence no longer churns every package reader and React state slice.
+  - `usr/plugins/Greeble3D/index.html` now allows `http://ipc.localhost` in `connect-src`, which is required for Tauron/Tauri IPC fallback inside the standalone app-style plugin page.
+- Durable rules:
+  - A stack pointing at `devMcpBridge.ts` console capture is usually the reporting layer; inspect the captured React/browser message and source stack before patching the bridge.
+  - Do not force all managed-content refreshers on every usr-profile revision. Use directory-stack signatures and non-forced refreshes unless the user explicitly requests a manual rescan.
+  - Standalone plugin iframes that keep a CSP must include Tauri IPC fallback origins in `connect-src`, otherwise benign host actions such as devtools toggles can become CSP console errors.
+- Validation:
+  - Passed: `git diff --check`
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `bun run mcp:smoke`
+  - Passed live WebView/CDP steady-state check after reload: no `Maximum update depth`, hook-order, dependency-array, CSP, or `pyrefly-symbol.png` console entries; bridge stayed native with `tauriAvailable: true`.
+  - Not clean: repo-wide `bunx tsc --noEmit -p tsconfig.json` still has the existing unrelated `App.tsx` baseline diagnostics (`clampUnit`, explorer view loading vars, older effect callback return typing). No new diagnostics were reported for `src/runtime/devMcpBridge.ts` or the Greeble3D page.
+
 # 2026-05-07 - VS Code Extension Bridge Runtime v1
 
 - Added the first executable VS Code extension pipeline on top of the existing VSIX rail ingress.

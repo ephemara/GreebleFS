@@ -919,6 +919,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const explorerTaskTransitionReadyRef = useRef(false);
   const previousExplorerTasksByIdRef = useRef<Record<string, ExplorerTaskSnapshot>>({});
   const hasAppliedUsrProfileRefreshRef = useRef(false);
+  const usrProfileContentRefreshTimerRef = useRef<number | null>(null);
+  const usrProfileContentRefreshCallbacksRef = useRef<{
+    refreshTopBarPackages: (force?: boolean) => Promise<void>;
+    refreshDockPresentationPackages: (force?: boolean) => Promise<void>;
+    refreshExplorerLayoutPackages: (force?: boolean) => Promise<void>;
+    refreshExplorerWidgets: (force?: boolean) => Promise<void>;
+    refreshHomePacks: (force?: boolean) => Promise<void>;
+    refreshLookdevPresets: (force?: boolean) => Promise<void>;
+    refreshMenuPacks: (force?: boolean) => Promise<void>;
+    refreshFolderPlugins: (force?: boolean) => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     void installUsrProfileSettingsPersistence();
@@ -4540,33 +4551,53 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
   }, []);
 
+  usrProfileContentRefreshCallbacksRef.current = {
+    refreshTopBarPackages,
+    refreshDockPresentationPackages,
+    refreshExplorerLayoutPackages,
+    refreshExplorerWidgets,
+    refreshHomePacks,
+    refreshLookdevPresets,
+    refreshMenuPacks,
+    refreshFolderPlugins,
+  };
+
   useEffect(() => {
     if (!hasAppliedUsrProfileRefreshRef.current) {
       hasAppliedUsrProfileRefreshRef.current = true;
       return;
     }
 
-    void Promise.all([
-      refreshTopBarPackages(true),
-      refreshDockPresentationPackages(true),
-      refreshExplorerLayoutPackages(true),
-      refreshExplorerWidgets(true),
-      refreshHomePacks(true),
-      refreshLookdevPresets(true),
-      refreshMenuPacks(true),
-      refreshFolderPlugins(true),
-    ]);
-  }, [
-    usrProfileRuntimeRevision,
-    refreshDockPresentationPackages,
-    refreshExplorerLayoutPackages,
-    refreshExplorerWidgets,
-    refreshFolderPlugins,
-    refreshHomePacks,
-    refreshLookdevPresets,
-    refreshMenuPacks,
-    refreshTopBarPackages,
-  ]);
+    if (usrProfileContentRefreshTimerRef.current !== null) {
+      window.clearTimeout(usrProfileContentRefreshTimerRef.current);
+    }
+
+    usrProfileContentRefreshTimerRef.current = window.setTimeout(() => {
+      usrProfileContentRefreshTimerRef.current = null;
+      const callbacks = usrProfileContentRefreshCallbacksRef.current;
+      if (!callbacks) {
+        return;
+      }
+
+      void Promise.all([
+        callbacks.refreshTopBarPackages(false),
+        callbacks.refreshDockPresentationPackages(false),
+        callbacks.refreshExplorerLayoutPackages(false),
+        callbacks.refreshExplorerWidgets(false),
+        callbacks.refreshHomePacks(false),
+        callbacks.refreshLookdevPresets(false),
+        callbacks.refreshMenuPacks(false),
+        callbacks.refreshFolderPlugins(false),
+      ]);
+    }, 0);
+
+    return () => {
+      if (usrProfileContentRefreshTimerRef.current !== null) {
+        window.clearTimeout(usrProfileContentRefreshTimerRef.current);
+        usrProfileContentRefreshTimerRef.current = null;
+      }
+    };
+  }, [usrProfileRuntimeRevision]);
 
   const refreshTopBarCatalog = useCallback(async () => {
     await Promise.all([
