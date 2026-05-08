@@ -14115,6 +14115,12 @@ export function FileExplorer({
       shouldPreferManagedExplorerIcon(entry, themeIconTheme),
     [themeIconTheme],
   );
+  const shouldUseNativeIconSrc = useCallback(
+    (entry: FileEntry) =>
+      isExplorerNativeAppIconEntry(entry.name, getEntryExtension(entry)) ||
+      (useNativeOsIcons && !shouldUseManagedIconSrc(entry)),
+    [shouldUseManagedIconSrc, useNativeOsIcons],
+  );
 
   const getRenderableIconSrc = useCallback(
     (entry: FileEntry, open = false) => {
@@ -14128,11 +14134,7 @@ export function FileExplorer({
         themeIconTheme,
       );
 
-      if (!useNativeOsIcons || shouldUseManagedIconSrc(entry)) {
-        return managedIconSrc;
-      }
-
-      if (useNativeOsIcons) {
+      if (shouldUseNativeIconSrc(entry)) {
         const nativeIconSrc =
           nativeIconMap[
             getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE)
@@ -14148,9 +14150,8 @@ export function FileExplorer({
       explorerSettings.defaultFolderIcon,
       explorerSettings.folderIconRules,
       nativeIconMap,
-      shouldUseManagedIconSrc,
+      shouldUseNativeIconSrc,
       themeIconTheme,
-      useNativeOsIcons,
     ],
   );
 
@@ -30850,7 +30851,6 @@ export function FileExplorer({
 
   useEffect(() => {
     if (
-      !useNativeOsIcons ||
       loading ||
       deferredVirtualizedEntries.length === 0
     ) {
@@ -30858,7 +30858,7 @@ export function FileExplorer({
     }
 
     const pendingEntries = deferredVirtualizedEntries
-      .filter((entry) => !shouldUseManagedIconSrc(entry))
+      .filter((entry) => shouldUseNativeIconSrc(entry))
       .map((entry) => ({
         entry,
         key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
@@ -30980,8 +30980,7 @@ export function FileExplorer({
     nativeIconLoadingKeys,
     nativeIconMap,
     recordExplorerMetric,
-    shouldUseManagedIconSrc,
-    useNativeOsIcons,
+    shouldUseNativeIconSrc,
     deferredVirtualizedEntries,
   ]);
 

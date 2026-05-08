@@ -21,9 +21,13 @@ use windows_sys::Win32::{
         BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
     },
     Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL},
+    System::Environment::ExpandEnvironmentStringsW,
     UI::{
-        Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SMALLICON},
-        WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL},
+        Shell::{
+            ExtractIconExW, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON,
+            SHGFI_SMALLICON,
+        },
+        WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL, HICON},
     },
 };
 
@@ -107,40 +111,36 @@ fn path_to_wide_null(path: &Path) -> Vec<u16> {
 }
 
 #[cfg(target_os = "windows")]
-fn resolve_native_icon_pixels_with_windows_shell(
-    path: &Path,
-    size: u32,
-) -> Result<Option<NativeIconPixelBuffer>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
+fn wide_null_buffer_to_string(buffer: &[u16]) -> String {
+    let len = buffer
+        .iter()
+        .position(|value| *value == 0)
+        .unwrap_or(buffer.len());
+    String::from_utf16_lossy(&buffer[..len])
+}
 
-    let path_wide = path_to_wide_null(path);
-    let mut file_info: SHFILEINFOW = unsafe { std::mem::zeroed() };
-    let icon_size = if size <= 16 {
-        SHGFI_SMALLICON
-    } else {
-        SHGFI_LARGEICON
-    };
-    let file_attributes = if path.is_dir() {
-        FILE_ATTRIBUTE_DIRECTORY
-    } else {
-        FILE_ATTRIBUTE_NORMAL
-    };
-    let result = unsafe {
-        SHGetFileInfoW(
-            path_wide.as_ptr(),
-            file_attributes,
-            &mut file_info,
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_ICON | icon_size,
-        )
-    };
-    if result == 0 || file_info.hIcon == null_mut() {
-        return Ok(None);
+#[cfg(target_os = "windows")]
+fn expand_windows_icon_location(value: &str) -> String {
+    let input: Vec<u16> = std::ffi::OsStr::new(value)
+        .encode_wide()
+        .chain(once(0))
+        .collect();
+    unsafe {
+        let required = ExpandEnvironmentStringsW(input.as_ptr(), null_mut(), 0);
+        if required == 0 {
+            return value.to_string();
+        }
+        let mut output = vec![0; required as usize];
+        let written = ExpandEnvironmentStringsW(input.as_ptr(), output.as_mut_ptr(), required);
+        if written == 0 || written > required {
+            return value.to_string();
+        }
+        wide_null_buffer_to_string(&output)
     }
+}
 
-    let hicon = file_info.hIcon;
+#[cfg(target_os = "windows")]
+fn rasterize_windows_hicon(hicon: HICON, size: u32) -> Result<NativeIconPixelBuffer, String> {
     let hdc = unsafe { CreateCompatibleDC(null_mut()) };
     if hdc == null_mut() {
         unsafe {
@@ -226,13 +226,180 @@ fn resolve_native_icon_pixels_with_windows_shell(
         chunk.swap(0, 2);
     }
 
-    Ok(Some((size, size, pixels)))
+    Ok((size, size, pixels))
+}
+
+#[cfg(target_os = "windows")]
+fn extract_windows_icon_location_pixels(
+    icon_path: &Path,
+    icon_index: i32,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
+    if !icon_path.exists() {
+        return Ok(None);
+    }
+
+    let path_wide = path_to_wide_null(icon_path);
+    let mut large_icon: HICON = null_mut();
+    let count = unsafe {
+        ExtractIconExW(
+            path_wide.as_ptr(),
+            icon_index,
+            &mut large_icon,
+            null_mut(),
+            1,
+        )
+    };
+    if count == 0 || large_icon == null_mut() {
+        return Ok(None);
+    }
+
+    rasterize_windows_hicon(large_icon, size).map(Some)
+}
+
+#[cfg(target_os = "windows")]
+fn load_windows_shortcut_icon_target(path: &Path) -> Result<Option<(PathBuf, i32)>, String> {
+    use windows::core::{Interface, PCWSTR};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, STGM_READ,
+    };
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+    if !path.exists()
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| !extension.eq_ignore_ascii_case("lnk"))
+            .unwrap_or(true)
+    {
+        return Ok(None);
+    }
+
+    unsafe {
+        let coinit_result = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let needs_uninit = coinit_result.is_ok();
+
+        let result = (|| -> Result<Option<(PathBuf, i32)>, String> {
+            let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                .map_err(|error| error.to_string())?;
+            let persist_file: IPersistFile =
+                shell_link.cast().map_err(|error| error.to_string())?;
+            let shortcut_path_wide = path_to_wide_null(path);
+            persist_file
+                .Load(PCWSTR(shortcut_path_wide.as_ptr()), STGM_READ)
+                .map_err(|error| error.to_string())?;
+
+            let mut icon_path_buffer = vec![0u16; 32768];
+            let mut icon_index = 0;
+            if shell_link
+                .GetIconLocation(&mut icon_path_buffer, &mut icon_index)
+                .is_ok()
+            {
+                let icon_path = expand_windows_icon_location(
+                    wide_null_buffer_to_string(&icon_path_buffer).trim(),
+                );
+                if !icon_path.is_empty() {
+                    return Ok(Some((PathBuf::from(icon_path), icon_index)));
+                }
+            }
+
+            let mut target_path_buffer = vec![0u16; 32768];
+            if shell_link
+                .GetPath(&mut target_path_buffer, null_mut(), 0)
+                .is_ok()
+            {
+                let target_path = expand_windows_icon_location(
+                    wide_null_buffer_to_string(&target_path_buffer).trim(),
+                );
+                if !target_path.is_empty() {
+                    return Ok(Some((PathBuf::from(target_path), 0)));
+                }
+            }
+
+            Ok(None)
+        })();
+
+        if needs_uninit {
+            CoUninitialize();
+        }
+
+        result
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_native_icon_pixels_with_windows_shortcut(
+    path: &Path,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
+    let Some((icon_path, icon_index)) = load_windows_shortcut_icon_target(path)? else {
+        return Ok(None);
+    };
+
+    if let Some(icon) = extract_windows_icon_location_pixels(&icon_path, icon_index, size)? {
+        return Ok(Some(icon));
+    }
+
+    resolve_native_icon_pixels_with_provider(&icon_path, size)
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_native_icon_pixels_with_windows_shell(
+    path: &Path,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let path_wide = path_to_wide_null(path);
+    let mut file_info: SHFILEINFOW = unsafe { std::mem::zeroed() };
+    let icon_size = if size <= 16 {
+        SHGFI_SMALLICON
+    } else {
+        SHGFI_LARGEICON
+    };
+    let file_attributes = if path.is_dir() {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
+    let result = unsafe {
+        SHGetFileInfoW(
+            path_wide.as_ptr(),
+            file_attributes,
+            &mut file_info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | icon_size,
+        )
+    };
+    if result == 0 || file_info.hIcon == null_mut() {
+        return Ok(None);
+    }
+
+    rasterize_windows_hicon(file_info.hIcon, size).map(Some)
 }
 
 fn resolve_native_icon_pixels(
     path: &Path,
     size: u32,
 ) -> Result<Option<NativeIconPixelBuffer>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        match resolve_native_icon_pixels_with_windows_shortcut(path, size) {
+            Ok(Some(icon)) => return Ok(Some(icon)),
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "GreebleFS: Windows shortcut icon extraction failed for {}: {}",
+                    path.display(),
+                    error
+                );
+            }
+        }
+    }
+
     match resolve_native_icon_pixels_with_provider(path, size) {
         Ok(Some(icon)) => return Ok(Some(icon)),
         Ok(None) => {}

@@ -479,7 +479,7 @@
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
     "uiFontFamily": "system-ui, sans-serif",
-    "useNativeOsIcons": false,
+    "useNativeOsIcons": true,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,
     "wallpaperOpacity": 1

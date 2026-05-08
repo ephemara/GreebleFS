@@ -418,7 +418,7 @@ describe('SettingsPage behavior', () => {
 
     expect(screen.getByText('Choose a dedicated icon theme, keep folder rules in one place, and make Explorer show real OS app icons for shortcuts and executables.')).toBeInTheDocument();
     expect(screen.getByText('Explorer OS App Icons')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Explorer OS App Icons' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Native OS Icons On' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('advertises VS Code folder and .vsix compatibility in theme settings copy', async () => {

@@ -8310,3 +8310,21 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/documentInteractionGuards.test.ts src/test/documentPreview.test.tsx --reporter=dot`
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens markdown files in rendered preview mode with themed document surfaces" --reporter=dot --testTimeout=30000`
   - MCP live-WebView probe on `C:\Users\Admin\GEMINI.md` confirmed selected markdown text survived click, context-menu, and `Ctrl+C` dispatch (`beforeLength`, `afterClickLength`, `afterContextLength`, and `afterCopyLength` all remained 3108; `contextAllowed` and `copyAllowed` were true).
+
+# 2026-05-08 - Native OS App Icons Are Native-First
+
+- Explorer now treats app-like local entries as native-icon-first so shortcuts and executables do not get hidden behind managed theme glyphs or generic document icons.
+  - `src/config/nativeIcons.ts` owns the app-like extension set: `.lnk`, `.exe`, `.msi`, `.url`, `.website`, and `.appref-ms`.
+  - `src/components/FileExplorer.tsx` requests native icons for those entries regardless of the generic `appearance.useNativeOsIcons` fallback. That setting still controls ordinary OS-icon fallback for non-app files, but shortcuts/executables always try the native app branding lane first.
+  - Directories remain managed-folder-theme-first, and ordinary file extensions still use managed icon-theme mappings when a theme provides a semantic match.
+- Windows shortcut resolution is now more deliberate in `src-tauri/src/desktop_integration.rs`.
+  - `fs_resolve_native_icons` no longer round-trips through the WebView main-thread helper for icon batches.
+  - `.lnk` entries try the Windows shell shortcut icon location and shortcut target before falling back to `file_icon_provider` or `SHGetFileInfoW`.
+  - `src-tauri/Cargo.toml` enables the Windows storage-filesystem feature needed for `IShellLinkW::GetPath`.
+- Settings now exposes the control where users expect it: Settings > Icons has a compact `Explorer OS App Icons` button with `Native OS Icons On/Off` state. Runtime defaults, pilot theme defaults, and the shipped default profile now default this lane on.
+- Validation:
+  - Passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lands directly on the icons section" --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "native OS app icons|managed theme icons ahead|managed semantic icons ahead" --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path src-tauri\Cargo.toml --lib`
+- Current risk:
+  - Live MCP/Tauri screenshot validation was not available in this pass because the dev app session was not running. The narrow tests cover the previous gating bug, but a real Windows desktop smoke pass should still inspect `.lnk`, `.exe`, `.url`, and `.msi` tiles visually.

@@ -142,11 +142,20 @@ export function IconSettingsSection({
           </>
         )}
         control={(
-          <input
-            type="checkbox"
-            checked={useNativeOsIcons}
-            onChange={event => onToggleNativeOsIcons(event.target.checked)}
-          />
+          <button
+            type="button"
+            aria-label={`Native OS Icons ${useNativeOsIcons ? 'On' : 'Off'}`}
+            aria-pressed={useNativeOsIcons}
+            onClick={() => onToggleNativeOsIcons(!useNativeOsIcons)}
+            className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{
+              border: `1px solid ${useNativeOsIcons ? accent : border}`,
+              background: useNativeOsIcons ? `${accent}22` : 'rgba(255,255,255,0.04)',
+              color: text,
+            }}
+          >
+            Native OS Icons {useNativeOsIcons ? 'On' : 'Off'}
+          </button>
         )}
         descriptionAlwaysVisible
       />

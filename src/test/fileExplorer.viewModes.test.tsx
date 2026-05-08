@@ -603,6 +603,7 @@ import {
   resolveOverlayAppearance,
 } from "../config/appearance";
 import { getBuiltInIconTheme, resolveFileIconSrc } from "../config/iconTheme";
+import { defaultExplorerThumbnailSettings } from "../config/explorerThumbnails";
 import { DEFAULT_NATIVE_ICON_SIZE } from "../config/nativeIcons";
 import { createDefaultExplorerRailSnapshot } from "../components/explorer/explorerRailState";
 import {
@@ -7234,6 +7235,7 @@ const value = 1;
   it("keeps managed theme icons ahead of native icon fallback for mapped explorer entries", async () => {
     useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
     useSettingsStore.getState().updateExplorer({
+      thumbnails: { ...defaultExplorerThumbnailSettings, enabled: false },
       folderIconRules: [
         {
           id: "alpha-folder",
@@ -7283,6 +7285,9 @@ const value = 1;
 
   it("keeps managed semantic icons ahead of native fallback when entry metadata drifts from the filename extension", async () => {
     useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
+    useSettingsStore.getState().updateExplorer({
+      thumbnails: { ...defaultExplorerThumbnailSettings, enabled: false },
+    });
 
     const driftedEntries = ENTRIES.map((entry) =>
       entry.name === "preview.png"
@@ -7331,9 +7336,12 @@ const value = 1;
     ).toBe(false);
   });
 
-  it("uses native OS app icons for shortcuts and executables before managed file glyphs", async () => {
+  it("uses native OS app icons for shortcuts and executables before managed file glyphs even when generic OS fallback is off", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
+    useSettingsStore.getState().updateAppearance({ useNativeOsIcons: false });
+    useSettingsStore.getState().updateExplorer({
+      thumbnails: { ...defaultExplorerThumbnailSettings, enabled: false },
+    });
 
     const nativeAppEntries = [
       {
