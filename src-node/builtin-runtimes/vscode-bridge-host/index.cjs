@@ -235,14 +235,145 @@ class ThemeIcon {
 
 class TreeItem {
   constructor(label, collapsibleState = TreeItemCollapsibleState.None) {
-    this.label = label;
+    if (label instanceof Uri) {
+      this.resourceUri = label;
+      this.label = path.basename(label.fsPath || label.path || label.toString());
+    } else {
+      this.label = label;
+    }
     this.collapsibleState = collapsibleState;
   }
 }
 
+class Position {
+  constructor(line, character) {
+    this.line = Number.isFinite(line) ? Number(line) : 0;
+    this.character = Number.isFinite(character) ? Number(character) : 0;
+  }
+}
+
+class Range {
+  constructor(startOrStartLine, startOrStartCharacter, endLine, endCharacter) {
+    const looksLikePositionPair =
+      startOrStartLine && typeof startOrStartLine === 'object'
+      && startOrStartCharacter && typeof startOrStartCharacter === 'object'
+      && Number.isFinite(startOrStartLine.line)
+      && Number.isFinite(startOrStartLine.character)
+      && Number.isFinite(startOrStartCharacter.line)
+      && Number.isFinite(startOrStartCharacter.character);
+    if (looksLikePositionPair) {
+      this.start = startOrStartLine instanceof Position
+        ? startOrStartLine
+        : new Position(startOrStartLine.line, startOrStartLine.character);
+      this.end = startOrStartCharacter instanceof Position
+        ? startOrStartCharacter
+        : new Position(startOrStartCharacter.line, startOrStartCharacter.character);
+      return;
+    }
+    this.start = new Position(startOrStartLine, startOrStartCharacter);
+    this.end = new Position(endLine, endCharacter);
+  }
+}
+
+class Selection extends Range {
+  constructor(anchorOrStart, activeOrEnd, endLine, endCharacter) {
+    const looksLikePositionPair =
+      anchorOrStart && typeof anchorOrStart === 'object'
+      && activeOrEnd && typeof activeOrEnd === 'object'
+      && Number.isFinite(anchorOrStart.line)
+      && Number.isFinite(anchorOrStart.character)
+      && Number.isFinite(activeOrEnd.line)
+      && Number.isFinite(activeOrEnd.character);
+    if (looksLikePositionPair) {
+      const anchor = anchorOrStart instanceof Position
+        ? anchorOrStart
+        : new Position(anchorOrStart.line, anchorOrStart.character);
+      const active = activeOrEnd instanceof Position
+        ? activeOrEnd
+        : new Position(activeOrEnd.line, activeOrEnd.character);
+      super(anchor, active);
+      this.anchor = anchor;
+      this.active = active;
+      return;
+    }
+    const anchor = new Position(anchorOrStart, activeOrEnd);
+    const active = new Position(endLine, endCharacter);
+    super(anchor, active);
+    this.anchor = anchor;
+    this.active = active;
+  }
+}
+
+class MarkdownString {
+  constructor(value = '', isTrusted = false) {
+    this.value = String(value);
+    this.isTrusted = Boolean(isTrusted);
+  }
+
+  toString() {
+    return this.value;
+  }
+}
+
+class FileSystemError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'FileSystemError';
+    this.code = code;
+  }
+
+  static FileNotFound(message = 'File not found') {
+    return new FileSystemError(message, 'FileNotFound');
+  }
+
+  static FileIsADirectory(message = 'File is a directory') {
+    return new FileSystemError(message, 'FileIsADirectory');
+  }
+
+  static FileExists(message = 'File already exists') {
+    return new FileSystemError(message, 'FileExists');
+  }
+
+  static NoPermissions(message = 'Insufficient permissions') {
+    return new FileSystemError(message, 'NoPermissions');
+  }
+}
+
+function createBridgeRuntimeState() {
+  return {
+    currentExecutionContext: null,
+    textDocumentContentProviders: new Map(),
+    fileSystemProviders: new Map(),
+    workspaceFolders: [],
+    textDocuments: [],
+    activeTextEditor: null,
+    visibleTextEditors: [],
+    contextValues: new Map(),
+    emitters: {
+      didChangeActiveTextEditor: new EventEmitter(),
+      didChangeVisibleTextEditors: new EventEmitter(),
+      didChangeTextDocument: new EventEmitter(),
+      didOpenTextDocument: new EventEmitter(),
+      didCloseTextDocument: new EventEmitter(),
+      didChangeConfiguration: new EventEmitter(),
+      didChangeWorkspaceFolders: new EventEmitter(),
+    },
+  };
+}
+
+const bridgeRuntimeState = createBridgeRuntimeState();
+
 function serializeValue(value) {
   if (value instanceof Uri) {
-    return { $type: 'Uri', scheme: value.scheme, path: value.path, fsPath: value.fsPath };
+    return {
+      $type: 'Uri',
+      scheme: value.scheme,
+      authority: value.authority,
+      path: value.path,
+      fsPath: value.fsPath,
+      query: value.query,
+      fragment: value.fragment,
+    };
   }
   if (Buffer.isBuffer(value) || value instanceof Uint8Array) {
     return { $type: 'Uint8Array', data: Array.from(value) };
@@ -268,7 +399,15 @@ function deserializeValue(value) {
   }
   if (value && typeof value === 'object') {
     if (value.$type === 'Uri') {
-      return Uri.file(value.fsPath || value.path || '');
+      return value.scheme === 'file'
+        ? Uri.file(value.fsPath || value.path || '')
+        : new Uri(
+            value.scheme || 'file',
+            value.authority || '',
+            value.path || value.fsPath || '',
+            value.query || '',
+            value.fragment || '',
+          );
     }
     if (value.$type === 'Uint8Array' && Array.isArray(value.data)) {
       return Uint8Array.from(value.data);
@@ -276,6 +415,407 @@ function deserializeValue(value) {
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, deserializeValue(entry)]));
   }
   return value;
+}
+
+function normalizePositionLike(value) {
+  if (value instanceof Position) {
+    return value;
+  }
+  return new Position(value?.line ?? 0, value?.character ?? 0);
+}
+
+function normalizeRangeLike(value) {
+  if (value instanceof Range) {
+    return value;
+  }
+  return new Range(
+    normalizePositionLike(value?.start),
+    normalizePositionLike(value?.end),
+  );
+}
+
+function lineOffsetsForText(text) {
+  const offsets = [0];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charCodeAt(index) === 10) {
+      offsets.push(index + 1);
+    }
+  }
+  return offsets;
+}
+
+function positionAtOffset(text, offset) {
+  const clampedOffset = Math.max(0, Math.min(Number(offset) || 0, text.length));
+  const offsets = lineOffsetsForText(text);
+  let low = 0;
+  let high = offsets.length - 1;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const lineOffset = offsets[middle];
+    const nextOffset = middle + 1 < offsets.length ? offsets[middle + 1] : text.length + 1;
+    if (clampedOffset < lineOffset) {
+      high = middle - 1;
+    } else if (clampedOffset >= nextOffset) {
+      low = middle + 1;
+    } else {
+      return new Position(middle, clampedOffset - lineOffset);
+    }
+  }
+  const line = Math.max(0, offsets.length - 1);
+  return new Position(line, clampedOffset - offsets[line]);
+}
+
+function offsetAtPosition(text, positionLike) {
+  const position = normalizePositionLike(positionLike);
+  const offsets = lineOffsetsForText(text);
+  const line = Math.max(0, Math.min(position.line, offsets.length - 1));
+  const lineOffset = offsets[line];
+  const nextOffset = line + 1 < offsets.length ? offsets[line + 1] : text.length + 1;
+  return Math.max(lineOffset, Math.min(lineOffset + position.character, nextOffset - 1));
+}
+
+function uriIdentity(uri) {
+  if (!(uri instanceof Uri)) {
+    return String(uri || '');
+  }
+  return `${uri.scheme}:${uri.fsPath || uri.path || uri.toString()}`;
+}
+
+function findOpenDocumentByUri(uri) {
+  const key = uriIdentity(uri);
+  return bridgeRuntimeState.textDocuments.find((document) => uriIdentity(document.uri) === key) || null;
+}
+
+function isTextDocumentLike(value) {
+  return Boolean(value)
+    && typeof value === 'object'
+    && value.uri instanceof Uri
+    && typeof value.getText === 'function';
+}
+
+function removeOpenDocumentByUri(uri) {
+  const key = uriIdentity(uri);
+  bridgeRuntimeState.textDocuments = bridgeRuntimeState.textDocuments.filter(
+    (document) => uriIdentity(document.uri) !== key,
+  );
+}
+
+function inferLanguageId(filePath, executionContext) {
+  const activeLanguageId = executionContext?.activeFileType?.languageId;
+  if (typeof activeLanguageId === 'string' && activeLanguageId.trim()) {
+    return activeLanguageId.trim();
+  }
+  const lowerPath = String(filePath || '').toLowerCase();
+  const extension = path.extname(lowerPath);
+  switch (extension) {
+    case '.json':
+      return 'json';
+    case '.jsonc':
+      return 'jsonc';
+    case '.md':
+      return 'markdown';
+    case '.ts':
+      return 'typescript';
+    case '.tsx':
+      return 'typescriptreact';
+    case '.js':
+      return 'javascript';
+    case '.jsx':
+      return 'javascriptreact';
+    case '.html':
+      return 'html';
+    case '.css':
+      return 'css';
+    case '.yml':
+    case '.yaml':
+      return 'yaml';
+    case '.toml':
+      return 'toml';
+    default:
+      return 'plaintext';
+  }
+}
+
+function createWorkspaceFolder(pathValue, index = 0) {
+  const normalizedPath = String(pathValue || '').trim();
+  if (!normalizedPath) {
+    return null;
+  }
+  return {
+    uri: Uri.file(normalizedPath),
+    name: path.basename(normalizedPath) || normalizedPath,
+    index,
+  };
+}
+
+function resolveWorkspaceFoldersFromExecutionContext(executionContext) {
+  const nextFolders = [];
+  if (Array.isArray(executionContext?.roots)) {
+    executionContext.roots.forEach((root, index) => {
+      const folder = createWorkspaceFolder(root?.path, index);
+      if (folder) {
+        nextFolders.push(folder);
+      }
+    });
+  }
+  if (nextFolders.length > 0) {
+    return nextFolders;
+  }
+  const fallbackPath = executionContext?.repoContext?.rootPath
+    || executionContext?.cwd
+    || executionContext?.activeDirectory
+    || null;
+  const fallbackFolder = createWorkspaceFolder(fallbackPath, 0);
+  return fallbackFolder ? [fallbackFolder] : [];
+}
+
+function setWorkspaceFolders(nextFolders) {
+  const previousKeys = new Set(
+    bridgeRuntimeState.workspaceFolders?.map((folder) => uriIdentity(folder.uri)) || [],
+  );
+  const nextKeys = new Set(nextFolders.map((folder) => uriIdentity(folder.uri)));
+  bridgeRuntimeState.workspaceFolders = nextFolders;
+  const changed = previousKeys.size !== nextKeys.size
+    || [...previousKeys].some((entry) => !nextKeys.has(entry));
+  if (changed) {
+    bridgeRuntimeState.emitters.didChangeWorkspaceFolders.fire({
+      added: nextFolders,
+      removed: [],
+    });
+  }
+}
+
+function documentTargetFromExecutionContext(executionContext) {
+  const previewPath = executionContext?.previewSession?.resolvedPath
+    || executionContext?.previewSession?.filePath
+    || null;
+  if (previewPath) {
+    return {
+      uri: Uri.file(previewPath),
+      languageId: inferLanguageId(previewPath, executionContext),
+    };
+  }
+  const focusedEntry = executionContext?.focusedEntry;
+  if (focusedEntry && !focusedEntry.isDirectory && focusedEntry.path) {
+    return {
+      uri: Uri.file(focusedEntry.path),
+      languageId: inferLanguageId(focusedEntry.path, executionContext),
+    };
+  }
+  const selectedEntry = Array.isArray(executionContext?.selectedEntries)
+    ? executionContext.selectedEntries.find((entry) => entry && !entry.isDirectory && entry.path)
+    : null;
+  if (selectedEntry?.path) {
+    return {
+      uri: Uri.file(selectedEntry.path),
+      languageId: inferLanguageId(selectedEntry.path, executionContext),
+    };
+  }
+  return null;
+}
+
+async function loadFileDocumentText(uri) {
+  const filePath = toFsPath(uri);
+  try {
+    const fromHost = await hostCall('files.read_text', { path: filePath });
+    return String(fromHost ?? '');
+  } catch (hostError) {
+    try {
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (fsError) {
+      throw hostError || fsError;
+    }
+  }
+}
+
+function createTextDocument(options) {
+  const uri = options.uri instanceof Uri ? options.uri : Uri.parse(options.uri);
+  let textValue = String(options.text ?? '');
+  let version = 1;
+  let dirty = false;
+  const document = {
+    uri,
+    fileName: uri.fsPath || uri.path || uri.toString(),
+    languageId: String(options.languageId || 'plaintext'),
+    get version() {
+      return version;
+    },
+    get isDirty() {
+      return dirty;
+    },
+    get isClosed() {
+      return false;
+    },
+    get lineCount() {
+      return lineOffsetsForText(textValue).length;
+    },
+    getText(range) {
+      if (!range) {
+        return textValue;
+      }
+      const normalizedRange = normalizeRangeLike(range);
+      const startOffset = offsetAtPosition(textValue, normalizedRange.start);
+      const endOffset = offsetAtPosition(textValue, normalizedRange.end);
+      return textValue.slice(startOffset, endOffset);
+    },
+    positionAt(offset) {
+      return positionAtOffset(textValue, offset);
+    },
+    offsetAt(position) {
+      return offsetAtPosition(textValue, position);
+    },
+    save: async () => {
+      if (typeof options.save === 'function') {
+        await options.save(textValue);
+        dirty = false;
+      }
+      return true;
+    },
+    _applyEdits(edits) {
+      const sortedEdits = [...edits].sort((left, right) => right.startOffset - left.startOffset);
+      for (const edit of sortedEdits) {
+        textValue = `${textValue.slice(0, edit.startOffset)}${edit.text}${textValue.slice(edit.endOffset)}`;
+      }
+      version += 1;
+      dirty = true;
+      return textValue;
+    },
+  };
+  return document;
+}
+
+function createTextEditor(document) {
+  let selection = new Selection(document.positionAt(0), document.positionAt(0));
+  return {
+    document,
+    get selection() {
+      return selection;
+    },
+    set selection(value) {
+      selection = value instanceof Selection
+        ? value
+        : new Selection(value?.anchor ?? value?.start, value?.active ?? value?.end);
+    },
+    get selections() {
+      return [selection];
+    },
+    set selections(values) {
+      if (Array.isArray(values) && values[0]) {
+        this.selection = values[0];
+      }
+    },
+    edit: async (callback) => {
+      const pendingEdits = [];
+      const builder = {
+        replace(rangeLike, nextText) {
+          const range = normalizeRangeLike(rangeLike);
+          pendingEdits.push({
+            range,
+            startOffset: document.offsetAt(range.start),
+            endOffset: document.offsetAt(range.end),
+            text: String(nextText ?? ''),
+          });
+        },
+      };
+      await Promise.resolve(callback(builder));
+      if (pendingEdits.length === 0) {
+        return true;
+      }
+      document._applyEdits(pendingEdits);
+      await document.save();
+      bridgeRuntimeState.emitters.didChangeTextDocument.fire({
+        document,
+        contentChanges: pendingEdits.map((edit) => ({
+          range: edit.range,
+          rangeOffset: edit.startOffset,
+          rangeLength: edit.endOffset - edit.startOffset,
+          text: edit.text,
+        })),
+      });
+      return true;
+    },
+    revealRange: () => undefined,
+  };
+}
+
+async function openTextDocument(resource, options = {}) {
+  if (isTextDocumentLike(resource)) {
+    return resource;
+  }
+  const uri = resource instanceof Uri ? resource : Uri.parse(resource);
+  const existingDocument = findOpenDocumentByUri(uri);
+  if (existingDocument) {
+    return existingDocument;
+  }
+  let text = '';
+  let saveHandler = null;
+  if (uri.scheme === 'file') {
+    text = await loadFileDocumentText(uri);
+    saveHandler = async (nextText) => {
+      const filePath = toFsPath(uri);
+      try {
+        await hostCall('files.write_text', {
+          path: filePath,
+          content: nextText,
+        });
+      } catch (_hostError) {
+        fs.writeFileSync(filePath, nextText, 'utf8');
+      }
+    };
+  } else if (bridgeRuntimeState.textDocumentContentProviders.has(uri.scheme)) {
+    const provider = bridgeRuntimeState.textDocumentContentProviders.get(uri.scheme);
+    text = await Promise.resolve(
+      provider.provideTextDocumentContent(uri, { isCancellationRequested: false }),
+    );
+  }
+  const document = createTextDocument({
+    uri,
+    text,
+    languageId: options.languageId || inferLanguageId(uri.fsPath || uri.path, bridgeRuntimeState.currentExecutionContext),
+    save: saveHandler,
+  });
+  bridgeRuntimeState.textDocuments = [...bridgeRuntimeState.textDocuments, document];
+  bridgeRuntimeState.emitters.didOpenTextDocument.fire(document);
+  return document;
+}
+
+async function showTextDocument(target, options = {}) {
+  const document = isTextDocumentLike(target)
+    ? target
+    : target && target.document
+      ? target.document
+      : await openTextDocument(target, options);
+  const currentEditor = bridgeRuntimeState.activeTextEditor;
+  if (currentEditor?.document && uriIdentity(currentEditor.document.uri) === uriIdentity(document.uri)) {
+    return currentEditor;
+  }
+  const editor = createTextEditor(document);
+  bridgeRuntimeState.activeTextEditor = editor;
+  bridgeRuntimeState.visibleTextEditors = [editor];
+  bridgeRuntimeState.emitters.didChangeActiveTextEditor.fire(editor);
+  bridgeRuntimeState.emitters.didChangeVisibleTextEditors.fire([editor]);
+  return editor;
+}
+
+async function applyExecutionContextPacket(packet) {
+  const executionContext = parseJson(packet.executionContextJson, null);
+  if (!executionContext || typeof executionContext !== 'object') {
+    return;
+  }
+  bridgeRuntimeState.currentExecutionContext = executionContext;
+  setWorkspaceFolders(resolveWorkspaceFoldersFromExecutionContext(executionContext));
+  const target = documentTargetFromExecutionContext(executionContext);
+  if (!target) {
+    return;
+  }
+  try {
+    await showTextDocument(target.uri, { languageId: target.languageId });
+  } catch (error) {
+    publishOutput(
+      'vscode-bridge',
+      `execution context document hydrate failed: ${String(error && error.stack ? error.stack : error)}`,
+    );
+  }
 }
 
 async function hostCall(methodId, payload) {
@@ -380,6 +920,9 @@ function createOutputChannel(name) {
 }
 
 function normalizeTreeLabel(label) {
+  if (label instanceof Uri) {
+    return path.basename(label.fsPath || label.path || label.toString());
+  }
   if (typeof label === 'string') {
     return label;
   }
@@ -415,6 +958,9 @@ function normalizeTreeItem(viewRecord, element, treeItem) {
   viewRecord.handleCounter += 1;
   const handle = `${viewRecord.viewId}:${viewRecord.handleCounter}`;
   viewRecord.handles.set(handle, element);
+  const resourceUri = item.resourceUri instanceof Uri
+    ? item.resourceUri
+    : (element?.resourceUri instanceof Uri ? element.resourceUri : null);
   const command = item.command && typeof item.command === 'object'
     ? {
         command: String(item.command.command || ''),
@@ -425,9 +971,9 @@ function normalizeTreeItem(viewRecord, element, treeItem) {
   return {
     id: String(item.id || handle),
     handle,
-    label: normalizeTreeLabel(item.label),
+    label: normalizeTreeLabel(item.label || resourceUri || element?.label || element?.resource || ''),
     description: item.description != null ? String(item.description) : null,
-    tooltip: item.tooltip != null ? String(item.tooltip) : null,
+    tooltip: item.tooltip != null ? String(item.tooltip.value || item.tooltip) : null,
     icon: normalizeTreeIcon(item.iconPath || item.icon),
     collapsibleState: Number.isFinite(item.collapsibleState)
       ? Number(item.collapsibleState)
@@ -459,6 +1005,28 @@ async function resolveTreeItems(extensionId, viewId, parentHandle) {
   return { extensionId, viewId, items, missingProvider: false };
 }
 
+async function executeBuiltinCommand(commandId, args) {
+  switch (commandId) {
+    case 'setContext': {
+      const [key, value] = args;
+      bridgeRuntimeState.contextValues.set(String(key || ''), value);
+      return null;
+    }
+    case 'vscode.open': {
+      const [resource] = args;
+      const uri = resource instanceof Uri ? resource : Uri.parse(resource);
+      if (uri.scheme === 'http' || uri.scheme === 'https') {
+        await hostCall('explorer.open_path', { path: uri.toString() });
+        return true;
+      }
+      await showTextDocument(uri);
+      return true;
+    }
+    default:
+      return undefined;
+  }
+}
+
 function createVscodeApi(extension) {
   const api = {
     version: '1.90.0-greeblefs',
@@ -468,6 +1036,11 @@ function createVscodeApi(extension) {
     ThemeIcon,
     TreeItem,
     TreeItemCollapsibleState,
+    Position,
+    Range,
+    Selection,
+    MarkdownString,
+    FileSystemError,
     commands: {
       registerCommand(commandId, callback) {
         const id = String(commandId || '').trim();
@@ -484,7 +1057,7 @@ function createVscodeApi(extension) {
           args,
         });
       },
-      getCommands: async () => [...commands.keys()],
+      getCommands: async () => [...new Set([...commands.keys(), 'setContext', 'vscode.open'])],
     },
     window: {
       createTreeView(viewId, options = {}) {
@@ -494,11 +1067,14 @@ function createVscodeApi(extension) {
         }
         const provider = options.treeDataProvider;
         registerTreeProvider(extension.extensionId, id, provider);
+        const visibilityEmitter = new EventEmitter();
+        const selectionEmitter = new EventEmitter();
         return {
           viewId: id,
+          title: id,
           visible: true,
-          onDidChangeVisibility: new EventEmitter().event,
-          onDidChangeSelection: new EventEmitter().event,
+          onDidChangeVisibility: visibilityEmitter.event,
+          onDidChangeSelection: selectionEmitter.event,
           reveal: async () => undefined,
           dispose: () => treeProviders.delete(`${extension.extensionId}:${id}`),
         };
@@ -507,6 +1083,14 @@ function createVscodeApi(extension) {
         registerTreeProvider(extension.extensionId, String(viewId || ''), provider);
         return makeDisposable(() => treeProviders.delete(`${extension.extensionId}:${viewId}`));
       },
+      get activeTextEditor() {
+        return bridgeRuntimeState.activeTextEditor;
+      },
+      get visibleTextEditors() {
+        return bridgeRuntimeState.visibleTextEditors;
+      },
+      onDidChangeActiveTextEditor: bridgeRuntimeState.emitters.didChangeActiveTextEditor.event,
+      onDidChangeVisibleTextEditors: bridgeRuntimeState.emitters.didChangeVisibleTextEditors.event,
       showInformationMessage: async (message, ...items) => {
         await publishEvent('ext.vscode-bridge-host.notification', {
           extensionId: extension.extensionId,
@@ -534,6 +1118,8 @@ function createVscodeApi(extension) {
         });
         return items[0];
       },
+      showInputBox: async () => undefined,
+      showTextDocument: async (resource, options) => showTextDocument(resource, options),
       createOutputChannel,
     },
     workspace: {
@@ -560,15 +1146,47 @@ function createVscodeApi(extension) {
           newPath: toFsPath(newUri),
         }),
       },
-      getConfiguration: () => ({
-        get: (_key, fallback) => fallback,
-        has: () => false,
-        inspect: () => undefined,
-        update: async () => undefined,
-      }),
-      workspaceFolders: [],
-      onDidChangeConfiguration: new EventEmitter().event,
-      onDidChangeWorkspaceFolders: new EventEmitter().event,
+        getConfiguration: () => ({
+          get: (_key, fallback) => fallback,
+          has: () => false,
+          inspect: () => undefined,
+          update: async () => undefined,
+        }),
+      get rootPath() {
+        return bridgeRuntimeState.workspaceFolders[0]?.uri.fsPath || undefined;
+      },
+      get workspaceFolders() {
+        return bridgeRuntimeState.workspaceFolders;
+      },
+      get textDocuments() {
+        return bridgeRuntimeState.textDocuments;
+      },
+      onDidChangeConfiguration: bridgeRuntimeState.emitters.didChangeConfiguration.event,
+      onDidChangeWorkspaceFolders: bridgeRuntimeState.emitters.didChangeWorkspaceFolders.event,
+      onDidChangeTextDocument: bridgeRuntimeState.emitters.didChangeTextDocument.event,
+      onDidOpenTextDocument: bridgeRuntimeState.emitters.didOpenTextDocument.event,
+      onDidCloseTextDocument: bridgeRuntimeState.emitters.didCloseTextDocument.event,
+      openTextDocument: async (resource) => openTextDocument(resource),
+      registerTextDocumentContentProvider(scheme, provider) {
+        const normalizedScheme = String(scheme || '').trim();
+        if (!normalizedScheme || !provider) {
+          return makeDisposable();
+        }
+        bridgeRuntimeState.textDocumentContentProviders.set(normalizedScheme, provider);
+        return makeDisposable(() => {
+          bridgeRuntimeState.textDocumentContentProviders.delete(normalizedScheme);
+        });
+      },
+      registerFileSystemProvider(scheme, provider) {
+        const normalizedScheme = String(scheme || '').trim();
+        if (!normalizedScheme || !provider) {
+          return makeDisposable();
+        }
+        bridgeRuntimeState.fileSystemProviders.set(normalizedScheme, provider);
+        return makeDisposable(() => {
+          bridgeRuntimeState.fileSystemProviders.delete(normalizedScheme);
+        });
+      },
     },
     env: {
       appName: 'GreebleFS',
@@ -579,7 +1197,10 @@ function createVscodeApi(extension) {
         writeText: async () => undefined,
       },
       openExternal: async (uri) => {
-        await hostCall('explorer.open_path', { path: toFsPath(uri) });
+        const target = uri instanceof Uri && uri.scheme !== 'file'
+          ? uri.toString()
+          : toFsPath(uri);
+        await hostCall('explorer.open_path', { path: target });
         return true;
       },
     },
@@ -592,6 +1213,7 @@ function createVscodeApi(extension) {
     },
     ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
     FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
+    FileChangeType: { Changed: 1, Created: 2, Deleted: 3 },
   };
   return api;
 }
@@ -619,8 +1241,12 @@ function registerTreeProvider(extensionId, viewId, provider) {
     handleCounter: 0,
   };
   treeProviders.set(key, viewRecord);
-  if (typeof provider.onDidChangeTreeData === 'function') {
-    provider.onDidChangeTreeData(() => publishTreeChanged(extensionId, viewId));
+  const changeEvent =
+    (typeof provider.onDidChangeTreeData === 'function' && provider.onDidChangeTreeData)
+    || (typeof provider.onDidChangeTreeData2 === 'function' && provider.onDidChangeTreeData2)
+    || null;
+  if (changeEvent) {
+    changeEvent(() => publishTreeChanged(extensionId, viewId));
   }
 }
 
@@ -677,10 +1303,14 @@ async function executeCommand(payload) {
     await activateExtension(payload, commandActivationEvent(commandId));
   }
   const command = commands.get(commandId);
+  const args = Array.isArray(payload.args) ? payload.args.map(deserializeValue) : [];
   if (!command) {
+    const builtinResult = await executeBuiltinCommand(commandId, args);
+    if (builtinResult !== undefined) {
+      return serializeValue(builtinResult ?? null);
+    }
     throw new Error(`VS Code command is not registered: ${commandId}`);
   }
-  const args = Array.isArray(payload.args) ? payload.args.map(deserializeValue) : [];
   const result = await Promise.resolve(command.callback(...args));
   return serializeValue(result ?? null);
 }
@@ -701,6 +1331,7 @@ function summarizeExtension(extension) {
 
 async function handleAction(packet) {
   const payload = parseJson(packet.payloadJson, {});
+  await applyExecutionContextPacket(packet);
   switch (packet.actionId) {
     case ACTIONS.activateExtension:
       return activateExtension(payload, payload.activationEvent || 'onStartupFinished');

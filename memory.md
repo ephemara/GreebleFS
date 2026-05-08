@@ -1,3 +1,18 @@
+# 2026-05-08 - VS Code Bridge Editor Shim
+
+- Expanded `src-node/builtin-runtimes/vscode-bridge-host/index.cjs` beyond the initial Activity/Commands slice so extensions that expect editor/document hooks can activate without crashing.
+  - Added `Position`, `Range`, `Selection`, `MarkdownString`, and `FileSystemError` shims.
+  - Added `window.activeTextEditor`, `window.visibleTextEditors`, `window.onDidChangeActiveTextEditor`, `window.onDidChangeVisibleTextEditors`, `window.showTextDocument`, `workspace.openTextDocument`, `workspace.onDidOpenTextDocument`, `workspace.onDidCloseTextDocument`, `workspace.onDidChangeTextDocument`, `workspace.registerTextDocumentContentProvider`, and `workspace.registerFileSystemProvider`.
+  - Preserved non-file `Uri` shape through serialization/deserialization instead of flattening everything to `Uri.file(...)`.
+  - Hydrated execution-context packets before extension activation so the bridge can seed workspace folders and an active document from host state.
+- Validation:
+  - Passed: `node --check src-node\\builtin-runtimes\\vscode-bridge-host\\index.cjs`
+  - Passed: live Node smoke against a `JsonOutlineProvider`-style sample extension that listens for active editor changes, registers a tree provider, opens a file, and returns a custom `Uri`.
+- Durable rule:
+  - Keep the VS Code shim tiny and real-extension-driven. Add new API surface only when a concrete extension proves it is needed.
+- Next recommended step:
+  - Add webview hosting and deeper editor/LSP behavior only after one or two more real VSIX samples prove this editor/document slice is stable.
+
 # 2026-05-08 - Static Explorer Chrome Slots For Slider Scrubbing
 
 - Tightened the Explorer status-bar slider/view-switcher chrome so live value changes no longer resize neighboring controls.
