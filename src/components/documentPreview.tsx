@@ -334,6 +334,10 @@ export function TextDocumentPreview({
       data-document-preview-kind={kind}
       data-native-text-selection-surface="true"
       tabIndex={0}
+      onClick={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
       style={{
         height: '100%',
         overflowY: 'auto',

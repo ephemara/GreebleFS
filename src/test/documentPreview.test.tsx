@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import {
   TextDocumentPreview,
   getDocumentPreviewKind,
@@ -66,6 +66,35 @@ const value = 1;
     expect(styleTag?.textContent).not.toContain('#171a22');
     expect(styleTag?.textContent).not.toContain('rgba(8, 12, 18, 0.9)');
     expect(styleTag?.textContent).not.toContain('rgba(255,255,255,0.06)');
+  });
+
+  it('keeps rendered preview pointer and context-menu events inside the native selection surface', () => {
+    const parentClick = vi.fn();
+    const parentContextMenu = vi.fn();
+    const parentMouseDown = vi.fn();
+    const parentPointerDown = vi.fn();
+
+    render(
+      <div
+        onClick={parentClick}
+        onContextMenu={parentContextMenu}
+        onMouseDown={parentMouseDown}
+        onPointerDown={parentPointerDown}
+      >
+        <TextDocumentPreview kind="markdown" content="# Ship Notes\n\nSelectable prose" />
+      </div>,
+    );
+
+    const article = screen.getByTestId('document-preview-article');
+    fireEvent.pointerDown(article);
+    fireEvent.mouseDown(article);
+    fireEvent.click(article);
+    fireEvent.contextMenu(article);
+
+    expect(parentPointerDown).not.toHaveBeenCalled();
+    expect(parentMouseDown).not.toHaveBeenCalled();
+    expect(parentClick).not.toHaveBeenCalled();
+    expect(parentContextMenu).not.toHaveBeenCalled();
   });
 
   it('builds sandboxed html preview documents with a local asset base', () => {

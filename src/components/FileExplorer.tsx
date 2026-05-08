@@ -19547,6 +19547,9 @@ export function FileExplorer({
   );
   const onPreviewContextMenu = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isNativeTextSelectionSurfaceTarget(e.target)) {
+        return;
+      }
       const previewTarget = resolvePreviewContextMenuEntry();
       if (!previewTarget) {
         return;
@@ -34892,7 +34895,10 @@ export function FileExplorer({
         }
         void onExplorerDropScopeDrop(e);
       }}
-      onClick={() => {
+      onClick={(event) => {
+        if (isNativeTextSelectionSurfaceTarget(event.target)) {
+          return;
+        }
         setSelected(new Set());
         closeContextMenu();
       }}
