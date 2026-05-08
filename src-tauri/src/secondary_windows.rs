@@ -15,6 +15,7 @@ pub const SECONDARY_WINDOW_LABEL_PREFIX: &str = "secondary-";
 pub const SECONDARY_PANEL_WINDOW_LABEL_PREFIX: &str = "secondary-panel-";
 pub const SECONDARY_PLUGIN_PANEL_WINDOW_LABEL_PREFIX: &str = "secondary-plugin-panel-";
 pub const SECONDARY_ACTION_WIDGET_WINDOW_LABEL_PREFIX: &str = "secondary-action-widget-";
+pub const SECONDARY_LOOKDEV_WINDOW_LABEL_PREFIX: &str = "secondary-lookdev-";
 pub const SECONDARY_WINDOW_DESCRIPTOR_EVENT: &str = "greeblefs:secondary-window:descriptor";
 pub const SECONDARY_WINDOW_CLOSED_EVENT: &str = "greeblefs:secondary-window:closed";
 pub const SECONDARY_WINDOW_DOCK_BACK_EVENT: &str = "greeblefs:secondary-window:dock-back";
@@ -28,6 +29,7 @@ pub enum SecondaryWindowSurfaceKind {
     Panel,
     PluginPanel,
     ActionWidget,
+    Lookdev,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type, PartialEq, Eq)]
@@ -737,6 +739,20 @@ fn resolve_secondary_window_policy(
             always_on_top: true,
             remember_bounds: false,
         },
+        SecondaryWindowSurfaceKind::Lookdev => SecondaryWindowPolicy {
+            initial_size: SecondaryWindowSize {
+                width: 1240,
+                height: 860,
+            },
+            min_size: SecondaryWindowSize {
+                width: 760,
+                height: 560,
+            },
+            skip_taskbar: false,
+            transparent: false,
+            always_on_top: false,
+            remember_bounds: true,
+        },
     };
 
     let requested_min_size = requested_min_size.unwrap_or(defaults.min_size);
@@ -773,6 +789,7 @@ fn resolve_secondary_window_label(
                 SecondaryWindowSurfaceKind::ActionWidget => {
                     SECONDARY_ACTION_WIDGET_WINDOW_LABEL_PREFIX
                 }
+                SecondaryWindowSurfaceKind::Lookdev => SECONDARY_LOOKDEV_WINDOW_LABEL_PREFIX,
                 _ => SECONDARY_WINDOW_LABEL_PREFIX,
             };
             format!("{prefix}{sanitized_window_id}")
@@ -860,6 +877,7 @@ pub fn should_window_label_remember_bounds(label: &str) -> bool {
         || label == FILE_OPERATIONS_WINDOW_LABEL
         || label.starts_with(SECONDARY_PANEL_WINDOW_LABEL_PREFIX)
         || label.starts_with(SECONDARY_PLUGIN_PANEL_WINDOW_LABEL_PREFIX)
+        || label.starts_with(SECONDARY_LOOKDEV_WINDOW_LABEL_PREFIX)
 }
 
 #[cfg(test)]
@@ -901,6 +919,30 @@ mod tests {
         assert!(action_widget_policy.always_on_top);
         assert!(action_widget_policy.transparent);
         assert!(!action_widget_policy.remember_bounds);
+
+        let lookdev_policy = resolve_secondary_window_policy(
+            &SecondaryWindowSurfaceKind::Lookdev,
+            &SecondaryWindowPresentation::ToolWindow,
+            None,
+            None,
+        );
+        assert_eq!(
+            lookdev_policy,
+            SecondaryWindowPolicy {
+                initial_size: SecondaryWindowSize {
+                    width: 1240,
+                    height: 860,
+                },
+                min_size: SecondaryWindowSize {
+                    width: 760,
+                    height: 560,
+                },
+                skip_taskbar: false,
+                transparent: false,
+                always_on_top: false,
+                remember_bounds: true,
+            }
+        );
     }
 
     #[test]
@@ -915,6 +957,10 @@ mod tests {
         assert_eq!(
             resolve_secondary_window_label("notes-panel", &SecondaryWindowSurfaceKind::Panel,),
             "secondary-panel-notes-panel"
+        );
+        assert_eq!(
+            resolve_secondary_window_label("lookdev", &SecondaryWindowSurfaceKind::Lookdev,),
+            "secondary-lookdev-lookdev"
         );
     }
 
@@ -972,6 +1018,9 @@ mod tests {
         assert!(should_window_label_remember_bounds("secondary-panel-notes"));
         assert!(should_window_label_remember_bounds(
             "secondary-plugin-panel-sketchfab"
+        ));
+        assert!(should_window_label_remember_bounds(
+            "secondary-lookdev-lookdev"
         ));
         assert!(!should_window_label_remember_bounds("picker"));
         assert!(!should_window_label_remember_bounds(

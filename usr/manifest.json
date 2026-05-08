@@ -186,6 +186,14 @@
       "profileMode": "shared-root"
     },
     {
+      "id": "kainUi",
+      "relativeDirectory": "kain-ui",
+      "envVarSuffix": "KAIN_UI",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
+    },
+    {
       "id": "iconThemes",
       "relativeDirectory": "icon-themes",
       "envVarSuffix": "ICON_THEMES",

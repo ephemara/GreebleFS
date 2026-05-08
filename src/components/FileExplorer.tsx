@@ -406,6 +406,7 @@ import type {
   ExplorerWorkflowHostControls,
   ExplorerWorkflowLaunchRequest,
   ExplorerWorkflowSession,
+  ExplorerWorkflowStatusValue,
 } from "./explorer/explorerWorkflowContracts";
 import { useInteractionMotionController } from "../animation/interactionMotion";
 import { useLayoutDynamicsController } from "../animation/layoutDynamics";
@@ -8789,6 +8790,57 @@ function areExplorerActivityLaneIdListsEqual(
     left.every((laneId, index) => laneId === right[index])
   );
 }
+
+function areUnknownRecordValuesEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every(([key, value]) => Object.is(value, right[key]))
+  );
+}
+
+function areExplorerWorkflowStatusesEqual(
+  left: ExplorerWorkflowStatusValue | null,
+  right: ExplorerWorkflowStatusValue | null,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return left.label === right.label && left.tone === right.tone;
+}
+
+type ExplorerInteractiveHostRuntime = {
+  setDensity: (value: number) => void;
+  openPath: (path: string, options?: { pushHistory?: boolean }) => void;
+  openEntry: (entry: FileEntry) => void;
+  refresh: () => void;
+  setSearch: (query: string) => void;
+  setSort: (
+    sortBy: "name" | "size" | "date" | "type",
+    sortOrder?: "asc" | "desc",
+  ) => void;
+  setSelectedPaths: (
+    paths: readonly string[],
+    options?: { focusPrimary?: boolean },
+  ) => void;
+  toggleSelectedPath: (path: string) => void;
+  revealPath: (path: string) => void;
+  openPanel: (panelId: string, payload?: Record<string, string>) => void;
+  openWorkflow: (
+    workflowId: string,
+    options?: {
+      payload?: Record<string, unknown> | null;
+      titleOverride?: string | null;
+    },
+  ) => void;
+};
 
 function getExplorerChromeSurfaceContextLabel(
   surfaceId: ExplorerChromeSurfaceId,
@@ -23311,6 +23363,9 @@ export function FileExplorer({
       const currentState = currentMap[normalizedInstanceId] ?? {};
       const nextState =
         typeof patch === "function" ? patch(currentState) : { ...currentState, ...patch };
+      if (areUnknownRecordValuesEqual(currentState, nextState)) {
+        return;
+      }
       store.updateExplorer({
         explorerWidgetStateByInstanceId: {
           ...currentMap,
@@ -23338,13 +23393,84 @@ export function FileExplorer({
     },
     [],
   );
+  const explorerInteractiveHostRuntimeRef =
+    useRef<ExplorerInteractiveHostRuntime | null>(null);
+  const explorerWidgetHostByInstanceIdRef = useRef<Map<string, ExplorerWidgetHost>>(
+    new Map(),
+  );
+  const explorerActivityViewHostByIdRef = useRef<Map<string, ExplorerViewHost>>(
+    new Map(),
+  );
+  explorerInteractiveHostRuntimeRef.current = {
+    setDensity: (value) => {
+      if (activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID) {
+        applyStandardExplorerLayoutZoomValue(value);
+        commitStandardExplorerLayoutZoomValue(value);
+        return;
+      }
+      updateActiveExplorerViewDensityValue(value);
+    },
+    openPath: (path, options) => {
+      void navigate(path, options?.pushHistory ?? true);
+    },
+    openEntry: (entry) => {
+      void openEntry(entry);
+    },
+    refresh,
+    setSearch: (query) => {
+      setSearch(query);
+    },
+    setSort: (sortBy, sortOrder) => {
+      updateExplorerSettings({
+        sortBy,
+        sortOrder: sortOrder ?? explorerSettings.sortOrder,
+      });
+    },
+    setSelectedPaths: (paths, options) => {
+      const nextSelected = new Set(paths);
+      setSelected(nextSelected);
+      const focusPrimaryPath = options?.focusPrimary ? paths[0] : null;
+      if (focusPrimaryPath) {
+        lastSelected.current = focusPrimaryPath;
+        selectionRangeAnchorPathRef.current = focusPrimaryPath;
+        scrollExplorerEntryIntoView(focusPrimaryPath);
+      }
+    },
+    toggleSelectedPath: (path) => {
+      setSelected((current) => {
+        const nextSelected = new Set(current);
+        if (nextSelected.has(path)) {
+          nextSelected.delete(path);
+        } else {
+          nextSelected.add(path);
+        }
+        return nextSelected;
+      });
+    },
+    revealPath: scrollExplorerEntryIntoView,
+    openPanel: (panelId, payload) => {
+      onOpenPanel(panelId, payload);
+    },
+    openWorkflow: (workflowId, options) => {
+      void openExplorerWorkflow({
+        workflowId,
+        payload: options?.payload ?? null,
+        titleOverride: options?.titleOverride ?? null,
+      });
+    },
+  };
   const createExplorerWidgetHost = useCallback(
     (
       widget: ExplorerWidgetDescriptor,
       placement?: ExplorerChromeResolvedControlPlacement | null,
     ): ExplorerWidgetHost => {
       const widgetInstanceId = getExplorerWidgetInstanceId(widget, placement);
-      return {
+      const existingHost =
+        explorerWidgetHostByInstanceIdRef.current.get(widgetInstanceId) ?? null;
+      if (existingHost) {
+        return existingHost;
+      }
+      const host: ExplorerWidgetHost = {
         getInstanceState: () =>
           useSettingsStore.getState().settings.explorer
             .explorerWidgetStateByInstanceId?.[widgetInstanceId] ?? {},
@@ -23355,79 +23481,50 @@ export function FileExplorer({
         resetInstanceState: () =>
           resetExplorerWidgetInstanceState(widgetInstanceId),
         setDensity: (value) => {
-          if (activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID) {
-            applyStandardExplorerLayoutZoomValue(value);
-            commitStandardExplorerLayoutZoomValue(value);
-            return;
-          }
-          updateActiveExplorerViewDensityValue(value);
+          explorerInteractiveHostRuntimeRef.current?.setDensity(value);
         },
         openPath: (path, options) => {
-          void navigate(path, options?.pushHistory ?? true);
+          explorerInteractiveHostRuntimeRef.current?.openPath(path, options);
         },
         openEntry: (entry) => {
-          void openEntry(entry as FileEntry);
+          explorerInteractiveHostRuntimeRef.current?.openEntry(entry as FileEntry);
         },
-        refresh,
+        refresh: () => {
+          explorerInteractiveHostRuntimeRef.current?.refresh();
+        },
         setSearch: (query) => {
-          setSearch(query);
+          explorerInteractiveHostRuntimeRef.current?.setSearch(query);
         },
         setSort: (sortBy, sortOrder) => {
-          updateExplorerSettings({
-            sortBy,
-            sortOrder: sortOrder ?? explorerSettings.sortOrder,
-          });
+          explorerInteractiveHostRuntimeRef.current?.setSort(sortBy, sortOrder);
         },
         setSelectedPaths: (paths, options) => {
-          const nextSelected = new Set(paths);
-          setSelected(nextSelected);
-          const focusPrimaryPath = options?.focusPrimary ? paths[0] : null;
-          if (focusPrimaryPath) {
-            lastSelected.current = focusPrimaryPath;
-            selectionRangeAnchorPathRef.current = focusPrimaryPath;
-            scrollExplorerEntryIntoView(focusPrimaryPath);
-          }
+          explorerInteractiveHostRuntimeRef.current?.setSelectedPaths(paths, options);
         },
         toggleSelectedPath: (path) => {
-          setSelected((current) => {
-            const nextSelected = new Set(current);
-            if (nextSelected.has(path)) {
-              nextSelected.delete(path);
-            } else {
-              nextSelected.add(path);
-            }
-            return nextSelected;
-          });
+          explorerInteractiveHostRuntimeRef.current?.toggleSelectedPath(path);
         },
-        revealPath: scrollExplorerEntryIntoView,
+        revealPath: (path) => {
+          explorerInteractiveHostRuntimeRef.current?.revealPath(path);
+        },
         openPanel: (panelId) => {
-          onOpenPanel(panelId);
+          explorerInteractiveHostRuntimeRef.current?.openPanel(panelId);
         },
         openWorkflow: (workflowId, options) => {
-          void openExplorerWorkflow({
+          explorerInteractiveHostRuntimeRef.current?.openWorkflow(
             workflowId,
-            payload: options?.payload ?? null,
-            titleOverride: options?.titleOverride ?? null,
-          });
+            options,
+          );
         },
       };
+      explorerWidgetHostByInstanceIdRef.current.set(widgetInstanceId, host);
+      return host;
     },
     [
-      activeExplorerViewId,
-      applyStandardExplorerLayoutZoomValue,
-      commitStandardExplorerLayoutZoomValue,
-      explorerSettings.sortOrder,
+      explorerWidgetHostByInstanceIdRef,
       getExplorerWidgetInstanceId,
-      navigate,
-      onOpenPanel,
-      openEntry,
-      openExplorerWorkflow,
       patchExplorerWidgetInstanceState,
-      refresh,
       resetExplorerWidgetInstanceState,
-      scrollExplorerEntryIntoView,
-      updateActiveExplorerViewDensityValue,
-      updateExplorerSettings,
     ],
   );
   const explorerWidgetSession = useMemo(
@@ -23504,6 +23601,9 @@ export function FileExplorer({
           typeof patch === "function"
             ? patch(currentViewState)
             : { ...currentViewState, ...patch };
+        if (areUnknownRecordValuesEqual(currentViewState, nextViewState)) {
+          return current;
+        }
         return {
           ...current,
           [viewId]: { ...nextViewState },
@@ -23513,78 +23613,64 @@ export function FileExplorer({
     [],
   );
   const createExplorerActivityViewHost = useCallback(
-    (viewId: string): ExplorerViewHost => ({
-      setDensity: (value) => {
-        if (activeExplorerViewId === STANDARD_EXPLORER_VIEW_ID) {
-          applyStandardExplorerLayoutZoomValue(value);
-          commitStandardExplorerLayoutZoomValue(value);
-          return;
-        }
-        updateActiveExplorerViewDensityValue(value);
-      },
-      patchViewState: (patch) => patchExplorerActivityViewState(viewId, patch),
-      openPath: (path, options) => {
-        void navigate(path, options?.pushHistory ?? true);
-      },
-      openEntry: (entry) => {
-        void openEntry(entry as FileEntry);
-      },
-      refresh,
-      setSearch,
-      setSort: (sortBy, sortOrder) => {
-        updateExplorerSettings({
-          sortBy,
-          sortOrder: sortOrder ?? explorerSettings.sortOrder,
-        });
-      },
-      setSelectedPaths: (paths, options) => {
-        const nextSelected = new Set(paths);
-        setSelected(nextSelected);
-        const focusPrimaryPath = options?.focusPrimary ? paths[0] : null;
-        if (focusPrimaryPath) {
-          lastSelected.current = focusPrimaryPath;
-          selectionRangeAnchorPathRef.current = focusPrimaryPath;
-          scrollExplorerEntryIntoView(focusPrimaryPath);
-        }
-      },
-      toggleSelectedPath: (path) => {
-        setSelected((current) => {
-          const nextSelected = new Set(current);
-          if (nextSelected.has(path)) {
-            nextSelected.delete(path);
-          } else {
-            nextSelected.add(path);
-          }
-          return nextSelected;
-        });
-      },
-      revealPath: scrollExplorerEntryIntoView,
-      openPanel: onOpenPanel,
-      openWorkflow: (workflowId, options) => {
-        void openExplorerWorkflow({
-          workflowId,
-          payload: options?.payload ?? null,
-          titleOverride: options?.titleOverride ?? null,
-        });
-      },
-      renderSurface: () => null,
-      renderStandardLayout: () => null,
-      renderBuiltInContentView: () => null,
-    }),
+    (viewId: string): ExplorerViewHost => {
+      const existingHost =
+        explorerActivityViewHostByIdRef.current.get(viewId) ?? null;
+      if (existingHost) {
+        return existingHost;
+      }
+      const host: ExplorerViewHost = {
+        setDensity: (value) => {
+          explorerInteractiveHostRuntimeRef.current?.setDensity(value);
+        },
+        patchViewState: (patch) => patchExplorerActivityViewState(viewId, patch),
+        openPath: (path, options) => {
+          explorerInteractiveHostRuntimeRef.current?.openPath(path, options);
+        },
+        openEntry: (entry) => {
+          explorerInteractiveHostRuntimeRef.current?.openEntry(
+            entry as FileEntry,
+          );
+        },
+        refresh: () => {
+          explorerInteractiveHostRuntimeRef.current?.refresh();
+        },
+        setSearch: (query) => {
+          explorerInteractiveHostRuntimeRef.current?.setSearch(query);
+        },
+        setSort: (sortBy, sortOrder) => {
+          explorerInteractiveHostRuntimeRef.current?.setSort(sortBy, sortOrder);
+        },
+        setSelectedPaths: (paths, options) => {
+          explorerInteractiveHostRuntimeRef.current?.setSelectedPaths(
+            paths,
+            options,
+          );
+        },
+        toggleSelectedPath: (path) => {
+          explorerInteractiveHostRuntimeRef.current?.toggleSelectedPath(path);
+        },
+        revealPath: (path) => {
+          explorerInteractiveHostRuntimeRef.current?.revealPath(path);
+        },
+        openPanel: (panelId, payload) => {
+          explorerInteractiveHostRuntimeRef.current?.openPanel(panelId, payload);
+        },
+        openWorkflow: (workflowId, options) => {
+          explorerInteractiveHostRuntimeRef.current?.openWorkflow(
+            workflowId,
+            options,
+          );
+        },
+        renderSurface: () => null,
+        renderStandardLayout: () => null,
+        renderBuiltInContentView: () => null,
+      };
+      explorerActivityViewHostByIdRef.current.set(viewId, host);
+      return host;
+    },
     [
-      activeExplorerViewId,
-      applyStandardExplorerLayoutZoomValue,
-      commitStandardExplorerLayoutZoomValue,
-      explorerSettings.sortOrder,
-      navigate,
-      onOpenPanel,
-      openEntry,
-      openExplorerWorkflow,
       patchExplorerActivityViewState,
-      refresh,
-      scrollExplorerEntryIntoView,
-      updateActiveExplorerViewDensityValue,
-      updateExplorerSettings,
     ],
   );
   const renderExplorerWidgetControl = useCallback(
@@ -33855,22 +33941,31 @@ export function FileExplorer({
       },
       setTitle: (title) => {
         setActiveWorkflowSession((current) =>
-          current?.id === sessionId ? { ...current, title } : current,
+          current?.id === sessionId && current.title !== title
+            ? { ...current, title }
+            : current,
         );
       },
       setStatus: (status) => {
         setActiveWorkflowSession((current) =>
-          current?.id === sessionId ? { ...current, status } : current,
+          current?.id === sessionId &&
+          !areExplorerWorkflowStatusesEqual(current.status, status)
+            ? { ...current, status }
+            : current,
         );
       },
       setBusy: (busy) => {
         setActiveWorkflowSession((current) =>
-          current?.id === sessionId ? { ...current, busy } : current,
+          current?.id === sessionId && current.busy !== busy
+            ? { ...current, busy }
+            : current,
         );
       },
       setSize: (size) => {
         setActiveWorkflowSession((current) =>
-          current?.id === sessionId ? { ...current, size } : current,
+          current?.id === sessionId && current.size !== size
+            ? { ...current, size }
+            : current,
         );
       },
       setFooterActions: (footerActions) => {
@@ -33887,12 +33982,13 @@ export function FileExplorer({
     }),
     [closeExplorerWorkflow],
   );
+  const activeWorkflowSessionId = activeWorkflowSession?.id ?? null;
   const activeWorkflowHostControls = useMemo(
     () =>
-      activeWorkflowSession
-        ? createExplorerWorkflowHostControls(activeWorkflowSession.id)
+      activeWorkflowSessionId
+        ? createExplorerWorkflowHostControls(activeWorkflowSessionId)
         : null,
-    [activeWorkflowSession, createExplorerWorkflowHostControls],
+    [activeWorkflowSessionId, createExplorerWorkflowHostControls],
   );
   const resolvedWorkflowEntriesById = useMemo(() => {
     const entriesById = new Map<string, ResolvedExplorerWorkflowEntry>();

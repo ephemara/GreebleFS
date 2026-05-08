@@ -1,0 +1,187 @@
+fn json_field_present(object: Any, key: String) -> Bool:
+    if !json_has(object, key):
+        return false
+    return json_string(json_get(object, key)) != "null"
+
+fn json_string_field(object: Any, key: String) -> String:
+    if json_field_present(object, key):
+        return json_get_string(object, key)
+    return ""
+
+fn string_array_2(a: String, b: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    return items
+
+fn string_array_4(a: String, b: String, c: String, d: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    return items
+
+fn string_array_6(a: String, b: String, c: String, d: String, e: String, f: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    json_array_push(items, f)
+    return items
+
+fn string_array_8(a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    json_array_push(items, f)
+    json_array_push(items, g)
+    json_array_push(items, h)
+    return items
+
+fn string_array_10(a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String, i: String, j: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    json_array_push(items, f)
+    json_array_push(items, g)
+    json_array_push(items, h)
+    json_array_push(items, i)
+    json_array_push(items, j)
+    return items
+
+fn build_ui_theme() -> Any:
+    let theme = json_object_new()
+    json_object_set(theme, "activeThemeId", "pilot-dark")
+    json_object_set(theme, "appOpacity", 1.0)
+    json_object_set(theme, "panelTransparency", 0.0)
+    json_object_set(theme, "appZoom", 1.0)
+    json_object_set(theme, "blurStrengthPx", 18)
+    json_object_set(theme, "source", "src-kain/app/main.kn")
+    return theme
+
+fn build_ui_chrome() -> Any:
+    let chrome = json_object_new()
+    json_object_set(chrome, "density", "compact")
+    json_object_set(chrome, "topBarMode", "theme-default")
+    json_object_set(chrome, "buttonSize", "tight")
+    json_object_set(chrome, "showAdvancedThemeLanes", false)
+    return chrome
+
+fn build_ui_layout() -> Any:
+    let layout = json_object_new()
+    json_object_set(layout, "shellFamily", "classic")
+    json_object_set(layout, "settingsRailMode", "streamlined")
+    json_object_set(layout, "explorerChromePreset", "focused")
+    return layout
+
+fn build_ui_motion() -> Any:
+    let motion = json_object_new()
+    json_object_set(motion, "preset", "subtle")
+    json_object_set(motion, "interactionPreset", "subtle")
+    json_object_set(motion, "shaderPerformanceMode", "performance")
+    return motion
+
+fn build_settings_category(key: String, label: String, description: String, section_keys: Array<String>) -> Any:
+    let category = json_object_new()
+    json_object_set(category, "key", key)
+    json_object_set(category, "label", label)
+    json_object_set(category, "description", description)
+    json_object_set(category, "sectionKeys", section_keys)
+    return category
+
+fn build_ui_settings() -> Any:
+    let settings = json_object_new()
+    let categories = json_array_new()
+    let hidden_sections = json_array_new()
+
+    json_array_push(categories, build_settings_category(
+        "start",
+        "Start",
+        "Profiles, system status, and the Kain-authored UI graph.",
+        string_array_4("overview", "system", "profiles", "kain-ui")
+    ))
+    json_array_push(categories, build_settings_category(
+        "interface",
+        "Interface",
+        "The controls that shape the actual shell.",
+        string_array_6("appearance", "explorer", "layouts", "terminal", "dock", "context-menus")
+    ))
+    json_array_push(categories, build_settings_category(
+        "visuals",
+        "Visuals",
+        "Assets and live rendering lanes.",
+        string_array_4("icons", "wallpapers", "shaders", "animations")
+    ))
+    json_array_push(categories, build_settings_category(
+        "pipelines",
+        "Pipelines",
+        "Models, audio, mobile, and cloud features.",
+        string_array_6("models", "audio", "mobile", "cloud", "home", "hotkeys")
+    ))
+    json_array_push(categories, build_settings_category(
+        "advanced-authoring",
+        "Advanced",
+        "Pack-level authoring lanes kept available without owning the main flow.",
+        string_array_8("appearance-packs", "theme-recipes", "theme-engines", "shell-renderers", "top-bars", "interaction-motion", "layout-dynamics", "lookdev")
+    ))
+
+    json_array_push(hidden_sections, "theme-json")
+
+    json_object_set(settings, "mode", "streamlined")
+    json_object_set(settings, "categories", categories)
+    json_object_set(settings, "hiddenSectionKeys", hidden_sections)
+    json_object_set(settings, "primarySectionKeys", string_array_10("overview", "system", "profiles", "kain-ui", "appearance", "explorer", "layouts", "terminal", "dock", "context-menus"))
+    return settings
+
+fn build_ui_profile() -> Any:
+    let profile = json_object_new()
+    json_object_set(profile, "source", "app")
+    json_object_set(profile, "scope", "global")
+    json_object_set(profile, "overlays", string_array_2("usr/kain-ui/main.kn", "usr/profiles/<active>/kain-ui/main.kn"))
+    return profile
+
+fn build_ui_graph(request: Any) -> Any:
+    let graph = json_object_new()
+    json_object_set(graph, "schemaVersion", 1)
+    json_object_set(graph, "kind", "greeblefs.ui.graph")
+    json_object_set(graph, "source", "src-kain/app/main.kn")
+    json_object_set(graph, "namespace", json_string_field(request, "namespace"))
+    json_object_set(graph, "method", json_string_field(request, "method"))
+    json_object_set(graph, "theme", build_ui_theme())
+    json_object_set(graph, "chrome", build_ui_chrome())
+    json_object_set(graph, "layout", build_ui_layout())
+    json_object_set(graph, "motion", build_ui_motion())
+    json_object_set(graph, "settings", build_ui_settings())
+    json_object_set(graph, "profile", build_ui_profile())
+    return graph
+
+fn build_error(message: String) -> Any:
+    let result = json_object_new()
+    json_object_set(result, "ok", false)
+    json_object_set(result, "error", message)
+    return result
+
+fn kain_bridge_dispatch(request_json: String) -> Any:
+    let request = json_parse(request_json)
+    let request_namespace = json_string_field(request, "namespace")
+    let request_method = json_string_field(request, "method")
+
+    if request_namespace == "greeblefs.ui" and request_method == "graph":
+        return build_ui_graph(request)
+
+    if request_namespace == "greeblefs.ui" and request_method == "ping":
+        let result = json_object_new()
+        json_object_set(result, "ok", true)
+        json_object_set(result, "source", "src-kain/app/main.kn")
+        return result
+
+    return build_error("Unknown GreebleFS Kain UI request: " + request_namespace + "." + request_method)

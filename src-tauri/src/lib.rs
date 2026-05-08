@@ -144,6 +144,16 @@ use terminal::TerminalManager;
 use window_commands::{TrayVisibilityState, MAIN_WINDOW_LABEL};
 
 #[cfg(not(test))]
+fn kain_ui_runtime_config() -> tauri_plugin_kain::KainRuntimeProcessConfig {
+    tauri_plugin_kain::KainRuntimeProcessConfig {
+        entry: Some("src-kain/app/main.kn".into()),
+        dispatch_function: "kain_bridge_dispatch".into(),
+        restart_on_reload: true,
+        ..Default::default()
+    }
+}
+
+#[cfg(not(test))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_graphics::apply_linux_graphics_startup_configuration();
@@ -184,7 +194,11 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_kain::init())
+        .plugin(
+            tauri_plugin_kain::Builder::default()
+                .runtime(kain_ui_runtime_config())
+                .build(),
+        )
         .plugin(tauri_plugin_screenshots::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(move |app| {

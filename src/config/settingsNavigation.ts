@@ -53,6 +53,17 @@ export const settingsSectionCatalog = [
     order: 22,
   },
   {
+    key: 'kain-ui',
+    label: 'Kain UI',
+    subtitle: 'Live Kain graph for theme, chrome, layout, motion, settings, and profile intent.',
+    keywords: ['kain', 'kain ui', 'scriptable ui', 'theme script', 'layout script', 'profile graph'],
+    overviewSummary: 'Kain-authored UI graph that can drive settings navigation and future theme/layout state without JSON sprawl.',
+    featuredInOverview: true,
+    archetype: 'rows',
+    shell: { preferredContentDensity: 'compact' },
+    order: 24,
+  },
+  {
     key: 'models',
     label: 'Models',
     subtitle: 'Managed local-model catalog, cache, and acceleration-aware bindings.',
@@ -313,8 +324,8 @@ export const settingsSectionCatalog = [
     key: 'lookdev',
     label: 'Lookdev',
     subtitle: 'Global semantic shell authoring, live presets, and mode-aware export flows.',
-    keywords: ['lookdev', 'theme authoring', 'global customize', 'preset', 'shell overlay', 'dock mode', 'app mode'],
-    overviewSummary: 'Open the immersive global lookdev overlay, manage semantic presets, and keep theme-aligned exports in sync.',
+    keywords: ['lookdev', 'theme authoring', 'global customize', 'preset', 'shell window', 'dock mode', 'app mode'],
+    overviewSummary: 'Open the global lookdev tool window, manage semantic presets, and keep theme-aligned exports in sync.',
     featuredInOverview: false,
     archetype: 'hybrid',
     shell: { preferredContentDensity: 'comfortable' },
@@ -362,11 +373,14 @@ export const settingsRailPathCatalog = [
 export type SettingsSectionCategoryKey =
   | 'start'
   | 'core-features'
+  | 'interface'
   | 'pipelines'
   | 'connectivity'
+  | 'visuals'
   | 'appearance'
   | 'motion-rendering'
-  | 'authoring';
+  | 'authoring'
+  | 'advanced-authoring';
 
 export interface SettingsSectionCategoryEntry {
   key: SettingsSectionCategoryKey;
@@ -382,58 +396,45 @@ export const settingsSectionCategoryCatalog = [
     label: 'Start',
     description: 'Orientation, startup behavior, and global controls.',
     order: 10,
-    sectionKeys: ['overview', 'system', 'profiles', 'hotkeys'],
+    sectionKeys: ['overview', 'system', 'profiles', 'kain-ui', 'hotkeys'],
   },
   {
-    key: 'core-features',
-    label: 'Core Features',
+    key: 'interface',
+    label: 'Interface',
     description: 'Main workbench, explorer, terminal, and menu workflows.',
     order: 20,
-    sectionKeys: ['terminal', 'dock', 'explorer', 'context-menus', 'home', 'layouts'],
+    sectionKeys: ['appearance', 'explorer', 'layouts', 'terminal', 'dock', 'context-menus', 'home'],
   },
   {
     key: 'pipelines',
     label: 'Pipelines',
-    description: 'Model, audio, and runtime feature pipelines.',
+    description: 'Model, audio, cloud, and mobile feature pipelines.',
     order: 30,
-    sectionKeys: ['models', 'audio'],
+    sectionKeys: ['models', 'audio', 'cloud', 'mobile'],
   },
   {
-    key: 'connectivity',
-    label: 'Connectivity',
-    description: 'Cloud and mobile delivery surfaces.',
+    key: 'visuals',
+    label: 'Visuals',
+    description: 'Icon, wallpaper, shader, and animation assets.',
     order: 40,
-    sectionKeys: ['cloud', 'mobile'],
+    sectionKeys: ['icons', 'wallpapers', 'shaders', 'animations'],
   },
   {
-    key: 'appearance',
-    label: 'Appearance',
-    description: 'Theme, visual identity, shell chrome, icons, and wallpaper.',
+    key: 'advanced-authoring',
+    label: 'Advanced',
+    description: 'Pack-level authoring lanes kept available without owning the main flow.',
     order: 50,
     sectionKeys: [
-      'appearance',
       'appearance-packs',
       'theme-recipes',
       'theme-engines',
       'shell-renderers',
       'top-bars',
-      'icons',
-      'wallpapers',
+      'interaction-motion',
+      'layout-dynamics',
+      'lookdev',
+      'theme-json',
     ],
-  },
-  {
-    key: 'motion-rendering',
-    label: 'Motion & Rendering',
-    description: 'Shaders, animation, interaction motion, and layout physics.',
-    order: 60,
-    sectionKeys: ['shaders', 'animations', 'interaction-motion', 'layout-dynamics'],
-  },
-  {
-    key: 'authoring',
-    label: 'Authoring',
-    description: 'Lookdev, raw theme, and package editing surfaces.',
-    order: 70,
-    sectionKeys: ['lookdev', 'theme-json'],
   },
 ] as const satisfies readonly SettingsSectionCategoryEntry[];
 

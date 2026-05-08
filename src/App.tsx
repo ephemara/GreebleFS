@@ -41,6 +41,7 @@ import {
   loadLookdevPresets,
   lookdevPresetSystemConfig,
   resolveLookdevPresetForWindowMode,
+  type LoadedLookdevPreset,
 } from './config/lookdevPresets';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
@@ -298,6 +299,12 @@ import {
   type LookdevApplyPresetEventDetail,
 } from './runtime/lookdevEvents';
 import {
+  LOOKDEV_SECONDARY_WINDOW_ID,
+  createLookdevSecondaryWindowOpenRequest,
+  isLookdevSecondaryWindowDescriptor,
+  parseLookdevSecondaryWindowPayload,
+} from './runtime/lookdevWindow';
+import {
   listenToExplorerPickerRequests,
   openExplorerPicker,
   publishExplorerPickerResult,
@@ -310,6 +317,7 @@ import {
   dockBackSecondaryWindow,
   focusSecondaryWindow,
   listenToSecondaryWindowClosed,
+  listenToSecondaryWindowDescriptorUpdates,
   listenToSecondaryWindowDockBack,
   listSecondaryWindowDescriptors,
   openSecondaryWindow,
@@ -327,6 +335,10 @@ import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { executeVsCodeCommand } from './runtime/vscodeBridgeBackend';
+import {
+  loadKainUiGraph,
+  type KainUiGraph,
+} from './runtime/kainUiGraph';
 import { sendNativeNotification } from './runtime/nativeNotifications';
 import {
   applyLookdevScopedOverridesToSettings,
@@ -723,10 +735,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const dedicatedSecondaryWindowPayload = parseSecondaryWindowPayload<{ panelId?: string }>(
     secondaryWindowDescriptor?.payloadJson,
   );
+  const dedicatedLookdevWindowPayload = parseLookdevSecondaryWindowPayload(
+    secondaryWindowDescriptor?.payloadJson,
+  );
   const dedicatedSecondarySurfaceId = secondaryWindowDescriptor?.dockTarget?.surfaceId
     ?? dedicatedSecondaryWindowPayload?.panelId
     ?? null;
   const isDedicatedSecondaryWindowHost = secondaryWindowDescriptor != null;
+  const isDedicatedLookdevSecondaryWindow = isLookdevSecondaryWindowDescriptor(
+    secondaryWindowDescriptor,
+  );
   const isDedicatedSecondaryWorkbenchSurfaceWindow = Boolean(
     isDedicatedSecondaryWindowHost
     && dedicatedSecondarySurfaceId
@@ -752,6 +770,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [themeContributedAnimations, setThemeContributedAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isLookdevSecondaryWindowOpen, setIsLookdevSecondaryWindowOpen] = useState(false);
   const [latestOverlayFrameStats, setLatestOverlayFrameStats] = useState<OverlayFrameTelemetryStats | null>(null);
   const [themeRendererViewport, setThemeRendererViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 1280 : window.innerWidth,
@@ -837,6 +856,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const actionPacksRefreshQueuedRef = useRef(false);
   const lookdevPresetsRefreshInFlightRef = useRef(false);
   const lookdevPresetsRefreshQueuedRef = useRef(false);
+  const lookdevSecondaryWindowSessionInitializedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -907,6 +927,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [usrProfileRuntimeRevision, setUsrProfileRuntimeRevision] = useState(
     getUsrProfileRuntimeRevision,
   );
+  const [kainUiGraph, setKainUiGraph] = useState<KainUiGraph | null>(null);
+  const [kainUiGraphError, setKainUiGraphError] = useState<string | null>(null);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -1026,6 +1048,33 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     () => settingsPersistApi?.hasHydrated?.() ?? true,
   );
   const mobileShareBootEvaluationRef = useRef(false);
+  const usrProfileRuntimeActiveProfileId =
+    usrProfileRuntimeSnapshot?.activeProfileId ?? "default";
+  useEffect(() => {
+    if (!settingsHydrated) {
+      return;
+    }
+
+    let cancelled = false;
+    void loadKainUiGraph({
+      profileId: usrProfileRuntimeActiveProfileId,
+      revision: usrProfileRuntimeRevision,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setKainUiGraph(result.graph);
+      setKainUiGraphError(result.error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    settingsHydrated,
+    usrProfileRuntimeActiveProfileId,
+    usrProfileRuntimeRevision,
+  ]);
   const {
     lookdevPresets,
     lookdevSelectedPresetId,
@@ -1039,6 +1088,9 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     lookdevDraftSession: state.draftSession,
     lookdevIsOpen: state.isOpen,
   })));
+  const isLookdevSurfaceOpen = lookdevIsOpen
+    || isLookdevSecondaryWindowOpen
+    || isDedicatedLookdevSecondaryWindow;
 
   useEffect(() => {
     if (settingsPersistApi?.hasHydrated?.()) {
@@ -1327,8 +1379,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     ...(appThemeOverrideManifest ? [appThemeOverrideManifest] : []),
     ...(dockThemeOverrideManifest ? [dockThemeOverrideManifest] : []),
   ], [appearance.customThemeBundles, appThemeOverrideManifest, dockThemeOverrideManifest]);
-  const effectiveActiveThemeId = appThemeOverrideManifest?.id ?? appearance.activeThemeId;
-  const effectiveActiveDockThemeId = dockThemeOverrideManifest?.id ?? appearance.activeDockThemeId;
+  const kainUiTheme = kainUiGraph?.theme;
+  const effectiveActiveThemeId = appThemeOverrideManifest?.id ?? kainUiTheme?.activeThemeId ?? appearance.activeThemeId;
+  const effectiveActiveDockThemeId = dockThemeOverrideManifest?.id ?? kainUiTheme?.activeDockThemeId ?? appearance.activeDockThemeId;
+  const effectivePanelTransparency = kainUiTheme?.panelTransparency ?? appearance.panelTransparency;
   const resolvedCustomBundleThemes = useMemo(
     () => resolveThemeBundleManifests(
       effectiveCustomThemeBundles,
@@ -1389,13 +1443,13 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       selectedIconTheme,
       uiFontFamily: appearance.uiFontFamily,
       monoFontFamily: settings.fontFamily,
-      panelTransparency: appearance.panelTransparency,
+      panelTransparency: effectivePanelTransparency,
       windowMode,
     }),
     [
       appearance.customThemes,
       appearance.dockThemeMode,
-      appearance.panelTransparency,
+      effectivePanelTransparency,
       appearance.uiFontFamily,
       effectiveActiveDockThemeId,
       effectiveActiveThemeId,
@@ -1665,11 +1719,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     [systemSettings],
   );
   const shouldSkipTaskbar = !systemPresentationState.taskbarVisible;
-  const appOpacity = appearance.appOpacity ?? 1.0;
-  const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
-  const appZoom = appearance.appZoom ?? 1.0;
+  const appOpacity = kainUiTheme?.appOpacity ?? appearance.appOpacity ?? 1.0;
+  const panelTransparency = effectivePanelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
+  const appZoom = kainUiTheme?.appZoom ?? appearance.appZoom ?? 1.0;
   const appBlur = appearance.appBlur ?? true;
-  const appBlurStrength = appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
+  const appBlurStrength = kainUiTheme?.blurStrengthPx ?? appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
   const animationsEnabled = appearance.animations ?? false;
   const appAnimationDurationMs = animationsEnabled
     ? clampOverlayAnimationDuration(appearance.appAnimationDurationMs ?? 320)
@@ -5274,6 +5328,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         usrProfileSettingSliceKeys: getUsrProfileSettingSliceKeys(),
         usrProfileSharedSettingSliceKeys: getUsrProfileSharedSettingSliceKeys(),
         usrProfileSettingsVariants,
+        kainUiGraph,
+        kainUiGraphError,
         onSwitchUsrProfile: handleSwitchUsrProfile,
         onCreateUsrProfile: handleCreateUsrProfile,
         onCreateUsrProfileFromVariant: handleCreateUsrProfileFromVariant,
@@ -5549,6 +5605,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       menuPacksLoading,
       menuPacksWarnings,
       refreshMenuPacks,
+      kainUiGraph,
+      kainUiGraphError,
       usrProfileRuntimeSnapshot,
     ],
   );
@@ -5927,6 +5985,45 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     updateActiveIdeWorkbenchLayoutState,
     workbenchSurfaceSeeds,
   ]);
+  useEffect(() => {
+    if (isDedicatedSecondaryWindowHost || !isTauri()) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    void listSecondaryWindowDescriptors()
+      .then((descriptors) => {
+        if (cancelled) {
+          return;
+        }
+
+        setIsLookdevSecondaryWindowOpen(
+          descriptors.some((descriptor) => descriptor.windowId === LOOKDEV_SECONDARY_WINDOW_ID),
+        );
+      })
+      .catch(() => undefined);
+
+    const stopListeningForDescriptors = listenToSecondaryWindowDescriptorUpdates((descriptor) => {
+      if (descriptor.windowId !== LOOKDEV_SECONDARY_WINDOW_ID) {
+        return;
+      }
+
+      setIsLookdevSecondaryWindowOpen(true);
+    });
+    const stopListeningForClosed = listenToSecondaryWindowClosed((detail) => {
+      if (detail.windowId !== LOOKDEV_SECONDARY_WINDOW_ID) {
+        return;
+      }
+
+      setIsLookdevSecondaryWindowOpen(false);
+    });
+
+    return () => {
+      cancelled = true;
+      stopListeningForDescriptors();
+      stopListeningForClosed();
+    };
+  }, [isDedicatedSecondaryWindowHost]);
   useEffect(() => {
     if (!activeShellUsesIdeWorkbench) {
       return;
@@ -6411,6 +6508,14 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     useLookdevStore.getState().closeSession();
   }, [lookdevApplyCallbacks]);
 
+  const closeDedicatedLookdevWindow = useCallback(async () => {
+    if (!secondaryWindowDescriptor || !isDedicatedLookdevSecondaryWindow) {
+      return;
+    }
+
+    await closeSecondaryWindow(secondaryWindowDescriptor.windowId).catch(() => undefined);
+  }, [isDedicatedLookdevSecondaryWindow, secondaryWindowDescriptor]);
+
   const handleApplyLookdevPresetById = useCallback((presetId?: string | null) => {
     const lookdevState = useLookdevStore.getState();
     const targetPresetId = presetId?.trim()
@@ -6442,14 +6547,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     return true;
   }, [lookdevApplyCallbacks, presentationSettings.windowMode]);
 
-  const handleOpenLookdevOverlay = useCallback((requestedPresetId?: string | null) => {
+  const openLocalLookdevSession = useCallback((args?: {
+    requestedPresetId?: string | null;
+    presetOverride?: LoadedLookdevPreset | null;
+  }) => {
     const lookdevState = useLookdevStore.getState();
-    const targetPresetId = requestedPresetId?.trim()
+    const targetPresetId = args?.requestedPresetId?.trim()
       || lookdevState.selectedPresetId
       || lookdevState.activeAppliedPresetId;
-    const targetPreset = targetPresetId
+    const targetPreset = args?.presetOverride
+      ?? (targetPresetId
       ? lookdevState.presets.find((preset) => preset.id === targetPresetId) ?? null
-      : null;
+      : null);
     const liveSettingsSnapshot = {
       appearance,
       explorer: explorerSettings,
@@ -6471,25 +6580,107 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       preset: targetPreset,
       draftManifest: targetPreset?.manifest ?? defaultDraftManifest,
     });
-    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+    if (
+      !isDedicatedSecondaryWindowHost
+      && (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed')
+    ) {
       void showCurrentPresentation();
     }
   }, [
     appearance,
     dockSettings,
     explorerSettings,
+    isDedicatedSecondaryWindowHost,
     presentationSettings,
     showCurrentPresentation,
   ]);
 
-  const handleToggleLookdevOverlay = useCallback(() => {
+  const handleOpenLookdevOverlay = useCallback(async (requestedPresetId?: string | null) => {
+    const lookdevState = useLookdevStore.getState();
+    const targetPresetId = requestedPresetId?.trim()
+      || lookdevState.selectedPresetId
+      || lookdevState.activeAppliedPresetId;
+    const targetPreset = targetPresetId
+      ? lookdevState.presets.find((preset) => preset.id === targetPresetId) ?? null
+      : null;
+
+    if (isDedicatedLookdevSecondaryWindow) {
+      openLocalLookdevSession({
+        requestedPresetId,
+        presetOverride: targetPreset,
+      });
+      return;
+    }
+
+    if (isTauri()) {
+      setIsCommandPaletteOpen(false);
+      await openSecondaryWindow(
+        createLookdevSecondaryWindowOpenRequest({
+          presetId: requestedPresetId,
+          preset: targetPreset,
+        }),
+      );
+      return;
+    }
+
+    openLocalLookdevSession({
+      requestedPresetId,
+      presetOverride: targetPreset,
+    });
+  }, [
+    isDedicatedLookdevSecondaryWindow,
+    openLocalLookdevSession,
+  ]);
+
+  const handleToggleLookdevOverlay = useCallback(async () => {
+    if (isDedicatedLookdevSecondaryWindow) {
+      handleRestoreLookdevBaseline();
+      await closeDedicatedLookdevWindow();
+      return;
+    }
+
+    if (isTauri()) {
+      try {
+        const lookdevDescriptor = (await listSecondaryWindowDescriptors())
+          .find((descriptor) => descriptor.windowId === LOOKDEV_SECONDARY_WINDOW_ID);
+        if (lookdevDescriptor) {
+          await closeSecondaryWindow(lookdevDescriptor.windowId).catch(() => undefined);
+          return;
+        }
+      } catch {
+        // Fall through to the open path when descriptor reconciliation is unavailable.
+      }
+    }
+
     if (useLookdevStore.getState().isOpen) {
       handleRestoreLookdevBaseline();
       return;
     }
 
-    handleOpenLookdevOverlay();
-  }, [handleOpenLookdevOverlay, handleRestoreLookdevBaseline]);
+    await handleOpenLookdevOverlay();
+  }, [
+    closeDedicatedLookdevWindow,
+    handleOpenLookdevOverlay,
+    handleRestoreLookdevBaseline,
+    isDedicatedLookdevSecondaryWindow,
+  ]);
+
+  useEffect(() => {
+    if (!isDedicatedLookdevSecondaryWindow || lookdevSecondaryWindowSessionInitializedRef.current) {
+      return;
+    }
+
+    lookdevSecondaryWindowSessionInitializedRef.current = true;
+    openLocalLookdevSession({
+      requestedPresetId: dedicatedLookdevWindowPayload?.presetId,
+      presetOverride: dedicatedLookdevWindowPayload?.preset ?? null,
+    });
+  }, [
+    dedicatedLookdevWindowPayload?.preset,
+    dedicatedLookdevWindowPayload?.presetId,
+    isDedicatedLookdevSecondaryWindow,
+    openLocalLookdevSession,
+  ]);
 
   useEffect(() => {
     if (lookdevDraftSession || !lookdevActiveAppliedPresetId) {
@@ -6530,10 +6721,10 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     const handleOpenEvent = (event: Event) => {
       const detail = (event as CustomEvent<LookdevApplyPresetEventDetail>).detail;
-      handleOpenLookdevOverlay(detail?.presetId);
+      void handleOpenLookdevOverlay(detail?.presetId);
     };
     const handleToggleEvent = () => {
-      handleToggleLookdevOverlay();
+      void handleToggleLookdevOverlay();
     };
     const handleApplyEvent = (event: Event) => {
       const detail = (event as CustomEvent<LookdevApplyPresetEventDetail>).detail;
@@ -6819,7 +7010,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       if (matchesKeybinding(event, keybindings.toggleLookdevOverlay)) {
         event.preventDefault();
         event.stopPropagation();
-        handleToggleLookdevOverlay();
+        void handleToggleLookdevOverlay();
         return;
       }
 
@@ -7120,27 +7311,31 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       },
       {
         id: 'lookdev-open-overlay',
-        title: lookdevIsOpen ? 'Focus Lookdev Overlay' : 'Open Lookdev Overlay',
-        subtitle: 'Open the full-screen semantic shell lookdev surface over the live workbench.',
+        title: isLookdevSurfaceOpen ? 'Focus Lookdev Window' : 'Open Lookdev Window',
+        subtitle: 'Open the semantic shell lookdev tool window beside the live workbench.',
         group: 'Lookdev',
         kind: 'command',
-        keywords: ['lookdev', 'theme', 'customize', 'shell', 'overlay', 'dock', 'app'],
+        keywords: ['lookdev', 'theme', 'customize', 'shell', 'window', 'dock', 'app'],
         badge: 'Lookdev',
         shortcutLabel: formatHotkeyLabel(keybindings.toggleLookdevOverlay),
-        onSelect: () => handleOpenLookdevOverlay(),
+        onSelect: () => {
+          void handleOpenLookdevOverlay();
+        },
       },
       {
         id: 'lookdev-toggle-overlay',
-        title: lookdevIsOpen ? 'Close Lookdev Overlay' : 'Toggle Lookdev Overlay',
-        subtitle: lookdevIsOpen
+        title: isLookdevSurfaceOpen ? 'Close Lookdev Window' : 'Toggle Lookdev Window',
+        subtitle: isLookdevSurfaceOpen
           ? 'Close the current lookdev draft and restore the baseline session state.'
-          : 'Toggle the immersive lookdev overlay on top of the current shell.',
+          : 'Toggle the compact lookdev tool window beside the current shell.',
         group: 'Lookdev',
         kind: 'command',
-        keywords: ['lookdev', 'toggle', 'close', 'open', 'overlay', 'draft'],
-        badge: lookdevIsOpen ? 'Close' : 'Lookdev',
+        keywords: ['lookdev', 'toggle', 'close', 'open', 'window', 'draft'],
+        badge: isLookdevSurfaceOpen ? 'Close' : 'Lookdev',
         shortcutLabel: formatHotkeyLabel(keybindings.toggleLookdevOverlay),
-        onSelect: handleToggleLookdevOverlay,
+        onSelect: () => {
+          void handleToggleLookdevOverlay();
+        },
       },
       ...((() => {
         const activeLookdevCommandPresetId = lookdevSelectedPresetId || lookdevActiveAppliedPresetId;
@@ -7444,7 +7639,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     keybindings.windowModeToggle,
     keybindings.zenFocusModeToggle,
     lookdevActiveAppliedPresetId,
-    lookdevIsOpen,
+    isLookdevSurfaceOpen,
     lookdevPresets,
     lookdevSelectedPresetId,
     dockPlacementMode,
@@ -7731,7 +7926,32 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const dedicatedSecondaryWorkbenchSurfaceDefinition = dedicatedSecondarySurfaceId
     ? workbenchSurfaceLookup.get(dedicatedSecondarySurfaceId) ?? null
     : null;
-  const dedicatedSecondaryWindowContent = isDedicatedSecondaryWorkbenchSurfaceWindow
+  const dedicatedLookdevWindowContent = isDedicatedLookdevSecondaryWindow
+    ? (
+      <LookdevOverlay
+        appearance={resolvedAppearance}
+        themePackages={combinedThemePackages}
+        topBarPackages={topBarPackages}
+        dockPresentationPackages={dockPresentationPackages}
+        menuPacks={combinedMenuPacks}
+        actions={combinedExplorerActions}
+        onRefreshLookdevPresets={() => refreshLookdevPresets(true)}
+        onRefreshThemes={() => refreshThemePackages(true)}
+        onRefreshTopBars={() => refreshTopBarCatalog()}
+        onRefreshDockPresentations={() => refreshDockPresentationPackages(true)}
+        onRefreshMenuPacks={() => refreshMenuPacks(true)}
+        onOpenSettingsSection={handleOpenSettingsSection}
+        onToggleTopBarCustomize={handleToggleTopBarCustomize}
+        hostMode="secondary-window"
+        forceVisible
+        runtimePlatform={runtimePlatform}
+        isWindowMaximized={isWindowMaximized}
+        sourceWindowLabel={secondaryWindowDescriptor?.sourceWindowLabel ?? null}
+        onRequestCloseWindow={() => closeDedicatedLookdevWindow()}
+      />
+    )
+    : null;
+  const dedicatedSecondaryWorkbenchWindowContent = isDedicatedSecondaryWorkbenchSurfaceWindow
     && dedicatedSecondarySurfaceId
     ? (
       <div
@@ -7857,6 +8077,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       </div>
     )
     : null;
+  const dedicatedSecondaryWindowContent = dedicatedLookdevWindowContent
+    ?? dedicatedSecondaryWorkbenchWindowContent;
   const renderPinnedPanelSurface = useCallback((side: 'left' | 'right') => {
     const entries = side === 'left' ? leftPinnedPanels : rightPinnedPanels;
     return entries.map(({ panel, definition }) => (

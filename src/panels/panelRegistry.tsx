@@ -51,6 +51,7 @@ import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
 import type { UsrProfileRuntimeSnapshot } from '../runtime/usrProfiles';
+import type { KainUiGraph } from '../runtime/kainUiGraph';
 import type { UsrProfileSettingsVariantDefinition } from '../config/usrProfileSettingsVariants';
 import type {
   LoadedOverlayPlugin,
@@ -249,6 +250,8 @@ export function createBuiltInPanelDefinitions({
   usrProfileSettingSliceKeys = [],
   usrProfileSharedSettingSliceKeys = [],
   usrProfileSettingsVariants = [],
+  kainUiGraph = null,
+  kainUiGraphError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -418,6 +421,8 @@ export function createBuiltInPanelDefinitions({
   usrProfileSettingSliceKeys?: readonly string[];
   usrProfileSharedSettingSliceKeys?: readonly string[];
   usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
+  kainUiGraph?: KainUiGraph | null;
+  kainUiGraphError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -806,6 +811,8 @@ export function createBuiltInPanelDefinitions({
             usrProfileSettingSliceKeys={usrProfileSettingSliceKeys}
             usrProfileSharedSettingSliceKeys={usrProfileSharedSettingSliceKeys}
             usrProfileSettingsVariants={usrProfileSettingsVariants}
+            kainUiGraph={kainUiGraph}
+            kainUiGraphError={kainUiGraphError}
             onSwitchUsrProfile={onSwitchUsrProfile}
             onCreateUsrProfile={onCreateUsrProfile}
             onCreateUsrProfileFromVariant={onCreateUsrProfileFromVariant}

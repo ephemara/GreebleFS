@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -24,11 +25,13 @@ import {
 } from "@/components/AppIcons";
 import { isTauri } from "@tauri-apps/api/core";
 import { mkdir } from "@tauri-apps/plugin-fs";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useShallow } from "zustand/react/shallow";
 
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
+import type { RuntimePlatform } from "../../config/platform";
 import {
-  getManagedContentDirectory,
   getManagedContentPrimaryDirectory,
 } from "../../config/appContentDirectories";
 import {
@@ -68,6 +71,7 @@ import {
   type LookdevOverlayLens,
 } from "../../store/lookdevStore";
 import { useSettingsStore } from "../../store/settingsStore";
+import { WindowControls } from "../WindowControls";
 
 function slugifyLookdevLabel(value: string): string {
   return value
@@ -108,6 +112,12 @@ export interface LookdevOverlayProps {
   onRefreshMenuPacks: () => Promise<void>;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   onToggleTopBarCustomize: () => void;
+  hostMode?: "overlay" | "secondary-window";
+  forceVisible?: boolean;
+  runtimePlatform?: RuntimePlatform;
+  isWindowMaximized?: boolean;
+  sourceWindowLabel?: string | null;
+  onRequestCloseWindow?: (() => Promise<void> | void) | null;
 }
 
 export function LookdevOverlay({
@@ -124,6 +134,12 @@ export function LookdevOverlay({
   onRefreshMenuPacks,
   onOpenSettingsSection,
   onToggleTopBarCustomize,
+  hostMode = "overlay",
+  forceVisible = false,
+  runtimePlatform,
+  isWindowMaximized = false,
+  sourceWindowLabel = null,
+  onRequestCloseWindow = null,
 }: LookdevOverlayProps) {
   const paneHostRef = useRef<HTMLDivElement | null>(null);
   const paneInstanceRef = useRef<Pane | null>(null);
@@ -193,6 +209,7 @@ export function LookdevOverlay({
   );
   const [presetName, setPresetName] = useState("");
   const [presetDescription, setPresetDescription] = useState("");
+  const isSecondaryWindowMode = hostMode === "secondary-window";
 
   useEffect(() => {
     if (!draftSession) {
@@ -298,6 +315,48 @@ export function LookdevOverlay({
     }),
     [updateAppearance, updateDock, updateExplorer, updatePresentation],
   );
+
+  const handleOpenPresetDirectory = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    const directory = getManagedContentPrimaryDirectory("lookdevPresets");
+    await mkdir(directory, { recursive: true });
+    await openExplorerPath(directory);
+  }, []);
+
+  const handleFocusSourceWindow = useCallback(async () => {
+    const normalizedSourceWindowLabel = sourceWindowLabel?.trim();
+    if (!isTauri() || !normalizedSourceWindowLabel) {
+      return;
+    }
+
+    const sourceWindow = await WebviewWindow.getByLabel(normalizedSourceWindowLabel);
+    if (!sourceWindow) {
+      return;
+    }
+
+    await sourceWindow.show().catch(() => undefined);
+    await sourceWindow.setFocus().catch(() => undefined);
+  }, [sourceWindowLabel]);
+
+  const handleCloseHostedLookdevWindow = useCallback(async () => {
+    if (!isSecondaryWindowMode) {
+      return;
+    }
+
+    if (onRequestCloseWindow) {
+      await onRequestCloseWindow();
+      return;
+    }
+
+    if (!isTauri()) {
+      return;
+    }
+
+    await getCurrentWindow().close().catch(() => undefined);
+  }, [isSecondaryWindowMode, onRequestCloseWindow]);
 
   function patchDraftAndPreview(
     sectionKey: "appearance" | "explorer" | "dock" | "presentation",
@@ -572,14 +631,7 @@ export function LookdevOverlay({
       shellFolder
         .addButton({ title: "Open Preset Folder" })
         .on("click", () => {
-          void (async () => {
-            if (!isTauri()) {
-              return;
-            }
-            const directory = getManagedContentPrimaryDirectory("lookdevPresets");
-            await mkdir(directory, { recursive: true });
-            await openExplorerPath(directory);
-          })();
+          void handleOpenPresetDirectory();
         });
       shellFolder
         .addButton({ title: "Refresh Presets" })
@@ -620,6 +672,7 @@ export function LookdevOverlay({
     isOpen,
     menuPackOptions,
     onRefreshLookdevPresets,
+    handleOpenPresetDirectory,
     topBarOptions,
     updateAppearance,
     updateDock,
@@ -644,6 +697,7 @@ export function LookdevOverlay({
   async function handleCancelSession() {
     if (!draftSession) {
       closeSession();
+      await handleCloseHostedLookdevWindow();
       return;
     }
 
@@ -652,11 +706,13 @@ export function LookdevOverlay({
       applyCallbacks,
     );
     closeSession();
+    await handleCloseHostedLookdevWindow();
   }
 
   async function handleApplySession() {
     clearActiveAppliedPresetId();
     closeSession();
+    await handleCloseHostedLookdevWindow();
   }
 
   async function handleSavePreset() {
@@ -700,7 +756,7 @@ export function LookdevOverlay({
       name: `${normalizedName} Theme`,
       description:
         presetDescription.trim() ||
-        "Theme bundle exported from the live lookdev overlay.",
+        "Theme bundle exported from the live lookdev tool window.",
     };
     updateAppearance({
       customThemeBundles: upsertCustomThemeBundle(
@@ -763,31 +819,123 @@ export function LookdevOverlay({
     setStatusMessage(`${selectedPreset.name} is now the active runtime preset.`);
   }
 
-  if (!isOpen) {
+  if (!forceVisible && !isOpen) {
     return null;
   }
 
-  const overlayStyle: CSSProperties = {
-    position: "fixed",
-    inset: 0,
-    zIndex: 2100,
-    background:
-      "linear-gradient(180deg, rgba(8,10,14,0.78) 0%, rgba(6,8,12,0.72) 48%, rgba(6,8,12,0.82) 100%)",
-    backdropFilter: "blur(18px) saturate(1.2)",
-    WebkitBackdropFilter: "blur(18px) saturate(1.2)",
-  };
+  const rootStyle: CSSProperties = isSecondaryWindowMode
+    ? {
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        overflow: "hidden",
+        background: appearance.theme.palette.panelBackground,
+      }
+    : {
+        position: "fixed",
+        inset: 0,
+        zIndex: 2100,
+        background:
+          "linear-gradient(180deg, rgba(8,10,14,0.78) 0%, rgba(6,8,12,0.72) 48%, rgba(6,8,12,0.82) 100%)",
+        backdropFilter: "blur(18px) saturate(1.2)",
+        WebkitBackdropFilter: "blur(18px) saturate(1.2)",
+      };
+  const chromeButtonClassName =
+    "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white/[0.08] disabled:opacity-40";
+  const framePaddingClassName = isSecondaryWindowMode
+    ? "px-3 pb-3 pt-3"
+    : "px-5 pb-5 pt-4";
 
   return (
-    <div style={overlayStyle}>
-      <div className="flex h-full min-h-0">
-        <div className="flex min-w-0 flex-1 flex-col px-5 pb-5 pt-4">
+    <div style={rootStyle}>
+      {isSecondaryWindowMode ? (
+        <div
+          onPointerDown={(event) => {
+            if (
+              event.button !== 0
+              || (event.target instanceof HTMLElement
+                && event.target.closest('[data-gfs-window-drag-exclusion="true"]'))
+            ) {
+              return;
+            }
+
+            void getCurrentWindow().startDragging().catch(() => undefined);
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            minHeight: 40,
+            padding: "0 0 0 12px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            background: appearance.theme.palette.appBackgroundAlt,
+            userSelect: "none",
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 flex-col">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-60">
+                Global Lookdev
+              </div>
+              <div className="truncate text-[11px] font-semibold">
+                Live semantic shell authoring
+              </div>
+            </div>
+            <div className="hidden items-center gap-2 text-[9px] uppercase tracking-[0.14em] opacity-65 md:flex">
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
+                {currentWindowMode}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
+                {editableScope}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              data-gfs-window-drag-exclusion="true"
+              disabled={!sourceWindowLabel?.trim()}
+              onClick={() => void handleFocusSourceWindow()}
+              className={chromeButtonClassName}
+            >
+              <ExternalLink size={11} />
+              Focus Shell
+            </button>
+            {runtimePlatform ? (
+              <WindowControls
+                platform={runtimePlatform}
+                isMaximized={isWindowMaximized}
+                onClose={() => {
+                  void handleCancelSession();
+                }}
+                textMuted="rgba(255,255,255,0.62)"
+              />
+            ) : (
+              <button
+                type="button"
+                data-gfs-window-drag-exclusion="true"
+                onClick={() => void handleCancelSession()}
+                className={chromeButtonClassName}
+              >
+                <X size={11} />
+                Close
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
+      <div className={`flex ${isSecondaryWindowMode ? "min-h-0 flex-1" : "h-full min-h-0"}`}>
+        <div className={`flex min-w-0 flex-1 flex-col ${framePaddingClassName}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] opacity-65">
                 <Sparkles size={12} />
                 <span>Global Lookdev</span>
               </div>
-              <div className="mt-1 text-[20px] font-semibold leading-none">
+              <div className={`${isSecondaryWindowMode ? "mt-1 text-[16px]" : "mt-1 text-[20px]"} font-semibold leading-none`}>
                 Shape the live shell.
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.12em] opacity-70">
@@ -805,17 +953,19 @@ export function LookdevOverlay({
                 </span>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleCancelSession()}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white/[0.09]"
-            >
-              <X size={12} />
-              Close
-            </button>
+            {!isSecondaryWindowMode ? (
+              <button
+                type="button"
+                onClick={() => void handleCancelSession()}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors hover:bg-white/[0.09]"
+              >
+                <X size={12} />
+                Close
+              </button>
+            ) : null}
           </div>
 
-          <div className="mt-4 grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)] gap-4">
+          <div className="mt-4 grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
             <div className="flex min-h-0 flex-col gap-4">
               <div className="rounded-[22px] border border-white/10 bg-black/20 p-2">
                 <div className="grid grid-cols-2 gap-2">
@@ -883,7 +1033,7 @@ export function LookdevOverlay({
                 </div>
               </div>
 
-              <div className="min-h-0 rounded-[22px] border border-white/10 bg-black/20 p-3">
+              <div className="min-h-0 flex-1 rounded-[22px] border border-white/10 bg-black/20 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-55">
                     Presets
@@ -897,7 +1047,7 @@ export function LookdevOverlay({
                     Refresh
                   </button>
                 </div>
-                <div className="mt-2 space-y-2 overflow-y-auto pr-1" style={{ maxHeight: "calc(100vh - 420px)" }}>
+                <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
                   {presetsLoading ? (
                     <div className="rounded-[14px] border border-white/10 bg-white/[0.03] px-3 py-3 text-[11px] opacity-55">
                       Loading presets...
@@ -947,59 +1097,91 @@ export function LookdevOverlay({
               </div>
             </div>
 
-            <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_420px] gap-4">
+            <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
               <div className="min-h-0 rounded-[28px] border border-white/10 bg-black/15 p-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT));
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  >
-                    <Sparkles size={11} />
-                    Focus Lookdev
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      window.dispatchEvent(
-                        new CustomEvent("greeblefs:open-explorer-customize"),
-                      )
-                    }
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  >
-                    <LayoutGrid size={11} />
-                    Explorer Customize
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onToggleTopBarCustomize}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  >
-                    <SplitSquareHorizontal size={11} />
-                    Top Bar Customize
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenSettingsSection?.("context-menus")}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  >
-                    <Puzzle size={11} />
-                    Menu Composer
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.dispatchEvent(
-                        new CustomEvent(LOOKDEV_TOGGLE_OVERLAY_EVENT),
-                      );
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  >
-                    <Layers3 size={11} />
-                    Toggle Overlay
-                  </button>
+                  {isSecondaryWindowMode ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={!sourceWindowLabel?.trim()}
+                        onClick={() => void handleFocusSourceWindow()}
+                        className={chromeButtonClassName}
+                      >
+                        <Layers3 size={11} />
+                        Focus Shell
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleRefreshInspectorCatalogs()}
+                        className={chromeButtonClassName}
+                      >
+                        <RefreshCw size={11} />
+                        Refresh Catalogs
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenPresetDirectory()}
+                        className={chromeButtonClassName}
+                      >
+                        <FolderOpen size={11} />
+                        Preset Folder
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(new CustomEvent(LOOKDEV_OPEN_OVERLAY_EVENT));
+                        }}
+                        className={chromeButtonClassName}
+                      >
+                        <Sparkles size={11} />
+                        Focus Lookdev
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          window.dispatchEvent(
+                            new CustomEvent("greeblefs:open-explorer-customize"),
+                          )
+                        }
+                        className={chromeButtonClassName}
+                      >
+                        <LayoutGrid size={11} />
+                        Explorer Customize
+                      </button>
+                      <button
+                        type="button"
+                        onClick={onToggleTopBarCustomize}
+                        className={chromeButtonClassName}
+                      >
+                        <SplitSquareHorizontal size={11} />
+                        Top Bar Customize
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenSettingsSection?.("context-menus")}
+                        className={chromeButtonClassName}
+                      >
+                        <Puzzle size={11} />
+                        Menu Composer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(
+                            new CustomEvent(LOOKDEV_TOGGLE_OVERLAY_EVENT),
+                          );
+                        }}
+                        className={chromeButtonClassName}
+                      >
+                        <Layers3 size={11} />
+                        Toggle Overlay
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -1155,14 +1337,7 @@ export function LookdevOverlay({
                     </button>
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (!isTauri()) {
-                          return;
-                        }
-                        const directory = getManagedContentDirectory("lookdevPresets");
-                        await mkdir(directory, { recursive: true });
-                        await openExplorerPath(directory);
-                      }}
+                      onClick={() => void handleOpenPresetDirectory()}
                       className="rounded-full border border-white/10 p-2 opacity-70 hover:opacity-100"
                       title="Open lookdev presets folder"
                     >
@@ -1170,8 +1345,9 @@ export function LookdevOverlay({
                     </button>
                     <button
                       type="button"
+                      disabled={isSecondaryWindowMode}
                       onClick={() => onOpenSettingsSection?.("appearance")}
-                      className="rounded-full border border-white/10 p-2 opacity-70 hover:opacity-100"
+                      className="rounded-full border border-white/10 p-2 opacity-70 hover:opacity-100 disabled:opacity-35"
                       title="Open appearance settings"
                     >
                       <ExternalLink size={11} />

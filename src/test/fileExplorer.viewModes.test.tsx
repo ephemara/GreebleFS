@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import { dispatchExplorerWorkflowRequest } from "../runtime/explorerWorkflowBridge";
+
 const {
   pdfPreviewMockState,
   previewContextMenuMockState,
@@ -2600,6 +2602,39 @@ describe("FileExplorer view modes", () => {
 
     expect(getChromeControl("previewModeToggle")).toBeNull();
     expect(getChromeControl("previewSplitToggle")).toBeNull();
+  });
+
+  it("opens batch rename through the workflow bridge without re-entering a host update loop", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+
+    try {
+      renderExplorer();
+
+      act(() => {
+        dispatchExplorerWorkflowRequest({
+          kind: "open",
+          workflowId: "builtin.batchRename",
+          source: "builtin",
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Recipe")).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: "Rename" }),
+        ).toBeInTheDocument();
+      });
+
+      const consoleOutput = consoleErrorSpy.mock.calls
+        .flat()
+        .map((value) => String(value))
+        .join("\n");
+      expect(consoleOutput).not.toContain("Maximum update depth exceeded");
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it("opens executable scripts in an editor-first preview with edit left of the run workflow tab", async () => {

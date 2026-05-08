@@ -42,8 +42,8 @@
     },
     {
       "key": "toggleLookdevOverlay",
-      "label": "Toggle Lookdev Overlay",
-      "description": "Open or close the immersive semantic lookdev overlay over the live shell.",
+      "label": "Toggle Lookdev Window",
+      "description": "Open or close the compact semantic lookdev tool window beside the live shell.",
       "defaultValue": "Ctrl+Alt+L",
       "scope": "local"
     },

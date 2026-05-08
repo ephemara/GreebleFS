@@ -75,6 +75,11 @@ export interface RuntimeCallTypedResponse<TResult = unknown>
   resultJson: string;
 }
 
+type RuntimeActionRunnerOptions<TPayload> = Omit<
+  Partial<RuntimeCallTypedRequest<TPayload>>,
+  'runtimeId' | 'actionId' | 'payload'
+>;
+
 function encodeJsonPayload(payload: unknown): string | null {
   if (payload === undefined) {
     return null;
@@ -84,6 +89,24 @@ function encodeJsonPayload(payload: unknown): string | null {
 
 function decodeJsonPayload<TResult>(payloadJson: string): TResult {
   return JSON.parse(payloadJson) as TResult;
+}
+
+function resolveRuntimeActionRunnerOption<
+  TPayload,
+  TKey extends keyof RuntimeActionRunnerOptions<TPayload>,
+>(
+  overrides: RuntimeActionRunnerOptions<TPayload>,
+  defaults: RuntimeActionRunnerOptions<TPayload>,
+  key: TKey,
+  fallback: RuntimeActionRunnerOptions<TPayload>[TKey],
+): RuntimeActionRunnerOptions<TPayload>[TKey] {
+  if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+    return overrides[key] as RuntimeActionRunnerOptions<TPayload>[TKey];
+  }
+  if (Object.prototype.hasOwnProperty.call(defaults, key)) {
+    return defaults[key] as RuntimeActionRunnerOptions<TPayload>[TKey];
+  }
+  return fallback;
 }
 
 export async function listRuntimePackages(
@@ -176,18 +199,39 @@ export async function getRuntimePackage(
 export function createRuntimeActionRunner<TPayload = unknown, TResult = unknown>(
   runtimeId: string,
   actionId: string,
-  defaults: Omit<Partial<RuntimeCallTypedRequest<TPayload>>, 'runtimeId' | 'actionId' | 'payload'> = {},
+  defaults: RuntimeActionRunnerOptions<TPayload> = {},
 ) {
   return async (
     payload?: TPayload,
-    overrides: Omit<Partial<RuntimeCallTypedRequest<TPayload>>, 'runtimeId' | 'actionId' | 'payload'> = {},
+    overrides: RuntimeActionRunnerOptions<TPayload> = {},
   ): Promise<RuntimeCallTypedResponse<TResult>> =>
     callRuntimeAction<TResult, TPayload>({
       runtimeId,
       actionId,
       payload,
-      workingDirectory: overrides.workingDirectory ?? defaults.workingDirectory ?? null,
-      environment: overrides.environment ?? defaults.environment ?? null,
-      startIfNeeded: overrides.startIfNeeded ?? defaults.startIfNeeded ?? true,
+      workingDirectory: resolveRuntimeActionRunnerOption(
+        overrides,
+        defaults,
+        'workingDirectory',
+        null,
+      ),
+      environment: resolveRuntimeActionRunnerOption(
+        overrides,
+        defaults,
+        'environment',
+        null,
+      ),
+      executionContext: resolveRuntimeActionRunnerOption(
+        overrides,
+        defaults,
+        'executionContext',
+        null,
+      ),
+      startIfNeeded: resolveRuntimeActionRunnerOption(
+        overrides,
+        defaults,
+        'startIfNeeded',
+        true,
+      ),
     });
 }

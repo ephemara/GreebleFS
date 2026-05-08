@@ -292,6 +292,13 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 29.7,
   },
+  kainUi: {
+    label: "Kain UI",
+    description:
+      "Author Kain UI overlays for theme, chrome, layout, motion, settings, and profile orchestration here.",
+    keywords: ["kain", "ui graph", "theme script", "layout script"],
+    order: 29.8,
+  },
   iconThemes: {
     label: "Icon Themes",
     description:

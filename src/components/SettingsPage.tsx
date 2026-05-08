@@ -148,6 +148,7 @@ import {
 } from "../runtime/explorerBackend";
 import { openExplorerPicker } from "../runtime/explorerPicker";
 import type { UsrProfileRuntimeSnapshot } from "../runtime/usrProfiles";
+import type { KainUiGraph } from "../runtime/kainUiGraph";
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
@@ -264,6 +265,7 @@ import {
 import { AppearanceSettingsSection } from "./settings/sections/AppearanceSettingsSection";
 import { IconSettingsSection } from "./settings/sections/IconSettingsSection";
 import { SystemSettingsSection } from "./settings/sections/SystemSettingsSection";
+import { KainUiSettingsSection } from "./settings/sections/KainUiSettingsSection";
 import { ContextMenusSettingsSection } from "./settings/sections/ContextMenusSettingsSection";
 import { LayoutDynamicsSettingsSection } from "./settings/sections/LayoutDynamicsSettingsSection";
 import {
@@ -2638,6 +2640,8 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Settings2 size={14} />;
     case "profiles":
       return <Layers3 size={14} />;
+    case "kain-ui":
+      return <Cpu size={14} />;
     case "models":
       return <Bot size={14} />;
     case "terminal":
@@ -2706,6 +2710,9 @@ interface SettingsSectionContentContext {
   usrProfileCount: number;
   usrProfileSharedSliceCount: number;
   usrProfileOverrideSliceCount: number;
+  kainUiGraphSource: string;
+  kainUiSettingsMode: string;
+  kainUiCategoryCount: number;
   systemPresentationState: ReturnType<typeof resolveSystemPresentationState>;
   platform: "windows" | "macos" | "linux" | "unknown";
   presentationWindowMode: PresentationWindowMode;
@@ -2797,6 +2804,11 @@ function getSettingsSectionContent(
           context.usrProfileOverrideSliceCount === 1 ? "" : "s"
         }`,
         detail: `Keep ${context.usrProfileSharedSliceCount} shared-root settings slices global while swapping profile-local workbench overlays and authored usr lanes.`,
+      };
+    case "kain-ui":
+      return {
+        summary: `${context.kainUiSettingsMode} · ${context.kainUiCategoryCount} groups`,
+        detail: `Live UI graph source: ${context.kainUiGraphSource}.`,
       };
     case "models":
       return {
@@ -2936,7 +2948,7 @@ function getSettingsSectionContent(
       return {
         summary: `${context.activeLookdevPresetSummary} · ${context.lookdevPresetCount} preset${context.lookdevPresetCount === 1 ? "" : "s"} · ${context.shellCustomizeControlCount} shell controls`,
         detail:
-          "Launch the immersive global lookdev overlay, tweak dock and app mode semantically, then save presets or export theme-aligned assets without drifting away from the existing theme lanes.",
+          "Launch the global lookdev tool window, tweak dock and app mode semantically, then save presets or export theme-aligned assets without drifting away from the existing theme lanes.",
       };
     case "theme-json":
       return {
@@ -3177,6 +3189,8 @@ export function SettingsPage({
   usrProfileSettingSliceKeys = [],
   usrProfileSharedSettingSliceKeys = [],
   usrProfileSettingsVariants = [],
+  kainUiGraph = null,
+  kainUiGraphError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -3313,6 +3327,8 @@ export function SettingsPage({
   usrProfileSettingSliceKeys?: readonly string[];
   usrProfileSharedSettingSliceKeys?: readonly string[];
   usrProfileSettingsVariants?: readonly UsrProfileSettingsVariantDefinition[];
+  kainUiGraph?: KainUiGraph | null;
+  kainUiGraphError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -7919,6 +7935,9 @@ export function SettingsPage({
       usrProfileCount: usrProfileRuntimeSnapshot?.profiles.length ?? 0,
       usrProfileSharedSliceCount: usrProfileSharedSettingSliceKeys.length,
       usrProfileOverrideSliceCount: activeUsrProfile?.overrideSlices.length ?? 0,
+      kainUiGraphSource: kainUiGraph?.source ?? kainUiGraphError ?? "settings store fallback",
+      kainUiSettingsMode: kainUiGraph?.settings.mode ?? "fallback",
+      kainUiCategoryCount: kainUiGraph?.settings.categories.length ?? 0,
       systemPresentationState,
       platform: platform as SettingsSectionContentContext["platform"],
       presentationWindowMode: settings.presentation.windowMode,
@@ -8016,6 +8035,10 @@ export function SettingsPage({
       followThemeTopBarDetail,
       homePackSummary,
       iconThemeSelectionSummary,
+      kainUiGraph?.settings.categories.length,
+      kainUiGraph?.settings.mode,
+      kainUiGraph?.source,
+      kainUiGraphError,
       activeMenuPack?.name,
       appearancePackSelectionSummary,
       availableAppearancePackEntries.length,
@@ -8143,9 +8166,23 @@ export function SettingsPage({
     () => new Map(settingsSections.map((section) => [section.key, section] as const)),
     [settingsSections],
   );
+  const kainHiddenSettingsSectionKeys = useMemo(
+    () => new Set(kainUiGraph?.settings.hiddenSectionKeys ?? []),
+    [kainUiGraph?.settings.hiddenSectionKeys],
+  );
   const settingsSectionGroups = useMemo(
-    () =>
-      settingsSectionCategoryCatalog
+    () => {
+      const authoredCategories = kainUiGraph?.settings.categories?.length
+        ? kainUiGraph.settings.categories.map((category, index) => ({
+            key: category.key,
+            label: category.label,
+            description: category.description,
+            order: (index + 1) * 10,
+            sectionKeys: category.sectionKeys,
+          }))
+        : settingsSectionCategoryCatalog;
+
+      return authoredCategories
         .slice()
         .sort((left, right) => left.order - right.order)
         .map((category) => ({
@@ -8153,11 +8190,13 @@ export function SettingsPage({
           label: category.label,
           description: category.description,
           sections: category.sectionKeys
-            .map((sectionKey) => settingsSectionsByKey.get(sectionKey))
+            .filter((sectionKey) => !kainHiddenSettingsSectionKeys.has(sectionKey))
+            .map((sectionKey) => settingsSectionsByKey.get(sectionKey as SettingsSectionKey))
             .filter((section): section is NonNullable<typeof section> => section != null),
         }))
-        .filter((category) => category.sections.length > 0),
-    [settingsSectionsByKey],
+        .filter((category) => category.sections.length > 0);
+    },
+    [kainHiddenSettingsSectionKeys, kainUiGraph, settingsSectionsByKey],
   );
   const pluginSettingsSlotGroups = useMemo(() => {
     const groups = new Map<
@@ -15228,6 +15267,13 @@ export function SettingsPage({
             onDeleteUsrProfile={onDeleteUsrProfile}
             onOpenUsrProfilesRootFolder={onOpenUsrProfilesRootFolder}
             onOpenUsrProfileFolder={onOpenUsrProfileFolder}
+          />
+        )}
+
+        {activeSection === "kain-ui" && (
+          <KainUiSettingsSection
+            graph={kainUiGraph}
+            error={kainUiGraphError}
           />
         )}
 

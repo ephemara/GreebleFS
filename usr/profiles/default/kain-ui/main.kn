@@ -1,0 +1,6 @@
+fn greeblefs_profile_kain_ui_overlay() -> Any:
+    let overlay = json_object_new()
+    json_object_set(overlay, "scope", "profile")
+    json_object_set(overlay, "profileId", "default")
+    json_object_set(overlay, "source", "usr/profiles/default/kain-ui/main.kn")
+    return overlay
