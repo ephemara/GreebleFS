@@ -221,7 +221,6 @@ describe("explorerPreviewRegistry", () => {
     expect(selection.activeWorkbench?.id).toBe(sqlitePluginLane.id);
     expect(selection.candidates.map((candidate) => candidate.id)).toEqual([
       sqlitePluginLane.id,
-      "builtin-text",
     ]);
     expect(selection.resolutionSource).toBe("priority");
 
@@ -421,6 +420,79 @@ describe("explorerPreviewRegistry", () => {
       kind: "image",
       extension: "png",
     });
+  });
+
+  it("collapses first-party workbench shims into the built-in workbench identity", () => {
+    const imageLane = createPluginLane({
+      id: "greeblefs-workbench-image.preview-lane.image",
+      pluginId: "greeblefs-workbench-image",
+      pluginName: "GreebleFS Image Workbench",
+      title: "Image Workbench",
+      priority: 720,
+      match: {
+        appliesTo: "file",
+        extensions: [],
+        fileNames: [],
+        previewKinds: ["image"],
+      },
+    });
+
+    const selection = resolveExplorerPreviewWorkbenchSelection(
+      createEntry({
+        name: "render.png",
+        path: "/tmp/render.png",
+        extension: "png",
+        size: 4096,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [imageLane],
+      },
+    );
+
+    expect(selection.activeWorkbench?.id).toBe(imageLane.id);
+    expect(selection.activeWorkbench?.title).toBe("Image Workbench");
+    expect(selection.candidates.map((candidate) => candidate.id)).toEqual([
+      imageLane.id,
+    ]);
+  });
+
+  it("keeps third-party workbench alternatives branded and separate from built-ins", () => {
+    const imageLane = createPluginLane({
+      id: "com.acme.image.preview-lane.image",
+      pluginId: "com.acme.image",
+      pluginName: "Acme Image Tools",
+      title: "Image Workbench",
+      priority: 720,
+      match: {
+        appliesTo: "file",
+        extensions: [],
+        fileNames: [],
+        previewKinds: ["image"],
+      },
+    });
+
+    const selection = resolveExplorerPreviewWorkbenchSelection(
+      createEntry({
+        name: "render.png",
+        path: "/tmp/render.png",
+        extension: "png",
+        size: 4096,
+      }),
+      {
+        ...PREVIEW_OPTIONS,
+        pluginPreviewLanes: [imageLane],
+      },
+    );
+
+    expect(selection.activeWorkbench?.id).toBe(imageLane.id);
+    expect(selection.activeWorkbench?.title).toBe(
+      "Acme Image Tools: Image Workbench",
+    );
+    expect(selection.candidates.map((candidate) => candidate.id)).toEqual([
+      imageLane.id,
+      "builtin-image",
+    ]);
   });
 
   it("lets a saved user default win over a higher priority candidate", () => {

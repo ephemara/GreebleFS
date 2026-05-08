@@ -131,6 +131,7 @@ export interface ExplorerResolvedPreviewWorkbenchSelection {
 }
 
 export const BUILT_IN_EXPLORER_PREVIEW_LANE_PRIORITY = 100;
+const FIRST_PARTY_WORKBENCH_PLUGIN_ID_PREFIX = "greeblefs-workbench-";
 
 const BUILT_IN_EXPLORER_PREVIEW_LANES: readonly ExplorerPreviewLaneDefinition[] =
   [
@@ -316,25 +317,27 @@ export function resolveExplorerPreviewWorkbenchSelection(
     extension,
     options,
   };
-  const candidates = buildRegisteredExplorerPreviewLanes(options)
-    .map((definition) => {
-      const descriptor = definition.match(matchContext);
-      if (!descriptor) {
-        return null;
-      }
-      return {
-        id: definition.id,
-        title: definition.title,
-        priority: definition.priority,
-        descriptor,
-      } satisfies ExplorerResolvedPreviewWorkbenchCandidate;
-    })
-    .filter(
-      (
-        candidate,
-      ): candidate is ExplorerResolvedPreviewWorkbenchCandidate =>
-        candidate != null,
-    );
+  const candidates = coalesceFirstPartyExplorerPreviewWorkbenchCandidates(
+    buildRegisteredExplorerPreviewLanes(options)
+      .map((definition) => {
+        const descriptor = definition.match(matchContext);
+        if (!descriptor) {
+          return null;
+        }
+        return {
+          id: definition.id,
+          title: definition.title,
+          priority: definition.priority,
+          descriptor,
+        } satisfies ExplorerResolvedPreviewWorkbenchCandidate;
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is ExplorerResolvedPreviewWorkbenchCandidate =>
+          candidate != null,
+      ),
+  );
 
   if (candidates.length === 0) {
     return {
@@ -424,7 +427,7 @@ function createPluginExplorerPreviewLaneDefinition(
 ): ExplorerPreviewLaneDefinition {
   return {
     id: lane.id,
-    title: `${lane.pluginName}: ${lane.title}`,
+    title: getPluginExplorerPreviewLaneDisplayTitle(lane),
     priority: lane.priority,
     match: (context) => {
       const builtInDelegateDescriptor =
@@ -451,6 +454,56 @@ function createPluginExplorerPreviewLaneDefinition(
       };
     },
   };
+}
+
+function coalesceFirstPartyExplorerPreviewWorkbenchCandidates(
+  candidates: ExplorerResolvedPreviewWorkbenchCandidate[],
+): ExplorerResolvedPreviewWorkbenchCandidate[] {
+  const firstPartyDelegateKinds = new Set<string>();
+  for (const candidate of candidates) {
+    const descriptor = candidate.descriptor;
+    if (
+      descriptor.kind === "plugin" &&
+      isFirstPartyExplorerWorkbenchPluginLane(descriptor.lane) &&
+      descriptor.delegateDescriptor
+    ) {
+      firstPartyDelegateKinds.add(descriptor.delegateDescriptor.kind);
+    }
+  }
+
+  if (firstPartyDelegateKinds.size === 0) {
+    return candidates;
+  }
+
+  return candidates.filter((candidate) => {
+    const descriptor = candidate.descriptor;
+    return (
+      descriptor.kind === "plugin" ||
+      !firstPartyDelegateKinds.has(descriptor.kind)
+    );
+  });
+}
+
+function getPluginExplorerPreviewLaneDisplayTitle(
+  lane: OverlayPluginPreviewLaneContribution,
+): string {
+  if (
+    isFirstPartyExplorerWorkbenchPluginLane(lane) ||
+    lane.pluginName.trim() === lane.title.trim()
+  ) {
+    return lane.title;
+  }
+
+  return `${lane.pluginName}: ${lane.title}`;
+}
+
+function isFirstPartyExplorerWorkbenchPluginLane(
+  lane: Pick<OverlayPluginPreviewLaneContribution, "pluginId">,
+): boolean {
+  return lane.pluginId
+    .trim()
+    .toLowerCase()
+    .startsWith(FIRST_PARTY_WORKBENCH_PLUGIN_ID_PREFIX);
 }
 
 function matchesOverlayPluginPreviewLane(
