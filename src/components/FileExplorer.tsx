@@ -188,6 +188,7 @@ import {
   resolveFileIcon,
   resolveFileIconSrc,
   resolveIconSrc,
+  resolveUiIconReference,
   type OverlayResolvedIconTheme,
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
@@ -798,11 +799,14 @@ const EXPLORER_VIRTUALIZATION_FALLBACK_VIEWPORT_HEIGHT = 720;
 const EXPLORER_VIRTUAL_SCROLL_STATE_GRANULARITY_PX = 128;
 const EXPLORER_VIRTUAL_SCROLL_IMMEDIATE_JUMP_PX = 720;
 const EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX = 36;
+const EXPLORER_SHORTCUT_BADGE_MIN_STAGE_PX = 20;
+const EXPLORER_SHORTCUT_BADGE_ICON_SLOT_ID = "explorer-shortcut-badge";
 const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
   ExplorerEntryThumbnailData["kind"]
 >(["code", "shader"]);
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
+const EXPLORER_NATIVE_ICON_DIRECTORY_PREFETCH_LIMIT = 96;
 const EXPLORER_AUTO_MEASURE_DIRECTORY_SIZES = false;
 const EXPLORER_ENTRY_SIZE_ROOT_WATCH_ENV_VALUE = String(
   (import.meta.env as Record<string, string | boolean | undefined>)
@@ -2694,6 +2698,46 @@ function getDefaultExplorerSortOrder(sortBy: ExplorerSortKey): "asc" | "desc" {
 
 const getEntryExtension = getSharedEntryExtension;
 
+function isExplorerShortcutEntry(
+  entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
+): boolean {
+  return !entry.is_dir && getEntryExtension(entry) === "lnk";
+}
+
+function getExplorerDisplayName(
+  entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
+): string {
+  if (!isExplorerShortcutEntry(entry)) {
+    return entry.name;
+  }
+  return entry.name.replace(/\.lnk$/i, "");
+}
+
+function getEntryTypeLabel(
+  entry: Pick<FileEntry, "is_dir" | "name" | "extension">,
+): string {
+  if (isExplorerShortcutEntry(entry)) {
+    return "Shortcut";
+  }
+  return getSharedEntryTypeLabel(entry);
+}
+
+function resolveExplorerShortcutBadgeIconSrc(
+  iconTheme: OverlayResolvedIconTheme,
+): string | null {
+  const iconReference =
+    resolveUiIconReference(EXPLORER_SHORTCUT_BADGE_ICON_SLOT_ID, iconTheme) ??
+    "shortcut_arrow";
+  if (iconReference.startsWith("lucide:")) {
+    return null;
+  }
+  return (
+    resolveIconSrc(iconReference, iconTheme) ??
+    resolveIconSrc("shortcut_arrow", iconTheme) ??
+    null
+  );
+}
+
 function getPreviewAssetUrl(filePath: string): string {
   if (typeof window === "undefined") {
     return filePath;
@@ -2734,8 +2778,6 @@ function getExplorerPreviewCacheKey(
   return `${kind}:${path}`;
 }
 
-const getEntryTypeLabel = getSharedEntryTypeLabel;
-
 function compareExplorerEntries(
   left: FileEntry,
   right: FileEntry,
@@ -2773,13 +2815,27 @@ function shouldPreferManagedExplorerIcon(
     return true;
   }
 
-  if (isExplorerNativeAppIconEntry(entry.name, getEntryExtension(entry))) {
+  if (isExplorerNativeAppIconFileEntry(entry)) {
     return false;
   }
 
   return (
     resolveFileIcon(entry.name, getEntryExtension(entry), iconTheme)
       .matchKind !== "default"
+  );
+}
+
+function isExplorerNativeAppIconFileEntry(
+  entry: Pick<FileEntry, "is_dir" | "name" | "path" | "extension">,
+): boolean {
+  if (entry.is_dir) {
+    return false;
+  }
+
+  const extension = getEntryExtension(entry);
+  return (
+    isExplorerNativeAppIconEntry(entry.name, extension) ||
+    isExplorerNativeAppIconEntry(getPathLeaf(entry.path), extension)
   );
 }
 
@@ -7353,6 +7409,65 @@ function getExplorerThumbnailTypeBadgeMetrics(stageSize: number) {
   return { shellSize, iconSize, inset };
 }
 
+function getExplorerShortcutBadgeMetrics(stageSize: number) {
+  const shellSize = Math.max(9, Math.min(15, Math.round(stageSize * 0.16)));
+  const iconSize = Math.max(7, Math.min(12, Math.round(shellSize * 0.82)));
+  const inset = Math.max(1, Math.round(stageSize * 0.025));
+  return { shellSize, iconSize, inset };
+}
+
+function ExplorerShortcutBadge({
+  iconSrc,
+  stageSize,
+}: {
+  iconSrc: string | null;
+  stageSize: number;
+}) {
+  if (!iconSrc || stageSize < EXPLORER_SHORTCUT_BADGE_MIN_STAGE_PX) {
+    return null;
+  }
+
+  const badgeMetrics = getExplorerShortcutBadgeMetrics(stageSize);
+  return (
+    <div
+      data-overlay-explorer-shortcut-badge="true"
+      style={{
+        position: "absolute",
+        left: badgeMetrics.inset,
+        bottom: badgeMetrics.inset,
+        width: badgeMetrics.shellSize,
+        height: badgeMetrics.shellSize,
+        borderRadius: Math.max(3, Math.round(badgeMetrics.shellSize * 0.28)),
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        border: "1px solid color-mix(in srgb, white 55%, transparent)",
+        background:
+          "color-mix(in srgb, var(--overlay-bg-shell-solid) 78%, white)",
+        boxShadow:
+          "0 2px 6px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.18)",
+        pointerEvents: "none",
+      }}
+    >
+      <img
+        src={iconSrc}
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        style={{
+          width: badgeMetrics.iconSize,
+          height: badgeMetrics.iconSize,
+          objectFit: "contain",
+          display: "block",
+        }}
+        onError={(event) => {
+          event.currentTarget.style.opacity = "0";
+        }}
+      />
+    </div>
+  );
+}
+
 const ExplorerEntryThumbnailStageContent = React.memo(
   function ExplorerEntryThumbnailStageContent({
     entry,
@@ -7385,6 +7500,9 @@ const ExplorerEntryThumbnailStageContent = React.memo(
       baseTransition:
         "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), filter 180ms cubic-bezier(0.22, 1, 0.36, 1)",
     });
+    const shortcutBadgeSrc = isExplorerShortcutEntry(entry)
+      ? resolveExplorerShortcutBadgeIconSrc(iconTheme)
+      : null;
 
     if (!thumbnail) {
       return (
@@ -7397,6 +7515,7 @@ const ExplorerEntryThumbnailStageContent = React.memo(
           onPointerUp={iconMotionBinding.onPointerUp}
           onPointerCancel={iconMotionBinding.onPointerCancel}
           style={{
+            position: "relative",
             width: "100%",
             height: "100%",
             display: "flex",
@@ -7406,6 +7525,10 @@ const ExplorerEntryThumbnailStageContent = React.memo(
           }}
         >
           <SvgIcon src={fallbackIconSrc} size={fallbackIconSize} />
+          <ExplorerShortcutBadge
+            iconSrc={shortcutBadgeSrc}
+            stageSize={stageSize}
+          />
         </div>
       );
     }
@@ -7438,6 +7561,10 @@ const ExplorerEntryThumbnailStageContent = React.memo(
           entryName={entry.name}
           hoverScrubEnabled={hoverScrubEnabled}
           thumbnail={thumbnail}
+        />
+        <ExplorerShortcutBadge
+          iconSrc={shortcutBadgeSrc}
+          stageSize={stageSize}
         />
         {typeBadgeSrc ? (
           <div
@@ -8155,7 +8282,7 @@ function ExplorerPropertiesDialog({
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {entry.name}
+                        {getExplorerDisplayName(entry)}
                       </div>
                       <div
                         style={{
@@ -12344,6 +12471,70 @@ export function FileExplorer({
           setLocationParentPath(nextListing.parentPath);
         }
       });
+
+      const nativeAppIconEntries = nextListing.entries
+        .filter(isExplorerNativeAppIconFileEntry)
+        .slice(0, EXPLORER_NATIVE_ICON_DIRECTORY_PREFETCH_LIMIT);
+      if (nativeAppIconEntries.length > 0) {
+        window.setTimeout(() => {
+          if (isActiveDirectoryLoadRequest()) {
+            const startedAt = getExplorerPerformanceNow();
+            const requests = nativeAppIconEntries.map(getNativeIconRequest);
+            void commands
+              .fsResolveNativeIcons(
+                requests.map((request) => ({
+                  ...request,
+                  size: request.size ?? null,
+                })),
+              )
+              .then(unwrapTauriResult)
+              .then((results) => {
+                if (!isActiveDirectoryLoadRequest()) {
+                  return;
+                }
+                recordExplorerMetric({
+                  metricId: "explorer_native_icon_batch",
+                  durationMs: getExplorerPerformanceNow() - startedAt,
+                  metadata: {
+                    source: "directory-prefetch",
+                    pathCount: requests.length,
+                    resultCount: results.length,
+                    success: true,
+                  },
+                });
+                startTransition(() => {
+                  setNativeIconMap((current) => {
+                    const next = { ...current };
+                    for (const result of results) {
+                      next[
+                        getNativeIconCacheKey(
+                          result.path,
+                          DEFAULT_NATIVE_ICON_SIZE,
+                        )
+                      ] = result.src ?? null;
+                    }
+                    return next;
+                  });
+                });
+              })
+              .catch(() => {
+                if (!isActiveDirectoryLoadRequest()) {
+                  return;
+                }
+                recordExplorerMetric({
+                  metricId: "explorer_native_icon_batch",
+                  durationMs: getExplorerPerformanceNow() - startedAt,
+                  metadata: {
+                    source: "directory-prefetch",
+                    pathCount: requests.length,
+                    resultCount: 0,
+                    success: false,
+                  },
+                });
+              });
+          }
+        }, EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS);
+      }
     } catch (e) {
       if (isActiveDirectoryLoadRequest()) {
         if (pendingNavigationPath && refreshPath === pendingNavigationPath) {
@@ -14117,7 +14308,7 @@ export function FileExplorer({
   );
   const shouldUseNativeIconSrc = useCallback(
     (entry: FileEntry) =>
-      isExplorerNativeAppIconEntry(entry.name, getEntryExtension(entry)) ||
+      isExplorerNativeAppIconFileEntry(entry) ||
       (useNativeOsIcons && !shouldUseManagedIconSrc(entry)),
     [shouldUseManagedIconSrc, useNativeOsIcons],
   );
@@ -14170,6 +14361,119 @@ export function FileExplorer({
     [folderActivationPrimedPath, folderClickMode, getRenderableIconSrc],
   );
 
+  const resolveExplorerNativeIconEntries = useCallback(
+    (
+      candidateEntries: readonly FileEntry[],
+      metadata: ExplorerPerformanceMetadata = {},
+    ) => {
+      const pendingEntries = candidateEntries
+        .filter((entry) => shouldUseNativeIconSrc(entry))
+        .map((entry) => ({
+          entry,
+          key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
+        }))
+        .filter(
+          ({ key }) =>
+            nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key),
+        )
+        .slice(0, 24);
+
+      if (pendingEntries.length === 0) {
+        return false;
+      }
+
+      const pendingKeys = pendingEntries.map((item) => item.key);
+      const requests = pendingEntries.map((item) =>
+        getNativeIconRequest(item.entry),
+      );
+
+      setNativeIconLoadingKeys((current) => {
+        const next = new Set(current);
+        let changed = false;
+        for (const key of pendingKeys) {
+          if (!next.has(key)) {
+            next.add(key);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+
+      const startedAt = getExplorerPerformanceNow();
+      void commands
+        .fsResolveNativeIcons(
+          requests.map((request) => ({
+            ...request,
+            size: request.size ?? null,
+          })),
+        )
+        .then(unwrapTauriResult)
+        .then((results) => {
+          recordExplorerMetric({
+            metricId: "explorer_native_icon_batch",
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              ...metadata,
+              pathCount: pendingKeys.length,
+              resultCount: results.length,
+              success: true,
+            },
+          });
+
+          startTransition(() => {
+            setNativeIconMap((current) => {
+              const next = { ...current };
+              for (const result of results) {
+                next[
+                  getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)
+                ] = result.src ?? null;
+              }
+              return next;
+            });
+          });
+        })
+        .catch(() => {
+          recordExplorerMetric({
+            metricId: "explorer_native_icon_batch",
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              ...metadata,
+              pathCount: pendingKeys.length,
+              resultCount: 0,
+              success: false,
+            },
+          });
+
+          startTransition(() => {
+            setNativeIconMap((current) => {
+              const next = { ...current };
+              for (const key of pendingKeys) {
+                next[key] = null;
+              }
+              return next;
+            });
+          });
+        })
+        .finally(() => {
+          setNativeIconLoadingKeys((current) => {
+            const next = new Set(current);
+            for (const key of pendingKeys) {
+              next.delete(key);
+            }
+            return next.size === current.size ? current : next;
+          });
+        });
+
+      return true;
+    },
+    [
+      nativeIconLoadingKeys,
+      nativeIconMap,
+      recordExplorerMetric,
+      shouldUseNativeIconSrc,
+    ],
+  );
+
   const buildExplorerDragAvatarStackItems = useCallback(
     (
       dragEntries: readonly FileEntry[],
@@ -14200,6 +14504,7 @@ export function FileExplorer({
     (entry: FileEntry): boolean => {
       if (
         entry.is_dir ||
+        isExplorerNativeAppIconFileEntry(entry) ||
         currentPathIsCloud ||
         isCloudExplorerPath(entry.path)
       ) {
@@ -29228,7 +29533,7 @@ export function FileExplorer({
                 letterSpacing: "var(--overlay-explorer-label-spacing)",
               }}
             >
-              {entry.name}
+              {getExplorerDisplayName(entry)}
             </span>
           )}
           <span
@@ -29455,7 +29760,7 @@ export function FileExplorer({
                       minWidth: 0,
                     }}
                   >
-                    {entry.name}
+                    {getExplorerDisplayName(entry)}
                   </span>
                   {entry.is_symlink && (
                     <span
@@ -29698,7 +30003,7 @@ export function FileExplorer({
                         flex: 1,
                       }}
                     >
-                      {entry.name}
+                      {getExplorerDisplayName(entry)}
                     </span>
                     {entry.is_symlink && (
                       <span
@@ -30852,123 +31157,48 @@ export function FileExplorer({
   useEffect(() => {
     if (
       loading ||
-      deferredVirtualizedEntries.length === 0
+      visibleEntries.length === 0 ||
+      virtualWindow.endIndex <= virtualWindow.startIndex
     ) {
       return;
     }
 
-    const pendingEntries = deferredVirtualizedEntries
-      .filter((entry) => shouldUseNativeIconSrc(entry))
-      .map((entry) => ({
-        entry,
-        key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
-      }))
-      .filter(
-        ({ key }) =>
-          nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key),
-      )
+    const nativeIconCandidates = buildExplorerViewportThumbnailWorkCandidates({
+      entries: visibleEntries,
+      viewportStartIndex: virtualWindow.startIndex,
+      viewportEndIndex: virtualWindow.endIndex,
+      hoveredEntryPath: null,
+      policy: EXPLORER_VIEWPORT_SCHEDULER_POLICY,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: (entry) =>
+        getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
+      shouldScheduleEntry: (entry) => {
+        if (!shouldUseNativeIconSrc(entry)) {
+          return false;
+        }
+        const key = getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE);
+        return (
+          nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key)
+        );
+      },
+      isModelPreviewEntry: () => false,
+    });
+
+    const pendingEntries = nativeIconCandidates
+      .map((candidate) => candidate.entry)
       .slice(0, 24);
 
     if (pendingEntries.length === 0) {
       return;
     }
 
-    const pendingKeys = pendingEntries.map((item) => item.key);
-    const requests = pendingEntries.map((item) =>
-      getNativeIconRequest(item.entry),
-    );
-
     let disposed = false;
     const batchTimer = window.setTimeout(() => {
-      setNativeIconLoadingKeys((current) => {
-        const next = new Set(current);
-        let changed = false;
-        for (const key of pendingKeys) {
-          if (!next.has(key)) {
-            next.add(key);
-            changed = true;
-          }
-        }
-        return changed ? next : current;
-      });
-
-      const startedAt = getExplorerPerformanceNow();
-      void commands
-        .fsResolveNativeIcons(
-          requests.map((request) => ({
-            ...request,
-            size: request.size ?? null,
-          })),
-        )
-        .then(unwrapTauriResult)
-        .then((results) => {
-          if (disposed) {
-            return;
-          }
-
-          recordExplorerMetric({
-            metricId: "explorer_native_icon_batch",
-            durationMs: getExplorerPerformanceNow() - startedAt,
-            metadata: {
-              pathCount: pendingKeys.length,
-              resultCount: results.length,
-              success: true,
-            },
-          });
-
-          startTransition(() => {
-            setNativeIconMap((current) => {
-              const next = { ...current };
-              for (const result of results) {
-                next[
-                  getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)
-                ] = result.src ?? null;
-              }
-              return next;
-            });
-          });
-
-          setNativeIconLoadingKeys((current) => {
-            const next = new Set(current);
-            for (const key of pendingKeys) {
-              next.delete(key);
-            }
-            return next.size === current.size ? current : next;
-          });
-        })
-        .catch(() => {
-          if (disposed) {
-            return;
-          }
-
-          recordExplorerMetric({
-            metricId: "explorer_native_icon_batch",
-            durationMs: getExplorerPerformanceNow() - startedAt,
-            metadata: {
-              pathCount: pendingKeys.length,
-              resultCount: 0,
-              success: false,
-            },
-          });
-
-          startTransition(() => {
-            setNativeIconMap((current) => {
-              const next = { ...current };
-              for (const key of pendingKeys) {
-                next[key] = null;
-              }
-              return next;
-            });
-          });
-
-          setNativeIconLoadingKeys((current) => {
-            const next = new Set(current);
-            for (const key of pendingKeys) {
-              next.delete(key);
-            }
-            return next.size === current.size ? current : next;
-          });
+      if (!disposed) {
+        resolveExplorerNativeIconEntries(pendingEntries, {
+          source: "viewport",
         });
+      }
     }, EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS);
 
     return () => {
@@ -30979,9 +31209,11 @@ export function FileExplorer({
     loading,
     nativeIconLoadingKeys,
     nativeIconMap,
-    recordExplorerMetric,
+    resolveExplorerNativeIconEntries,
     shouldUseNativeIconSrc,
-    deferredVirtualizedEntries,
+    virtualWindow.endIndex,
+    virtualWindow.startIndex,
+    visibleEntries,
   ]);
 
   useEffect(() => {
@@ -31442,7 +31674,7 @@ export function FileExplorer({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {entry.name}
+                    {getExplorerDisplayName(entry)}
                   </div>
                 </>
               )}
@@ -31643,7 +31875,7 @@ export function FileExplorer({
                   lineHeight: 1.28,
                 }}
               >
-                {entry.name}
+                {getExplorerDisplayName(entry)}
               </div>
             </>
           )}
@@ -32072,7 +32304,7 @@ export function FileExplorer({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {node.entry.name}
+                  {getExplorerDisplayName(node.entry)}
                 </div>
                 <div
                   style={{
@@ -32798,7 +33030,7 @@ export function FileExplorer({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {entry.name}
+                    {getExplorerDisplayName(entry)}
                   </div>
                   <div
                     style={{

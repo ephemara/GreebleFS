@@ -273,6 +273,9 @@
     "shell": {
       "iconPath": "./icons/shell.svg"
     },
+    "shortcut_arrow": {
+      "iconPath": "./icons/shortcut_arrow.svg"
+    },
     "spv": {
       "iconPath": "./icons/spv.svg"
     },
@@ -691,6 +694,7 @@
     "droplet": "lucide:Droplet",
     "edit3": "lucide:Edit3",
     "eraser": "lucide:Eraser",
+    "explorer_shortcut_badge": "shortcut_arrow",
     "external_link": "lucide:ExternalLink",
     "eye": "lucide:Eye",
     "file": "lucide:File",
