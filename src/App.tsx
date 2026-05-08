@@ -1774,9 +1774,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     ],
   );
   const activeDockResizeGrid = dockResizeTelemetry?.grid ?? dockTerminalGrid;
-  const effectiveWindowZoom = isWindowedMode
-    ? overlayVisualControls.zoom.defaultValue
-    : clampedAppZoom;
+  const effectiveWindowZoom = clampedAppZoom;
   const scaledWidth = `${100 / effectiveWindowZoom}%`;
   const scaledHeight = `${100 / effectiveWindowZoom}%`;
   const shellBackgroundColor = effectiveShellBlurEnabled
@@ -8826,7 +8824,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     </div>
   ), [shellBody]);
   const shellSceneTransformOrigin = isWindowedMode
-    ? 'center center'
+    ? 'top left'
     : (dockIsFloating ? 'center center' : (isTopAnchored ? 'top left' : 'bottom left'));
   const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
     && systemSettings.devTelemetryHudVisible;

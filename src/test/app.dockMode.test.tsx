@@ -713,6 +713,10 @@ describe('App dock mode behavior', () => {
         baselineZoom + overlayVisualControls.zoom.step,
         5,
       );
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute(
+        'data-zoom',
+        String(baselineZoom + overlayVisualControls.zoom.step),
+      );
     });
 
     fireEvent.keyDown(window, { key: '-', ctrlKey: true });
@@ -863,7 +867,7 @@ describe('App dock mode behavior', () => {
     }));
   });
 
-  it('pins normal app windows to native scale while maximized', async () => {
+  it('applies app zoom to app windows without scaling native geometry', async () => {
     setWindowMode('windowed');
     const currentWindow = getCurrentWindow();
     vi.mocked(currentWindow.isMaximized).mockResolvedValue(true);
@@ -872,8 +876,18 @@ describe('App dock mode behavior', () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '1');
+      expect(screen.getByTestId('overlay-shell-scene')).toHaveAttribute('data-zoom', '0.82');
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalled();
     });
+
+    const nativeModeCalls = vi.mocked(commands.windowApplyMode).mock.calls;
+    const nativeModeRequest = nativeModeCalls[nativeModeCalls.length - 1]?.[0];
+    expect(nativeModeRequest).toEqual(expect.objectContaining({
+      minWidth: panelWindowGeometry.minWidth,
+      minHeight: panelWindowGeometry.minHeight,
+    }));
+    expect(nativeModeRequest?.width).not.toBe(Math.round(panelWindowGeometry.defaultWidth / 0.82));
+    expect(nativeModeRequest?.height).not.toBe(Math.round(panelWindowGeometry.defaultHeight / 0.82));
   });
 
   it('keeps dock mode zoom isolated from native app window scaling', async () => {

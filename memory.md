@@ -1,3 +1,17 @@
+# 2026-05-08 - Application Mode Visual Zoom Restored
+
+- Restored global app zoom in application/windowed mode.
+  - `src/App.tsx` now feeds the clamped `appearance.appZoom` into `OverlayShellScene` for both app and dock presentations instead of forcing windowed mode to `zoom=1`.
+  - Windowed zoom uses a top-left transform origin so the existing `100 / zoom` frame compensation fills the viewport without center-origin clipping.
+  - Native app-window geometry remains separate: `windowApplyMode` still uses `panelWindowGeometry` restore/default sizes, and zoom does not mutate persisted app bounds.
+- Durable rule:
+  - Keep `appearance.appZoom` as shell-scene visual zoom across presentation modes. If app-mode zoom regresses, inspect `effectiveWindowZoom` and `shellSceneTransformOrigin` in `src/App.tsx` before touching native window sizing.
+- Validation:
+  - Passed: `bunx vitest run src/test/app.dockMode.test.tsx -t "adjusts the global app zoom from ctrl-plus and ctrl-minus|applies app zoom to app windows without scaling native geometry|keeps dock mode zoom isolated from native app window scaling|yields ctrl-plus app zoom to local zoom-owned surfaces" --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/hotkeys.test.ts --reporter=dot --testTimeout=30000`
+  - Not clean: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot --testTimeout=30000` still fails on existing settings-store default drift unrelated to app zoom.
+  - Not clean: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` still reports existing `src/App.tsx` unused/listener-effect diagnostics in the dirty working tree; no app-zoom implementation diagnostic remained after replacing test `.at(...)`.
+
 # 2026-05-08 - Kain Bridge Runtime Resolution Fix
 
 - Fixed the dev-time failure where GreebleFS disabled the Kain UI bridge because the global `kain.exe` on PATH did not support `bridge serve`.
