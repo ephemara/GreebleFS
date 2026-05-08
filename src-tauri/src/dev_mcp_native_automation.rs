@@ -592,6 +592,7 @@ fn secondary_window_kind_to_string(kind: &SecondaryWindowSurfaceKind) -> String 
         SecondaryWindowSurfaceKind::Panel => "panel".to_string(),
         SecondaryWindowSurfaceKind::PluginPanel => "plugin-panel".to_string(),
         SecondaryWindowSurfaceKind::ActionWidget => "action-widget".to_string(),
+        SecondaryWindowSurfaceKind::Lookdev => "lookdev".to_string(),
     }
 }
 
