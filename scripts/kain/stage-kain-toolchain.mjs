@@ -69,20 +69,50 @@ async function resolveKainSourceRoot() {
   return sourceRoot;
 }
 
-async function resolveExecutable(sourceRoot, fileName, envName) {
+function executableSupportsArgs(executablePath, args) {
+  if (!args.length) {
+    return true;
+  }
+  const probe = spawnSync(executablePath, args, {
+    encoding: "utf8",
+    stdio: "ignore",
+  });
+  return probe.status === 0;
+}
+
+async function resolveExecutable(sourceRoot, fileName, envName, requiredArgs = []) {
   const configured = process.env[envName];
+  const candidates = [];
+
   if (configured?.trim()) {
-    return requirePath(path.resolve(configured), envName);
+    candidates.push(path.resolve(configured));
   }
 
   const sourceReleaseExecutable = path.join(sourceRoot, "target", "release", fileName);
-  if (await pathExists(sourceReleaseExecutable)) {
-    return sourceReleaseExecutable;
-  }
+  const sourceDebugExecutable = path.join(sourceRoot, "target", "debug", fileName);
+  const sourceCodexDebugExecutable = path.join(sourceRoot, "target", "codex-cli-bridge-check", "debug", fileName);
+  candidates.push(sourceReleaseExecutable, sourceDebugExecutable, sourceCodexDebugExecutable);
 
   const pathExecutable = findOnPath(fileName);
   if (pathExecutable) {
-    return pathExecutable;
+    candidates.push(pathExecutable);
+  }
+
+  const existingCandidates = [];
+  for (const candidate of candidates) {
+    if (!(await pathExists(candidate))) {
+      continue;
+    }
+    existingCandidates.push(candidate);
+    if (executableSupportsArgs(candidate, requiredArgs)) {
+      return candidate;
+    }
+  }
+
+  if (requiredArgs.length && existingCandidates.length) {
+    const requiredCommand = [fileName, ...requiredArgs].join(" ");
+    const tried = existingCandidates.map(normalizeForLogs).join(", ");
+    throw new Error(`Found ${fileName}, but no candidate supports '${requiredCommand}'. Tried: ${tried}`);
   }
 
   return null;
@@ -159,12 +189,20 @@ async function copyDirectory(sourceRoot, directoryName) {
   if (!(await pathExists(sourcePath))) {
     return false;
   }
-  await removePayloadChild(directoryName);
-  await fs.cp(sourcePath, path.join(payloadRoot, directoryName), {
-    recursive: true,
-    force: true,
-    errorOnExist: false,
-  });
+  const targetPath = path.join(payloadRoot, directoryName);
+  try {
+    await fs.cp(sourcePath, targetPath, {
+      recursive: true,
+      force: true,
+      errorOnExist: false,
+    });
+  } catch (error) {
+    if (await pathExists(targetPath)) {
+      console.warn(`Kain payload directory refresh kept existing ${directoryName}: ${error.message}`);
+      return true;
+    }
+    throw error;
+  }
   return true;
 }
 
@@ -260,7 +298,7 @@ async function main() {
   let optionalLauncher;
   try {
     sourceRoot = await resolveKainSourceRoot();
-    kainExecutable = await resolveExecutable(sourceRoot, executableName, "GREEBLEFS_KAIN_EXE");
+    kainExecutable = await resolveExecutable(sourceRoot, executableName, "GREEBLEFS_KAIN_EXE", ["bridge", "serve", "--help"]);
     optionalLauncher = await resolveExecutable(sourceRoot, optionalLauncherName, "GREEBLEFS_KN_EXE");
     if (!kainExecutable) {
       throw new Error(`Unable to locate ${executableName} in ${normalizeForLogs(sourceRoot)}, GREEBLEFS_KAIN_EXE, or PATH.`);
@@ -291,9 +329,12 @@ async function main() {
   }
 
   await fs.mkdir(payloadRoot, { recursive: true });
-  await removePayloadChild("bin");
   await stageExecutable(kainExecutable, executableName);
-  await stageExecutable(optionalLauncher, optionalLauncherName);
+  try {
+    await stageExecutable(optionalLauncher, optionalLauncherName);
+  } catch (error) {
+    console.warn(`Optional Kain launcher staging skipped: ${error.message}`);
+  }
 
   const copiedDirectories = [];
   for (const directoryName of payloadDirectories) {

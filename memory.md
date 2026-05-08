@@ -1,3 +1,20 @@
+# 2026-05-08 - Kain Bridge Runtime Resolution Fix
+
+- Fixed the dev-time failure where GreebleFS disabled the Kain UI bridge because the global `kain.exe` on PATH did not support `bridge serve`.
+  - `src-tauri/src/lib.rs` now resolves the app-level Kain bridge executable from `GREEBLEFS_KAIN_EXE` / `KAIN_EXE`, then the staged `toolchains/kain/payload/bin/kain.exe`, then PATH.
+  - `scripts/kain/stage-kain-toolchain.mjs` now requires the staged `kain.exe` candidate to pass `bridge serve --help`, can fall through stale release/PATH binaries to a bridge-capable debug build, and refreshes executable payloads without deleting the whole locked `bin` directory.
+  - Refreshed the private staged payload executable from `D:/Kain-Lang/target/codex-cli-bridge-check/debug/kain.exe`; the staged binary now supports `kain bridge serve`.
+- Durable rules:
+  - For GreebleFS app UI graph work, stale global Kain binaries are not authoritative. Prefer env overrides and the staged private payload so release/dev behavior matches the bundled Kain lane.
+  - Windows file locks can keep existing staged payload directories open. The staging script should update what it can and keep existing payload directories when locks prove they are already present.
+- Validation:
+  - Passed: `D:/GreebleFS/toolchains/kain/payload/bin/kain.exe bridge serve --help`.
+  - Passed: staged payload bridge smoke against `src-kain/app/main.kn` with Kain env vars cleared; it loaded stdlib from the staged payload and returned `greeblefs.ui.ping`.
+  - Passed: `node --check scripts/kain/stage-kain-toolchain.mjs`.
+  - Passed: `node scripts/kain/stage-kain-toolchain.mjs --verify-only`.
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`.
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib` with existing warning noise and Windows incremental GC access warnings.
+
 # 2026-05-08 - VS Code Bridge Workspace Authority
 
 - Added the first real VS Code workspace-authority slice for AI/agent-style extensions.

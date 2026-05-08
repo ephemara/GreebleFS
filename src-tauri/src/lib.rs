@@ -135,6 +135,10 @@ use preview_streaming::PreviewStreamingManager;
 #[cfg(not(test))]
 use remote_storage_commands::RemoteStorageState;
 #[cfg(not(test))]
+use std::path::{Path, PathBuf};
+#[cfg(not(test))]
+use std::process::{Command, Stdio};
+#[cfg(not(test))]
 use tauri::{Emitter, Manager};
 #[cfg(not(test))]
 use telemetry::{finish_native_span, start_native_span, TelemetryManager};
@@ -144,13 +148,70 @@ use terminal::TerminalManager;
 use window_commands::{TrayVisibilityState, MAIN_WINDOW_LABEL};
 
 #[cfg(not(test))]
+fn configured_kain_runtime_command() -> Option<PathBuf> {
+    for env_name in ["GREEBLEFS_KAIN_EXE", "KAIN_EXE"] {
+        if let Ok(value) = std::env::var(env_name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(PathBuf::from(trimmed));
+            }
+        }
+    }
+
+    let toolchain_context = runtime_pipeline::toolchain::RuntimeToolchainContext::default();
+    if let Some(payload_root) =
+        runtime_pipeline::toolchain::resolve_kain_payload_root(&toolchain_context)
+    {
+        let payload_executable = payload_root
+            .join("bin")
+            .join(runtime_pipeline::toolchain::kain_executable_name());
+        if payload_executable.exists() {
+            return Some(payload_executable);
+        }
+    }
+
+    Some(PathBuf::from("kain"))
+}
+
+#[cfg(not(test))]
+fn supports_kain_bridge_serve(command_path: &Path) -> bool {
+    Command::new(command_path)
+        .arg("bridge")
+        .arg("serve")
+        .arg("--help")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(test))]
 fn kain_ui_runtime_config() -> tauri_plugin_kain::KainRuntimeProcessConfig {
-    tauri_plugin_kain::KainRuntimeProcessConfig {
-        entry: Some("src-kain/app/main.kn".into()),
+    let mut config = tauri_plugin_kain::KainRuntimeProcessConfig {
         dispatch_function: "kain_bridge_dispatch".into(),
         restart_on_reload: true,
         ..Default::default()
+    };
+
+    let Some(command_path) = configured_kain_runtime_command() else {
+        config.enabled = false;
+        return config;
+    };
+
+    if supports_kain_bridge_serve(&command_path) {
+        config.command = Some(command_path);
+        config.entry = Some("src-kain/app/main.kn".into());
+    } else {
+        config.enabled = false;
+        eprintln!(
+            "GreebleFS: Kain bridge runtime disabled because `{}` does not support `bridge serve`.",
+            command_path.display()
+        );
     }
+
+    config
 }
 
 #[cfg(not(test))]
