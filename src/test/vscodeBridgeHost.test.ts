@@ -29,6 +29,7 @@ type BridgeFixture = {
   rootPath: string;
   extensionRootPath: string;
   packageJsonPath: string;
+  workspaceTargetPath: string;
   manifest: Record<string, unknown>;
   cleanup: () => void;
 };
@@ -57,6 +58,7 @@ function createBridgeFixture(): BridgeFixture {
   mkdirSync(extensionRootPath, { recursive: true });
 
   const packageJsonPath = join(extensionRootPath, 'package.json');
+  const workspaceTargetPath = join(extensionRootPath, 'workspace-target.txt');
   const manifest = {
     name: 'tree-test',
     displayName: 'Tree Test',
@@ -68,6 +70,7 @@ function createBridgeFixture(): BridgeFixture {
       'onCommand:tree-test.hello',
       'onCommand:tree-test.returnUri',
       'onCommand:tree-test.showPackage',
+      'onCommand:tree-test.workspaceAuthority',
     ],
     contributes: {
       viewsContainers: {
@@ -99,11 +102,16 @@ function createBridgeFixture(): BridgeFixture {
           command: 'tree-test.showPackage',
           title: 'Show Package',
         },
+        {
+          command: 'tree-test.workspaceAuthority',
+          title: 'Workspace Authority',
+        },
       ],
     },
   } satisfies Record<string, unknown>;
 
   writeFileSync(packageJsonPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  writeFileSync(workspaceTargetPath, 'alpha\nbeta\n', 'utf8');
   writeFileSync(
     join(extensionRootPath, 'extension.cjs'),
     `
@@ -183,6 +191,52 @@ function activate(context) {
       };
     }),
   );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('tree-test.workspaceAuthority', async () => {
+      const targetUri = vscode.Uri.file(path.join(context.extensionPath, 'workspace-target.txt'));
+      const watcher = vscode.workspace.createFileSystemWatcher('**/*.txt');
+      const watcherCounts = { changed: 0, created: 0, deleted: 0 };
+      watcher.onDidChange(() => {
+        watcherCounts.changed += 1;
+      });
+      watcher.onDidCreate(() => {
+        watcherCounts.created += 1;
+      });
+      watcher.onDidDelete(() => {
+        watcherCounts.deleted += 1;
+      });
+
+      const workspaceEdit = new vscode.WorkspaceEdit();
+      workspaceEdit.replace(
+        targetUri,
+        new vscode.Range(new vscode.Position(1, 0), new vscode.Position(1, 4)),
+        'BETA',
+      );
+      const applied = await vscode.workspace.applyEdit(workspaceEdit);
+      const document = await vscode.workspace.openTextDocument(targetUri);
+      const matches = await vscode.workspace.findFiles('**/*.txt');
+
+      const diagnostics = vscode.languages.createDiagnosticCollection('tree-test');
+      diagnostics.set(targetUri, [
+        new vscode.Diagnostic(
+          new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 5)),
+          'sample diagnostic',
+          vscode.DiagnosticSeverity.Warning,
+        ),
+      ]);
+
+      return {
+        applied,
+        text: document.getText(),
+        matches: matches.map((uri) => path.basename(uri.fsPath)),
+        diagnostics: diagnostics.get(targetUri).map((diagnostic) => ({
+          message: diagnostic.message,
+          severity: diagnostic.severity,
+        })),
+        watcherCounts,
+      };
+    }),
+  );
   vscode.window.createTreeView('jsonOutline', { treeDataProvider: provider });
   return { activated: true };
 }
@@ -196,6 +250,7 @@ module.exports = { activate };
     rootPath,
     extensionRootPath,
     packageJsonPath,
+    workspaceTargetPath,
     manifest,
     cleanup: () => rmSync(rootPath, { recursive: true, force: true }),
   };
@@ -410,6 +465,7 @@ describe('vscode bridge host', () => {
           'onCommand:tree-test.hello',
           'onCommand:tree-test.returnUri',
           'onCommand:tree-test.showPackage',
+          'onCommand:tree-test.workspaceAuthority',
         ],
       };
 
@@ -433,6 +489,7 @@ describe('vscode bridge host', () => {
         'tree-test.hello',
         'tree-test.returnUri',
         'tree-test.showPackage',
+        'tree-test.workspaceAuthority',
       ]));
       expect(activation.treeViews).toEqual(['jsonOutline']);
 
@@ -496,6 +553,30 @@ describe('vscode bridge host', () => {
         query: 'mode=demo',
         fragment: 'frag',
       });
+
+      const workspaceAuthority = await harness.call('vscode.executeCommand', {
+        ...extensionPayload,
+        commandId: 'tree-test.workspaceAuthority',
+        args: [],
+      }, {
+        cwd: fixture.extensionRootPath,
+        roots: [{ path: fixture.extensionRootPath }],
+      }) as {
+        applied?: boolean;
+        text?: string;
+        matches?: string[];
+        diagnostics?: Array<{ message?: string; severity?: number }>;
+        watcherCounts?: { changed?: number; created?: number; deleted?: number };
+      };
+
+      expect(workspaceAuthority).toMatchObject({
+        applied: true,
+        text: 'alpha\nBETA\n',
+        diagnostics: [{ message: 'sample diagnostic', severity: 1 }],
+        watcherCounts: { changed: 1, created: 0, deleted: 0 },
+      });
+      expect(workspaceAuthority.matches).toContain('workspace-target.txt');
+      expect(readFileSync(fixture.workspaceTargetPath, 'utf8')).toBe('alpha\nBETA\n');
     } finally {
       harness.close();
       fixture.cleanup();

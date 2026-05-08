@@ -1,3 +1,19 @@
+# 2026-05-08 - VS Code Bridge Workspace Authority
+
+- Added the first real VS Code workspace-authority slice for AI/agent-style extensions.
+  - `src-node/builtin-runtimes/vscode-bridge-host/vendor/vscode-primitives.cjs` now owns the VS Code-compatible primitive layer used by the bridge: `Uri`, `Position`, `Range`, `Selection`, `MarkdownString`, `CancellationTokenSource`, `Diagnostic`, `TextEdit`, `WorkspaceEdit`, tree items, and disposables/events.
+  - The Node bridge now exposes `workspace.applyEdit`, `workspace.findFiles`, `workspace.createFileSystemWatcher`, save events, `languages.createDiagnosticCollection`, and richer `workspace.fs` mutation events.
+  - The bridge continues to treat GreebleFS Explorer context as the spoofed VS Code workspace; `executionContext.roots`, `cwd`, `activeDirectory`, and `repoContext.rootPath` hydrate `workspace.workspaceFolders`.
+  - `vscode-api-compatibility.json` seeds the bridge compatibility ledger against `reference/vscode-main/src/vscode-dts/vscode.d.ts`; keep this ledger current as new API surface lands.
+- Validation:
+  - Passed: `node --check src-node\\builtin-runtimes\\vscode-bridge-host\\index.cjs`
+  - Passed: `node --check src-node\\builtin-runtimes\\vscode-bridge-host\\vendor\\vscode-primitives.cjs`
+  - Passed: `bun run vitest run src/test/pluginPackages.test.ts src/test/vscodeBridgeBackend.test.ts src/test/vscodeBridgeHost.test.ts --reporter=dot`
+- Durable rule:
+  - Do not import from `reference/vscode-main` at runtime. Use it as the MIT source/spec oracle, then vendor or port the smallest stable pieces into the bridge runtime.
+- Next recommended step:
+  - Add webview hosting and terminal/task support next; those are the major blockers for real VS Code AI chat/agent extensions.
+
 # 2026-05-08 - Kain UI Graph Runtime Overlay
 
 - Added the first app-level Kain UI graph lane so the theme/settings simplification work has a live source of truth instead of another JSON pack layer.

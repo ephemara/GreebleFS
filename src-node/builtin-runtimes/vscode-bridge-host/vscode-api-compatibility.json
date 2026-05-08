@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "sourceOfTruth": "reference/vscode-main/src/vscode-dts/vscode.d.ts",
+  "bridgeRuntime": "src-node/builtin-runtimes/vscode-bridge-host",
+  "model": "GreebleFS treats the active Explorer execution context as the virtual VS Code workspace. Workspace folders are hydrated from runtime executionContext.roots, cwd, activeDirectory, or repoContext.rootPath.",
+  "implemented": {
+    "primitives": [
+      "CancellationTokenSource",
+      "Diagnostic",
+      "DiagnosticSeverity",
+      "Disposable",
+      "EventEmitter",
+      "FileSystemError",
+      "MarkdownString",
+      "Position",
+      "Range",
+      "Selection",
+      "TextEdit",
+      "ThemeIcon",
+      "TreeItem",
+      "TreeItemCollapsibleState",
+      "Uri",
+      "WorkspaceEdit"
+    ],
+    "commands": [
+      "commands.registerCommand",
+      "commands.executeCommand",
+      "commands.getCommands",
+      "setContext",
+      "vscode.open"
+    ],
+    "window": [
+      "window.createTreeView",
+      "window.registerTreeDataProvider",
+      "window.activeTextEditor",
+      "window.visibleTextEditors",
+      "window.onDidChangeActiveTextEditor",
+      "window.onDidChangeVisibleTextEditors",
+      "window.showTextDocument",
+      "window.createOutputChannel",
+      "window.showInformationMessage",
+      "window.showWarningMessage",
+      "window.showErrorMessage"
+    ],
+    "workspace": [
+      "workspace.rootPath",
+      "workspace.workspaceFolders",
+      "workspace.textDocuments",
+      "workspace.fs.readFile",
+      "workspace.fs.writeFile",
+      "workspace.fs.stat",
+      "workspace.fs.readDirectory",
+      "workspace.fs.createDirectory",
+      "workspace.fs.delete",
+      "workspace.fs.rename",
+      "workspace.openTextDocument",
+      "workspace.applyEdit",
+      "workspace.findFiles",
+      "workspace.createFileSystemWatcher",
+      "workspace.registerTextDocumentContentProvider",
+      "workspace.registerFileSystemProvider",
+      "workspace.onDidChangeTextDocument",
+      "workspace.onDidOpenTextDocument",
+      "workspace.onDidCloseTextDocument",
+      "workspace.onWillSaveTextDocument",
+      "workspace.onDidSaveTextDocument",
+      "workspace.onDidChangeWorkspaceFolders"
+    ],
+    "languages": [
+      "languages.createDiagnosticCollection"
+    ]
+  },
+  "stubbed": {
+    "window": [
+      "window.showInputBox"
+    ],
+    "workspace": [
+      "workspace.getConfiguration",
+      "workspace.onDidChangeConfiguration"
+    ],
+    "env": [
+      "env.clipboard.readText",
+      "env.clipboard.writeText"
+    ],
+    "secrets": [
+      "ExtensionContext.secrets.get",
+      "ExtensionContext.secrets.store",
+      "ExtensionContext.secrets.delete"
+    ]
+  },
+  "planned": {
+    "aiChatExtensions": [
+      "window.createWebviewPanel",
+      "Webview.postMessage",
+      "Webview.onDidReceiveMessage",
+      "Webview.asWebviewUri",
+      "window.createTerminal",
+      "tasks.executeTask",
+      "authentication",
+      "LanguageModelChat",
+      "lm.registerTool",
+      "diff editors"
+    ],
+    "languageAndEditor": [
+      "CompletionItemProvider",
+      "HoverProvider",
+      "CodeActionProvider",
+      "DocumentSymbolProvider",
+      "DiagnosticCollection UI surfacing",
+      "TextDocument save participants"
+    ],
+    "sourceControlAndDebug": [
+      "scm.createSourceControl",
+      "debug.registerDebugAdapterDescriptorFactory",
+      "debug.startDebugging"
+    ]
+  },
+  "unsupportedForNow": [
+    "notebooks",
+    "custom editors",
+    "remote extension hosts",
+    "full VS Code workbench layout ownership"
+  ]
+}
