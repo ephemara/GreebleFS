@@ -1,3 +1,18 @@
+# 2026-05-08 - Tauron Native Lane Roadmap Pass Consumed By GreebleFS
+
+- GreebleFS stayed product-compatible while Tauron absorbed the next native-lane roadmap slice.
+  - Terminal behavior remains unchanged: prefer native byte stream, decode ordered bytes, fall back to retained transport, and never close terminal-owned streams from UI teardown.
+  - `scripts/tauron-preflight.mjs` now treats `D:/tauron/packages/api/src/native-control.ts` and `native-stream.ts` as API freshness inputs and requires fresh `dist/native-control.js` plus `dist/native-stream.js` before Cargo-backed app work.
+- Tauron-side result to remember before moving more GreebleFS systems:
+  - Native-control lifecycle now owns native-stream subscribe/unsubscribe/telemetry with invoke as fallback.
+  - The benchmark harness measures invoke JSON, host-object JSON, one-shot shared buffer, pooled shared buffer, and persistent ring with schema v2 counters/timings/CPU/JS consume metrics.
+  - The persistent ring is currently the strongest data-plane candidate for append/event lanes; the first pooled-buffer lane proves state ownership but is slower until real reusable COM buffers and batched release land.
+- Durable rule:
+  - Keep broad GreebleFS migrations paused until the Tauron benchmark artifact shows the target lane beating the old path for that payload shape. Directory listings, thumbnails, preview bytes, search output, and task output should each choose lane shapes by measured behavior, not by one generic abstraction.
+- Validation:
+  - Passed: `bunx vitest run src/test/nativeControl.test.ts src/test/terminalOverlay.test.tsx src/test/ipcStreamsRuntime.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+
 # 2026-05-08 - Native Control Facade For Tauron Host Objects
 
 - Added `src/runtime/nativeControl.ts` as GreebleFS's first frontend seam over Tauron's WebView2 host-object control plane.
