@@ -280,6 +280,57 @@ fn build_kain_authored_settings_surface() -> Any:
     json_object_set(surface, "root", root)
     return surface
 
+fn build_lattice_shell_control_surface() -> Any:
+    let surface = json_object_new()
+    let root = build_ui_node("settings.kain-lattice.root", "stack", "", "")
+    set_ui_node_layout(root, "column", "compact", "none")
+
+    let module_section = build_ui_node("settings.kain-lattice.module", "section", "Lattice Shell Control", "Kain Lattice can now hand-author a QML-style Settings module and mount it through a semantic host instead of bespoke JSX.")
+
+    let package_row = build_ui_node("settings.kain-lattice.package", "row", "Package", "src-kain/lattice/greeblefs-shell-control/main.kn declares the component graph, host models, actions, and render target.")
+    let package_pill = build_ui_node("settings.kain-lattice.package.pill", "status-pill", "", "")
+    set_ui_node_label(package_pill, "mounted", "live", true)
+    append_ui_child(package_row, package_pill)
+
+    let host_row = build_ui_node("settings.kain-lattice.host-models", "row", "Host Models", "host.settings, host.kainBridge, host.windowShell, and host.profile are declared as native object contracts.")
+    let host_pill = build_ui_node("settings.kain-lattice.host-models.pill", "status-pill", "", "")
+    set_ui_node_label(host_pill, "4 models", "live", true)
+    append_ui_child(host_row, host_pill)
+
+    let binding_row = build_ui_node("settings.kain-lattice.bindings", "row", "Bindings", "The current pass records binding intent as data; later passes can evaluate safe expressions against reflected host models.")
+    let binding_pill = build_ui_node("settings.kain-lattice.bindings.pill", "status-pill", "", "")
+    set_ui_node_label(binding_pill, "declared", "live", true)
+    append_ui_child(binding_row, binding_pill)
+
+    let reload_row = build_ui_node("settings.kain-lattice.reload", "row", "Reload Bridge", "This action is authored in Kain and executed by the trusted frontend host through @tauri-apps/api/kain.")
+    let reload_button = build_ui_node("settings.kain-lattice.reload.button", "button", "", "")
+    set_ui_node_label(reload_button, "reload", "live", true)
+    set_ui_node_action(reload_button, "kain.ui.reload")
+    append_ui_child(reload_row, reload_button)
+
+    append_ui_child(module_section, package_row)
+    append_ui_child(module_section, host_row)
+    append_ui_child(module_section, binding_row)
+    append_ui_child(module_section, reload_row)
+    append_ui_child(root, module_section)
+
+    let note = build_ui_node("settings.kain-lattice.note", "text", "", "")
+    set_ui_node_text(note, "This is the first semantic Lattice mount: Kain owns the object graph, React only hosts known primitives and trusted actions.", "caption")
+    append_ui_child(root, note)
+
+    json_object_set(surface, "id", "settings:kain-lattice-proof")
+    json_object_set(surface, "kind", "settings-module")
+    json_object_set(surface, "title", "Lattice Shell Control")
+    json_object_set(surface, "summary", "Kain Lattice package mounted as a semantic GreebleFS Settings surface.")
+    json_object_set(surface, "source", "src-kain/lattice/greeblefs-shell-control/main.kn")
+    json_object_set(surface, "packageId", "greeblefs.lattice.shell-control")
+    json_object_set(surface, "componentId", "ShellControlModule")
+    json_object_set(surface, "mountId", "settings:kain-lattice-proof")
+    json_object_set(surface, "hostModels", string_array_4("host.settings", "host.kainBridge", "host.windowShell", "host.profile"))
+    json_object_set(surface, "actions", string_array_2("kain.ui.reload", "settings.open"))
+    json_object_set(surface, "root", root)
+    return surface
+
 fn build_ui_scaffold(request: Any) -> Any:
     let scaffold = json_object_new()
     let surfaces = json_array_new()
@@ -288,6 +339,7 @@ fn build_ui_scaffold(request: Any) -> Any:
     let actions = json_array_new()
     let consumers = json_array_new()
 
+    json_array_push(surfaces, build_lattice_shell_control_surface())
     json_array_push(surfaces, build_kain_authored_settings_surface())
 
     append_ui_primitive(primitives, "stack", "flex column/row layout wrapper", "wired")
@@ -295,17 +347,20 @@ fn build_ui_scaffold(request: Any) -> Any:
     append_ui_primitive(primitives, "row", "SettingsRow", "wired")
     append_ui_primitive(primitives, "status-pill", "SettingsStatusPill", "wired")
     append_ui_primitive(primitives, "text", "semantic text node", "wired")
-    append_ui_primitive(primitives, "button", "theme-aware button/action host", "scaffold")
+    append_ui_primitive(primitives, "button", "theme-aware button/action host", "wired")
+    append_ui_primitive(primitives, "settings-module", "KainSemanticSurfaceHost mount", "wired")
 
     append_ui_token(tokens, "control.button.size.tight", "geometry", "tight", "Kain UI graph chrome.buttonSize")
     append_ui_token(tokens, "surface.settings.gap.compact", "spacing", "compact", "Settings row and block spacing")
     append_ui_token(tokens, "surface.settings.status.live", "interaction", "live", "SettingsStatusPill active state")
     append_ui_token(tokens, "surface.settings.text.caption", "typography", "caption", "Compact explanatory text")
 
-    append_ui_action(actions, "kain.ui.reload", "Reload Kain UI", "tauron.kain.reload", "planned")
+    append_ui_action(actions, "kain.ui.reload", "Reload Kain UI", "tauron.kain.reload", "wired")
     append_ui_action(actions, "kain.ui.emit-artifact", "Emit UI Artifact", "greeblefs.ui.emit", "planned")
 
     json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
+    json_array_push(consumers, "src/runtime/kainSemanticUiRuntime.ts")
+    json_array_push(consumers, "src/components/kain/KainSemanticSurfaceHost.tsx")
     json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
 
@@ -434,7 +489,8 @@ fn build_lattice_catalog(request: Any) -> Any:
     append_lattice_primitive(primitives, "binding", "QML binding", "Expression that derives one value from host model or component state.", "planned")
     append_lattice_primitive(primitives, "signal", "QML signal", "Component event emitted into host actions or parent components.", "planned")
     append_lattice_primitive(primitives, "action", "PlasmaCore.Action", "Named command with label, enabled state, permission, and host call.", "planned")
-    append_lattice_primitive(primitives, "settings-module", "KCM", "Settings page authored in Kain and rendered by trusted GreebleFS primitives.", "reference")
+    append_lattice_primitive(primitives, "settings-module", "KCM", "Settings page authored in Kain and rendered by trusted GreebleFS primitives.", "live")
+    append_lattice_primitive(primitives, "semantic-surface-host", "QQuickItem host", "Trusted frontend host that mounts Lattice-authored semantic surfaces without custom JSX per module.", "live")
     append_lattice_primitive(primitives, "applet", "PlasmoidItem", "Small shell widget with icon, status, actions, tooltip, and compact/full representations.", "planned")
 
     append_lattice_host_object(host_objects, "host.settings", "GreebleFS settings store + Rust profile overlay", "Read and eventually write typed settings slices through reflected contracts.", "planned")
@@ -446,8 +502,9 @@ fn build_lattice_catalog(request: Any) -> Any:
     json_array_push(packages, build_lattice_package_shell_control())
 
     append_lattice_milestone(milestones, "lattice.catalog", "Catalog", "Expose the QML-like Kain Lattice package model through the resident bridge.", "live")
-    append_lattice_milestone(milestones, "lattice.settings-module", "Settings Module", "Render one Kain-authored KCM-style settings module without hand-editing JSX.", "next")
-    append_lattice_milestone(milestones, "lattice.applet", "Applet", "Mount one Kain-authored applet into a shell surface with host actions.", "planned")
+    append_lattice_milestone(milestones, "lattice.settings-module", "Settings Module", "Render one Kain-authored KCM-style settings module without hand-editing JSX.", "live")
+    append_lattice_milestone(milestones, "lattice.semantic-host", "Semantic Host", "Mount Lattice package surfaces through a reusable React host with trusted action dispatch.", "live")
+    append_lattice_milestone(milestones, "lattice.applet", "Applet", "Mount one Kain-authored applet into a shell surface with host actions.", "next")
     append_lattice_milestone(milestones, "lattice.host-reflection", "Host Reflection", "Generate host model wrappers from Rust/Tauron reflection.", "planned")
 
     json_array_push(consumers, "src/runtime/kainLatticeCatalog.ts")

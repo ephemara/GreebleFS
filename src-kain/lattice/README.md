@@ -13,6 +13,7 @@ Kain Lattice package
   -> components, properties, bindings, signals, actions
   -> host models from Rust/Tauron reflection
   -> semantic GreebleFS surfaces
+  -> KainSemanticSurfaceHost
   -> trusted renderer/runtime output
 ```
 
@@ -35,3 +36,17 @@ This directory is the future authoring root for real packages:
   First reference package for a KCM-style Settings module and shell-control applet.
 
 This is not JSX generation. Kain owns the declarative object graph; GreebleFS owns trusted rendering, permissions, host execution, and fallbacks.
+
+## First Live Mount
+
+`settings:kain-lattice-proof` is the first hand-authored Lattice surface mounted by the frontend. It proves the intended path:
+
+```text
+src-kain/lattice/greeblefs-shell-control/main.kn
+  -> greeblefs.ui.scaffold surface metadata
+  -> src/runtime/kainSemanticUiRuntime.ts registry
+  -> src/components/kain/KainSemanticSurfaceHost.tsx
+  -> src/components/kain/KainUiRenderer.tsx
+```
+
+The surface declares package id, component id, host models, and action ids as data. React does not know about the module beyond the reusable semantic host.

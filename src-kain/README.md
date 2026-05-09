@@ -99,6 +99,7 @@ The model is:
 Kain .kn surface intent
   -> greeblefs.ui.scaffold semantic IR
   -> TypeScript normalizer
+  -> KainSemanticSurfaceHost
   -> GreebleFS renderer primitives
 ```
 
@@ -110,8 +111,11 @@ First primitives:
 - `status-pill`
 - `text`
 - `button`
+- `settings-module`
 
-Keep this lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, state, and action ids. GreebleFS should own rendering, theme variables, trusted host actions, permissions, and fallbacks. Graduate one consumer at a time.
+`src/runtime/kainSemanticUiRuntime.ts` is now the small semantic registry between scaffold data and Lattice package metadata. `src/components/kain/KainSemanticSurfaceHost.tsx` is the reusable frontend mount point: it resolves a scaffold surface, associates it with a Lattice package, renders through `KainUiRenderer`, and handles trusted actions such as `kain.ui.reload`.
+
+Keep this lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, state, host-model declarations, and action ids. GreebleFS should own rendering, theme variables, trusted host actions, permissions, and fallbacks. Graduate one consumer at a time.
 
 ## Kain Lattice
 
@@ -140,6 +144,8 @@ Plasma-inspired mapping:
 - KRunner -> Kain-authored command/search/action provider.
 
 This sits above the semantic UI scaffold. The scaffold defines renderable nodes; Lattice defines packages and live object contracts that can produce those nodes.
+
+The first live Lattice mount is `settings:kain-lattice-proof`. It is authored by `src-kain/app/main.kn` from the reference package shape in `src-kain/lattice/greeblefs-shell-control/main.kn`, normalized by `src/runtime/kainUiScaffold.ts`, mounted by `KainSemanticSurfaceHost`, and rendered in Settings > Kain UI without adding a custom React component for that module.
 
 ## What Is Possible Now
 

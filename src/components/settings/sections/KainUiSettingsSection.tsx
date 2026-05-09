@@ -3,7 +3,7 @@ import type { KainAppManifest } from "@/runtime/kainManifest";
 import type { KainUiScaffold } from "@/runtime/kainUiScaffold";
 import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
 import type { KainFfiCatalog } from "@/runtime/kainFfiCatalog";
-import { KainUiRenderer } from "@/components/kain/KainUiRenderer";
+import { KainSemanticSurfaceHost } from "@/components/kain/KainSemanticSurfaceHost";
 import {
   SettingsActionButton,
   SettingsActionStrip,
@@ -76,7 +76,10 @@ export function KainUiSettingsSection({
   const ffiAnalysisCount = ffiCatalog?.analysisPipelines.length ?? 0;
   const pythonFfiLane = ffiCatalog?.lanes.find((lane) => lane.id === "python") ?? null;
   const nextFfiLane = ffiCatalog?.lanes.find((lane) => !lane.implemented) ?? ffiCatalog?.lanes[0] ?? null;
-  const previewSurface = scaffold?.surfaces[0] ?? null;
+  const previewSurface = scaffold?.surfaces.find((surface) => surface.id === "settings:kain-lattice-proof")
+    ?? scaffold?.surfaces[0]
+    ?? null;
+  const semanticSurfaceCount = scaffold?.surfaces.filter((surface) => surface.packageId || surface.mountId).length ?? 0;
   const nextPipeline = manifest?.pipelines.find((pipeline) => pipeline.status === "next")
     ?? manifest?.pipelines[0]
     ?? null;
@@ -99,6 +102,8 @@ export function KainUiSettingsSection({
       data-kain-ffi-python={pythonFfiLane?.status ?? "missing"}
       data-kain-authored-theme-count={authoredThemeCount}
       data-kain-authored-theme-selected={selectedAuthoredTheme?.compatibilityThemeId ?? "none"}
+      data-kain-semantic-surface-count={semanticSurfaceCount}
+      data-kain-semantic-preview-surface={previewSurface?.id ?? "none"}
     >
       <SettingsSectionBlock
         title="Kain UI"
@@ -232,7 +237,11 @@ export function KainUiSettingsSection({
           />
         </SettingsRowGroup>
         <div className="mt-3">
-          <KainUiRenderer surface={previewSurface} />
+          <KainSemanticSurfaceHost
+            scaffold={scaffold}
+            latticeCatalog={latticeCatalog}
+            surfaceId={previewSurface?.id}
+          />
         </div>
       </SettingsSectionBlock>
 
@@ -261,6 +270,11 @@ export function KainUiSettingsSection({
             title="Next"
             description={nextLatticeMilestone ? `${nextLatticeMilestone.label}: ${nextLatticeMilestone.summary}` : "No Lattice milestone reported"}
             control={<SettingsStatusPill active={nextLatticeMilestone?.status === "next"}>{nextLatticeMilestone?.status ?? "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Semantic Host"
+            description={`${semanticSurfaceCount} Lattice-mounted surfaces can render through KainSemanticSurfaceHost`}
+            control={<SettingsStatusPill active={semanticSurfaceCount > 0}>{semanticSurfaceCount}</SettingsStatusPill>}
           />
         </SettingsRowGroup>
       </SettingsSectionBlock>

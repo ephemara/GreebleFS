@@ -141,26 +141,32 @@ const scaffold: KainUiScaffold = {
   summary: 'Kain-authored semantic UI scaffold.',
   surfaces: [
     {
-      id: 'settings.kain-authoring-proof',
-      kind: 'settings-section',
-      title: 'Kain UI Authoring Proof',
+      id: 'settings:kain-lattice-proof',
+      kind: 'settings-module',
+      title: 'Lattice Shell Control',
       summary: 'Kain can define UI.',
+      source: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+      packageId: 'greeblefs.lattice.shell-control',
+      componentId: 'ShellControlModule',
+      mountId: 'settings:kain-lattice-proof',
+      hostModels: ['host.kainBridge'],
+      actions: ['kain.ui.reload'],
       root: {
-        id: 'settings.kain-authoring.root',
+        id: 'settings.kain-lattice.root',
         kind: 'stack',
         layout: { direction: 'column', gap: 'compact' },
         props: {},
         children: [
           {
-            id: 'settings.kain-authoring.status',
+            id: 'settings.kain-lattice.module',
             kind: 'section',
-            title: 'Kain Authored Surface',
+            title: 'Lattice Shell Control',
             description: 'Semantic UI is coming from Kain.',
             layout: {},
             props: {},
             children: [
               {
-                id: 'settings.kain-authoring.renderer',
+                id: 'settings.kain-lattice.renderer',
                 kind: 'row',
                 title: 'Renderer',
                 description: 'Maps Kain nodes onto existing primitives.',
@@ -168,7 +174,7 @@ const scaffold: KainUiScaffold = {
                 props: {},
                 children: [
                   {
-                    id: 'settings.kain-authoring.renderer.pill',
+                    id: 'settings.kain-lattice.renderer.pill',
                     kind: 'status-pill',
                     label: 'wired',
                     tone: 'live',
@@ -329,6 +335,9 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-ffi-python', 'sidecar-hooked');
     expect(proof).toHaveAttribute('data-kain-authored-theme-count', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-selected', 'none');
+    expect(proof).toHaveAttribute('data-kain-semantic-surface-count', '1');
+    expect(proof).toHaveAttribute('data-kain-semantic-preview-surface', 'settings:kain-lattice-proof');
+    expect(container.querySelector('[data-kain-semantic-surface-host]')).toHaveAttribute('data-kain-semantic-package', 'greeblefs.lattice.shell-control');
     expect(screen.getByText('Kain Manifest')).toBeInTheDocument();
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
     expect(screen.getByText('Kain Lattice')).toBeInTheDocument();
@@ -337,7 +346,8 @@ describe('KainUiSettingsSection', () => {
     expect(screen.getByText('Ion Lattice')).toBeInTheDocument();
     expect(screen.getByText(/QML-like Kain authoring system/)).toBeInTheDocument();
     expect(screen.getByText(/Kain-owned cross-language bridge map/)).toBeInTheDocument();
-    expect(screen.getByText('Kain Authored Surface')).toBeInTheDocument();
+    expect(screen.getAllByText('Lattice Shell Control').length).toBeGreaterThan(0);
+    expect(screen.getByText('Semantic Host')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
     expect(screen.getAllByText(/Node FFI/).length).toBeGreaterThan(0);
 

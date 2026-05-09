@@ -12,22 +12,30 @@ interface KainUiRendererProps {
   surface?: KainUiSurface | null;
   node?: KainUiNode | null;
   fallback?: ReactNode;
+  onAction?: (actionId: string, node: KainUiNode) => void | Promise<void>;
 }
 
 function nodeLabel(node: KainUiNode): string {
   return node.label ?? node.text ?? node.title ?? node.id;
 }
 
-function renderNodeList(nodes: KainUiNode[]): ReactNode {
+function renderNodeList(
+  nodes: KainUiNode[],
+  onAction?: KainUiRendererProps["onAction"],
+): ReactNode {
   return nodes.map((child) => (
     <KainUiNodeRenderer
       key={child.id}
       node={child}
+      onAction={onAction}
     />
   ));
 }
 
-function renderCompactControl(node: KainUiNode): ReactNode {
+function renderCompactControl(
+  node: KainUiNode,
+  onAction?: KainUiRendererProps["onAction"],
+): ReactNode {
   if (node.kind === "status-pill") {
     return (
       <SettingsStatusPill active={node.active ?? node.tone === "live"}>
@@ -37,21 +45,29 @@ function renderCompactControl(node: KainUiNode): ReactNode {
   }
 
   if (node.kind === "button") {
+    const actionId = node.actionId ?? node.id;
     return (
       <SettingsActionButton
-        disabled
-        data-kain-action-id={node.actionId ?? node.id}
+        disabled={node.disabled || !onAction}
+        onClick={() => void onAction?.(actionId, node)}
+        data-kain-action-id={actionId}
       >
         {nodeLabel(node)}
       </SettingsActionButton>
     );
   }
 
-  return <KainUiNodeRenderer node={node} />;
+  return <KainUiNodeRenderer node={node} onAction={onAction} />;
 }
 
-function KainUiNodeRenderer({ node }: { node: KainUiNode }) {
-  const childNodes = renderNodeList(node.children);
+function KainUiNodeRenderer({
+  node,
+  onAction,
+}: {
+  node: KainUiNode;
+  onAction?: KainUiRendererProps["onAction"];
+}) {
+  const childNodes = renderNodeList(node.children, onAction);
   const commonProps = {
     "data-kain-ui-node": node.id,
     "data-kain-ui-node-kind": node.kind,
@@ -85,8 +101,8 @@ function KainUiNodeRenderer({ node }: { node: KainUiNode }) {
         <SettingsRow
           title={node.title ?? node.id}
           description={node.description ?? node.text ?? ""}
-          control={controlNode ? renderCompactControl(controlNode) : <SettingsStatusPill>ready</SettingsStatusPill>}
-          note={bodyNodes.length ? renderNodeList(bodyNodes) : undefined}
+          control={controlNode ? renderCompactControl(controlNode, onAction) : <SettingsStatusPill>ready</SettingsStatusPill>}
+          note={bodyNodes.length ? renderNodeList(bodyNodes, onAction) : undefined}
         />
       </div>
     );
@@ -103,11 +119,13 @@ function KainUiNodeRenderer({ node }: { node: KainUiNode }) {
   }
 
   if (node.kind === "button") {
+    const actionId = node.actionId ?? node.id;
     return (
       <span {...commonProps}>
         <SettingsActionButton
-          disabled
-          data-kain-action-id={node.actionId ?? node.id}
+          disabled={node.disabled || !onAction}
+          onClick={() => void onAction?.(actionId, node)}
+          data-kain-action-id={actionId}
         >
           {nodeLabel(node)}
         </SettingsActionButton>
@@ -140,6 +158,7 @@ export function KainUiRenderer({
   surface,
   node,
   fallback = null,
+  onAction,
 }: KainUiRendererProps) {
   const root = node ?? surface?.root ?? null;
   if (!root) {
@@ -152,7 +171,7 @@ export function KainUiRenderer({
       data-kain-ui-renderer="semantic-v1"
       data-kain-ui-surface={surface?.id ?? root.id}
     >
-      <KainUiNodeRenderer node={root} />
+      <KainUiNodeRenderer node={root} onAction={onAction} />
     </div>
   );
 }

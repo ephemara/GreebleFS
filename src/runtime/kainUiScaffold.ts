@@ -12,6 +12,7 @@ export interface KainUiNode {
   label?: string;
   tone?: string;
   active?: boolean;
+  disabled?: boolean;
   actionId?: string;
   layout: Record<string, KainUiNodeScalar>;
   props: Record<string, unknown>;
@@ -23,6 +24,12 @@ export interface KainUiSurface {
   kind: string;
   title: string;
   summary: string;
+  source?: string;
+  packageId?: string;
+  componentId?: string;
+  mountId?: string;
+  hostModels: string[];
+  actions: string[];
   root: KainUiNode | null;
 }
 
@@ -139,6 +146,7 @@ function normalizeUiNode(value: unknown): KainUiNode | null {
     label: stringValue(source.label),
     tone: stringValue(source.tone),
     active: booleanValue(source.active),
+    disabled: booleanValue(source.disabled),
     actionId: stringValue(source.actionId),
     layout: scalarMap(source.layout),
     props: asObject(source.props) ?? {},
@@ -178,6 +186,12 @@ export function normalizeKainUiScaffold(value: unknown): KainUiScaffold | null {
         kind: surfaceKind,
         title: stringValue(item.title) ?? id,
         summary: stringValue(item.summary) ?? "",
+        source: stringValue(item.source),
+        packageId: stringValue(item.packageId),
+        componentId: stringValue(item.componentId),
+        mountId: stringValue(item.mountId),
+        hostModels: stringList(item.hostModels),
+        actions: stringList(item.actions),
         root: normalizeUiNode(item.root),
       };
     }),
