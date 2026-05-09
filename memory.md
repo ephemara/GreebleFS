@@ -1,3 +1,20 @@
+# 2026-05-08 - GreebleFS Native Lane Migration Prep Map
+
+- Inventoried the first GreebleFS hot payload candidates for future Tauron native lanes without changing product behavior.
+  - Thumbnails currently use `fs_read_entry_thumbnail_artifact` -> IPC artifact/resource descriptors -> `resourceUrl(...)`; future candidate is `native_buffer_pool` for generated poster/hover-frame bytes, with artifact/resource transport as fallback and replay/cache truth.
+  - Preview bytes currently use raw binary invoke responses through `fs_read_preview_bytes` / `fs_read_archive_entry_preview_bytes`; future candidate is `native_buffer_pool`, with invoke binary as required fallback.
+  - Directory listing snapshots and current search requests remain invoke-shaped for now. Directory listings are metadata/control heavy and should not move until Tauron native-control handle/result paging exists. Search should become a `native_ring` only after the backend can emit incremental result batches while preserving current final-response behavior as fallback.
+  - Task output and terminal-like append streams are future `native_ring` candidates. Terminal remains comparison-only because it already tries Tauron native byte stream first and falls back to retained transport replay.
+- Added `src/config/nativeLaneMigration.ts` as a pure, unused planning seam:
+  - all native-lane feature flags default to `false`;
+  - runtime capabilities default unavailable;
+  - `resolveGreebleNativeLaneSelection(...)` selects the current invoke/transport fallback unless both a feature switch and runtime capability are present.
+- Added `src/test/nativeLaneMigration.test.ts` to lock fallback-first behavior.
+- Validation:
+  - Passed: `bunx vitest run src/test/nativeLaneMigration.test.ts --reporter=dot --testTimeout=30000`
+- Current repo state note:
+  - Pre-existing dirty files were left untouched: `public/icons/shortcut_arrow.svg`, `src/generated/tauri.ts`, `usr/kain-ui/main.kn` deleted, and `usr/profiles/default/settings.json`.
+
 # 2026-05-08 - Tauron Native Lane Roadmap Pass Consumed By GreebleFS
 
 - GreebleFS stayed product-compatible while Tauron absorbed the next native-lane roadmap slice.
