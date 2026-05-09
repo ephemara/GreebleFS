@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { KainUiSettingsSection } from '../components/settings/sections/KainUiSettingsSection';
 import type { KainAppManifest } from '../runtime/kainManifest';
+import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
 import type { KainUiGraph } from '../runtime/kainUiGraph';
 import type { KainUiScaffold } from '../runtime/kainUiScaffold';
 
@@ -193,8 +194,56 @@ const scaffold: KainUiScaffold = {
   consumers: ['src/components/kain/KainUiRenderer.tsx'],
 };
 
+const latticeCatalog: KainLatticeCatalog = {
+  schemaVersion: 1,
+  kind: 'greeblefs.lattice.catalog',
+  name: 'Kain Lattice',
+  source: 'src-kain/app/main.kn',
+  stdlib: 'src-kain/stdlib/greeblefs/lattice.kn',
+  packageRoot: 'src-kain/lattice',
+  summary: 'QML-like Kain authoring system.',
+  analogy: {
+    reference: 'reference/plasma-desktop-master',
+    qmlLike: 'Kain components declare properties and bindings.',
+    nativeModelLike: 'Rust exposes host objects.',
+    packageLike: 'Lattice packages map to applets and settings modules.',
+  },
+  imports: [
+    { id: 'gfs.shell', label: 'Shell', mapsTo: 'panels', status: 'planned' },
+  ],
+  primitives: [
+    { id: 'component', qmlAnalogy: 'QML component', summary: 'Declarative object.', status: 'reference' },
+    { id: 'action', qmlAnalogy: 'PlasmaCore.Action', summary: 'Host command.', status: 'planned' },
+  ],
+  hostObjects: [
+    { id: 'host.kainBridge', provider: 'Tauron', summary: 'Kain bridge.', status: 'live' },
+  ],
+  packages: [
+    {
+      id: 'greeblefs.lattice.shell-control',
+      kind: 'settings-module',
+      title: 'Shell Control',
+      summary: 'Reference Kain Lattice package.',
+      packagePath: 'src-kain/lattice/greeblefs-shell-control',
+      entry: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+      metadata: 'src-kain/lattice/greeblefs-shell-control/lattice.toml',
+      imports: ['gfs.shell'],
+      surfaces: ['settings:kain-lattice-proof'],
+      hostModels: ['host.kainBridge'],
+      actions: ['kain.ui.reload'],
+      permissions: ['kain.reload'],
+      configSchema: { status: 'reference' },
+    },
+  ],
+  milestones: [
+    { id: 'lattice.catalog', label: 'Catalog', summary: 'Expose the catalog.', status: 'live' },
+    { id: 'lattice.settings-module', label: 'Settings Module', summary: 'Render one KCM-style module.', status: 'next' },
+  ],
+  consumers: ['src/runtime/kainLatticeCatalog.ts'],
+};
+
 describe('KainUiSettingsSection', () => {
-  it('renders live Kain manifest and UI scaffold proof hooks', () => {
+  it('renders live Kain manifest, UI scaffold, and Lattice proof hooks', () => {
     const { container } = render(
       <KainUiSettingsSection
         graph={graph}
@@ -203,6 +252,8 @@ describe('KainUiSettingsSection', () => {
         manifestError={null}
         scaffold={scaffold}
         scaffoldError={null}
+        latticeCatalog={latticeCatalog}
+        latticeCatalogError={null}
       />,
     );
 
@@ -213,8 +264,13 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-ui-scaffold-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-ui-scaffold-surfaces', '1');
     expect(proof).toHaveAttribute('data-kain-ui-scaffold-primitives', '2');
+    expect(proof).toHaveAttribute('data-kain-lattice-proof', 'live');
+    expect(proof).toHaveAttribute('data-kain-lattice-packages', '1');
+    expect(proof).toHaveAttribute('data-kain-lattice-host-objects', '1');
     expect(screen.getByText('Kain Manifest')).toBeInTheDocument();
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
+    expect(screen.getByText('Kain Lattice')).toBeInTheDocument();
+    expect(screen.getByText(/QML-like Kain authoring system/)).toBeInTheDocument();
     expect(screen.getByText('Kain Authored Surface')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
     expect(screen.getByText(/Node FFI/)).toBeInTheDocument();

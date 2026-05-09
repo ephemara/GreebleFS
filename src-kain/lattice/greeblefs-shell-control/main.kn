@@ -1,0 +1,67 @@
+fn string_array_4(a: String, b: String, c: String, d: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    return items
+
+fn string_array_2(a: String, b: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    return items
+
+fn build_shell_control_component() -> Any:
+    let component_node = json_object_new()
+    let properties = json_array_new()
+    let bindings = json_array_new()
+    let actions = json_array_new()
+    let render = json_object_new()
+
+    let enabled_property = json_object_new()
+    json_object_set(enabled_property, "name", "bridgeLive")
+    json_object_set(enabled_property, "type", "Bool")
+    json_object_set(enabled_property, "default", "false")
+    json_array_push(properties, enabled_property)
+
+    let title_binding = json_object_new()
+    json_object_set(title_binding, "target", "title")
+    json_object_set(title_binding, "expression", "host.kainBridge.status.label")
+    json_array_push(bindings, title_binding)
+
+    let reload_action = json_object_new()
+    json_object_set(reload_action, "id", "kain.ui.reload")
+    json_object_set(reload_action, "hostCall", "tauron.kain.reload")
+    json_array_push(actions, reload_action)
+
+    json_object_set(render, "primitive", "settings-module")
+    json_object_set(render, "surface", "settings:kain-lattice-proof")
+
+    json_object_set(component_node, "id", "ShellControlModule")
+    json_object_set(component_node, "kind", "settings-module")
+    json_object_set(component_node, "properties", properties)
+    json_object_set(component_node, "bindings", bindings)
+    json_object_set(component_node, "signals", string_array_2("activated", "configurationChanged"))
+    json_object_set(component_node, "actions", actions)
+    json_object_set(component_node, "render", render)
+    return component_node
+
+fn build_shell_control_package() -> Any:
+    let package_node = json_object_new()
+    let components = json_array_new()
+    json_array_push(components, build_shell_control_component())
+
+    json_object_set(package_node, "schemaVersion", 1)
+    json_object_set(package_node, "kind", "greeblefs.lattice.package")
+    json_object_set(package_node, "id", "greeblefs.lattice.shell-control")
+    json_object_set(package_node, "title", "Shell Control")
+    json_object_set(package_node, "summary", "Reference Kain Lattice package for QML-like settings and applet authoring.")
+    json_object_set(package_node, "entry", "src-kain/lattice/greeblefs-shell-control/main.kn")
+    json_object_set(package_node, "imports", string_array_4("gfs.shell", "gfs.settings", "gfs.actions", "gfs.ui"))
+    json_object_set(package_node, "hostModels", string_array_4("host.settings", "host.kainBridge", "host.windowShell", "host.profile"))
+    json_object_set(package_node, "components", components)
+    return package_node
+
+fn main() -> Any:
+    return build_shell_control_package()

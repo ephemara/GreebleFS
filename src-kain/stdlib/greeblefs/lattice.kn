@@ -1,0 +1,70 @@
+fn lattice_package(id: String, package_kind: String, title: String, summary: String, entry: String) -> Any:
+    let package_node = json_object_new()
+    json_object_set(package_node, "id", id)
+    json_object_set(package_node, "kind", package_kind)
+    json_object_set(package_node, "title", title)
+    json_object_set(package_node, "summary", summary)
+    json_object_set(package_node, "entry", entry)
+    json_object_set(package_node, "imports", json_array_new())
+    json_object_set(package_node, "surfaces", json_array_new())
+    json_object_set(package_node, "hostModels", json_array_new())
+    json_object_set(package_node, "actions", json_array_new())
+    json_object_set(package_node, "permissions", json_array_new())
+    return package_node
+
+fn lattice_import(package_node: Any, import_id: String) -> Any:
+    json_array_push(json_get(package_node, "imports"), import_id)
+    return package_node
+
+fn lattice_surface(package_node: Any, surface_id: String) -> Any:
+    json_array_push(json_get(package_node, "surfaces"), surface_id)
+    return package_node
+
+fn lattice_host_model(package_node: Any, model_id: String) -> Any:
+    json_array_push(json_get(package_node, "hostModels"), model_id)
+    return package_node
+
+fn lattice_action(package_node: Any, action_id: String) -> Any:
+    json_array_push(json_get(package_node, "actions"), action_id)
+    return package_node
+
+fn lattice_permission(package_node: Any, permission_id: String) -> Any:
+    json_array_push(json_get(package_node, "permissions"), permission_id)
+    return package_node
+
+fn lattice_component(id: String, component_kind: String) -> Any:
+    let component_node = json_object_new()
+    json_object_set(component_node, "id", id)
+    json_object_set(component_node, "kind", component_kind)
+    json_object_set(component_node, "properties", json_array_new())
+    json_object_set(component_node, "bindings", json_array_new())
+    json_object_set(component_node, "signals", json_array_new())
+    json_object_set(component_node, "actions", json_array_new())
+    json_object_set(component_node, "render", json_object_new())
+    return component_node
+
+fn lattice_property(component_node: Any, name: String, value_type: String, default_value: String) -> Any:
+    let property_node = json_object_new()
+    json_object_set(property_node, "name", name)
+    json_object_set(property_node, "type", value_type)
+    json_object_set(property_node, "default", default_value)
+    json_array_push(json_get(component_node, "properties"), property_node)
+    return component_node
+
+fn lattice_binding(component_node: Any, target: String, expression: String) -> Any:
+    let binding = json_object_new()
+    json_object_set(binding, "target", target)
+    json_object_set(binding, "expression", expression)
+    json_array_push(json_get(component_node, "bindings"), binding)
+    return component_node
+
+fn lattice_signal(component_node: Any, name: String) -> Any:
+    json_array_push(json_get(component_node, "signals"), name)
+    return component_node
+
+fn lattice_component_action(component_node: Any, id: String, host_call: String) -> Any:
+    let action_node = json_object_new()
+    json_object_set(action_node, "id", id)
+    json_object_set(action_node, "hostCall", host_call)
+    json_array_push(json_get(component_node, "actions"), action_node)
+    return component_node

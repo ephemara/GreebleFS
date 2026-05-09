@@ -40,6 +40,8 @@ This means Kain can become a source-of-truth/orchestration layer while Tauron st
   Returns the Kain-authored UI graph consumed by Settings and app defaults.
 - `greeblefs.ui.scaffold`
   Returns Kain-authored semantic UI surfaces, primitive vocabulary, token hints, and action ids consumed by `src/runtime/kainUiScaffold.ts`.
+- `greeblefs.lattice.catalog`
+  Returns the Kain Lattice QML-like package/component catalog consumed by `src/runtime/kainLatticeCatalog.ts`.
 - `greeblefs.kain.manifest`
   Returns the first-class Kain contribution manifest consumed by `src/runtime/kainManifest.ts` and surfaced in Settings > Kain UI.
 
@@ -65,6 +67,9 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-ui-scaffold-proof`
 - `data-kain-ui-scaffold-surfaces`
 - `data-kain-ui-scaffold-primitives`
+- `data-kain-lattice-proof`
+- `data-kain-lattice-packages`
+- `data-kain-lattice-host-objects`
 
 If the Kain file changes while the app is already running, restart or reload the resident Tauron Kain runtime before judging the in-app proof. The old process can otherwise keep serving the previous `src-kain/app/main.kn` dispatch table.
 
@@ -102,6 +107,34 @@ First primitives:
 - `button`
 
 Keep this lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, state, and action ids. GreebleFS should own rendering, theme variables, trusted host actions, permissions, and fallbacks. Graduate one consumer at a time.
+
+## Kain Lattice
+
+Kain Lattice is the QML-like authoring system for GreebleFS.
+
+The name is deliberate. Plasma is hot, free-flowing ionized matter; a lattice is the ordered structure on the other side. Lattice is where Kain turns GreebleFS UI, settings modules, panels, applets, actions, host models, bindings, and package metadata into authorable source that does not require editing JavaScript for every surface.
+
+Current files:
+
+- `src-kain/stdlib/greeblefs/lattice.kn`
+  Kain helper vocabulary for packages, components, properties, bindings, signals, actions, and permissions.
+- `src-kain/lattice/`
+  Future package root for Kain Lattice packages.
+- `src-kain/lattice/greeblefs-shell-control/`
+  First reference package for a KCM-style Settings module and shell-control applet lane.
+- `src/runtime/kainLatticeCatalog.ts`
+  TypeScript normalization boundary for `greeblefs.lattice.catalog`.
+
+Plasma-inspired mapping:
+
+- QML component -> Kain Lattice component.
+- Plasmoid package metadata -> Kain Lattice package metadata.
+- `Plasmoid.configuration` -> Kain-owned config schema and profile defaults.
+- `Q_PROPERTY` / `Q_INVOKABLE` -> Rust/Tauron reflected host objects and actions.
+- KCM -> Kain-authored Settings module.
+- KRunner -> Kain-authored command/search/action provider.
+
+This sits above the semantic UI scaffold. The scaffold defines renderable nodes; Lattice defines packages and live object contracts that can produce those nodes.
 
 ## What Is Possible Now
 
@@ -238,6 +271,7 @@ This is where Kain should reduce cross-domain slop: one orchestration source, ma
 ## First Next Passes
 
 - Turn `button` scaffold actions into a real Kain action dispatch path, starting with `kain.ui.reload`.
+- Render the first Kain Lattice package as a real KCM-style Settings module.
 - Move one small Settings sub-surface from React-authored JSX to Kain-authored semantic IR while keeping the same renderer primitive output.
 - Promote the `greeblefs-kain-control-plane` proof actions into a consumed generated-artifact lane.
 - Convert one proof artifact from `greeblefs.kain.manifest.generatedArtifacts` into a real generated plugin/action manifest loaded by the plugin system.

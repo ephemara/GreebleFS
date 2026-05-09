@@ -1,0 +1,13 @@
+id = "greeblefs.lattice.shell-control"
+kind = "settings-module"
+title = "Shell Control"
+entry = "main.kn"
+schemaVersion = 1
+
+[lattice]
+stdlib = "src-kain/stdlib/greeblefs/lattice.kn"
+imports = ["gfs.shell", "gfs.settings", "gfs.actions", "gfs.ui"]
+surfaces = ["settings:kain-lattice-proof", "applet:shell-control"]
+hostModels = ["host.settings", "host.kainBridge", "host.windowShell"]
+actions = ["kain.ui.reload", "settings.open"]
+permissions = ["settings.read", "kain.reload"]

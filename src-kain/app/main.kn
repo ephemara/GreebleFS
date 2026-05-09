@@ -298,6 +298,154 @@ fn build_ui_scaffold(request: Any) -> Any:
     json_object_set(scaffold, "consumers", consumers)
     return scaffold
 
+fn append_lattice_import(items, id: String, label: String, maps_to: String, status: String) -> Int:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "mapsTo", maps_to)
+    json_object_set(item, "status", status)
+    json_array_push(items, item)
+    return 0
+
+fn append_lattice_primitive(items, id: String, qml_analogy: String, summary: String, status: String) -> Int:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "qmlAnalogy", qml_analogy)
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "status", status)
+    json_array_push(items, item)
+    return 0
+
+fn append_lattice_host_object(items, id: String, provider: String, summary: String, status: String) -> Int:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "provider", provider)
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "status", status)
+    json_array_push(items, item)
+    return 0
+
+fn append_lattice_milestone(items, id: String, label: String, summary: String, status: String) -> Int:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "status", status)
+    json_array_push(items, item)
+    return 0
+
+fn build_lattice_package_shell_control() -> Any:
+    let package_node = json_object_new()
+    let imports = json_array_new()
+    let surfaces = json_array_new()
+    let host_models = json_array_new()
+    let actions = json_array_new()
+    let permissions = json_array_new()
+    let config_schema = json_object_new()
+
+    json_array_push(imports, "gfs.shell")
+    json_array_push(imports, "gfs.settings")
+    json_array_push(imports, "gfs.actions")
+    json_array_push(imports, "gfs.ui")
+
+    json_array_push(surfaces, "settings:kain-lattice-proof")
+    json_array_push(surfaces, "applet:shell-control")
+
+    json_array_push(host_models, "host.settings")
+    json_array_push(host_models, "host.kainBridge")
+    json_array_push(host_models, "host.windowShell")
+    json_array_push(host_models, "host.profile")
+
+    json_array_push(actions, "kain.ui.reload")
+    json_array_push(actions, "settings.open")
+
+    json_array_push(permissions, "settings.read")
+    json_array_push(permissions, "kain.reload")
+
+    json_object_set(config_schema, "source", "src-kain/lattice/greeblefs-shell-control/lattice.toml")
+    json_object_set(config_schema, "shape", "KCM-style settings module with cfg_ compatible state planned.")
+    json_object_set(config_schema, "status", "reference")
+
+    json_object_set(package_node, "id", "greeblefs.lattice.shell-control")
+    json_object_set(package_node, "kind", "settings-module")
+    json_object_set(package_node, "title", "Shell Control")
+    json_object_set(package_node, "summary", "First Kain Lattice reference package for QML-like Settings and applet authoring.")
+    json_object_set(package_node, "packagePath", "src-kain/lattice/greeblefs-shell-control")
+    json_object_set(package_node, "entry", "src-kain/lattice/greeblefs-shell-control/main.kn")
+    json_object_set(package_node, "metadata", "src-kain/lattice/greeblefs-shell-control/lattice.toml")
+    json_object_set(package_node, "imports", imports)
+    json_object_set(package_node, "surfaces", surfaces)
+    json_object_set(package_node, "hostModels", host_models)
+    json_object_set(package_node, "actions", actions)
+    json_object_set(package_node, "permissions", permissions)
+    json_object_set(package_node, "configSchema", config_schema)
+    return package_node
+
+fn build_lattice_catalog(request: Any) -> Any:
+    let catalog = json_object_new()
+    let analogy = json_object_new()
+    let imports = json_array_new()
+    let primitives = json_array_new()
+    let host_objects = json_array_new()
+    let packages = json_array_new()
+    let milestones = json_array_new()
+    let consumers = json_array_new()
+
+    json_object_set(analogy, "reference", "reference/plasma-desktop-master")
+    json_object_set(analogy, "qmlLike", "Kain components declare properties, bindings, signals, actions, and render targets.")
+    json_object_set(analogy, "nativeModelLike", "Rust and Tauron expose reflected host objects to Kain the way Qt/C++ exposes Q_PROPERTY and Q_INVOKABLE surfaces to QML.")
+    json_object_set(analogy, "packageLike", "Kain Lattice packages map to Plasma-style applets, KCMs, containments, runners, and layout templates.")
+
+    append_lattice_import(imports, "gfs.shell", "Shell", "panels, workbench surfaces, windows, dock chrome", "planned")
+    append_lattice_import(imports, "gfs.settings", "Settings", "KCM-style settings modules, cfg_ bindings, migrations", "planned")
+    append_lattice_import(imports, "gfs.ui", "UI", "semantic renderer primitives and layout vocabulary", "live")
+    append_lattice_import(imports, "gfs.actions", "Actions", "command palette, context menus, applet actions", "planned")
+    append_lattice_import(imports, "gfs.explorer", "Explorer", "file views, preview lanes, activity panes, item delegates", "planned")
+
+    append_lattice_primitive(primitives, "package", "Plasmoid package metadata", "Declares id, kind, entry, imports, permissions, surfaces, host models, and config schema.", "reference")
+    append_lattice_primitive(primitives, "component", "QML component", "Declarative object with properties, bindings, signals, actions, and render target.", "reference")
+    append_lattice_primitive(primitives, "property", "Q_PROPERTY / property", "State slot that can bind to host models or config schema values.", "reference")
+    append_lattice_primitive(primitives, "binding", "QML binding", "Expression that derives one value from host model or component state.", "planned")
+    append_lattice_primitive(primitives, "signal", "QML signal", "Component event emitted into host actions or parent components.", "planned")
+    append_lattice_primitive(primitives, "action", "PlasmaCore.Action", "Named command with label, enabled state, permission, and host call.", "planned")
+    append_lattice_primitive(primitives, "settings-module", "KCM", "Settings page authored in Kain and rendered by trusted GreebleFS primitives.", "reference")
+    append_lattice_primitive(primitives, "applet", "PlasmoidItem", "Small shell widget with icon, status, actions, tooltip, and compact/full representations.", "planned")
+
+    append_lattice_host_object(host_objects, "host.settings", "GreebleFS settings store + Rust profile overlay", "Read and eventually write typed settings slices through reflected contracts.", "planned")
+    append_lattice_host_object(host_objects, "host.kainBridge", "Tauron tauri-plugin-kain", "Reload, status, manifest, reflection, and dispatch operations.", "live")
+    append_lattice_host_object(host_objects, "host.windowShell", "Tauron/GreebleFS window manager", "Window mode, dock state, panels, secondary windows, and focus state.", "planned")
+    append_lattice_host_object(host_objects, "host.explorer", "GreebleFS Explorer runtime", "Locations, selections, preview sessions, actions, and activity lanes.", "planned")
+    append_lattice_host_object(host_objects, "host.profile", "usr profile runtime", "Profile overlays, package roots, and migration state.", "planned")
+
+    json_array_push(packages, build_lattice_package_shell_control())
+
+    append_lattice_milestone(milestones, "lattice.catalog", "Catalog", "Expose the QML-like Kain Lattice package model through the resident bridge.", "live")
+    append_lattice_milestone(milestones, "lattice.settings-module", "Settings Module", "Render one Kain-authored KCM-style settings module without hand-editing JSX.", "next")
+    append_lattice_milestone(milestones, "lattice.applet", "Applet", "Mount one Kain-authored applet into a shell surface with host actions.", "planned")
+    append_lattice_milestone(milestones, "lattice.host-reflection", "Host Reflection", "Generate host model wrappers from Rust/Tauron reflection.", "planned")
+
+    json_array_push(consumers, "src/runtime/kainLatticeCatalog.ts")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+    json_array_push(consumers, "src-kain/lattice/README.md")
+
+    json_object_set(catalog, "schemaVersion", 1)
+    json_object_set(catalog, "kind", "greeblefs.lattice.catalog")
+    json_object_set(catalog, "name", "Kain Lattice")
+    json_object_set(catalog, "source", "src-kain/app/main.kn")
+    json_object_set(catalog, "stdlib", "src-kain/stdlib/greeblefs/lattice.kn")
+    json_object_set(catalog, "packageRoot", "src-kain/lattice")
+    json_object_set(catalog, "summary", "QML-like Kain authoring system for GreebleFS components, applets, settings modules, host models, bindings, and actions.")
+    json_object_set(catalog, "namespace", json_string_field(request, "namespace"))
+    json_object_set(catalog, "method", json_string_field(request, "method"))
+    json_object_set(catalog, "analogy", analogy)
+    json_object_set(catalog, "imports", imports)
+    json_object_set(catalog, "primitives", primitives)
+    json_object_set(catalog, "hostObjects", host_objects)
+    json_object_set(catalog, "packages", packages)
+    json_object_set(catalog, "milestones", milestones)
+    json_object_set(catalog, "consumers", consumers)
+    return catalog
+
 fn append_manifest_capability(items, id: String, lane: String, label: String, summary: String, status: String, implemented: Bool) -> Int:
     let capability = json_object_new()
     json_object_set(capability, "id", id)
@@ -376,6 +524,7 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_capability(capabilities, "kain.app.manifest", "bridge", "Kain app manifest", "Kain can describe the app-level features it contributes to GreebleFS.", "live", true)
     append_manifest_capability(capabilities, "kain.ui.graph", "ui", "Kain UI graph", "Kain supplies theme, chrome, layout, motion, settings, and profile intent.", "live", true)
     append_manifest_capability(capabilities, "kain.ui.scaffold", "ui", "Kain semantic UI scaffold", "Kain can describe compact UI surfaces, primitive nodes, layout intent, tokens, and action ids for React to render.", "live", true)
+    append_manifest_capability(capabilities, "kain.lattice.catalog", "ui", "Kain Lattice catalog", "Kain can describe QML-like packages, components, properties, bindings, signals, actions, host models, and KCM-style settings modules.", "live", true)
     append_manifest_capability(capabilities, "kain.settings.navigation", "settings", "Settings navigation ownership", "Kain can author Settings groups and hide compatibility lanes while GreebleFS keeps fallbacks.", "consumed", true)
     append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can emit GreebleFS-compatible plugin and action artifacts from typed intent.", "planned", false)
     append_manifest_capability(capabilities, "kain.host.reflection", "rust", "Rust host reflection", "Rust/Tauron can describe host capabilities for Kain to route or generate wrappers.", "planned", false)
@@ -386,18 +535,21 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_dispatch(dispatch, "greeblefs.ui", "graph", "Return the Kain-authored UI graph consumed by Settings and app defaults.", "src/runtime/kainUiGraph.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ui", "scaffold", "Return Kain-authored semantic UI surfaces and primitive vocabulary for React rendering.", "src/runtime/kainUiScaffold.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ui", "ping", "Smoke-test the resident bridge process.", "dev/mcp smoke")
+    append_manifest_dispatch(dispatch, "greeblefs.lattice", "catalog", "Return the Kain Lattice QML-like package/component catalog.", "src/runtime/kainLatticeCatalog.ts")
     append_manifest_dispatch(dispatch, "greeblefs.kain", "manifest", "Return the Kain app manifest that declares first-class GreebleFS contributions.", "src/runtime/kainManifest.ts")
 
     append_manifest_artifact(generated_artifacts, "kain.plugin.proof", "plugin-manifest", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn", "generated/plugin-proof.json", "proof")
     append_manifest_artifact(generated_artifacts, "kain.settings.proof", "settings-schema", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated/settings-proof.json", "proof")
     append_manifest_artifact(generated_artifacts, "kain.ui.graph", "runtime-graph", "src-kain/app/main.kn", "src/runtime/kainUiGraph.ts", "live")
     append_manifest_artifact(generated_artifacts, "kain.ui.scaffold", "semantic-ui-ir", "src-kain/app/main.kn", "src/runtime/kainUiScaffold.ts", "live")
+    append_manifest_artifact(generated_artifacts, "kain.lattice.catalog", "lattice-package-catalog", "src-kain/app/main.kn", "src/runtime/kainLatticeCatalog.ts", "live")
 
     append_manifest_schema(settings_schemas, "greeblefs.kain.ui", "Kain UI Settings", "src-kain/app/main.kn", "Settings > Kain UI", "live")
     append_manifest_schema(settings_schemas, "greeblefs.kain.controlPlane", "Kain Control Plane Settings", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated proof", "proof")
 
     append_manifest_pipeline(pipelines, "kain.settings.first-class", "Settings ownership", "Kain authors Settings grouping now, then graduates schema/default/migration ownership per section.", "active")
     append_manifest_pipeline(pipelines, "kain.ui.semantic-renderer", "Semantic UI renderer", "Kain defines small UI surfaces as data and React renders known GreebleFS primitives until full codegen is ready.", "active")
+    append_manifest_pipeline(pipelines, "kain.lattice.qml-like-shell", "Kain Lattice", "Kain becomes the QML-like authoring layer for GreebleFS packages, KCM-style settings modules, applets, panels, actions, bindings, and host models.", "active")
     append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Plugin manifest generation", "Kain emits plugin/action manifests that GreebleFS can load as compatibility artifacts.", "next")
     append_manifest_pipeline(pipelines, "kain.reflection.codegen", "Rust reflection codegen", "Kain consumes Rust/Tauron host shape and emits wrapper glue instead of hand-maintained mappings.", "planned")
     append_manifest_pipeline(pipelines, "kain.gpu.artifacts", "GPU artifact lane", "Kain compiles SPIR-V/shader artifacts for preview/lookdev pipelines.", "planned")
@@ -409,6 +561,7 @@ fn build_kain_manifest(request: Any) -> Any:
 
     json_array_push(consumers, "src/runtime/kainManifest.ts")
     json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
+    json_array_push(consumers, "src/runtime/kainLatticeCatalog.ts")
     json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
     json_array_push(consumers, "MCP greeblefs-dev-mcp smoke")
@@ -467,6 +620,9 @@ fn kain_bridge_dispatch(request_json: String) -> Any:
         json_object_set(result, "ok", true)
         json_object_set(result, "source", "src-kain/app/main.kn")
         return result
+
+    if request_namespace == "greeblefs.lattice" and request_method == "catalog":
+        return build_lattice_catalog(request)
 
     if request_namespace == "greeblefs.kain" and request_method == "manifest":
         return build_kain_manifest(request)

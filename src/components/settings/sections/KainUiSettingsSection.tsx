@@ -1,6 +1,7 @@
 import type { KainUiGraph } from "@/runtime/kainUiGraph";
 import type { KainAppManifest } from "@/runtime/kainManifest";
 import type { KainUiScaffold } from "@/runtime/kainUiScaffold";
+import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
 import { KainUiRenderer } from "@/components/kain/KainUiRenderer";
 import {
   SettingsRow,
@@ -16,6 +17,8 @@ export function KainUiSettingsSection({
   manifestError,
   scaffold,
   scaffoldError,
+  latticeCatalog,
+  latticeCatalogError,
 }: {
   graph: KainUiGraph | null;
   error: string | null;
@@ -23,6 +26,8 @@ export function KainUiSettingsSection({
   manifestError: string | null;
   scaffold: KainUiScaffold | null;
   scaffoldError: string | null;
+  latticeCatalog: KainLatticeCatalog | null;
+  latticeCatalogError: string | null;
 }) {
   const settingsMode = graph?.settings.mode ?? "fallback";
   const categoryCount = graph?.settings.categories.length ?? 0;
@@ -39,6 +44,14 @@ export function KainUiSettingsSection({
   const scaffoldPrimitiveCount = scaffold?.primitives.length ?? 0;
   const scaffoldTokenCount = scaffold?.tokens.length ?? 0;
   const scaffoldActionCount = scaffold?.actions.length ?? 0;
+  const latticeStatus = latticeCatalog ? "live" : "offline";
+  const latticePackageCount = latticeCatalog?.packages.length ?? 0;
+  const latticePrimitiveCount = latticeCatalog?.primitives.length ?? 0;
+  const latticeHostObjectCount = latticeCatalog?.hostObjects.length ?? 0;
+  const latticeImportCount = latticeCatalog?.imports.length ?? 0;
+  const nextLatticeMilestone = latticeCatalog?.milestones.find((milestone) => milestone.status === "next")
+    ?? latticeCatalog?.milestones[0]
+    ?? null;
   const previewSurface = scaffold?.surfaces[0] ?? null;
   const nextPipeline = manifest?.pipelines.find((pipeline) => pipeline.status === "next")
     ?? manifest?.pipelines[0]
@@ -54,6 +67,9 @@ export function KainUiSettingsSection({
       data-kain-ui-scaffold-proof={scaffoldStatus}
       data-kain-ui-scaffold-surfaces={scaffoldSurfaceCount}
       data-kain-ui-scaffold-primitives={scaffoldPrimitiveCount}
+      data-kain-lattice-proof={latticeStatus}
+      data-kain-lattice-packages={latticePackageCount}
+      data-kain-lattice-host-objects={latticeHostObjectCount}
     >
       <SettingsSectionBlock
         title="Kain UI"
@@ -138,6 +154,35 @@ export function KainUiSettingsSection({
         <div className="mt-3">
           <KainUiRenderer surface={previewSurface} />
         </div>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Kain Lattice"
+        subtitle={latticeCatalog?.summary ?? latticeCatalogError ?? "Waiting for greeblefs.lattice.catalog"}
+        badges={[latticeCatalog ? "QML-like" : "No Catalog", `${latticePackageCount} packages`]}
+      >
+        <SettingsRowGroup>
+          <SettingsRow
+            title="System"
+            description={latticeCatalog ? `${latticeCatalog.name} | ${latticeCatalog.packageRoot}` : "Kain Lattice catalog pending"}
+            control={<SettingsStatusPill active={Boolean(latticeCatalog)}>{latticeCatalog ? "live" : "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Vocabulary"
+            description={`${latticePrimitiveCount} primitives | ${latticeImportCount} imports | ${latticeHostObjectCount} host objects`}
+            control={<SettingsStatusPill active={latticePrimitiveCount > 0}>{latticePrimitiveCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Package"
+            description={latticeCatalog?.packages[0] ? `${latticeCatalog.packages[0].title}: ${latticeCatalog.packages[0].summary}` : "No Lattice packages reported"}
+            control={<SettingsStatusPill active={latticePackageCount > 0}>{latticePackageCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Next"
+            description={nextLatticeMilestone ? `${nextLatticeMilestone.label}: ${nextLatticeMilestone.summary}` : "No Lattice milestone reported"}
+            control={<SettingsStatusPill active={nextLatticeMilestone?.status === "next"}>{nextLatticeMilestone?.status ?? "pending"}</SettingsStatusPill>}
+          />
+        </SettingsRowGroup>
       </SettingsSectionBlock>
     </div>
   );

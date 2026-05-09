@@ -1,3 +1,25 @@
+# 2026-05-08 - Kain Lattice QML-Like Authoring First Pass
+
+- Added Kain Lattice as the named QML-like authoring lane for GreebleFS UI systems.
+  - `src-kain/app/main.kn` now dispatches `greeblefs.lattice.catalog` beside the UI graph, semantic scaffold, and app manifest lanes.
+  - `src-kain/stdlib/greeblefs/lattice.kn` defines the first reusable Kain vocabulary for packages, imports, surfaces, host models, permissions, components, properties, bindings, signals, and actions.
+  - `src-kain/lattice/greeblefs-shell-control/` is the first reference Lattice package: a KCM-style settings module/app shell-control proof inspired by Plasma/QML package architecture.
+  - `src/runtime/kainLatticeCatalog.ts` normalizes the catalog, while `App.tsx`, `panelRegistry.tsx`, `SettingsPage.tsx`, and `KainUiSettingsSection.tsx` load/pass/render the catalog in Settings > Kain UI.
+  - `src-kain/README.md` and `src-kain/lattice/README.md` document the Lattice model for future agents.
+- Durable design rule:
+  - Treat Kain Lattice as the declarative authoring contract, not a direct QML clone. Plasma is the reference architecture: packages, components, host models, bindings, config modules, and applets. Kain owns the authored shape; GreebleFS/Tauron own trusted rendering, host calls, permissions, and native reflection.
+- Current proof hooks:
+  - MCP/live-app checks should assert `data-kain-lattice-proof`, `data-kain-lattice-packages`, and `data-kain-lattice-host-objects` on Settings > Kain UI after reloading the resident Kain runtime.
+- Validation:
+  - Passed: staged Kain bridge smoke for `greeblefs.lattice.catalog` and `greeblefs.kain.manifest` via Node stdin to avoid PowerShell native-pipe escaping issues.
+  - Passed: `D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\src-kain\lattice\greeblefs-shell-control\main.kn`.
+  - Passed: `bunx vitest run src/test/kainManifest.test.ts src/test/kainUiScaffold.test.ts src/test/kainLatticeCatalog.test.ts src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`.
+  - Passed: GreebleFS MCP native-CDP app proof in Settings > Kain UI after `plugin:kain|reload`: `data-kain-lattice-proof="live"`, `data-kain-lattice-packages="1"`, `data-kain-lattice-host-objects="5"`, manifest capability count `10`, scaffold proof `live`. Screenshot: `D:/GreebleFS/MCP/.state/screenshots/kain-lattice-proof.png`.
+  - Not clean: filtered repo `tsc` still reports existing baseline errors in `src/App.tsx`, `src-mobile/App.tsx`, and `src/windows/PickerWindowApp.tsx`; no Kain Lattice-specific diagnostics appeared.
+  - Not clean: `git diff --check` still reports pre-existing trailing whitespace in dirty `src/generated/tauri.ts`.
+- Next recommended step:
+  - Turn `greeblefs.lattice.shell-control` into a real rendered KCM-style Settings module by converting its component/render document into the existing semantic scaffold IR, then wire the first host action (`kain.ui.reload`) through Tauron's Kain bridge reload call.
+
 # 2026-05-08 - Kain Semantic UI Scaffold First Pass
 
 - Added the first Kain-authored semantic UI scaffold lane without replacing existing React surfaces.
