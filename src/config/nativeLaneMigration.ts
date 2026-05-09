@@ -16,7 +16,7 @@ export type GreebleNativeLaneSystemId =
 export interface GreebleNativeLaneFeatureFlags {
   thumbnailGenerationNativeBufferPool: boolean;
   previewByteReadsNativeBufferPool: boolean;
-  directoryListingNativeControl: boolean;
+  directoryListingNativeBufferPool: boolean;
   searchResultsNativeRing: boolean;
   taskOutputNativeRing: boolean;
   terminalOutputNativeRingComparison: boolean;
@@ -50,7 +50,7 @@ export interface GreebleNativeLaneSelection {
 export const DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS: GreebleNativeLaneFeatureFlags = Object.freeze({
   thumbnailGenerationNativeBufferPool: false,
   previewByteReadsNativeBufferPool: false,
-  directoryListingNativeControl: false,
+  directoryListingNativeBufferPool: false,
   searchResultsNativeRing: false,
   taskOutputNativeRing: false,
   terminalOutputNativeRingComparison: false,
@@ -84,11 +84,11 @@ export const GREEBLE_NATIVE_LANE_SYSTEM_PLANS: readonly GreebleNativeLaneSystemP
   {
     systemId: "directoryListingSnapshots",
     currentLane: "invoke",
-    recommendedLane: "native_control",
+    recommendedLane: "native_buffer_pool",
     fallbackLane: "invoke",
-    featureFlag: "directoryListingNativeControl",
-    requiredCapability: "nativeControl",
-    migrationState: "leave-on-invoke",
+    featureFlag: "directoryListingNativeBufferPool",
+    requiredCapability: "nativeBufferPool",
+    migrationState: "candidate",
   },
   {
     systemId: "searchResultStreams",

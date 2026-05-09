@@ -13,7 +13,7 @@ describe("native lane migration planning", () => {
     expect(DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS).toEqual({
       thumbnailGenerationNativeBufferPool: false,
       previewByteReadsNativeBufferPool: false,
-      directoryListingNativeControl: false,
+      directoryListingNativeBufferPool: false,
       searchResultsNativeRing: false,
       taskOutputNativeRing: false,
       terminalOutputNativeRingComparison: false,
@@ -62,6 +62,26 @@ describe("native lane migration planning", () => {
     });
   });
 
+  it("treats directory listing snapshots as shared-buffer payload candidates", () => {
+    const selected = resolveGreebleNativeLaneSelection(
+      "directoryListingSnapshots",
+      { directoryListingNativeBufferPool: true },
+      { nativeBufferPool: true },
+    );
+
+    expect(selected).toMatchObject({
+      activeLane: "native_buffer_pool",
+      recommendedLane: "native_buffer_pool",
+      fallbackLane: "invoke",
+      nativeRequested: true,
+      nativeAvailable: true,
+    });
+    expect(getGreebleNativeLaneSystemPlan("directoryListingSnapshots")).toMatchObject({
+      migrationState: "candidate",
+      requiredCapability: "nativeBufferPool",
+    });
+  });
+
   it("keeps terminal output marked as comparison-only", () => {
     expect(getGreebleNativeLaneSystemPlan("terminalOutputComparison")).toMatchObject({
       recommendedLane: "native_ring",
@@ -73,7 +93,7 @@ describe("native lane migration planning", () => {
   it.each([
     ["thumbnailGeneration", "thumbnailGenerationNativeBufferPool"],
     ["previewByteReads", "previewByteReadsNativeBufferPool"],
-    ["directoryListingSnapshots", "directoryListingNativeControl"],
+    ["directoryListingSnapshots", "directoryListingNativeBufferPool"],
     ["searchResultStreams", "searchResultsNativeRing"],
     ["taskOutputStreams", "taskOutputNativeRing"],
     ["terminalOutputComparison", "terminalOutputNativeRingComparison"],
