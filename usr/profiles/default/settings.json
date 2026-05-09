@@ -7,7 +7,7 @@
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "monokai",
+    "activeThemeId": "github-dark",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.7499999999999998,
+    "appZoom": 0.7999999999999998,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -2250,7 +2250,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "list"
+    "viewMode": "details"
   },
   "home": {
     "activePackId": null,
@@ -2647,6 +2647,6 @@
     "showSidebar": false,
     "windowMode": "windowed",
     "windowedHeight": 936,
-    "windowedWidth": 800
+    "windowedWidth": 1683
   }
 }
