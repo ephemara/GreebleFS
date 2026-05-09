@@ -33,7 +33,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Vite/Vitest Tauron API boundary: `vite.shared.ts` owns the `@tauri-apps/api/*` aliases into `D:/tauron/packages/api/dist`, `tsconfig.json` mirrors those aliases for editor/typecheck resolution, and desktop/browser Vite configs must allow that sibling dist path through `server.fs.allow` because the file dependency resolves outside the repo root.
 - Python runtime: managed virtualenv + persistent stdio JSON sidecar + embedded `pyo3` helpers
 - Visual system: CSS variables, theme bundles, appearance packs, icon themes, top bars, shaders, animations
-- Tests: Vitest unit/browser, Rust tests
+- Validation: Vitest only for pure logic/config/store seams, Tauron UI runner proofs for fast real-WebView fixture-host UI flows, MCP/WebView2 proofs for native app truth, plus Rust tests/checks.
 
 ## Main Entry Points
 
@@ -43,6 +43,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Dev-only frontend automation bridge mounted at `window.__GREEBLEFS_DEV_MCP__`. It retains console/error history, exposes semantic UI snapshots, visible DOM node bounds/color metadata, resolved theme variables, explorer-performance summaries, usr-profile snapshots, and selected host/runtime seams. It also mirrors console/error records into Tauron's dev observatory event ring when that native-control surface is available. This bridge must stay browser-safe enough to light up on a fallback browser attach, but it is no longer the only host lane: external MCP automation now prefers the native dev automation server for host schema, host calls, telemetry, usr-profile snapshots, and host-event access, using the bridge primarily for DOM/UI semantics and as a browser-safe fallback when the real Tauri host is unavailable.
 - `MCP/greeblefs-dev-mcp/`
   Standalone dev automation subsystem for agents and MCP clients. `src/index.ts` is the public MCP server, `src/smoke.ts` is the runtime proof harness, `src/runtime/greeblefsAutomationRuntime.ts` owns attach/status/workspace automation plus startup-phase classification, native dev-automation RPC, live host-event subscriptions, typed host-tool generation from the runtime schema, and sessionful Streamable HTTP MCP transport, while `src/runtime/windowsDesktopWindowCapture.ts` is the Windows-native fallback for enumerating/capturing real desktop `greeblefs.exe` windows when WebView/CDP attach is unavailable or the app has not created its first WebView yet. The package uses Node + `tsx` for runtime execution because Playwright/CDP attachment is reliable there on this Windows host, while Bun remains fine for install and TypeScript validation.
+- `scripts/run-tauron-ui-proof.mjs`, `proofs/ui-runner/`, `src/proofs/ui-runner/`, and `scripts/proofs/fixtures/`
+  Fast UI proof lane that avoids `bun run tauri dev`, Chrome, Playwright, and Rust app compilation. It starts a Vite server with HMR disabled, launches the sibling Tauron `tauron-ui-runner` Wry/WebView executable, injects a JSON fixture host through `window.__TAURON_UI_RUNNER__`, and scripts real DOM flows through the runner's loopback `/eval` RPC. `bun run proof:ui` runs the fast smoke fixture host (`openFolders.currentFolder` and `openFiles.notesTxt`) against `scripts/proofs/fixtures/greeblefs-ui-runner.explorer.json`; `bun run proof:ui:explorer` targets the heavier FileExplorer repository-picker proof entry for future full Explorer coverage. Keep proof HTML under `proofs/ui-runner/` rather than `public/` so Vite transforms React preamble correctly, and keep generated proof evidence under `automations/**/evidence/` ignored.
 - `src-tauri/src/dev_observatory.rs`
   GreebleFS opt-in layer for Tauron's dev observatory. It initializes the dev-only loopback/session server, exposes backend log files, and registers the `greeblefs.runtime` provider with telemetry-manager, native-task-graph, preview-streaming, GPU, and native-lane summary data. In dev mode, press `Ctrl+Shift+F12` while the app window is focused, or launch `D:/tauron/packages/dev-observatory/server.mjs` against the session file directly.
 - `vite.mobile.config.ts`, `src-mobile/main.tsx`, `src-mobile/App.tsx`, `src-mobile/mobileApi.ts`, and `src-mobile/mobileStore.ts`
@@ -895,6 +897,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
 - `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
 - `bun run test:browser`
+- `bun run proof:ui`
+- `bun run proof:ui:explorer`
 - `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
 - `bun run mcp:doctor`
 - `bun run mcp:smoke`

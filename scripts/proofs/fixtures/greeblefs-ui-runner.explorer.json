@@ -1,0 +1,48 @@
+{
+  "homeDir": "C:\\workspace\\repo",
+  "runtimeCachePolicy": {
+    "dirListCacheTtlMs": 2000,
+    "searchNameIndexCacheTtlMs": 1500,
+    "searchContentIndexCacheTtlMs": 1000,
+    "entrySizeCacheTtlMs": 10000,
+    "searchContentIndexTotalBytesBudget": 12582912,
+    "maxSearchContentFileBytes": 8388608,
+    "searchMaxIndexedEntries": 25000,
+    "entrySizeScanBudgetMs": 900
+  },
+  "drives": [],
+  "directories": {
+    "C:\\workspace\\repo": [
+      {
+        "name": "alpha",
+        "path": "C:\\workspace\\repo\\alpha",
+        "is_dir": true,
+        "size": 0,
+        "modified": 0,
+        "extension": "",
+        "is_hidden": false,
+        "is_symlink": false
+      },
+      {
+        "name": "nested",
+        "path": "C:\\workspace\\repo\\nested",
+        "is_dir": true,
+        "size": 0,
+        "modified": 0,
+        "extension": "",
+        "is_hidden": false,
+        "is_symlink": false
+      },
+      {
+        "name": "notes.txt",
+        "path": "C:\\workspace\\repo\\notes.txt",
+        "is_dir": false,
+        "size": 12,
+        "modified": 0,
+        "extension": "txt",
+        "is_hidden": false,
+        "is_symlink": false
+      }
+    ]
+  }
+}

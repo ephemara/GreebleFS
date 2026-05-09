@@ -18,6 +18,22 @@
 - Current repo state note:
   - Pre-existing dirty files remain unrelated and should stay out of this lane commit unless the user explicitly asks: `public/icons/shortcut_arrow.svg`, `src/generated/tauri.ts`, deleted `usr/kain-ui/main.kn`, `usr/profiles/default/settings.json`, and untracked `src-tauri/src/fs.kn`.
 
+# 2026-05-09 - Tauron UI Runner Proof Lane
+
+- Added the first non-Chrome, non-`tauri dev` UI proof path for GreebleFS.
+  - `bun run proof:ui` runs `scripts/run-tauron-ui-proof.mjs`, starts a Vite proof server with HMR disabled, launches `D:/tauron/crates/tauron-ui-runner`, injects `scripts/proofs/fixtures/greeblefs-ui-runner.explorer.json`, and scripts a real Wry/WebView React fixture flow through the runner RPC.
+  - The smoke page lives at `proofs/ui-runner/fixture-host-smoke.html` with React code in `src/proofs/ui-runner/fixtureHostSmoke.page.tsx`; proof HTML must stay outside `public/` or Vite skips the React preamble transform.
+  - `src/proofs/ui-runner/mocks/*` is the fixture host adapter for the smoke lane. It implements the Tauri API seams the proof needs and reads fixture data from `window.__TAURON_UI_RUNNER__.fixture`.
+  - `bun run proof:ui:explorer` is wired as the heavier future FileExplorer lane through `proofs/ui-runner/fileExplorer.repositoryPicker.html`, but the fast smoke is the reliable first vertical slice.
+- Durable validation rule:
+  - Treat Vitest as useful only for pure logic/config/store seams. User-facing UI flow confidence should come from `proof:ui` for fixture-backed real WebView behavior and MCP/native proofs for real host behavior.
+- Validation:
+  - Passed: `cargo check -p tauron-ui-runner` in `D:/tauron` with isolated `CARGO_TARGET_DIR`.
+  - Passed: `node --check scripts/run-tauron-ui-proof.mjs`.
+  - Passed: `bun run proof:ui`.
+- Current risk:
+  - The first Vite/WebView cold start is still slower than the target loop. Next optimization should prewarm or prebundle the smoke entry without reintroducing HMR/optimizer cache locks, then promote more real Explorer surfaces into fixture-backed runner suites.
+
 # 2026-05-09 - Tauron Dev Observatory Integration
 
 - Wired GreebleFS into Tauron's new standalone dev observatory.
