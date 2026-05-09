@@ -61,7 +61,7 @@
     "showGrid": true
   },
   "system": {
-    "accelerationRoutingMode": "preferCuda",
+    "accelerationRoutingMode": "preferNative",
     "consumerDiagnosticsEnabled": false,
     "consumerDiagnosticsIncludePerfSamples": true,
     "consumerDiagnosticsIncludePluginRuntime": true,

@@ -1,0 +1,323 @@
+{
+  "input_path": "D:\\GreebleFS\\src-tauri",
+  "output_path": "D:\\GreebleFS\\src-tauri\\src_tauri_all_flat.kn",
+  "target": null,
+  "recursive": true,
+  "flat": true,
+  "include_filters": [],
+  "exclude_filters": [
+    "target"
+  ],
+  "discovered_files": 202,
+  "imported_files": 123,
+  "skipped_files": 79,
+  "failed_files": [],
+  "lossy_diagnostics": [
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\audio_engine.rs",
+      "module_path": "src::audio_engine",
+      "diagnostics": [
+        "dyn trait object lowered to impl symphonia::core::formats::FormatReader (dynamic dispatch / vtable semantics erased)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\global_search\\mod.rs",
+      "module_path": "src::global_search",
+      "diagnostics": [
+        "mod ignore; external module declaration (directory import should load ignore.rs or ignore/mod.rs separately)",
+        "mod index; external module declaration (directory import should load index.rs or index/mod.rs separately)",
+        "mod query; external module declaration (directory import should load query.rs or query/mod.rs separately)",
+        "mod scan; external module declaration (directory import should load scan.rs or scan/mod.rs separately)",
+        "mod scoring; external module declaration (directory import should load scoring.rs or scoring/mod.rs separately)",
+        "mod state; external module declaration (directory import should load state.rs or state/mod.rs separately)",
+        "mod types; external module declaration (directory import should load types.rs or types/mod.rs separately)",
+        "mod utils; external module declaration (directory import should load utils.rs or utils/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\global_search\\query.rs",
+      "module_path": "src::global_search::query",
+      "diagnostics": [
+        "dyn trait object lowered to impl Query (dynamic dispatch / vtable semantics erased)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\gpu_runtime\\mod.rs",
+      "module_path": "src::gpu_runtime",
+      "diagnostics": [
+        "mod capabilities; external module declaration (directory import should load capabilities.rs or capabilities/mod.rs separately)",
+        "mod registry; external module declaration (directory import should load registry.rs or registry/mod.rs separately)",
+        "mod resources; external module declaration (directory import should load resources.rs or resources/mod.rs separately)",
+        "mod scheduler; external module declaration (directory import should load scheduler.rs or scheduler/mod.rs separately)",
+        "mod workloads; external module declaration (directory import should load workloads.rs or workloads/mod.rs separately)",
+        "mod types; external module declaration (directory import should load types.rs or types/mod.rs separately)",
+        "impl method execute_workload where-clause skipped"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\gpu_runtime\\workloads\\mod.rs",
+      "module_path": "src::gpu_runtime::workloads",
+      "diagnostics": [
+        "mod audio_visuals; external module declaration (directory import should load audio_visuals.rs or audio_visuals/mod.rs separately)",
+        "mod image_preview; external module declaration (directory import should load image_preview.rs or image_preview/mod.rs separately)",
+        "mod thumbnail; external module declaration (directory import should load thumbnail.rs or thumbnail/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\ipc_runtime\\mod.rs",
+      "module_path": "src::ipc_runtime",
+      "diagnostics": [
+        "mod artifacts; external module declaration (directory import should load artifacts.rs or artifacts/mod.rs separately)",
+        "mod binary; external module declaration (directory import should load binary.rs or binary/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\ipc_runtime\\streams.rs",
+      "module_path": "src::ipc_runtime::streams",
+      "diagnostics": [
+        "impl method publish_packet where-clause skipped"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\lan_share.rs",
+      "module_path": "src::lan_share",
+      "diagnostics": [
+        "mod commands; external module declaration (directory import should load commands.rs or commands/mod.rs separately)",
+        "mod handlers; external module declaration (directory import should load handlers.rs or handlers/mod.rs separately)",
+        "mod mdns; external module declaration (directory import should load mdns.rs or mdns/mod.rs separately)",
+        "mod mobile; external module declaration (directory import should load mobile.rs or mobile/mod.rs separately)",
+        "mod mobile_plugins; external module declaration (directory import should load mobile_plugins.rs or mobile_plugins/mod.rs separately)",
+        "mod network; external module declaration (directory import should load network.rs or network/mod.rs separately)",
+        "mod push; external module declaration (directory import should load push.rs or push/mod.rs separately)",
+        "mod server; external module declaration (directory import should load server.rs or server/mod.rs separately)",
+        "mod streaming; external module declaration (directory import should load streaming.rs or streaming/mod.rs separately)",
+        "mod tls; external module declaration (directory import should load tls.rs or tls/mod.rs separately)",
+        "mod types; external module declaration (directory import should load types.rs or types/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\lib.rs",
+      "module_path": null,
+      "diagnostics": [
+        "mod acceleration_runtime; external module declaration (directory import should load acceleration_runtime.rs or acceleration_runtime/mod.rs separately)",
+        "mod action_commands; external module declaration (directory import should load action_commands.rs or action_commands/mod.rs separately)",
+        "mod archive_ops; external module declaration (directory import should load archive_ops.rs or archive_ops/mod.rs separately)",
+        "mod audio_commands; external module declaration (directory import should load audio_commands.rs or audio_commands/mod.rs separately)",
+        "mod audio_engine; external module declaration (directory import should load audio_engine.rs or audio_engine/mod.rs separately)",
+        "mod cloud_commands; external module declaration (directory import should load cloud_commands.rs or cloud_commands/mod.rs separately)",
+        "mod desktop_integration; external module declaration (directory import should load desktop_integration.rs or desktop_integration/mod.rs separately)",
+        "mod dev_mcp_native_automation; external module declaration (directory import should load dev_mcp_native_automation.rs or dev_mcp_native_automation/mod.rs separately)",
+        "mod dev_observatory; external module declaration (directory import should load dev_observatory.rs or dev_observatory/mod.rs separately)",
+        "mod domain_commands; external module declaration (directory import should load domain_commands.rs or domain_commands/mod.rs separately)",
+        "mod entry_size_cache; external module declaration (directory import should load entry_size_cache.rs or entry_size_cache/mod.rs separately)",
+        "mod explorer_identity; external module declaration (directory import should load explorer_identity.rs or explorer_identity/mod.rs separately)",
+        "mod explorer_path_key; external module declaration (directory import should load explorer_path_key.rs or explorer_path_key/mod.rs separately)",
+        "mod explorer_pro_commands; external module declaration (directory import should load explorer_pro_commands.rs or explorer_pro_commands/mod.rs separately)",
+        "mod fs_commands; external module declaration (directory import should load fs_commands.rs or fs_commands/mod.rs separately)",
+        "mod global_search; external module declaration (directory import should load global_search.rs or global_search/mod.rs separately)",
+        "mod gpu_runtime; external module declaration (directory import should load gpu_runtime.rs or gpu_runtime/mod.rs separately)",
+        "mod image_commands; external module declaration (directory import should load image_commands.rs or image_commands/mod.rs separately)",
+        "mod image_cutout_commands; external module declaration (directory import should load image_cutout_commands.rs or image_cutout_commands/mod.rs separately)",
+        "mod ipc_runtime; external module declaration (directory import should load ipc_runtime.rs or ipc_runtime/mod.rs separately)",
+        "mod lan_share; external module declaration (directory import should load lan_share.rs or lan_share/mod.rs separately)",
+        "mod linux_graphics; external module declaration (directory import should load linux_graphics.rs or linux_graphics/mod.rs separately)",
+        "mod message_ring; external module declaration (directory import should load message_ring.rs or message_ring/mod.rs separately)",
+        "mod native_pool_snapshots; external module declaration (directory import should load native_pool_snapshots.rs or native_pool_snapshots/mod.rs separately)",
+        "mod native_task_graph; external module declaration (directory import should load native_task_graph.rs or native_task_graph/mod.rs separately)",
+        "mod native_terminal; external module declaration (directory import should load native_terminal.rs or native_terminal/mod.rs separately)",
+        "mod open_with; external module declaration (directory import should load open_with.rs or open_with/mod.rs separately)",
+        "mod pdf_commands; external module declaration (directory import should load pdf_commands.rs or pdf_commands/mod.rs separately)",
+        "mod plugin_commands; external module declaration (directory import should load plugin_commands.rs or plugin_commands/mod.rs separately)",
+        "mod preview_streaming; external module declaration (directory import should load preview_streaming.rs or preview_streaming/mod.rs separately)",
+        "mod python_commands; external module declaration (directory import should load python_commands.rs or python_commands/mod.rs separately)",
+        "mod python_pyo3; external module declaration (directory import should load python_pyo3.rs or python_pyo3/mod.rs separately)",
+        "mod python_sidecar; external module declaration (directory import should load python_sidecar.rs or python_sidecar/mod.rs separately)",
+        "mod remote_storage_commands; external module declaration (directory import should load remote_storage_commands.rs or remote_storage_commands/mod.rs separately)",
+        "mod runtime_pipeline; external module declaration (directory import should load runtime_pipeline.rs or runtime_pipeline/mod.rs separately)",
+        "mod screenshot_commands; external module declaration (directory import should load screenshot_commands.rs or screenshot_commands/mod.rs separately)",
+        "mod secondary_windows; external module declaration (directory import should load secondary_windows.rs or secondary_windows/mod.rs separately)",
+        "mod semantic_search; external module declaration (directory import should load semantic_search.rs or semantic_search/mod.rs separately)",
+        "mod shader_preview_commands; external module declaration (directory import should load shader_preview_commands.rs or shader_preview_commands/mod.rs separately)",
+        "mod share_commands; external module declaration (directory import should load share_commands.rs or share_commands/mod.rs separately)",
+        "mod specta_bindings; external module declaration (directory import should load specta_bindings.rs or specta_bindings/mod.rs separately)",
+        "mod sqlite_commands; external module declaration (directory import should load sqlite_commands.rs or sqlite_commands/mod.rs separately)",
+        "mod startup_commands; external module declaration (directory import should load startup_commands.rs or startup_commands/mod.rs separately)",
+        "mod storage_commands; external module declaration (directory import should load storage_commands.rs or storage_commands/mod.rs separately)",
+        "mod system_tray; external module declaration (directory import should load system_tray.rs or system_tray/mod.rs separately)",
+        "mod tailscale_commands; external module declaration (directory import should load tailscale_commands.rs or tailscale_commands/mod.rs separately)",
+        "mod telemetry; external module declaration (directory import should load telemetry.rs or telemetry/mod.rs separately)",
+        "mod terminal; external module declaration (directory import should load terminal.rs or terminal/mod.rs separately)",
+        "mod thumbnail_commands; external module declaration (directory import should load thumbnail_commands.rs or thumbnail_commands/mod.rs separately)",
+        "mod url_drop; external module declaration (directory import should load url_drop.rs or url_drop/mod.rs separately)",
+        "mod usr; external module declaration (directory import should load usr.rs or usr/mod.rs separately)",
+        "mod usr_profiles; external module declaration (directory import should load usr_profiles.rs or usr_profiles/mod.rs separately)",
+        "mod video_commands; external module declaration (directory import should load video_commands.rs or video_commands/mod.rs separately)",
+        "mod video_engine; external module declaration (directory import should load video_engine.rs or video_engine/mod.rs separately)",
+        "mod volume_inventory; external module declaration (directory import should load volume_inventory.rs or volume_inventory/mod.rs separately)",
+        "mod vst_commands; external module declaration (directory import should load vst_commands.rs or vst_commands/mod.rs separately)",
+        "mod vst_host_runtime; external module declaration (directory import should load vst_host_runtime.rs or vst_host_runtime/mod.rs separately)",
+        "mod wayland_dock; external module declaration (directory import should load wayland_dock.rs or wayland_dock/mod.rs separately)",
+        "mod window_commands; external module declaration (directory import should load window_commands.rs or window_commands/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\native_task_graph.rs",
+      "module_path": "src::native_task_graph",
+      "diagnostics": [
+        "impl method submit_blocking where-clause skipped",
+        "impl method submit_async where-clause skipped",
+        "impl method enqueue where-clause skipped",
+        "dyn trait object lowered to impl Future (dynamic dispatch / vtable semantics erased)",
+        "dyn trait object lowered to impl FnOnce (dynamic dispatch / vtable semantics erased)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\open_with\\linux\\mod.rs",
+      "module_path": "src::open_with::linux",
+      "diagnostics": [
+        "mod desktop; external module declaration (directory import should load desktop.rs or desktop/mod.rs separately)",
+        "mod mime; external module declaration (directory import should load mime.rs or mime/mod.rs separately)",
+        "mod open; external module declaration (directory import should load open.rs or open/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\open_with\\mod.rs",
+      "module_path": "src::open_with",
+      "diagnostics": [
+        "mod types; external module declaration (directory import should load types.rs or types/mod.rs separately)",
+        "mod utils; external module declaration (directory import should load utils.rs or utils/mod.rs separately)",
+        "mod windows; external module declaration (directory import should load windows.rs or windows/mod.rs separately)",
+        "mod linux; external module declaration (directory import should load linux.rs or linux/mod.rs separately)",
+        "mod macos; external module declaration (directory import should load macos.rs or macos/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\open_with\\windows\\mod.rs",
+      "module_path": "src::open_with::windows",
+      "diagnostics": [
+        "mod associated_programs; external module declaration (directory import should load associated_programs.rs or associated_programs/mod.rs separately)",
+        "mod shell_menu; external module declaration (directory import should load shell_menu.rs or shell_menu/mod.rs separately)",
+        "mod utils; external module declaration (directory import should load utils.rs or utils/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\remote_storage_commands.rs",
+      "module_path": "src::remote_storage_commands",
+      "diagnostics": [
+        "impl associated type Error skipped"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\runtime_pipeline\\extension_host.rs",
+      "module_path": "src::runtime_pipeline::extension_host",
+      "diagnostics": [
+        "type placeholder `_` in expression position erased"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\runtime_pipeline\\host_events.rs",
+      "module_path": "src::runtime_pipeline::host_events",
+      "diagnostics": [
+        "dyn trait object lowered to impl Fn (dynamic dispatch / vtable semantics erased)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\runtime_pipeline\\manifest.rs",
+      "module_path": "src::runtime_pipeline::manifest",
+      "diagnostics": [
+        "impl associated const FILE_NAME skipped"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\runtime_pipeline\\mod.rs",
+      "module_path": "src::runtime_pipeline",
+      "diagnostics": [
+        "mod cache; external module declaration (directory import should load cache.rs or cache/mod.rs separately)",
+        "mod command_runtime; external module declaration (directory import should load command_runtime.rs or command_runtime/mod.rs separately)",
+        "mod commands; external module declaration (directory import should load commands.rs or commands/mod.rs separately)",
+        "mod discovery; external module declaration (directory import should load discovery.rs or discovery/mod.rs separately)",
+        "mod driver; external module declaration (directory import should load driver.rs or driver/mod.rs separately)",
+        "mod extension_host; external module declaration (directory import should load extension_host.rs or extension_host/mod.rs separately)",
+        "mod host_events; external module declaration (directory import should load host_events.rs or host_events/mod.rs separately)",
+        "mod manifest; external module declaration (directory import should load manifest.rs or manifest/mod.rs separately)",
+        "mod registry; external module declaration (directory import should load registry.rs or registry/mod.rs separately)",
+        "mod sidecar; external module declaration (directory import should load sidecar.rs or sidecar/mod.rs separately)",
+        "mod toolchain; external module declaration (directory import should load toolchain.rs or toolchain/mod.rs separately)",
+        "mod tui; external module declaration (directory import should load tui.rs or tui/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\runtime_pipeline_test_stub.rs",
+      "module_path": "src::runtime_pipeline_test_stub",
+      "diagnostics": [
+        "mod cache; external module declaration (directory import should load cache.rs or cache/mod.rs separately)",
+        "mod extension_host; external module declaration (directory import should load extension_host.rs or extension_host/mod.rs separately)",
+        "mod host_events; external module declaration (directory import should load host_events.rs or host_events/mod.rs separately)",
+        "mod manifest; external module declaration (directory import should load manifest.rs or manifest/mod.rs separately)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\system_tray.rs",
+      "module_path": "src::system_tray",
+      "diagnostics": [
+        "dyn trait object lowered to impl IsMenuItem (dynamic dispatch / vtable semantics erased)"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    },
+    {
+      "file": "D:\\GreebleFS\\src-tauri\\src\\terminal.rs",
+      "module_path": "src::terminal",
+      "diagnostics": [
+        "dyn trait object lowered to impl MasterPty (dynamic dispatch / vtable semantics erased)",
+        "dyn trait object lowered to impl Write (dynamic dispatch / vtable semantics erased)",
+        "dyn trait object lowered to impl Child (dynamic dispatch / vtable semantics erased)",
+        "impl method enqueue_pending_command_echoes where-clause skipped"
+      ],
+      "diagnostic_classes": {},
+      "repair_hint": "search these class markers in the generated .kn or import report; they point at the lowered seam"
+    }
+  ],
+  "diagnostics_by_class": {},
+  "generated_kain_path": "D:\\GreebleFS\\src-tauri\\src_tauri_all_flat.kn",
+  "compiled_output_path": null,
+  "generated_at_utc": "2026-05-09T04:20:59.070579900+00:00"
+}

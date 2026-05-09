@@ -2222,7 +2222,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.18,
+    "gridZoom": 0.12,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2243,14 +2243,14 @@
       "enableVideoHoverScrub": true,
       "enabled": true,
       "includeAudio": true,
-      "includeCode": true,
+      "includeCode": false,
       "includeImages": true,
       "includeModels": true,
       "includeShaders": true,
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "details"
+    "viewMode": "list"
   },
   "home": {
     "activePackId": null,
@@ -2373,7 +2373,7 @@
         ]
       },
       "overlay-classic": {
-        "activePanelId": "storage",
+        "activePanelId": "settings",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",
