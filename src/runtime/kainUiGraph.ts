@@ -1,8 +1,10 @@
 import { callKainTauronBridge } from "./kainTauronBridge";
 
 export interface KainUiThemeGraph {
+  selectionMode?: string;
   activeThemeId?: string;
   activeDockThemeId?: string;
+  recommendedThemeId?: string;
   activeAppearancePackId?: string;
   activeThemeRecipeId?: string;
   activeThemeEngineId?: string;
@@ -14,6 +16,18 @@ export interface KainUiThemeGraph {
   appZoom?: number;
   blurStrengthPx?: number;
   source?: string;
+  authoredThemes?: KainUiAuthoredThemeGraph[];
+}
+
+export interface KainUiAuthoredThemeGraph {
+  id: string;
+  name: string;
+  description?: string;
+  source?: string;
+  compatibilityThemeId?: string;
+  compatibilityBundlePath?: string;
+  status?: string;
+  selectable: boolean;
 }
 
 export interface KainUiChromeGraph {
@@ -102,9 +116,36 @@ function stringList(value: unknown): string[] {
 
 function normalizeThemeGraph(value: unknown): KainUiThemeGraph {
   const source = asObject(value) ?? {};
+  const authoredThemes: KainUiAuthoredThemeGraph[] = Array.isArray(source.authoredThemes)
+    ? source.authoredThemes.reduce<KainUiAuthoredThemeGraph[]>((themes, theme) => {
+        const themeObject = asObject(theme);
+        if (!themeObject) {
+          return themes;
+        }
+        const id = stringValue(themeObject.id);
+        const name = stringValue(themeObject.name);
+        if (!id || !name) {
+          return themes;
+        }
+        themes.push({
+          id,
+          name,
+          description: stringValue(themeObject.description),
+          source: stringValue(themeObject.source),
+          compatibilityThemeId: stringValue(themeObject.compatibilityThemeId),
+          compatibilityBundlePath: stringValue(themeObject.compatibilityBundlePath),
+          status: stringValue(themeObject.status),
+          selectable: booleanValue(themeObject.selectable) ?? true,
+        });
+        return themes;
+      }, [])
+    : [];
+
   return {
+    selectionMode: stringValue(source.selectionMode),
     activeThemeId: stringValue(source.activeThemeId),
     activeDockThemeId: stringValue(source.activeDockThemeId),
+    recommendedThemeId: stringValue(source.recommendedThemeId),
     activeAppearancePackId: stringValue(source.activeAppearancePackId),
     activeThemeRecipeId: stringValue(source.activeThemeRecipeId),
     activeThemeEngineId: stringValue(source.activeThemeEngineId),
@@ -116,6 +157,7 @@ function normalizeThemeGraph(value: unknown): KainUiThemeGraph {
     appZoom: numberValue(source.appZoom),
     blurStrengthPx: numberValue(source.blurStrengthPx),
     source: stringValue(source.source),
+    authoredThemes,
   };
 }
 

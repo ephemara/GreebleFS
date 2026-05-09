@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { KainUiSettingsSection } from '../components/settings/sections/KainUiSettingsSection';
 import type { KainAppManifest } from '../runtime/kainManifest';
 import type { KainFfiCatalog } from '../runtime/kainFfiCatalog';
@@ -12,7 +12,20 @@ const graph: KainUiGraph = {
   kind: 'greeblefs.ui.graph',
   source: 'src-kain/app/main.kn',
   theme: {
-    activeThemeId: 'pilot-dark',
+    selectionMode: 'catalog',
+    recommendedThemeId: 'kain-ion-lattice',
+    authoredThemes: [
+      {
+        id: 'ion-lattice',
+        name: 'Ion Lattice',
+        description: 'Usr-authored Kain UI theme.',
+        source: 'usr/profiles/default/kain-ui/themes/ion-lattice/main.kn',
+        compatibilityThemeId: 'kain-ion-lattice',
+        compatibilityBundlePath: 'usr/themes/kain-ion-lattice/theme.json',
+        status: 'selectable',
+        selectable: true,
+      },
+    ],
   },
   chrome: {
     density: 'compact',
@@ -283,6 +296,7 @@ const ffiCatalog: KainFfiCatalog = {
 
 describe('KainUiSettingsSection', () => {
   it('renders live Kain manifest, UI scaffold, Lattice, and FFI proof hooks', () => {
+    const onApplyThemeSelection = vi.fn();
     const { container } = render(
       <KainUiSettingsSection
         graph={graph}
@@ -295,6 +309,8 @@ describe('KainUiSettingsSection', () => {
         latticeCatalogError={null}
         ffiCatalog={ffiCatalog}
         ffiCatalogError={null}
+        activeThemeId="pilot-dark"
+        onApplyThemeSelection={onApplyThemeSelection}
       />,
     );
 
@@ -311,14 +327,21 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-ffi-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-ffi-lanes', '2');
     expect(proof).toHaveAttribute('data-kain-ffi-python', 'sidecar-hooked');
+    expect(proof).toHaveAttribute('data-kain-authored-theme-count', '1');
+    expect(proof).toHaveAttribute('data-kain-authored-theme-selected', 'none');
     expect(screen.getByText('Kain Manifest')).toBeInTheDocument();
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
     expect(screen.getByText('Kain Lattice')).toBeInTheDocument();
     expect(screen.getByText('Kain FFI')).toBeInTheDocument();
+    expect(screen.getByText('Kain Authored Themes')).toBeInTheDocument();
+    expect(screen.getByText('Ion Lattice')).toBeInTheDocument();
     expect(screen.getByText(/QML-like Kain authoring system/)).toBeInTheDocument();
     expect(screen.getByText(/Kain-owned cross-language bridge map/)).toBeInTheDocument();
     expect(screen.getByText('Kain Authored Surface')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
     expect(screen.getAllByText(/Node FFI/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select' }));
+    expect(onApplyThemeSelection).toHaveBeenCalledWith('kain-ion-lattice');
   });
 });

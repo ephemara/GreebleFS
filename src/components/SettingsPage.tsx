@@ -15304,6 +15304,8 @@ export function SettingsPage({
             latticeCatalogError={kainLatticeCatalogError}
             ffiCatalog={kainFfiCatalog}
             ffiCatalogError={kainFfiCatalogError}
+            activeThemeId={settings.appearance.activeThemeId}
+            onApplyThemeSelection={applyThemeSelection}
           />
         )}
 

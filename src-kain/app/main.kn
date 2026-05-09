@@ -58,9 +58,35 @@ fn string_array_10(a: String, b: String, c: String, d: String, e: String, f: Str
     json_array_push(items, j)
     return items
 
+fn build_authored_theme_entry(id: String, name: String, description: String, source: String, compatibility_theme_id: String, compatibility_bundle_path: String, status: String, selectable: Bool) -> Any:
+    let theme = json_object_new()
+    json_object_set(theme, "id", id)
+    json_object_set(theme, "name", name)
+    json_object_set(theme, "description", description)
+    json_object_set(theme, "source", source)
+    json_object_set(theme, "compatibilityThemeId", compatibility_theme_id)
+    json_object_set(theme, "compatibilityBundlePath", compatibility_bundle_path)
+    json_object_set(theme, "status", status)
+    json_object_set(theme, "selectable", selectable)
+    return theme
+
 fn build_ui_theme() -> Any:
     let theme = json_object_new()
-    json_object_set(theme, "activeThemeId", "pilot-dark")
+    let authored_themes = json_array_new()
+    json_array_push(authored_themes, build_authored_theme_entry(
+        "ion-lattice",
+        "Ion Lattice",
+        "A compact usr-authored Kain UI theme that emits a normal GreebleFS theme bundle until Kain owns the renderer directly.",
+        "usr/profiles/default/kain-ui/themes/ion-lattice/main.kn",
+        "kain-ion-lattice",
+        "usr/themes/kain-ion-lattice/theme.json",
+        "selectable",
+        true
+    ))
+
+    json_object_set(theme, "selectionMode", "catalog")
+    json_object_set(theme, "recommendedThemeId", "kain-ion-lattice")
+    json_object_set(theme, "authoredThemes", authored_themes)
     json_object_set(theme, "appOpacity", 1.0)
     json_object_set(theme, "panelTransparency", 0.0)
     json_object_set(theme, "appZoom", 1.0)

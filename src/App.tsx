@@ -1445,8 +1445,15 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     ...(dockThemeOverrideManifest ? [dockThemeOverrideManifest] : []),
   ], [appearance.customThemeBundles, appThemeOverrideManifest, dockThemeOverrideManifest]);
   const kainUiTheme = kainUiGraph?.theme;
-  const effectiveActiveThemeId = appThemeOverrideManifest?.id ?? kainUiTheme?.activeThemeId ?? appearance.activeThemeId;
-  const effectiveActiveDockThemeId = dockThemeOverrideManifest?.id ?? kainUiTheme?.activeDockThemeId ?? appearance.activeDockThemeId;
+  const kainUiThemeForcesSelection = kainUiTheme?.selectionMode === "force";
+  const effectiveActiveThemeId =
+    appThemeOverrideManifest?.id ??
+    (kainUiThemeForcesSelection ? kainUiTheme?.activeThemeId : undefined) ??
+    appearance.activeThemeId;
+  const effectiveActiveDockThemeId =
+    dockThemeOverrideManifest?.id ??
+    (kainUiThemeForcesSelection ? kainUiTheme?.activeDockThemeId : undefined) ??
+    appearance.activeDockThemeId;
   const effectivePanelTransparency = kainUiTheme?.panelTransparency ?? appearance.panelTransparency;
   const resolvedCustomBundleThemes = useMemo(
     () => resolveThemeBundleManifests(

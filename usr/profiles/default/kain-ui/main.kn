@@ -1,6 +1,18 @@
 fn greeblefs_profile_kain_ui_overlay() -> Any:
     let overlay = json_object_new()
+    let themes = json_array_new()
+    let ion_lattice = json_object_new()
+
+    json_object_set(ion_lattice, "id", "ion-lattice")
+    json_object_set(ion_lattice, "name", "Ion Lattice")
+    json_object_set(ion_lattice, "source", "usr/profiles/default/kain-ui/themes/ion-lattice/main.kn")
+    json_object_set(ion_lattice, "compatibilityThemeId", "kain-ion-lattice")
+    json_object_set(ion_lattice, "compatibilityBundlePath", "usr/themes/kain-ion-lattice/theme.json")
+    json_object_set(ion_lattice, "status", "selectable")
+    json_array_push(themes, ion_lattice)
+
     json_object_set(overlay, "scope", "profile")
     json_object_set(overlay, "profileId", "default")
     json_object_set(overlay, "source", "usr/profiles/default/kain-ui/main.kn")
+    json_object_set(overlay, "themes", themes)
     return overlay

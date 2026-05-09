@@ -8684,3 +8684,20 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
 - Validation:
   - Passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot --testTimeout=30000`
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "defaults videos to playback preview and only enters video edit mode when requested" --reporter=dot --testTimeout=30000`
+
+# 2026-05-09 - First Kain-Authored Selectable UI Theme
+
+- Added the first usr-authored Kain theme proof: `usr/profiles/default/kain-ui/themes/ion-lattice/main.kn` emits the Ion Lattice theme descriptor, while `usr/themes/kain-ion-lattice/theme.json` is the current compatibility bundle consumed by the existing trusted theme renderer.
+- `src-kain/app/main.kn` now publishes Kain UI themes as a catalog through `theme.selectionMode = "catalog"`, `theme.recommendedThemeId`, and `theme.authoredThemes`. This keeps theme choice user-owned while still letting Kain advertise authored UI/theme assets.
+- `src/runtime/kainUiGraph.ts`, `src/components/settings/sections/KainUiSettingsSection.tsx`, and `src/components/SettingsPage.tsx` now normalize and render Kain-authored theme cards. Selecting a card calls the normal Settings `applyThemeSelection(...)` path instead of persisting raw Kain graph defaults.
+- `src/App.tsx` only lets a Kain graph override `activeThemeId` / `activeDockThemeId` when `theme.selectionMode === "force"`. Catalog-mode Kain themes stay selectable without masking the user's persisted settings.
+- Durable rule:
+  - Keep Kain-authored themes as Kain source plus a compatibility bundle until Kain directly owns the renderer. Do not make `activeThemeId` authoritative from Kain in catalog mode.
+- Validation:
+  - Passed: `D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\profiles\default\kain-ui\themes\ion-lattice\main.kn`
+  - Passed: `D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\profiles\default\kain-ui\main.kn`
+  - Passed: Kain bridge smoke for `greeblefs.ui.graph`, confirming `selectionMode`, `recommendedThemeId`, and `authoredThemes`.
+  - Passed: `bunx vitest run src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bun run proof:ui:usr`
+  - MCP native-window screenshot showed Settings > Appearance reporting `4 bundles loaded`, proving the new `usr/themes/kain-ion-lattice` bundle entered the live app catalog.
+  - Repo-wide `bunx tsc --noEmit --pretty false` remains red from existing baseline diagnostics; a filtered pass returned no diagnostics for the touched Kain theme files.

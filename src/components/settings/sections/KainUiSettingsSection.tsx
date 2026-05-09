@@ -5,6 +5,10 @@ import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
 import type { KainFfiCatalog } from "@/runtime/kainFfiCatalog";
 import { KainUiRenderer } from "@/components/kain/KainUiRenderer";
 import {
+  SettingsActionButton,
+  SettingsActionStrip,
+  SettingsCatalogCard,
+  SettingsCatalogGrid,
   SettingsRow,
   SettingsRowGroup,
   SettingsSectionBlock,
@@ -22,6 +26,8 @@ export function KainUiSettingsSection({
   latticeCatalogError,
   ffiCatalog,
   ffiCatalogError,
+  activeThemeId,
+  onApplyThemeSelection,
 }: {
   graph: KainUiGraph | null;
   error: string | null;
@@ -33,10 +39,17 @@ export function KainUiSettingsSection({
   latticeCatalogError: string | null;
   ffiCatalog: KainFfiCatalog | null;
   ffiCatalogError: string | null;
+  activeThemeId?: string | null;
+  onApplyThemeSelection?: (themeId: string) => void;
 }) {
   const settingsMode = graph?.settings.mode ?? "fallback";
   const categoryCount = graph?.settings.categories.length ?? 0;
   const hiddenSectionCount = graph?.settings.hiddenSectionKeys.length ?? 0;
+  const authoredThemes = graph?.theme.authoredThemes ?? [];
+  const authoredThemeCount = authoredThemes.length;
+  const selectedAuthoredTheme = authoredThemes.find((theme) => theme.compatibilityThemeId === activeThemeId) ?? null;
+  const recommendedThemeId = graph?.theme.recommendedThemeId ?? graph?.theme.activeThemeId ?? null;
+  const themeSelectionMode = graph?.theme.selectionMode ?? (graph?.theme.activeThemeId ? "force" : "store");
   const capabilityCount = manifest?.capabilities.length ?? 0;
   const liveCapabilityCount = manifest?.capabilities.filter((capability) => capability.implemented).length ?? 0;
   const dispatchCount = manifest?.dispatch.length ?? 0;
@@ -84,17 +97,19 @@ export function KainUiSettingsSection({
       data-kain-ffi-proof={ffiStatus}
       data-kain-ffi-lanes={ffiCatalogLaneCount}
       data-kain-ffi-python={pythonFfiLane?.status ?? "missing"}
+      data-kain-authored-theme-count={authoredThemeCount}
+      data-kain-authored-theme-selected={selectedAuthoredTheme?.compatibilityThemeId ?? "none"}
     >
       <SettingsSectionBlock
         title="Kain UI"
         subtitle={graph?.source ?? error ?? "Bridge pending"}
-        badges={[graph ? "Live" : "Fallback", settingsMode]}
+        badges={[graph ? "Live" : "Fallback", settingsMode, themeSelectionMode]}
       >
         <SettingsRowGroup>
           <SettingsRow
             title="Theme"
-            description={graph?.theme.activeThemeId ?? "Current settings store"}
-            control={<SettingsStatusPill active={Boolean(graph)}>{graph ? "Kain" : "Store"}</SettingsStatusPill>}
+            description={selectedAuthoredTheme?.name ?? recommendedThemeId ?? "Current settings store"}
+            control={<SettingsStatusPill active={authoredThemeCount > 0}>{authoredThemeCount > 0 ? "catalog" : "store"}</SettingsStatusPill>}
           />
           <SettingsRow
             title="Navigation"
@@ -108,6 +123,57 @@ export function KainUiSettingsSection({
           />
         </SettingsRowGroup>
       </SettingsSectionBlock>
+
+      {authoredThemes.length > 0 ? (
+        <SettingsSectionBlock
+          title="Kain Authored Themes"
+          subtitle="Usr Kain files can publish normal GreebleFS theme ids while the app still uses the trusted theme renderer."
+          badges={[`${authoredThemeCount} usr`, selectedAuthoredTheme ? "selected" : "ready"]}
+        >
+          <SettingsCatalogGrid>
+            {authoredThemes.map((theme) => {
+              const compatibilityThemeId = theme.compatibilityThemeId ?? theme.id;
+              const selected = compatibilityThemeId === activeThemeId;
+              const canSelect = theme.selectable && Boolean(onApplyThemeSelection) && Boolean(compatibilityThemeId);
+              return (
+                <div
+                  key={theme.id}
+                  data-kain-authored-theme-card="true"
+                  data-kain-authored-theme-id={theme.id}
+                  data-kain-authored-theme-target={compatibilityThemeId}
+                  data-kain-authored-theme-selected={selected ? "true" : "false"}
+                >
+                  <SettingsCatalogCard
+                    title={theme.name}
+                    subtitle={theme.source ?? "usr/kain-ui"}
+                    description={theme.description ?? "Kain-authored theme source."}
+                    active={selected}
+                    badges={<SettingsStatusPill active={selected}>{selected ? "active" : (theme.status ?? "ready")}</SettingsStatusPill>}
+                    metadata={
+                      <div className="space-y-1 text-[10px] opacity-55">
+                        <div className="truncate">{compatibilityThemeId}</div>
+                        <div className="truncate">{theme.compatibilityBundlePath ?? "compat bundle pending"}</div>
+                      </div>
+                    }
+                    footer={
+                      <SettingsActionStrip>
+                        <SettingsActionButton
+                          active={selected}
+                          disabled={!canSelect || selected}
+                          onClick={() => onApplyThemeSelection?.(compatibilityThemeId)}
+                          data-kain-authored-theme-select={compatibilityThemeId}
+                        >
+                          {selected ? "Selected" : "Select"}
+                        </SettingsActionButton>
+                      </SettingsActionStrip>
+                    }
+                  />
+                </div>
+              );
+            })}
+          </SettingsCatalogGrid>
+        </SettingsSectionBlock>
+      ) : null}
 
       <SettingsSectionBlock
         title="Kain Manifest"
