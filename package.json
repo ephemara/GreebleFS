@@ -42,6 +42,7 @@
     "test:proof:ui-runner": "node scripts/run-tauron-ui-proof.mjs",
     "proof:ui": "node scripts/run-tauron-ui-proof.mjs",
     "proof:ui:explorer": "node scripts/run-tauron-ui-proof.mjs --suite explorer",
+    "proof:ui:usr": "node scripts/run-tauron-ui-proof.mjs --suite usr",
     "test:proof:native-icons": "node scripts/smoke-native-icons.mjs",
     "test:browser:vps": "bash scripts/with-vps-artifacts.sh bun run test:browser",
     "test:browser:watch": "vitest --config vitest.browser.config.ts",

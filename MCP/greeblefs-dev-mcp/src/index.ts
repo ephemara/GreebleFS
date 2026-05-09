@@ -682,7 +682,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
     'app_list_native_windows',
     {
       title: 'List Native Windows',
-      description: 'List visible desktop windows for the running `greeblefs.exe` processes so agents can target the real native app surface.',
+      description: 'List visible desktop windows for a native process so agents can target the real app or proof-runner surface.',
       inputSchema: z.object({
         processName: z.string().optional(),
       }),
@@ -802,7 +802,7 @@ function registerTools(server: McpServer, runtime: GreeblefsAutomationRuntime): 
     'ui_native_window_screenshot',
     {
       title: 'Native Window Screenshot',
-      description: 'Capture a PNG screenshot from a live native desktop window for `greeblefs.exe`, even when WebView/CDP attachment is unavailable.',
+      description: 'Capture a PNG screenshot from a live native desktop window, even when WebView/CDP attachment is unavailable.',
       inputSchema: z.object({
         processName: z.string().optional(),
         handle: z.string().optional(),

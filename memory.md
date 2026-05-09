@@ -15,6 +15,25 @@
   - Broad `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on the existing repo baseline; a filtered rerun found no diagnostics for `src/runtime/explorerBackend.ts`, `src/config/nativeLaneMigration.ts`, `src/test/nativeLaneMigration.test.ts`, or `src/test/explorerBackend.nativeLanes.test.ts`.
   - Cargo still emits existing dependency/app warnings and Windows incremental-cache cleanup warnings (`Access is denied`) during check.
 
+# 2026-05-09 - Tauron UI Proof Runner Reality Pass
+
+- Hardened the fast Tauron UI proof lane after re-testing it under an active, busy dev session.
+  - `scripts/run-tauron-ui-proof.mjs` now prewarms Vite proof entries, prefers the already-built `D:/tauron/target/ui-runner/debug/tauron-ui-runner.exe` over `cargo run`, uses env-configurable cold-start timeouts, and retries transient loopback RPC network failures without hiding non-OK runner responses.
+  - `bun run proof:ui` remains the spoofed-filesystem smoke: Tauri `invoke()` is aliased to fixture host mocks and reads `scripts/proofs/fixtures/greeblefs-ui-runner.explorer.json`, proving folder/file UI flow against fake `C:\workspace\repo` entries.
+  - `bun run proof:ui:usr` is now the real `/usr` import proof: it renders `proofs/ui-runner/usr-manifest-smoke.html`, imports `src/config/usrManifest.ts` and raw `usr/manifest.json`, and verifies the current manifest has 36 lanes, 16 profile-overlay lanes, `usr/plugins`, and `usr/profiles/default/top-bars`.
+  - The MCP desktop screenshot fallback now accepts non-GreebleFS process targets in docs and activates the selected native window before screen capture; this matters for `tauron-ui-runner.exe` because screen-bounds capture otherwise records whatever topmost window overlaps the same rectangle.
+- Validation:
+  - Passed: `node --check scripts/run-tauron-ui-proof.mjs`
+  - Passed: `bun run proof:ui:usr`
+  - Passed: `bun run proof:ui`
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Manual MCP screenshot probe: `ui_native_window_screenshot` can target `processName: "tauron-ui-runner"`/handle after the runner window is foregrounded; the source now foregrounds the requested target automatically, but the currently loaded MCP tool process may need restart before using that improvement.
+- Current truth:
+  - Yes, the runner scripts a real Wry/WebView DOM.
+  - Yes, the default smoke filesystem is deliberately spoofed through JSON fixtures.
+  - Yes, `/usr` import is now tested by a separate proof suite.
+  - Full native host truth still belongs to MCP/native GreebleFS proofs, not fixture mocks.
+
 # 2026-05-09 - Native Lane God Mode Follow-Up
 
 - Moved the next native-lane candidates beyond directory listings while preserving generated invoke/transport fallbacks.

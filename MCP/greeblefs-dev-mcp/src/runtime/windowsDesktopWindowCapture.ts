@@ -121,6 +121,9 @@ Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public static class GreebleFsDesktopWindowCapture {
+  public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+  public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT {
     public int Left;
@@ -131,6 +134,28 @@ public static class GreebleFsDesktopWindowCapture {
 
   [DllImport("user32.dll")]
   public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+  [DllImport("user32.dll")]
+  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+  [DllImport("user32.dll", SetLastError=true)]
+  public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+  [DllImport("user32.dll", EntryPoint="GetWindowLong")]
+  public static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtr")]
+  public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+  public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex) {
+    if (IntPtr.Size == 8) {
+      return GetWindowLongPtr64(hWnd, nIndex);
+    }
+    return new IntPtr(GetWindowLong32(hWnd, nIndex));
+  }
 }
 "@
 
@@ -159,6 +184,27 @@ if (-not $target) {
   throw 'No matching desktop window was found for screenshot capture.'
 }
 
+$GWL_EXSTYLE = -20
+$WS_EX_TOPMOST = 0x00000008
+$SW_SHOWNORMAL = 1
+$SWP_NOSIZE = 0x0001
+$SWP_NOMOVE = 0x0002
+$SWP_SHOWWINDOW = 0x0040
+$windowStyle = [GreebleFsDesktopWindowCapture]::GetWindowLongPtr($target.MainWindowHandle, $GWL_EXSTYLE).ToInt64()
+$wasTopmost = (($windowStyle -band $WS_EX_TOPMOST) -ne 0)
+[void][GreebleFsDesktopWindowCapture]::ShowWindow($target.MainWindowHandle, $SW_SHOWNORMAL)
+[void][GreebleFsDesktopWindowCapture]::SetWindowPos(
+  $target.MainWindowHandle,
+  [GreebleFsDesktopWindowCapture]::HWND_TOPMOST,
+  0,
+  0,
+  0,
+  0,
+  $SWP_NOMOVE -bor $SWP_NOSIZE -bor $SWP_SHOWWINDOW
+)
+[void][GreebleFsDesktopWindowCapture]::SetForegroundWindow($target.MainWindowHandle)
+Start-Sleep -Milliseconds 180
+
 $rect = New-Object GreebleFsDesktopWindowCapture+RECT
 [void][GreebleFsDesktopWindowCapture]::GetWindowRect($target.MainWindowHandle, [ref]$rect)
 $width = [Math]::Max(1, $rect.Right - $rect.Left)
@@ -169,6 +215,17 @@ $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
 $bitmap.Save('${escapedImagePath}', [System.Drawing.Imaging.ImageFormat]::Png)
 $graphics.Dispose()
 $bitmap.Dispose()
+if (-not $wasTopmost) {
+  [void][GreebleFsDesktopWindowCapture]::SetWindowPos(
+    $target.MainWindowHandle,
+    [GreebleFsDesktopWindowCapture]::HWND_NOTOPMOST,
+    0,
+    0,
+    0,
+    0,
+    $SWP_NOMOVE -bor $SWP_NOSIZE
+  )
+}
 
 [PSCustomObject]@{
   processId = $target.Id
