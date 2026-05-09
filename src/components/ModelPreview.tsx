@@ -187,7 +187,6 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
     <div
       onDoubleClick={resetView}
       style={{ width: '100%', height: '100%', position: 'relative', background: VIEW_BG }}
-      title="Double-click to reset view"
     >
       <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
 
@@ -211,9 +210,11 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
           <span>{format.toUpperCase()}</span>
           <span style={{ color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'none', letterSpacing: 0 }}>{entryName}</span>
         </div>
-        <div style={{ padding: '6px 8px', borderRadius: 9, background: OVERLAY_BG, border: `1px solid ${OVERLAY_BORDER}`, color: MUTED, fontSize: 10 }}>
-          {proxyNotice ?? 'Double-click reset'}
-        </div>
+        {proxyNotice && (
+          <div style={{ padding: '6px 8px', borderRadius: 9, background: OVERLAY_BG, border: `1px solid ${OVERLAY_BORDER}`, color: MUTED, fontSize: 10 }}>
+            {proxyNotice}
+          </div>
+        )}
       </div>
     </div>
   );
