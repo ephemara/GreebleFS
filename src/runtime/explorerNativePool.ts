@@ -4,6 +4,7 @@ import {
   withNativePooledBufferOnce,
   type NativeBufferPoolTelemetry,
 } from "@tauri-apps/api/native-buffer-pool";
+import { recordDevObservatoryEvent } from "@tauri-apps/api/dev-observatory";
 import type { FileEntry } from "../generated/tauri";
 import type { GreebleNativeLaneSystemId } from "../config/nativeLaneMigration";
 
@@ -51,11 +52,13 @@ export function getExplorerNativePoolTelemetrySnapshot(): ExplorerNativePoolTele
 export function recordExplorerNativePoolAttempt(systemId: GreebleNativeLaneSystemId): void {
   nativePoolTelemetry.attempts[systemId] =
     (nativePoolTelemetry.attempts[systemId] ?? 0) + 1;
+  publishExplorerNativePoolEvent("info", "attempt", systemId);
 }
 
 export function recordExplorerNativePoolSuccess(systemId: GreebleNativeLaneSystemId): void {
   nativePoolTelemetry.successes[systemId] =
     (nativePoolTelemetry.successes[systemId] ?? 0) + 1;
+  publishExplorerNativePoolEvent("info", "success", systemId);
 }
 
 export function recordExplorerNativePoolFallback(
@@ -70,6 +73,9 @@ export function recordExplorerNativePoolFallback(
   if (nativePoolTelemetry.fallbacks.length > 64) {
     nativePoolTelemetry.fallbacks.splice(0, nativePoolTelemetry.fallbacks.length - 64);
   }
+  publishExplorerNativePoolEvent("warn", "fallback", systemId, {
+    reason: String(reason instanceof Error ? reason.message : reason),
+  });
 }
 
 export async function listLocalExplorerDirectorySnapshotViaNativePool(args: {
@@ -217,4 +223,24 @@ function decodeSnapshotIdentityKind(value: number): FileEntry["identityKind"] {
     default:
       throw new Error(`Unsupported directory snapshot identity kind: ${value}`);
   }
+}
+
+function publishExplorerNativePoolEvent(
+  severity: "info" | "warn",
+  action: "attempt" | "success" | "fallback",
+  systemId: GreebleNativeLaneSystemId,
+  payload: Record<string, unknown> = {},
+): void {
+  void recordDevObservatoryEvent({
+    source: "greeblefs.explorerNativePool",
+    severity,
+    message: `native buffer pool ${action}: ${systemId}`,
+    lane: "native_buffer_pool",
+    systemId,
+    payload: {
+      action,
+      telemetry: getExplorerNativePoolTelemetrySnapshot(),
+      ...payload,
+    },
+  }).catch(() => undefined);
 }

@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::native_task_graph::NativeTaskCancellationToken;
 
@@ -13,7 +13,7 @@ const DEFAULT_DATA_URI_MAX_BYTES: u64 = 12 * 1024 * 1024;
 const DEFAULT_BINARY_MAX_BYTES: u64 = 256 * 1024 * 1024;
 const DEFAULT_ARCHIVE_ENTRY_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PreviewStreamingPolicy {
     pub enabled: bool,
     pub chunk_bytes: usize,

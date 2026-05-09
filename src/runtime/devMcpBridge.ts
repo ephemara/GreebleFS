@@ -1,4 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core';
+import { recordDevObservatoryEvent } from '@tauri-apps/api/dev-observatory';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 import type {
@@ -173,13 +174,23 @@ function nextConsoleEntryId(): string {
 }
 
 function appendConsoleEntry(entry: DevMcpBridgeConsoleEntryInput): void {
-  consoleEntries.push({
+  const nextEntry = {
     id: nextConsoleEntryId(),
     ...entry,
-  });
+  };
+  consoleEntries.push(nextEntry);
   if (consoleEntries.length > MAX_CONSOLE_ENTRIES) {
     consoleEntries.splice(0, consoleEntries.length - MAX_CONSOLE_ENTRIES);
   }
+  void recordDevObservatoryEvent({
+    source: `greeblefs.console.${entry.source}`,
+    severity: entry.level,
+    message: entry.message,
+    payload: {
+      id: nextEntry.id,
+      values: nextEntry.values,
+    },
+  }).catch(() => undefined);
 }
 
 function summarizeUnknownValue(value: unknown, depth = 0): unknown {

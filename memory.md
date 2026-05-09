@@ -1,3 +1,18 @@
+# 2026-05-09 - Tauron Dev Observatory Integration
+
+- Wired GreebleFS into Tauron's new standalone dev observatory.
+  - `src-tauri/src/dev_observatory.rs` initializes the dev-only observatory session/server, registers the `greeblefs.runtime` provider, and surfaces telemetry-manager, native-task-graph, preview-streaming, GPU, and native-lane summary data.
+  - `src/runtime/explorerNativePool.ts` now records native-lane attempt/success/fallback events for directory snapshots and local/archive preview bytes, including current native-pool telemetry.
+  - `src/runtime/devMcpBridge.ts` mirrors retained console/error/unhandled-rejection entries into observatory events so the standalone window can show console truth beside backend and lane data.
+  - `scripts/tauron-preflight.mjs` now requires fresh Tauron `dev-observatory` API dist output.
+- Durable design rule:
+  - Use MCP for automation/control and Tauron dev observatory for dense operator visibility. The observatory should consume existing providers/events; do not replace the MCP bridge or build a second app-control protocol there.
+- Validation:
+  - Passed: `cargo fmt --manifest-path D:/GreebleFS/src-tauri/Cargo.toml`
+  - Passed: isolated-target `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/nativeLaneMigration.test.ts src/test/nativeBufferPoolApi.test.ts src/test/explorerBackend.nativePool.test.ts --reporter=dot --testTimeout=30000`
+  - Not clean: repo-wide `bunx tsc --noEmit --pretty false` still reports existing unrelated TypeScript baseline errors outside this observatory pass.
+
 # 2026-05-08 - Kain FFI Monorepo And Python Sidecar Hook
 
 - Added the first Kain FFI monorepo scaffold so Kain is represented as more than a UI authoring layer.
