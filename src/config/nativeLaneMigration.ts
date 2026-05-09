@@ -12,7 +12,10 @@ export type GreebleNativeLaneSystemId =
   | "searchResultStreams"
   | "taskOutputStreams"
   | "terminalOutputComparison"
-  | "settingsButtonActions";
+  | "settingsButtonActions"
+  | "explorerActionControls"
+  | "explorerFileOperationControls"
+  | "explorerTaskControls";
 
 export interface GreebleNativeLaneFeatureFlags {
   thumbnailGenerationNativeControl: boolean;
@@ -22,6 +25,9 @@ export interface GreebleNativeLaneFeatureFlags {
   taskOutputNativeRing: boolean;
   terminalOutputNativeRingComparison: boolean;
   settingsButtonsNativeControl: boolean;
+  explorerActionsNativeControl: boolean;
+  explorerFileOperationsNativeControl: boolean;
+  explorerTaskControlsNativeControl: boolean;
 }
 
 export interface GreebleNativeLaneRuntimeCapabilities {
@@ -57,6 +63,9 @@ export const DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS: GreebleNativeLaneFeature
   taskOutputNativeRing: true,
   terminalOutputNativeRingComparison: true,
   settingsButtonsNativeControl: true,
+  explorerActionsNativeControl: true,
+  explorerFileOperationsNativeControl: true,
+  explorerTaskControlsNativeControl: true,
 });
 
 export const DEFAULT_GREEBLE_NATIVE_LANE_RUNTIME_CAPABILITIES: GreebleNativeLaneRuntimeCapabilities = Object.freeze({
@@ -126,6 +135,33 @@ export const GREEBLE_NATIVE_LANE_SYSTEM_PLANS: readonly GreebleNativeLaneSystemP
     recommendedLane: "native_control",
     fallbackLane: "invoke",
     featureFlag: "settingsButtonsNativeControl",
+    requiredCapability: "nativeControl",
+    migrationState: "candidate",
+  },
+  {
+    systemId: "explorerActionControls",
+    currentLane: "invoke",
+    recommendedLane: "native_control",
+    fallbackLane: "invoke",
+    featureFlag: "explorerActionsNativeControl",
+    requiredCapability: "nativeControl",
+    migrationState: "candidate",
+  },
+  {
+    systemId: "explorerFileOperationControls",
+    currentLane: "invoke",
+    recommendedLane: "native_control",
+    fallbackLane: "invoke",
+    featureFlag: "explorerFileOperationsNativeControl",
+    requiredCapability: "nativeControl",
+    migrationState: "candidate",
+  },
+  {
+    systemId: "explorerTaskControls",
+    currentLane: "invoke",
+    recommendedLane: "native_control",
+    fallbackLane: "invoke",
+    featureFlag: "explorerTaskControlsNativeControl",
     requiredCapability: "nativeControl",
     migrationState: "candidate",
   },

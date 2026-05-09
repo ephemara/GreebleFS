@@ -840,14 +840,38 @@ function shouldUseExplorerNativeBufferPool(
   ).activeLane === "native_buffer_pool";
 }
 
+type ExplorerNativeControlSystemId =
+  | "thumbnailGeneration"
+  | "settingsButtonActions"
+  | "explorerActionControls"
+  | "explorerFileOperationControls"
+  | "explorerTaskControls";
+
 function shouldUseExplorerNativeControl(
-  systemId: "thumbnailGeneration" | "settingsButtonActions",
+  systemId: ExplorerNativeControlSystemId,
 ): boolean {
   return resolveGreebleNativeLaneSelection(
     systemId,
     {},
     { nativeControl: isGreebleNativeControlAvailable() },
   ).activeLane === "native_control";
+}
+
+async function callExplorerNativeControlWithFallback<TResult, TArgs = unknown>(
+  systemId: ExplorerNativeControlSystemId,
+  method: string,
+  args: TArgs | undefined,
+  fallback: () => Promise<TResult>,
+): Promise<TResult> {
+  if (!shouldUseExplorerNativeControl(systemId)) {
+    return fallback();
+  }
+  return callGreebleNativeWithInvokeFallback<TResult, TArgs>(
+    "explorer",
+    method,
+    args,
+    fallback,
+  );
 }
 
 function shouldUseExplorerNativeRing(systemId: "searchResultStreams"): boolean {
@@ -1360,18 +1384,14 @@ export async function openExplorerPath(path: string): Promise<void> {
     unwrapTauriResult(await commands.remoteOpenFile(path));
     return;
   }
-  if (shouldUseExplorerNativeControl("settingsButtonActions")) {
-    await callGreebleNativeWithInvokeFallback<void, { path: string }>(
-      "settings",
-      "openLocalPath",
-      { path },
-      async () => {
-        unwrapTauriResult(await commands.fsOpenFile(path));
-      },
-    );
-    return;
-  }
-  unwrapTauriResult(await commands.fsOpenFile(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerFileOperationControls",
+    "openPath",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsOpenFile(path));
+    },
+  );
 }
 
 export async function openExplorerArchive(
@@ -1398,7 +1418,14 @@ export async function openExplorerPathWithDialog(path: string): Promise<void> {
   if (getExplorerPathSourceKind(path) !== "local") {
     throw new Error("Open With is only available for local filesystem items.");
   }
-  unwrapTauriResult(await commands.fsOpenWithDialog(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerActionControls",
+    "openWithDialog",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsOpenWithDialog(path));
+    },
+  );
 }
 
 export async function getExplorerAssociatedPrograms(
@@ -1407,7 +1434,15 @@ export async function getExplorerAssociatedPrograms(
   if (getExplorerPathSourceKind(path) !== "local") {
     throw new Error("Open With is only available for local filesystem items.");
   }
-  return unwrapTauriResult(await commands.openWithGetAssociatedPrograms(path));
+  return callExplorerNativeControlWithFallback<
+    ExplorerAssociatedProgramsCatalog,
+    { path: string }
+  >(
+    "explorerActionControls",
+    "getAssociatedPrograms",
+    { path },
+    () => commands.openWithGetAssociatedPrograms(path).then(unwrapTauriResult),
+  );
 }
 
 export async function openExplorerPathWithProgram(
@@ -1418,8 +1453,18 @@ export async function openExplorerPathWithProgram(
   if (getExplorerPathSourceKind(path) !== "local") {
     throw new Error("Open With is only available for local filesystem items.");
   }
-  unwrapTauriResult(
-    await commands.openWithLaunchProgram(path, programPath, launchArguments),
+  await callExplorerNativeControlWithFallback<
+    void,
+    { path: string; programPath: string; launchArguments: string[] }
+  >(
+    "explorerActionControls",
+    "launchProgram",
+    { path, programPath, launchArguments },
+    async () => {
+      unwrapTauriResult(
+        await commands.openWithLaunchProgram(path, programPath, launchArguments),
+      );
+    },
   );
 }
 
@@ -1445,15 +1490,33 @@ export async function getExplorerShellContextMenu(
   request: ExplorerShellContextMenuRequest,
 ): Promise<ExplorerShellContextMenuItem[]> {
   assertExplorerShellContextMenuRequestIsLocal(request);
-  return unwrapTauriResult(await commands.openWithGetShellContextMenu(request));
+  return callExplorerNativeControlWithFallback<
+    ExplorerShellContextMenuItem[],
+    ExplorerShellContextMenuRequest
+  >(
+    "explorerActionControls",
+    "getShellContextMenu",
+    request,
+    () => commands.openWithGetShellContextMenu(request).then(unwrapTauriResult),
+  );
 }
 
 export async function invokeExplorerShellContextMenuItem(
   request: ExplorerShellContextMenuInvokeRequest,
 ): Promise<void> {
   assertExplorerShellContextMenuRequestIsLocal(request.menuRequest);
-  unwrapTauriResult(
-    await commands.openWithInvokeShellContextMenuItem(request),
+  await callExplorerNativeControlWithFallback<
+    void,
+    ExplorerShellContextMenuInvokeRequest
+  >(
+    "explorerActionControls",
+    "invokeShellContextMenuItem",
+    request,
+    async () => {
+      unwrapTauriResult(
+        await commands.openWithInvokeShellContextMenuItem(request),
+      );
+    },
   );
 }
 
@@ -1463,7 +1526,14 @@ export async function revealExplorerPath(path: string): Promise<void> {
       "Reveal in the OS file manager is only available for local filesystem items.",
     );
   }
-  unwrapTauriResult(await commands.fsRevealInExplorer(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerActionControls",
+    "revealPath",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsRevealInExplorer(path));
+    },
+  );
 }
 
 export async function showExplorerPathProperties(path: string): Promise<void> {
@@ -1472,7 +1542,14 @@ export async function showExplorerPathProperties(path: string): Promise<void> {
       "Properties are only available for local filesystem items.",
     );
   }
-  unwrapTauriResult(await commands.fsShowItemProperties(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerActionControls",
+    "showItemProperties",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsShowItemProperties(path));
+    },
+  );
 }
 
 export async function openExplorerPathAsAdmin(path: string): Promise<void> {
@@ -1481,7 +1558,14 @@ export async function openExplorerPathAsAdmin(path: string): Promise<void> {
       "Administrative open is only available for local filesystem items.",
     );
   }
-  unwrapTauriResult(await commands.fsOpenAsAdmin(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerActionControls",
+    "openAsAdmin",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsOpenAsAdmin(path));
+    },
+  );
 }
 
 export async function createExplorerDir(path: string): Promise<void> {
@@ -1500,18 +1584,14 @@ export async function createExplorerDir(path: string): Promise<void> {
     );
     return;
   }
-  if (shouldUseExplorerNativeControl("settingsButtonActions")) {
-    await callGreebleNativeWithInvokeFallback<void, { path: string }>(
-      "settings",
-      "createDirectory",
-      { path },
-      async () => {
-        unwrapTauriResult(await commands.fsCreateDir(path));
-      },
-    );
-    return;
-  }
-  unwrapTauriResult(await commands.fsCreateDir(path));
+  await callExplorerNativeControlWithFallback<void, { path: string }>(
+    "explorerFileOperationControls",
+    "createDirectory",
+    { path },
+    async () => {
+      unwrapTauriResult(await commands.fsCreateDir(path));
+    },
+  );
 }
 
 export async function extractExplorerArchive(
@@ -1607,13 +1687,21 @@ export async function transferExplorerItems(
     );
   }
 
-  return unwrapTauriResult(
-    await commands.fsTransferItems(
-      targetDir,
-      sources,
-      operation,
-      collisionPolicy,
-    ),
+  return callExplorerNativeControlWithFallback<
+    ExplorerFileTransferResult[],
+    {
+      targetDir: string;
+      sources: string[];
+      operation: ExplorerFileTransferOperation;
+      collisionPolicy: ExplorerFileTransferCollisionPolicy;
+    }
+  >(
+    "explorerFileOperationControls",
+    "transferItems",
+    { targetDir, sources, operation, collisionPolicy },
+    () => commands
+      .fsTransferItems(targetDir, sources, operation, collisionPolicy)
+      .then(unwrapTauriResult),
   );
 }
 
@@ -1628,31 +1716,77 @@ export async function planExplorerItemTransfer(
   ) {
     return [];
   }
-  return unwrapTauriResult(
-    await commands.fsPlanTransferItems(targetDir, sources, operation),
+  return callExplorerNativeControlWithFallback<
+    ExplorerFileTransferCollision[],
+    {
+      targetDir: string;
+      sources: string[];
+      operation: ExplorerFileTransferOperation;
+    }
+  >(
+    "explorerFileOperationControls",
+    "planTransferItems",
+    { targetDir, sources, operation },
+    () => commands
+      .fsPlanTransferItems(targetDir, sources, operation)
+      .then(unwrapTauriResult),
   );
 }
 
 export async function listExplorerTasks(): Promise<ExplorerTaskSnapshot[]> {
-  return unwrapTauriResult(await commands.fsListExplorerTasks());
+  return callExplorerNativeControlWithFallback<
+    ExplorerTaskSnapshot[],
+    undefined
+  >(
+    "explorerTaskControls",
+    "listTasks",
+    undefined,
+    () => commands.fsListExplorerTasks().then(unwrapTauriResult),
+  );
 }
 
 export async function clearExplorerTaskHistory(
   scope: ExplorerTaskHistoryScope,
 ): Promise<void> {
-  unwrapTauriResult(await commands.fsClearExplorerTaskHistory(scope));
+  await callExplorerNativeControlWithFallback<
+    void,
+    { scope: ExplorerTaskHistoryScope }
+  >(
+    "explorerTaskControls",
+    "clearTaskHistory",
+    { scope },
+    async () => {
+      unwrapTauriResult(await commands.fsClearExplorerTaskHistory(scope));
+    },
+  );
 }
 
 export async function retryExplorerTask(
   taskId: string,
 ): Promise<ExplorerTaskSnapshot> {
-  return unwrapTauriResult(await commands.fsRetryExplorerTask(taskId));
+  return callExplorerNativeControlWithFallback<
+    ExplorerTaskSnapshot,
+    { taskId: string }
+  >(
+    "explorerTaskControls",
+    "retryTask",
+    { taskId },
+    () => commands.fsRetryExplorerTask(taskId).then(unwrapTauriResult),
+  );
 }
 
 export async function cancelExplorerTask(
   taskId: string,
 ): Promise<ExplorerTaskSnapshot> {
-  return unwrapTauriResult(await commands.fsCancelExplorerTask(taskId));
+  return callExplorerNativeControlWithFallback<
+    ExplorerTaskSnapshot,
+    { taskId: string }
+  >(
+    "explorerTaskControls",
+    "cancelTask",
+    { taskId },
+    () => commands.fsCancelExplorerTask(taskId).then(unwrapTauriResult),
+  );
 }
 
 export async function writeExplorerFile(
@@ -1933,7 +2067,17 @@ export async function renameExplorerPath(
     throw new Error("Renaming is only available for local, remote, or cloud items.");
   }
 
-  unwrapTauriResult(await commands.fsRename(oldPath, newPath));
+  await callExplorerNativeControlWithFallback<
+    void,
+    { oldPath: string; newPath: string }
+  >(
+    "explorerFileOperationControls",
+    "renamePath",
+    { oldPath, newPath },
+    async () => {
+      unwrapTauriResult(await commands.fsRename(oldPath, newPath));
+    },
+  );
 }
 
 export async function deleteExplorerPath(
@@ -1948,7 +2092,17 @@ export async function deleteExplorerPath(
       unwrapTauriResult(await commands.remoteDeletePath(path));
       return;
     case "local":
-      unwrapTauriResult(await commands.fsDelete(path, recursive));
+      await callExplorerNativeControlWithFallback<
+        void,
+        { path: string; recursive: boolean }
+      >(
+        "explorerFileOperationControls",
+        "deletePath",
+        { path, recursive },
+        async () => {
+          unwrapTauriResult(await commands.fsDelete(path, recursive));
+        },
+      );
       return;
     default:
       throw new Error("Delete is only available for local, remote, or cloud items.");
@@ -1967,7 +2121,14 @@ export async function deleteExplorerPaths(paths: string[]): Promise<void> {
   }
   const [kind] = [...kinds];
   if (kind === "local") {
-    unwrapTauriResult(await commands.fsDeleteMany(paths));
+    await callExplorerNativeControlWithFallback<void, { paths: string[] }>(
+      "explorerFileOperationControls",
+      "deleteMany",
+      { paths },
+      async () => {
+        unwrapTauriResult(await commands.fsDeleteMany(paths));
+      },
+    );
     return;
   }
   if (kind === "cloud") {
@@ -1994,11 +2155,27 @@ export async function trashExplorerPaths(
   if (localPaths.length !== paths.length) {
     throw new Error("Trash is only available for local filesystem items.");
   }
-  return unwrapTauriResult(await commands.fsTrash(localPaths));
+  return callExplorerNativeControlWithFallback<
+    ExplorerTrashAction,
+    { paths: string[] }
+  >(
+    "explorerFileOperationControls",
+    "trashPaths",
+    { paths: localPaths },
+    () => commands.fsTrash(localPaths).then(unwrapTauriResult),
+  );
 }
 
 export async function restoreExplorerTrashAction(): Promise<ExplorerTrashRestore | null> {
-  return unwrapTauriResult(await commands.fsRestoreRecentTrashAction());
+  return callExplorerNativeControlWithFallback<
+    ExplorerTrashRestore | null,
+    undefined
+  >(
+    "explorerFileOperationControls",
+    "restoreRecentTrashAction",
+    undefined,
+    () => commands.fsRestoreRecentTrashAction().then(unwrapTauriResult),
+  );
 }
 
 export async function batchRenameExplorerPaths(

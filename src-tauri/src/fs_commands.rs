@@ -26,6 +26,7 @@ use crate::native_task_graph::{
     is_native_task_cancelled_error, NativeTaskCancellationToken, NativeTaskGraphManager,
     NativeTaskLane, NativeTaskPriority, NativeTaskRequest, NativeTaskWorkKey,
 };
+use crate::open_with::{ShellContextMenuInvokeRequest, ShellContextMenuRequest};
 use crate::preview_streaming::{
     read_local_file_data_url, read_local_preview_bytes, read_local_text_file,
     resolve_preview_byte_limit, PreviewStreamingManager,
@@ -140,6 +141,63 @@ struct NativeSetLaunchAtStartupArgs {
 #[serde(rename_all = "camelCase")]
 struct NativeLocalPathArgs {
     path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeOpenWithLaunchProgramArgs {
+    path: String,
+    program_path: String,
+    launch_arguments: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeDeletePathArgs {
+    path: String,
+    recursive: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePathsArgs {
+    paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeRenamePathArgs {
+    old_path: String,
+    new_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeTransferItemsArgs {
+    target_dir: String,
+    sources: Vec<String>,
+    operation: FileTransferOperation,
+    collision_policy: Option<FileTransferCollisionPolicy>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePlanTransferItemsArgs {
+    target_dir: String,
+    sources: Vec<String>,
+    operation: FileTransferOperation,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeTaskHistoryClearArgs {
+    scope: ExplorerTaskHistoryClearScope,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeTaskIdArgs {
+    task_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3366,6 +3424,210 @@ pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
         let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
         tauri::async_runtime::block_on(fs_create_dir(args.path))?;
         serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "openPath", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_open_file(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "createDirectory", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_create_dir(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "openWithDialog", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_open_with_dialog(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "openAsAdmin", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_open_as_admin(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "revealPath", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_reveal_in_explorer(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "showItemProperties",
+        move |request| {
+            let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+            tauri::async_runtime::block_on(fs_show_item_properties(args.path))?;
+            serialize_native_control_response(())
+        },
+    )?;
+
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "getAssociatedPrograms",
+        move |request| {
+            let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+            serialize_native_control_response(crate::open_with::open_with_get_associated_programs(
+                args.path,
+            )?)
+        },
+    )?;
+
+    tauri::native_control::register_handler(app, "explorer", "launchProgram", move |request| {
+        let args: NativeOpenWithLaunchProgramArgs = parse_native_pool_args(request)?;
+        crate::open_with::open_with_launch_program(
+            args.path,
+            args.program_path,
+            args.launch_arguments,
+        )?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "getShellContextMenu",
+        move |request| {
+            let args: ShellContextMenuRequest = parse_native_pool_args(request)?;
+            serialize_native_control_response(crate::open_with::open_with_get_shell_context_menu(
+                args,
+            )?)
+        },
+    )?;
+
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "invokeShellContextMenuItem",
+        move |request| {
+            let args: ShellContextMenuInvokeRequest = parse_native_pool_args(request)?;
+            crate::open_with::open_with_invoke_shell_context_menu_item(args)?;
+            serialize_native_control_response(())
+        },
+    )?;
+
+    tauri::native_control::register_handler(app, "explorer", "deletePath", move |request| {
+        let args: NativeDeletePathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_delete(args.path, args.recursive))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "deleteMany", move |request| {
+        let args: NativePathsArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_delete_many(args.paths))?;
+        serialize_native_control_response(())
+    })?;
+
+    let app_for_rename = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "renamePath", move |request| {
+        let args: NativeRenamePathArgs = parse_native_pool_args(request)?;
+        let result = tauri::async_runtime::block_on(async {
+            let identity_manager = app_for_rename.state::<ExplorerIdentityManager>();
+            fs_rename(
+                app_for_rename.clone(),
+                identity_manager,
+                args.old_path,
+                args.new_path,
+            )
+            .await
+        })?;
+        serialize_native_control_response(result)
+    })?;
+
+    let app_for_transfer = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "transferItems", move |request| {
+        let args: NativeTransferItemsArgs = parse_native_pool_args(request)?;
+        let result = tauri::async_runtime::block_on(async {
+            let identity_manager = app_for_transfer.state::<ExplorerIdentityManager>();
+            fs_transfer_items(
+                app_for_transfer.clone(),
+                identity_manager,
+                args.target_dir,
+                args.sources,
+                args.operation,
+                args.collision_policy,
+            )
+            .await
+        })?;
+        serialize_native_control_response(result)
+    })?;
+
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "planTransferItems",
+        move |request| {
+            let args: NativePlanTransferItemsArgs = parse_native_pool_args(request)?;
+            let result = tauri::async_runtime::block_on(fs_plan_transfer_items(
+                args.target_dir,
+                args.sources,
+                args.operation,
+            ))?;
+            serialize_native_control_response(result)
+        },
+    )?;
+
+    let app_for_trash = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "trashPaths", move |request| {
+        let args: NativePathsArgs = parse_native_pool_args(request)?;
+        let result = tauri::async_runtime::block_on(crate::explorer_pro_commands::fs_trash(
+            app_for_trash.clone(),
+            args.paths,
+        ))?;
+        serialize_native_control_response(result)
+    })?;
+
+    let app_for_restore_trash = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "restoreRecentTrashAction",
+        move |_request| {
+            let result = tauri::async_runtime::block_on(
+                crate::explorer_pro_commands::fs_restore_recent_trash_action(
+                    app_for_restore_trash.clone(),
+                ),
+            )?;
+            serialize_native_control_response(result)
+        },
+    )?;
+
+    tauri::native_control::register_handler(app, "explorer", "listTasks", move |_request| {
+        let result = tauri::async_runtime::block_on(fs_list_explorer_tasks())?;
+        serialize_native_control_response(result)
+    })?;
+
+    tauri::native_control::register_handler(app, "explorer", "clearTaskHistory", move |request| {
+        let args: NativeTaskHistoryClearArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_clear_explorer_task_history(args.scope))?;
+        serialize_native_control_response(())
+    })?;
+
+    let app_for_retry_task = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "retryTask", move |request| {
+        let args: NativeTaskIdArgs = parse_native_pool_args(request)?;
+        let result = tauri::async_runtime::block_on(async {
+            let native_task_graph = app_for_retry_task.state::<NativeTaskGraphManager>();
+            fs_retry_explorer_task(app_for_retry_task.clone(), native_task_graph, args.task_id)
+                .await
+        })?;
+        serialize_native_control_response(result)
+    })?;
+
+    let app_for_cancel_task = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "cancelTask", move |request| {
+        let args: NativeTaskIdArgs = parse_native_pool_args(request)?;
+        let result = tauri::async_runtime::block_on(async {
+            let native_task_graph = app_for_cancel_task.state::<NativeTaskGraphManager>();
+            fs_cancel_explorer_task(native_task_graph, args.task_id).await
+        })?;
+        serialize_native_control_response(result)
     })?;
 
     let app_for_native_ring = app.clone();

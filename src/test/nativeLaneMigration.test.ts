@@ -18,6 +18,9 @@ describe("native lane migration planning", () => {
       taskOutputNativeRing: true,
       terminalOutputNativeRingComparison: true,
       settingsButtonsNativeControl: true,
+      explorerActionsNativeControl: true,
+      explorerFileOperationsNativeControl: true,
+      explorerTaskControlsNativeControl: true,
     });
   });
 
@@ -116,6 +119,21 @@ describe("native lane migration planning", () => {
     });
   });
 
+  it("tracks explorer control surfaces as native-control candidates with invoke fallback", () => {
+    for (const systemId of [
+      "explorerActionControls",
+      "explorerFileOperationControls",
+      "explorerTaskControls",
+    ] satisfies GreebleNativeLaneSystemId[]) {
+      expect(getGreebleNativeLaneSystemPlan(systemId)).toMatchObject({
+        recommendedLane: "native_control",
+        fallbackLane: "invoke",
+        requiredCapability: "nativeControl",
+        migrationState: "candidate",
+      });
+    }
+  });
+
   it.each([
     ["thumbnailGeneration", "thumbnailGenerationNativeControl"],
     ["previewByteReads", "previewByteReadsNativeBufferPool"],
@@ -124,6 +142,9 @@ describe("native lane migration planning", () => {
     ["taskOutputStreams", "taskOutputNativeRing"],
     ["terminalOutputComparison", "terminalOutputNativeRingComparison"],
     ["settingsButtonActions", "settingsButtonsNativeControl"],
+    ["explorerActionControls", "explorerActionsNativeControl"],
+    ["explorerFileOperationControls", "explorerFileOperationsNativeControl"],
+    ["explorerTaskControls", "explorerTaskControlsNativeControl"],
   ] satisfies Array<[GreebleNativeLaneSystemId, keyof GreebleNativeLaneFeatureFlags]>)(
     "keeps %s behind the %s switch",
     (systemId, featureFlag) => {

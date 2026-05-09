@@ -1,3 +1,20 @@
+# 2026-05-09 - Explorer Control Plane Native-Control Pass
+
+- Moved the next generated-invoke Explorer control surfaces onto Tauron native-control with generated-command fallback still intact.
+  - `src-tauri/src/fs_commands.rs` now registers `explorer.*` native-control handlers for local open/create/delete/rename/transfer/trash, Open With and shell context-menu actions, reveal/properties/admin open, and task-center list/clear/retry/cancel.
+  - `src/runtime/explorerBackend.ts` now routes local Explorer action controls, file-operation controls, and task controls through `callGreebleNativeWithInvokeFallback(...)` under the `explorer` namespace. Cloud and remote providers stay on their provider commands, and bulk file contents still avoid the native-control JSON lane.
+  - `src/config/nativeLaneMigration.ts` now tracks separate switches for `explorerActionControls`, `explorerFileOperationControls`, and `explorerTaskControls`, all requiring `nativeControl` and falling back to invoke.
+- Durable design rule:
+  - Use `explorerFileOperationControls` for compact mutation/control calls such as open path, create directory, rename, delete, transfer planning/execution, trash, and restore. Do not route file body writes or preview bytes through native-control; keep bulk payloads on buffer/stream lanes.
+  - Use `explorerActionControls` for OS/shell verbs such as Open With, associated-program catalogs, shell context menus, reveal, properties, and admin open.
+  - Use `explorerTaskControls` for task-center control/status calls; task output and progress retention remain host-event/message-ring payloads.
+- Validation:
+  - Passed: `cargo fmt --manifest-path D:/GreebleFS/src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/nativeLaneMigration.test.ts src/test/nativeControl.test.ts src/test/explorerBackend.nativePool.test.ts src/test/explorerBackend.nativeLanes.test.ts --reporter=dot --testTimeout=30000`
+  - Broad `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on the existing repo baseline; a filtered rerun found no diagnostics for `src/runtime/explorerBackend.ts`, `src/config/nativeLaneMigration.ts`, `src/test/nativeLaneMigration.test.ts`, or `src/test/explorerBackend.nativeLanes.test.ts`.
+  - Cargo still emits existing dependency/app warnings and Windows incremental-cache cleanup warnings (`Access is denied`) during check.
+
 # 2026-05-09 - Native Lane God Mode Follow-Up
 
 - Moved the next native-lane candidates beyond directory listings while preserving generated invoke/transport fallbacks.
