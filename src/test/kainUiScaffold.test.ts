@@ -13,7 +13,7 @@ describe('normalizeKainUiScaffold', () => {
       surfaces: [
         {
           id: 'settings.kain-authoring-proof',
-          kind: 'settings-section',
+          kind: 'settings-module',
           title: 'Kain UI Authoring Proof',
           summary: 'Proof.',
           mountSlot: 'settings.kain-ui',

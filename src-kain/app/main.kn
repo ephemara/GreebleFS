@@ -287,7 +287,7 @@ fn build_kain_authored_settings_surface() -> Any:
     append_ui_child(root, note)
 
     json_object_set(surface, "id", "settings.kain-authoring-proof")
-    json_object_set(surface, "kind", "settings-section")
+    json_object_set(surface, "kind", "settings-module")
     json_object_set(surface, "title", "Kain UI Authoring Proof")
     json_object_set(surface, "summary", "Kain can now describe a small UI surface as data while GreebleFS keeps the current React shell.")
     json_object_set(surface, "mountSlot", "settings.kain-ui")

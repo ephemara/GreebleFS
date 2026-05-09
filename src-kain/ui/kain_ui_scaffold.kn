@@ -32,7 +32,7 @@ fn build_reference_surface() -> Any:
 
     let surface = json_object_new()
     json_object_set(surface, "id", "reference.kain-ui.surface")
-    json_object_set(surface, "kind", "settings-section")
+    json_object_set(surface, "kind", "settings-module")
     json_object_set(surface, "title", "Kain UI Reference")
     json_object_set(surface, "summary", "Reference shape for future Kain-authored GreebleFS surfaces.")
     json_object_set(surface, "root", root)

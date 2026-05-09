@@ -22,6 +22,24 @@
 - Next recommended step:
   - Move Explorer drag/drop and interaction policy into a Lattice descriptor lane, then use the inventory report to prioritize the noisiest Explorer panels and chrome surfaces.
 
+# 2026-05-09 - Kain Lattice V1 Settings Modules And Shell Applets
+
+- Expanded the hand-spun Kain semantic UI lane into a real Lattice V1 mount system.
+  - `greeblefs.ui.scaffold` now emits ordered mount metadata for `settings-module` and `shell-applet` surfaces, including `mountSlot`, `order`, `packageId`, `componentId`, `hostModels`, and trusted action ids.
+  - `src/runtime/kainSemanticUiRuntime.ts` now builds the registry and selects ordered mounts by `kind` plus `mountSlot`; `resolveKainSemanticUiSurface(...)` remains compatible for old callers.
+  - `KainUiRenderer` now supports layout, display, control, and applet primitives: `stack`, `row`, `section`, `action-strip`, `divider`, `text`, `status-pill`, `key-value`, `notice`, `button`, `toggle`, `select`, `slider`, `applet`, `indicator`, `icon-button`, and `mini-meter`.
+  - `KainSemanticAppletStrip` mounts compact `shell-applet` surfaces in `workbench.topbar.trailing`, and `WorkbenchTopBar` passes the current Kain scaffold/catalog into it.
+  - Settings > Kain UI now proves semantic mount counts with `data-kain-semantic-settings-modules` and `data-kain-semantic-topbar-applets`; the top bar proves `data-kain-semantic-applet-strip`.
+- Durable design rule:
+  - Kain owns authored surface intent and mount metadata; GreebleFS owns trusted primitive rendering, ordering, action permissions, and host execution. Do not let this become arbitrary Kain-rendered DOM or JSX codegen until the contract is stable.
+- Validation:
+  - Passed: focused Vitest lane for scaffold normalization, semantic registry, renderer primitives, surface host, applet strip, Settings Kain UI, and WorkbenchTopBar.
+  - Passed: Kain CLI smokes for `greeblefs.ui.scaffold`, `greeblefs.lattice.catalog`, `src-kain/lattice/greeblefs-shell-control/main.kn`, and `src-kain/ui/kain_ui_scaffold.kn`.
+  - Passed: `bun run proof:ui:usr`.
+  - Passed: live MCP/CDP app proof after resident `plugin:kain|reload`: top-bar applet count `1`, package `greeblefs.lattice.shell-control`; Settings > Kain UI reported manifest `live`, scaffold `3` surfaces / `19` primitives, semantic settings modules `2`, semantic top-bar applets `1`.
+- Current risk / lesson:
+  - The dev WebView can briefly show the pre-existing Tauron API init race overlay (`Cannot read properties of undefined (reading 'invoke'|'metadata')`) after reload/HMR. Dismissing or reloading once lets the Lattice proof surface render; the Kain bridge and semantic mounts are not the source of that race.
+
 # 2026-05-09 - Explorer Control Plane Native-Control Pass
 
 - Moved the next generated-invoke Explorer control surfaces onto Tauron native-control with generated-command fallback still intact.
