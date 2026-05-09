@@ -1,3 +1,16 @@
+# 2026-05-09 - Transparent 3D Model Thumbnail Cutouts
+
+- Switched Explorer model thumbnails from baked dark-square PNGs to transparent cutout PNGs.
+  - `MODEL_THUMBNAIL_RENDER_CONFIG` now carries `cacheVariant: "cutout-v1"` and `backgroundAlpha: 0`.
+  - `src/runtime/modelThumbnailRenderer.ts` creates the shared Three/WebGL renderer with alpha support, clears to transparent, and leaves the scene background null for cutout exports.
+  - `src/runtime/modelThumbnailBackend.ts` includes the cache variant in the model thumbnail cache key so old in-memory square thumbnails do not survive after the renderer change.
+- Durable design rule:
+  - Keep model-thumbnail presentation policy in `src/config/filePreview.ts`, not scattered through Explorer JSX. If future agents add shadows/checkerboards/toggles for model thumbnails, extend that config and preserve transparent PNG output as the default raw-model lane.
+- Validation:
+  - Passed: `bunx vitest run src/test/filePreview.test.ts src/test/modelThumbnailBackend.test.ts src/test/explorerCollectionPreviewThumbnails.test.ts --reporter=dot --testTimeout=30000`
+  - Filtered TypeScript sweep found no diagnostics in the touched thumbnail files; repo-wide `tsc` still exits nonzero on the existing baseline.
+  - Live MCP/Vite proof rendered `F:\berry3d\Berry\assets\fox.glb` through `renderModelThumbnailDataUrl`: PNG corners alpha `[0,0,0,0]`, nontransparent model pixels `18554`, transparent ratio `0.8742`, model bounds `{ minX: 37, minY: 126, maxX: 287, maxY: 298 }`.
+
 # 2026-05-09 - UI Inventory And Panel Lattice Registry Pass
 
 - Added the first live UI hardcode inventory analyzer through the Kain/Python FFI lane.

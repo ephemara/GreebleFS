@@ -45,7 +45,9 @@ export const MODEL_PREVIEW_PROXY_CONFIG = {
 } as const;
 
 export const MODEL_THUMBNAIL_RENDER_CONFIG = {
+  cacheVariant: "cutout-v1",
   backgroundColor: "#090d12",
+  backgroundAlpha: 0,
   ambientIntensity: 1.15,
   keyLightIntensity: 1.35,
   fillLightIntensity: 0.45,

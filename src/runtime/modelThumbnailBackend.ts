@@ -1,5 +1,9 @@
 import { estimateStringPreviewCacheBytes, readCachedExplorerPreview, storeCachedExplorerPreview } from "../components/explorer/explorerPreviewCache";
-import { getModelPreviewFormat, type ModelPreviewFormat } from "../config/filePreview";
+import {
+  getModelPreviewFormat,
+  MODEL_THUMBNAIL_RENDER_CONFIG,
+  type ModelPreviewFormat,
+} from "../config/filePreview";
 import { renderModelThumbnailDataUrl } from "./modelThumbnailRenderer";
 import type { ExplorerEntryThumbnailData, ExplorerFileEntry } from "./explorerBackend";
 
@@ -81,6 +85,7 @@ function buildExplorerModelThumbnailCacheKey(
   const normalizedHeight = Math.max(1, Math.floor(maxHeight));
   return [
     "model-thumbnail",
+    MODEL_THUMBNAIL_RENDER_CONFIG.cacheVariant,
     format,
     entry.entityId,
     entry.contentRevision,

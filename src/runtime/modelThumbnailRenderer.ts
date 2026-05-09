@@ -89,17 +89,22 @@ function ensureModelThumbnailRendererState(): SharedModelThumbnailRendererState 
   const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
-    alpha: false,
+    alpha: MODEL_THUMBNAIL_RENDER_CONFIG.backgroundAlpha < 1,
     preserveDrawingBuffer: true,
     powerPreference: "low-power",
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(MODEL_THUMBNAIL_RENDER_CONFIG.backgroundColor, 1);
+  renderer.setClearColor(
+    MODEL_THUMBNAIL_RENDER_CONFIG.backgroundColor,
+    MODEL_THUMBNAIL_RENDER_CONFIG.backgroundAlpha,
+  );
+  renderer.setClearAlpha(MODEL_THUMBNAIL_RENDER_CONFIG.backgroundAlpha);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(
-    MODEL_THUMBNAIL_RENDER_CONFIG.backgroundColor,
-  );
+  scene.background =
+    MODEL_THUMBNAIL_RENDER_CONFIG.backgroundAlpha >= 1
+      ? new THREE.Color(MODEL_THUMBNAIL_RENDER_CONFIG.backgroundColor)
+      : null;
 
   const camera = new THREE.PerspectiveCamera(
     MODEL_THUMBNAIL_RENDER_CONFIG.cameraFov,

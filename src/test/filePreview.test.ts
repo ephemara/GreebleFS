@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
   EXPLORER_AUDIO_EXPORT_FORMATS,
+  MODEL_THUMBNAIL_RENDER_CONFIG,
   getAudioPreviewMimeType,
   getExplorerAudioExportFormatDefinition,
   getExecutableScriptRunner,
@@ -129,6 +130,11 @@ describe("filePreview config", () => {
     expect(isModelPreviewExtension("glb")).toBe(true);
     expect(isModelPreviewExtension(".obj")).toBe(true);
     expect(isModelPreviewExtension("png")).toBe(false);
+  });
+
+  it("renders 3d model thumbnails as transparent cutouts", () => {
+    expect(MODEL_THUMBNAIL_RENDER_CONFIG.cacheVariant).toBe("cutout-v1");
+    expect(MODEL_THUMBNAIL_RENDER_CONFIG.backgroundAlpha).toBe(0);
   });
 
   it("keeps 3d assets out of editable text mode even when small", () => {
