@@ -1,5 +1,0 @@
-fn greeblefs_shared_kain_ui_overlay() -> Any:
-    let overlay = json_object_new()
-    json_object_set(overlay, "scope", "shared")
-    json_object_set(overlay, "source", "usr/kain-ui/main.kn")
-    return overlay

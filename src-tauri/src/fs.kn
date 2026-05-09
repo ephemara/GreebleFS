@@ -1,0 +1,3709 @@
+# Generated from Rust source by kain import-rust
+# Project Ouroboros — Rust → KAIN → Rust
+
+struct FileEntry:
+    name: String
+    path: String
+    is_dir: Bool
+    size: u64
+    modified: u64
+    extension: String
+    is_hidden: Bool
+    is_symlink: Bool
+    entity_id: String
+    identity_kind: ExplorerIdentityKind
+    content_revision: String
+
+struct NativePoolListDirSnapshotArgs:
+    path: String
+    show_hidden: Bool
+    bypass_cache: Option<Bool>
+    stream_id: String
+
+struct NativePoolReadPreviewBytesArgs:
+    path: String
+    max_bytes: Option<u64>
+    stream_id: String
+
+struct NativePoolReadArchiveEntryPreviewBytesArgs:
+    archive_path: String
+    entry_path: String
+    max_bytes: Option<u64>
+    stream_id: String
+
+struct NativeSearchEntriesStreamArgs:
+    path: String
+    query: String
+    show_hidden: Bool
+    include_content: Option<Bool>
+    limit: Option<usize>
+    request_id: Option<u64>
+    request_scope: Option<String>
+    stream_id: String
+
+struct NativeSetLaunchAtStartupArgs:
+    enabled: Bool
+
+struct NativeLocalPathArgs:
+    path: String
+
+struct NativeRingBenchmarkArgs:
+    ring_id: Option<String>
+    packets: Option<u64>
+    packet_bytes: Option<usize>
+    capacity: Option<usize>
+
+struct NativePoolPostedPayloadResponse:
+    stream_id: String
+    sequence: u64
+    byte_length: u64
+    schema_version: Option<u32>
+    entry_count: Option<u64>
+    allocation_count: u64
+    reuse_count: u64
+    copy_count: u64
+    copied_bytes: u64
+    webview_post_time_us: u64
+
+struct EntryStorageInfo:
+    path: String
+    bytes: u64
+    is_dir: Bool
+    is_complete: Bool
+
+struct FsChecksumEntryInfo:
+    path: String
+    bytes: u64
+    is_dir: Bool
+    md5: Option<String>
+    sha256: Option<String>
+    error: Option<String>
+
+struct FsPermissionInfo:
+    readonly: Bool
+    display: String
+    unix_mode: Option<u32>
+    unix_mode_octal: Option<String>
+
+struct FsItemPropertiesInfo:
+    path: String
+    name: String
+    is_dir: Bool
+    is_symlink: Bool
+    bytes: u64
+    modified_at_ms: Option<u64>
+    created_at_ms: Option<u64>
+    accessed_at_ms: Option<u64>
+    permissions: FsPermissionInfo
+
+struct FsJumpFilterEntry:
+    path: String
+    name: String
+    is_dir: Bool
+    sort_order: u64
+
+struct FsJumpFilterRequest:
+    query: String
+    entries: Array<FsJumpFilterEntry>
+    limit: Option<usize>
+
+struct FsJumpFilterMatch:
+    path: String
+    name: String
+    is_dir: Bool
+    sort_order: u64
+    score: i64
+    matched_indices: Array<usize>
+
+enum FsWriteFileContent:
+    Text(String)
+    Bytes(Array<u8>)
+
+struct ExplorerTaskProgressEvent:
+    task_id: String
+    task: ExplorerTaskRecord
+
+enum ExplorerTaskKind:
+    Copy
+    Move
+    Delete
+    Trash
+    BatchRename
+    DuplicateScan
+    SemanticIndex
+    ExtractArchive
+    RecursiveSize
+    Checksum
+    AudioTransform
+    AudioBatchProcess
+
+enum ExplorerTaskStatus:
+    Running
+    Succeeded
+    Failed
+    Cancelled
+
+enum ExplorerTaskHistoryClearScope:
+    Completed
+    Failed
+    Finished
+
+struct ExplorerTaskRecord:
+    id: String
+    kind: ExplorerTaskKind
+    status: ExplorerTaskStatus
+    title: String
+    detail: String
+    progress_current: Option<u64>
+    progress_total: Option<u64>
+    started_at: u64
+    finished_at: Option<u64>
+    source_paths: Array<String>
+    destination_path: Option<String>
+    error_message: Option<String>
+    can_retry: Bool
+    can_cancel: Bool
+    can_reveal_output: Bool
+    can_open_output: Bool
+    can_undo: Bool
+    scheduler_task: Option<yazi_specta::YaziSchedulerTaskSnap>
+
+struct ExplorerTaskRegistration:
+    kind: ExplorerTaskKind
+    title: String
+    detail: String
+    source_paths: Array<String>
+    destination_path: Option<String>
+    retry_context: Option<ExplorerTaskRetryContext>
+    can_undo: Bool
+
+enum ExplorerTaskRetryContext:
+    Copy { source_path: String, destination_path: String }
+    Move { source_path: String, destination_path: String }
+    Delete { path: String, recursive: Bool }
+    DeleteMany { paths: Array<String> }
+    BatchRename { items: Array<FsBatchRenameItem> }
+    DuplicateScan { root_path: String }
+    RecursiveSize { paths: Array<String>, force_refresh: Bool }
+    Checksum { paths: Array<String> }
+    ArchiveExtraction { request: FsArchiveExtractionRequest }
+    AudioTransform { request: audio_commands::AudioTransformRequest }
+    AudioBatchProcess { request: audio_commands::AudioBatchProcessRequest }
+
+enum ExplorerTaskCancelContext:
+    Yazi { scheduler_task_id: yazi_shared::Id }
+    NativeTaskGraph { task_id: String }
+    DuplicateScan { scan_id: String }
+    AudioOperation { operation_id: String }
+
+struct ExplorerTaskRegistryEntry:
+    record: ExplorerTaskRecord
+    retry_context: Option<ExplorerTaskRetryContext>
+    cancel_context: Option<ExplorerTaskCancelContext>
+    cancel_requested: Bool
+
+struct ExplorerTaskRegistry:
+    order: Array<String>
+    entries: Map<String, ExplorerTaskRegistryEntry>
+
+impl Default for ExplorerTaskRegistry:
+    fn default_() -> ExplorerTaskRegistry:
+        ExplorerTaskRegistry { order: Vec__new_(), entries: HashMap__new_() }
+
+
+struct CachedEntrySize:
+    bytes: u64
+    is_dir: Bool
+    is_complete: Bool
+    measured_at: std::time::Instant
+
+struct CachedDirListing:
+    entries: Array<FileEntry>
+    directory_modified_ms: Option<u64>
+    cached_at: std::time::Instant
+
+struct CachedDirListingVariants:
+    visible_only: Option<CachedDirListing>
+    include_hidden: Option<CachedDirListing>
+
+impl Default for CachedDirListingVariants:
+    fn default_() -> CachedDirListingVariants:
+        CachedDirListingVariants { visible_only: none, include_hidden: none }
+
+
+impl CachedDirListingVariants:
+    fn get(_self: &CachedDirListingVariants, show_hidden: Bool) -> Option<&CachedDirListing>:
+        if show_hidden:
+            (*_self).include_hidden
+        else:
+            (*_self).visible_only
+
+    fn set(_self: &mut CachedDirListingVariants, show_hidden: Bool, listing: CachedDirListing):
+        if show_hidden:
+            (*_self).include_hidden = Option::Some(listing)
+            ()
+        else:
+            (*_self).visible_only = Option::Some(listing)
+            ()
+
+
+struct CachedSearchNameEntry:
+    name_lower: String
+    path_lower: String
+    result: FileSearchResult
+
+struct CachedSearchIndex:
+    entries: Slice<CachedSearchNameEntry>
+    cached_at: std::time::Instant
+
+struct CachedSearchIndexVariants:
+    visible_only: Option<CachedSearchIndex>
+    include_hidden: Option<CachedSearchIndex>
+
+impl Default for CachedSearchIndexVariants:
+    fn default_() -> CachedSearchIndexVariants:
+        CachedSearchIndexVariants { visible_only: none, include_hidden: none }
+
+
+impl CachedSearchIndexVariants:
+    fn get(_self: &CachedSearchIndexVariants, show_hidden: Bool) -> Option<&CachedSearchIndex>:
+        if show_hidden:
+            (*_self).include_hidden
+        else:
+            (*_self).visible_only
+
+    fn set(_self: &mut CachedSearchIndexVariants, show_hidden: Bool, index: CachedSearchIndex):
+        if show_hidden:
+            (*_self).include_hidden = Option::Some(index)
+            ()
+        else:
+            (*_self).visible_only = Option::Some(index)
+            ()
+
+
+struct CachedSearchContentEntry:
+    name_lower: String
+    path_lower: String
+    result: FileSearchResult
+    content: Option<String>
+
+struct CachedSearchContentIndex:
+    entries: Slice<CachedSearchContentEntry>
+    cached_at: std::time::Instant
+
+struct CachedSearchContentIndexVariants:
+    visible_only: Option<CachedSearchContentIndex>
+    include_hidden: Option<CachedSearchContentIndex>
+
+impl Default for CachedSearchContentIndexVariants:
+    fn default_() -> CachedSearchContentIndexVariants:
+        CachedSearchContentIndexVariants { visible_only: none, include_hidden: none }
+
+
+impl CachedSearchContentIndexVariants:
+    fn get(_self: &CachedSearchContentIndexVariants, show_hidden: Bool) -> Option<&CachedSearchContentIndex>:
+        if show_hidden:
+            (*_self).include_hidden
+        else:
+            (*_self).visible_only
+
+    fn set(_self: &mut CachedSearchContentIndexVariants, show_hidden: Bool, index: CachedSearchContentIndex):
+        if show_hidden:
+            (*_self).include_hidden = Option::Some(index)
+            ()
+        else:
+            (*_self).visible_only = Option::Some(index)
+            ()
+
+
+struct FsRuntimeCachePolicy:
+    dir_list_cache_ttl_ms: u64
+    search_name_index_cache_ttl_ms: u64
+    search_content_index_cache_ttl_ms: u64
+    entry_size_cache_ttl_ms: u64
+    entry_size_scan_budget_ms: u64
+    search_content_index_total_bytes_budget: u64
+    max_search_content_file_bytes: u64
+    search_max_indexed_entries: u64
+
+struct FsCachePolicy:
+    dir_list_cache_ttl: std::time::Duration
+    search_name_index_cache_ttl: std::time::Duration
+    search_content_index_cache_ttl: std::time::Duration
+    entry_size_cache_ttl: std::time::Duration
+    entry_size_scan_budget: std::time::Duration
+    search_content_index_total_bytes_budget: u64
+    max_search_content_file_bytes: u64
+    search_max_indexed_entries: usize
+
+impl FsCachePolicy:
+    fn snapshot(_self: &FsCachePolicy) -> FsRuntimeCachePolicy:
+        FsRuntimeCachePolicy { dir_list_cache_ttl_ms: (*_self).dir_list_cache_ttl.as_millis() as u64, search_name_index_cache_ttl_ms: (*_self).search_name_index_cache_ttl.as_millis() as u64, search_content_index_cache_ttl_ms: (*_self).search_content_index_cache_ttl.as_millis() as u64, entry_size_cache_ttl_ms: (*_self).entry_size_cache_ttl.as_millis() as u64, entry_size_scan_budget_ms: (*_self).entry_size_scan_budget.as_millis() as u64, search_content_index_total_bytes_budget: (*_self).search_content_index_total_bytes_budget, max_search_content_file_bytes: (*_self).max_search_content_file_bytes, search_max_indexed_entries: (*_self).search_max_indexed_entries as u64 }
+
+
+fn parse_fs_cache_policy_u64(raw: Option<String>, default: u64) -> u64:
+    raw.map(str__trim).filter(|value| !value.is_empty()).and_then(|value| value.parse().ok()).unwrap_or(default_)
+
+fn resolve_fs_cache_policy_from_lookup(lookup: impl FnMut) -> FsCachePolicy:
+    FsCachePolicy { dir_list_cache_ttl: Duration__from_millis(parse_fs_cache_policy_u64(lookup(DIR_LIST_CACHE_TTL_ENV), DIR_LIST_CACHE_TTL_MS_DEFAULT)), search_name_index_cache_ttl: Duration__from_millis(parse_fs_cache_policy_u64(lookup(SEARCH_NAME_INDEX_CACHE_TTL_ENV), SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT)), search_content_index_cache_ttl: Duration__from_millis(parse_fs_cache_policy_u64(lookup(SEARCH_CONTENT_INDEX_CACHE_TTL_ENV), SEARCH_CONTENT_INDEX_CACHE_TTL_MS_DEFAULT)), entry_size_cache_ttl: Duration__from_millis(parse_fs_cache_policy_u64(lookup(ENTRY_SIZE_CACHE_TTL_ENV), ENTRY_SIZE_CACHE_TTL_MS_DEFAULT)), entry_size_scan_budget: Duration__from_millis(parse_fs_cache_policy_u64(lookup(ENTRY_SIZE_SCAN_BUDGET_ENV), ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT)), search_content_index_total_bytes_budget: parse_fs_cache_policy_u64(lookup(SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV), SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT), max_search_content_file_bytes: parse_fs_cache_policy_u64(lookup(MAX_SEARCH_CONTENT_BYTES_ENV), MAX_SEARCH_CONTENT_BYTES_DEFAULT), search_max_indexed_entries: parse_fs_cache_policy_u64(lookup(SEARCH_MAX_INDEXED_ENTRIES_ENV), SEARCH_MAX_INDEXED_ENTRIES_DEFAULT).clamp(1, usize__MAX as u64) as usize }
+
+fn load_fs_cache_policy() -> FsCachePolicy:
+    resolve_fs_cache_policy_from_lookup(|key| std__env__var_(key).ok())
+
+fn fs_cache_policy() -> &FsCachePolicy:
+    FS_CACHE_POLICY.get_or_init(load_fs_cache_policy)
+
+fn dir_list_cache() -> &Map<ExplorerPathKey, CachedDirListingVariants>:
+    DIR_LIST_CACHE.get_or_init(|| Mutex__new_(HashMap__new_()))
+
+fn search_name_index_cache() -> &Map<ExplorerPathKey, CachedSearchIndexVariants>:
+    SEARCH_NAME_INDEX_CACHE.get_or_init(|| Mutex__new_(HashMap__new_()))
+
+fn search_content_index_cache() -> &Map<ExplorerPathKey, CachedSearchContentIndexVariants>:
+    SEARCH_CONTENT_INDEX_CACHE.get_or_init(|| Mutex__new_(HashMap__new_()))
+
+fn entry_size_cache() -> &Map<String, CachedEntrySize>:
+    ENTRY_SIZE_CACHE.get_or_init(|| Mutex__new_(HashMap__new_()))
+
+fn search_requests() -> &Map<String, u64>:
+    SEARCH_REQUESTS.get_or_init(|| Mutex__new_(HashMap__new_()))
+
+fn explorer_task_registry() -> &ExplorerTaskRegistry:
+    EXPLORER_TASK_REGISTRY.get_or_init(|| Mutex__new_(ExplorerTaskRegistry__default_()))
+
+fn initialize_fs_command_events(app: tauri::AppHandle):
+    let _ = FS_COMMAND_APP_HANDLE.set(app)
+
+fn fs_command_app_handle() -> Option<&tauri::AppHandle>:
+    FS_COMMAND_APP_HANDLE.get()
+
+fn ensure_yazi_runtime() -> Result<(), String>:
+    FS_COMMAND_YAZI_RUNTIME.get_or_init(
+        || block:
+            yazi_shared__init()
+            ()
+            yazi_term__init()
+            ()
+            yazi_fs__init()
+            ()
+            yazi_config__init_default().map_err(|error| format!("Failed to initialize Yazi default config: {error}"))?
+            ()
+            yazi_vfs__init()
+            ()
+            yazi_boot__init_default()
+            ()
+            yazi_dds__init()
+            ()
+            yazi_dds__serve()
+            ()
+            Result::Ok(())
+    ).clone()
+
+fn fs_command_scheduler() -> Result<&yazi_scheduler::Scheduler, String>:
+    ensure_yazi_runtime()?
+    ()
+    Result::Ok(FS_COMMAND_YAZI_SCHEDULER.get_or_init(|| Arc__new_(Scheduler__serve())))
+
+fn current_epoch_ms() -> u64:
+    SystemTime__now().duration_since(std__time__UNIX_EPOCH).map(|duration| duration.as_millis() as u64).unwrap_or(0)
+
+fn task_path_label(path: &std::path::Path) -> String:
+    path.file_name().map(|value| value.to_string_lossy().to_string()).filter(|value| !value.trim().is_empty()).unwrap_or_else(|| path.display().to_string())
+
+fn task_output_ready(status: ExplorerTaskStatus, destination_path: Option<String>) -> Bool:
+    status == ExplorerTaskStatus::Succeeded and destination_path.map(|value| !value.trim().is_empty()).unwrap_or(false)
+
+fn refresh_explorer_task_capabilities(entry: &mut ExplorerTaskRegistryEntry):
+    (*entry).record.can_retry = (*entry).retry_context.is_some() and matches!((*entry).record.status, ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled)
+    ()
+    (*entry).record.can_cancel = (*entry).cancel_context.is_some() and (*entry).record.status == ExplorerTaskStatus::Running
+    ()
+    let output_ready = task_output_ready((*entry).record.status, (*entry).record.destination_path)
+    (*entry).record.can_reveal_output = output_ready
+    ()
+    (*entry).record.can_open_output = output_ready
+    ()
+
+fn emit_explorer_task_progress(record: &ExplorerTaskRecord):
+    let Some(app) = fs_command_app_handle()
+    let event = ExplorerTaskProgressEvent { task_id: (*record).id.clone(), task: record.clone() }
+    let _ = event.emit_(app)
+    publish_explorer_task_progress_to_message_ring(app, record, &event)
+    ()
+
+fn publish_explorer_task_progress_to_message_ring(app: &tauri::AppHandle, record: &ExplorerTaskRecord, event: &ExplorerTaskProgressEvent):
+    let Some(host_event_bus) = app.try_state()
+    let path = (*record).destination_path.clone().or_else(|| (*record).source_paths.first().cloned())
+    let scope = HostEventScope { path: path, task_id: Option::Some((*record).id.clone()), ..HostEventScope__default_() }
+    match serde_json__to_string(event):
+        Ok(payload_json) =>
+            let _ = host_event_bus.publish_host_topic(runtime_pipeline__HOST_EVENT_TOPIC_TASKS_PROGRESS, Option::Some(payload_json), none, scope.clone(), false)
+            ()
+        _ =>
+            ()
+            ()
+    let output_payload = serde_json::json!()
+    let _ = host_event_bus.publish_host_topic(runtime_pipeline__HOST_EVENT_TOPIC_TASKS_OUTPUT, Option::Some(output_payload.to_string()), none, scope, false)
+
+fn sort_explorer_tasks(tasks: &mut Slice<ExplorerTaskRecord>):
+    tasks.sort_by(
+        |left, right| block:
+            let left_running = left.status == ExplorerTaskStatus::Running
+            let right_running = right.status == ExplorerTaskStatus::Running
+            match right_running.cmp(&left_running):
+                cmp::Ordering::Equal =>
+                    let left_time = if left_running:
+                        left.started_at
+                    else:
+                        left.finished_at.unwrap_or(left.started_at)
+                    let right_time = if right_running:
+                        right.started_at
+                    else:
+                        right.finished_at.unwrap_or(right.started_at)
+                    right_time.cmp(&left_time)
+                ordering => ordering
+    )
+    ()
+
+fn register_explorer_task(task_id: String, registration: ExplorerTaskRegistration, cancel_context: Option<ExplorerTaskCancelContext>) -> ExplorerTaskRecord:
+    let mut registry = explorer_task_registry().lock().expect("explorer task registry lock poisoned")
+    let started_at = current_epoch_ms()
+    let mut entry = ExplorerTaskRegistryEntry { record: ExplorerTaskRecord { id: task_id.clone(), kind: registration.kind, status: ExplorerTaskStatus::Running, title: registration.title, detail: registration.detail, progress_current: none, progress_total: none, started_at: started_at, finished_at: none, source_paths: registration.source_paths, destination_path: registration.destination_path, error_message: none, can_retry: false, can_cancel: false, can_reveal_output: false, can_open_output: false, can_undo: registration.can_undo, scheduler_task: none }, retry_context: registration.retry_context, cancel_context: cancel_context, cancel_requested: false }
+    refresh_explorer_task_capabilities(&mut entry)
+    ()
+    if !registry.order.iter().any(|existing| existing == &task_id):
+        registry.order.push(task_id.clone())
+        ()
+        ()
+        ()
+        ()
+    let record = entry.record.clone()
+    registry.entries.insert(task_id, entry)
+    ()
+    drop(registry)
+    ()
+    emit_explorer_task_progress(&record)
+    ()
+    record
+
+fn mutate_explorer_task(task_id: String, mutator: impl FnOnce) -> Result<ExplorerTaskRecord, String>:
+    let mut registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let entry = registry.entries.get_mut(task_id).ok_or_else(|| format!("Explorer task not found: {task_id}"))?
+    mutator(entry)
+    ()
+    refresh_explorer_task_capabilities(entry)
+    ()
+    let record = entry.record.clone()
+    drop(registry)
+    ()
+    emit_explorer_task_progress(&record)
+    ()
+    Result::Ok(record)
+
+fn update_explorer_task_progress(task_id: String, detail: Option<String>, progress_current: Option<u64>, progress_total: Option<u64>) -> Result<ExplorerTaskRecord, String>:
+    mutate_explorer_task(
+        task_id,
+        |entry| if entry.record.status == ExplorerTaskStatus::Running:
+            match detail:
+                Some(detail) =>
+                    entry.record.detail = detail
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            entry.record.progress_current = progress_current
+            ()
+            entry.record.progress_total = progress_total
+            ()
+    )
+
+fn mark_explorer_task_finished(task_id: String, status: ExplorerTaskStatus, detail: Option<String>, error_message: Option<String>, can_undo: Option<Bool>) -> Result<ExplorerTaskRecord, String>:
+    mutate_explorer_task(
+        task_id,
+        |entry| block:
+            entry.record.status = status
+            ()
+            entry.record.finished_at = Option::Some(current_epoch_ms())
+            ()
+            match detail:
+                Some(detail) =>
+                    entry.record.detail = detail
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            entry.record.error_message = error_message
+            ()
+            match can_undo:
+                Some(can_undo) =>
+                    entry.record.can_undo = can_undo
+                    ()
+                _ => ()
+    )
+
+fn create_manual_explorer_task_with_id(task_id: String, registration: ExplorerTaskRegistration) -> String:
+    register_explorer_task(task_id.clone(), registration, none)
+    ()
+    task_id
+
+fn create_manual_explorer_task(registration: ExplorerTaskRegistration) -> String:
+    create_manual_explorer_task_with_id(Uuid__new_v4().to_string(), registration)
+
+fn set_manual_explorer_task_cancel_context(task_id: String, cancel_context: ExplorerTaskCancelContext) -> Result<ExplorerTaskRecord, String>:
+    mutate_explorer_task(
+        task_id,
+        |entry| block:
+            entry.cancel_context = Option::Some(cancel_context)
+            ()
+    )
+
+fn update_manual_explorer_task(task_id: String, detail: Option<String>, progress_current: Option<u64>, progress_total: Option<u64>) -> Result<ExplorerTaskRecord, String>:
+    update_explorer_task_progress(task_id, detail, progress_current, progress_total)
+
+fn complete_manual_explorer_task(task_id: String, detail: Option<String>, can_undo: Option<Bool>) -> Result<ExplorerTaskRecord, String>:
+    mark_explorer_task_finished(task_id, ExplorerTaskStatus::Succeeded, detail, none, can_undo)
+
+fn fail_manual_explorer_task(task_id: String, error_message: String) -> Result<ExplorerTaskRecord, String>:
+    mark_explorer_task_finished(task_id, ExplorerTaskStatus::Failed, Option::Some(error_message.clone()), Option::Some(error_message), none)
+
+fn cancel_manual_explorer_task(task_id: String, detail: Option<String>) -> Result<ExplorerTaskRecord, String>:
+    mark_explorer_task_finished(task_id, ExplorerTaskStatus::Cancelled, detail.or_else(|| Option::Some("Cancelled".to_string())), Option::Some("Cancelled".to_string()), none)
+
+fn recursive_size_task_detail(current: usize, total: usize) -> String:
+    if total == 0:
+        return "Calculating recursive sizes".to_string()
+    format!("Calculated {} of {} recursive size item{}", current, total, if total == 1:
+        ""
+    else:
+        "s")
+
+fn checksum_task_detail(current: usize, total: usize) -> String:
+    if total == 0:
+        return "Calculating checksums".to_string()
+    format!("Calculated {} of {} checksum item{}", current, total, if total == 1:
+        ""
+    else:
+        "s")
+
+fn batch_recursive_size_task_registration(paths: Array<String>, force_refresh: Bool) -> ExplorerTaskRegistration:
+    ExplorerTaskRegistration { kind: ExplorerTaskKind::RecursiveSize, title: format!("Calculate recursive size for {} item{}", paths.len(), if paths.len() == 1:
+        ""
+    else:
+        "s"), detail: "Calculating recursive sizes".to_string(), source_paths: paths.clone(), destination_path: none, retry_context: Option::Some(ExplorerTaskRetryContext::RecursiveSize { paths: paths, force_refresh: force_refresh }), can_undo: false }
+
+fn batch_checksum_task_registration(paths: Array<String>) -> ExplorerTaskRegistration:
+    ExplorerTaskRegistration { kind: ExplorerTaskKind::Checksum, title: format!("Calculate checksums for {} item{}", paths.len(), if paths.len() == 1:
+        ""
+    else:
+        "s"), detail: "Calculating checksums".to_string(), source_paths: paths.clone(), destination_path: none, retry_context: Option::Some(ExplorerTaskRetryContext::Checksum { paths: paths }), can_undo: false }
+
+fn batch_delete_task_detail(current: usize, total: usize) -> String:
+    if total == 0:
+        return "Deleting queued items".to_string()
+    format!("Deleted {} of {} queued item{}", current, total, if total == 1:
+        ""
+    else:
+        "s")
+
+fn batch_delete_task_registration(paths: Array<String>) -> ExplorerTaskRegistration:
+    ExplorerTaskRegistration { kind: ExplorerTaskKind::Delete, title: format!("Delete {} queued item{}", paths.len(), if paths.len() == 1:
+        ""
+    else:
+        "s"), detail: "Deleting queued items".to_string(), source_paths: paths.clone(), destination_path: none, retry_context: Option::Some(ExplorerTaskRetryContext::DeleteMany { paths: paths }), can_undo: false }
+
+fn normalize_batch_delete_paths(paths: Array<String>) -> Array<String>:
+    let mut unique = paths.into_iter().map(|path| path.trim().to_string()).filter(|path| !path.is_empty()).collect()
+    unique.sort_by(|left, right| left.len().cmp(&right.len()).then_with(|| left.to_lowercase().cmp(&right.to_lowercase())))
+    ()
+    unique.dedup_by(|left, right| left.eq_ignore_ascii_case(right))
+    ()
+    let mut normalized = Vec__new_()
+    for candidate in unique:
+        let candidate_path = PathBuf__from(&candidate)
+        let is_descendant = normalized.iter().any(
+            |existing| block:
+                let existing_path = Path__new_(existing)
+                candidate_path != existing_path and candidate_path.starts_with(existing_path)
+        )
+        if !is_descendant:
+            normalized.push(candidate)
+            ()
+    ()
+    normalized
+
+fn calculate_file_checksums_with_cancel(path: &std::path::Path, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<FsChecksumEntryInfo, String>:
+    match cancellation_token:
+        Some(token) =>
+            token.throw_if_cancelled()?
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    let metadata = std__fs__metadata(path).map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
+    if metadata.is_dir():
+        return Result::Ok(FsChecksumEntryInfo { path: path.to_string_lossy().to_string(), bytes: 0, is_dir: true, md5: none, sha256: none, error: Option::Some("Checksums are only supported for regular files.".to_string()) })
+    let mut file = File__open(path).map_err(|error| format!("Failed to open {}: {error}", path.display()))?
+    let mut md5_hasher = Context__new_()
+    let mut sha256_hasher = Sha256__new_()
+    let mut buffer = [0]
+    let mut bytes = 0
+    loop:
+        match cancellation_token:
+            Some(token) =>
+                token.throw_if_cancelled()?
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        let read = file.read(&mut buffer).map_err(|error| format!("Failed to read {}: {error}", path.display()))?
+        if read == 0:
+            break
+        bytes = bytes.saturating_add(read as u64)
+        ()
+        md5_hasher.consume(&buffer[..read])
+        ()
+        sha256_hasher.update(&buffer[..read])
+        ()
+    ()
+    Result::Ok(FsChecksumEntryInfo { path: path.to_string_lossy().to_string(), bytes: bytes, is_dir: false, md5: Option::Some(format!("{:x}", md5_hasher.compute())), sha256: Option::Some(format!("{:x}", sha256_hasher.finalize())), error: none })
+
+fn fuzzy_boundary_score(chars: &Slice<Char>, index: usize) -> i64:
+    if index == 0:
+        return 16
+    let previous = chars[index - 1]
+    let current = chars[index]
+    if matches!(previous, "/" | "\\" | "." | "-" | "_" | " "):
+        14
+    else if previous.is_lowercase() and current.is_uppercase():
+        10
+    else:
+        0
+
+fn fuzzy_score_text(query: String, haystack: String) -> Option<(i64, Array<usize>)>:
+    let query = query.trim()
+    if query.is_empty():
+        return Option::Some((0, Vec__new_()))
+    let lower_query = query.to_lowercase().chars().collect()
+    let lower_haystack = haystack.to_lowercase().chars().collect()
+    let haystack_chars = haystack.chars().collect()
+    let mut matched_indices = |__kain_ctor_arg0| Vec::new()(lower_query.len())
+    let mut search_start = 0
+    let mut score = 0
+    let mut last_match = none
+    for (query_index, query_char) in lower_query.iter().enumerate():
+        let mut found = none
+        for index in search_start..lower_haystack.len():
+            if lower_haystack[index] == *query_char:
+                found = Option::Some(index)
+                ()
+                break
+        ()
+        let index = found?
+        matched_indices.push(index)
+        ()
+        score = score + 20
+        ()
+        score = score + fuzzy_boundary_score(&haystack_chars, index)
+        ()
+        match last_match:
+            Some(previous) =>
+                let gap = index.saturating_sub(previous + 1)
+                if gap == 0:
+                    score = score + 12
+                    ()
+                    ()
+                    ()
+                    ()
+                else:
+                    score = score - (gap as i64).min(10)
+                    ()
+                    ()
+                    ()
+                    ()
+                ()
+            _ =>
+                if query_index == 0 and index == 0:
+                    score = score + 20
+                    ()
+                    ()
+                    ()
+                    ()
+        search_start = index + 1
+        ()
+        last_match = Option::Some(index)
+        ()
+    ()
+    score = score - (haystack_chars.len() as i64 / 6).min(20)
+    ()
+    Option::Some((score, matched_indices))
+
+fn fuzzy_score_entry(query: String, entry: &FsJumpFilterEntry) -> Option<(i64, Array<usize>)>:
+    match fuzzy_score_text(query, &(*entry).name):
+        Some(name_match) =>
+            let path_bonus = fuzzy_score_text(query, &(*entry).path).map(|__kain_closure_arg0| *__kain_closure_arg0.__kain_tuple_0).unwrap_or(0)
+            let mut score = name_match.field_0.saturating_mul(1000) + path_bonus.saturating_mul(10)
+            if (*entry).is_dir:
+                score = score + 5
+                ()
+                ()
+                ()
+                ()
+            Option::Some((score, name_match.field_1))
+        _ =>
+            match fuzzy_score_text(query, &(*entry).path):
+                Some(path_match) =>
+                    let mut score = path_match.field_0.saturating_mul(100)
+                    if (*entry).is_dir:
+                        score = score + 5
+                        ()
+                        ()
+                        ()
+                        ()
+                    Option::Some((score, path_match.field_1))
+                _ =>
+                    none
+
+fn run_recursive_size_task(native_task_graph: &NativeTaskGraphManager, paths: Array<String>, force_refresh: Bool) -> Result<(String, Array<EntryStorageInfo>), String>:
+    if paths.is_empty():
+        return Result::Err("Recursive size request was empty.".to_string())
+    let total = paths.len()
+    let task_id = create_manual_explorer_task(batch_recursive_size_task_registration(paths.clone(), force_refresh))
+    let _ = set_manual_explorer_task_cancel_context(&task_id, ExplorerTaskCancelContext::NativeTaskGraph { task_id: task_id.clone() })
+    let task_id_for_worker = task_id.clone()
+    let submission = native_task_graph.submit_blocking(
+        NativeTaskRequest__new_(NativeTaskLane::DirectoryScan, NativeTaskPriority::UserInitiated, "recursive size").with_task_id(task_id.clone()).user_visible(true),
+        |token| block:
+            let mut results = |__kain_ctor_arg0| Vec::new()(total)
+            for (index, path) in paths.iter().enumerate():
+                token.throw_if_cancelled()?
+                ()
+                let mut measured = measure_entry_sizes_blocking_with_cancel(vec!(path.clone()), force_refresh, Option::Some(&token))?
+                token.throw_if_cancelled()?
+                ()
+                let entry = measured.pop().unwrap_or_else(|| EntryStorageInfo { path: path.clone(), bytes: 0, is_dir: Path__new_(path).is_dir(), is_complete: false })
+                results.push(entry)
+                ()
+                let _ = update_manual_explorer_task(&task_id_for_worker, Option::Some(recursive_size_task_detail(index + 1, total)), Option::Some((index + 1) as u64), Option::Some(total as u64))
+            ()
+            Result::Ok(results)
+    )
+    let submission = match submission:
+        Ok(submission) => submission
+        Err(error) =>
+            let _ = fail_manual_explorer_task(&task_id, error.clone())
+            return Result::Err(error)
+    let result = await submission.wait()
+    match result:
+        Ok(results) =>
+            let _ = complete_manual_explorer_task(&task_id, Option::Some(recursive_size_task_detail(total, total)), none)
+            Result::Ok((task_id, results))
+        Err(error) =>
+            if native_task_graph__is_native_task_cancelled_error(&error):
+                let _ = cancel_manual_explorer_task(&task_id, Option::Some("Cancelled".to_string()))
+                ()
+            else:
+                let _ = fail_manual_explorer_task(&task_id, error.clone())
+                ()
+            Result::Err(error)
+
+fn run_checksum_task(native_task_graph: &NativeTaskGraphManager, paths: Array<String>) -> Result<(String, Array<FsChecksumEntryInfo>), String>:
+    if paths.is_empty():
+        return Result::Err("Checksum request was empty.".to_string())
+    let total = paths.len()
+    let task_id = create_manual_explorer_task(batch_checksum_task_registration(paths.clone()))
+    let _ = set_manual_explorer_task_cancel_context(&task_id, ExplorerTaskCancelContext::NativeTaskGraph { task_id: task_id.clone() })
+    let task_id_for_worker = task_id.clone()
+    let submission = native_task_graph.submit_blocking(
+        NativeTaskRequest__new_(NativeTaskLane::Checksum, NativeTaskPriority::UserInitiated, "checksum").with_task_id(task_id.clone()).user_visible(true),
+        |token| block:
+            let mut results = |__kain_ctor_arg0| Vec::new()(total)
+            for (index, path) in paths.iter().enumerate():
+                token.throw_if_cancelled()?
+                ()
+                let entry = match calculate_file_checksums_with_cancel(Path__new_(path), Option::Some(&token)):
+                    Ok(entry) => entry
+                    Err(error) => FsChecksumEntryInfo { path: path.clone(), bytes: 0, is_dir: Path__new_(path).is_dir(), md5: none, sha256: none, error: Option::Some(error) }
+                token.throw_if_cancelled()?
+                ()
+                results.push(entry)
+                ()
+                let _ = update_manual_explorer_task(&task_id_for_worker, Option::Some(checksum_task_detail(index + 1, total)), Option::Some((index + 1) as u64), Option::Some(total as u64))
+            ()
+            Result::Ok(results)
+    )
+    let submission = match submission:
+        Ok(submission) => submission
+        Err(error) =>
+            let _ = fail_manual_explorer_task(&task_id, error.clone())
+            return Result::Err(error)
+    let result = await submission.wait()
+    match result:
+        Ok(results) =>
+            let _ = complete_manual_explorer_task(&task_id, Option::Some(checksum_task_detail(total, total)), none)
+            Result::Ok((task_id, results))
+        Err(error) =>
+            if native_task_graph__is_native_task_cancelled_error(&error):
+                let _ = cancel_manual_explorer_task(&task_id, Option::Some("Cancelled".to_string()))
+                ()
+            else:
+                let _ = fail_manual_explorer_task(&task_id, error.clone())
+                ()
+            Result::Err(error)
+
+fn run_delete_many_task(paths: Array<String>) -> Result<String, String>:
+    let normalized_paths = normalize_batch_delete_paths(paths)
+    if normalized_paths.is_empty():
+        return Result::Err("Delete request was empty.".to_string())
+    let total = normalized_paths.len()
+    let task_id = create_manual_explorer_task(batch_delete_task_registration(normalized_paths.clone()))
+    for (index, path) in normalized_paths.iter().enumerate():
+        let path_ref = Path__new_(path)
+        let metadata = std__fs__symlink_metadata(path_ref).map_err(|error| format!("Failed to inspect path {}: {error}", path_ref.display()))?
+        let recursive = metadata.is_dir()
+        ensure_nonrecursive_delete_allowed(path_ref, recursive)?
+        ()
+        (await delete_path_with_scheduler(path_ref, recursive))?
+        ()
+        invalidate_all_fs_caches(path_ref)
+        ()
+        match path_ref.parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        let _ = update_manual_explorer_task(&task_id, Option::Some(batch_delete_task_detail(index + 1, total)), Option::Some((index + 1) as u64), Option::Some(total as u64))
+    ()
+    let _ = complete_manual_explorer_task(&task_id, Option::Some(batch_delete_task_detail(total, total)), none)
+    Result::Ok(task_id)
+
+fn set_recent_trash_task(task_id: Option<String>) -> Result<(), String>:
+    let mut registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let mut changed_records = Vec__new_()
+    for entry in registry.entries.values_mut():
+        if entry.record.kind != ExplorerTaskKind::Trash:
+            continue
+        let should_undo = task_id.map(|candidate| candidate == entry.record.id).unwrap_or(false) and entry.record.status == ExplorerTaskStatus::Succeeded
+        if entry.record.can_undo != should_undo:
+            entry.record.can_undo = should_undo
+            ()
+            refresh_explorer_task_capabilities(entry)
+            ()
+            changed_records.push(entry.record.clone())
+            ()
+    ()
+    drop(registry)
+    ()
+    for record in changed_records:
+        emit_explorer_task_progress(&record)
+        ()
+    ()
+    Result::Ok(())
+
+fn list_explorer_tasks_snapshot() -> Result<Array<ExplorerTaskRecord>, String>:
+    let registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let mut tasks = registry.order.iter().filter_map(|task_id| registry.entries.get(task_id)).map(|entry| entry.record.clone()).collect()
+    drop(registry)
+    ()
+    sort_explorer_tasks(&mut tasks)
+    ()
+    Result::Ok(tasks)
+
+fn yazi_progress_counts(task: &yazi_specta::YaziSchedulerTaskSnap) -> (Option<u64>, Option<u64>):
+    match &(*task).prog:
+        yazi_specta::YaziSchedulerTaskProg::FileCopy(prog) =>
+            if prog.total_bytes > 0:
+                (Option::Some(prog.processed_bytes), Option::Some(prog.total_bytes))
+            else if prog.total_files > 0:
+                (Option::Some((prog.success_files + prog.failed_files).into()), Option::Some(prog.total_files.into()))
+            else:
+                (none, none)
+        yazi_specta::YaziSchedulerTaskProg::FileCut(prog) =>
+            if prog.total_bytes > 0:
+                (Option::Some(prog.processed_bytes), Option::Some(prog.total_bytes))
+            else if prog.total_files > 0:
+                (Option::Some((prog.success_files + prog.failed_files).into()), Option::Some(prog.total_files.into()))
+            else:
+                (none, none)
+        yazi_specta::YaziSchedulerTaskProg::FileDelete(prog) =>
+            if prog.total_bytes > 0:
+                (Option::Some(prog.processed_bytes), Option::Some(prog.total_bytes))
+            else if prog.total_files > 0:
+                (Option::Some((prog.success_files + prog.failed_files).into()), Option::Some(prog.total_files.into()))
+            else:
+                (none, none)
+        yazi_specta::YaziSchedulerTaskProg::FileDownload(prog) =>
+            if prog.total_bytes > 0:
+                (Option::Some(prog.processed_bytes), Option::Some(prog.total_bytes))
+            else if prog.total_files > 0:
+                (Option::Some((prog.success_files + prog.failed_files).into()), Option::Some(prog.total_files.into()))
+            else:
+                (none, none)
+        yazi_specta::YaziSchedulerTaskProg::FileUpload(prog) =>
+            if prog.total_bytes > 0:
+                (Option::Some(prog.processed_bytes), Option::Some(prog.total_bytes))
+            else if prog.total_files > 0:
+                (Option::Some((prog.success_files + prog.failed_files).into()), Option::Some(prog.total_files.into()))
+            else:
+                (none, none)
+        yazi_specta::YaziSchedulerTaskProg::FileHardlink(prog) =>
+            if prog.total > 0:
+                (Option::Some((prog.success + prog.failed).into()), Option::Some(prog.total.into()))
+            else:
+                (none, none)
+        _ => (none, none)
+
+fn yazi_task_failed(task: &yazi_specta::YaziSchedulerTaskSnap) -> Bool:
+    match &(*task).prog:
+        yazi_specta::YaziSchedulerTaskProg::FileCopy(prog) =>
+            prog.cleaned == Option::Some(false) or prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileCut(prog) =>
+            prog.cleaned == Option::Some(false) or prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileDelete(prog) =>
+            prog.cleaned == Option::Some(false) or prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileDownload(prog) =>
+            prog.cleaned == Option::Some(false) or prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileUpload(prog) =>
+            prog.cleaned == Option::Some(false) or prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileHardlink(prog) => prog.collected == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileLink(prog) => prog.state == Option::Some(false)
+        yazi_specta::YaziSchedulerTaskProg::FileTrash(prog) =>
+            prog.cleaned == Option::Some(false) or prog.state == Option::Some(false)
+        _ => false
+
+fn sync_yazi_task_record(task_id: String, task: &yazi_specta::YaziSchedulerTaskSnap) -> Result<ExplorerTaskRecord, String>:
+    let (progress_current, progress_total) = yazi_progress_counts(task)
+    mutate_explorer_task(
+        task_id,
+        |entry| block:
+            entry.record.scheduler_task = Option::Some(task.clone())
+            ()
+            entry.record.progress_current = progress_current
+            ()
+            entry.record.progress_total = progress_total
+            ()
+            if !entry.cancel_requested and entry.record.status == ExplorerTaskStatus::Running and yazi_task_failed(task):
+                entry.record.status = ExplorerTaskStatus::Failed
+                ()
+    )
+
+fn explorer_task_cancel_requested(task_id: String) -> Bool:
+    explorer_task_registry().lock().ok().and_then(|registry| registry.entries.get(task_id).map(|entry| entry.cancel_requested)).unwrap_or(false)
+
+struct ExplorerYaziTaskState:
+    snap: yazi_specta::YaziSchedulerTaskSnap
+    running: Bool
+    failed: Bool
+    logs: String
+
+fn current_explorer_yazi_task_state(task_id: yazi_shared::Id) -> Option<ExplorerYaziTaskState>:
+    let ongoing = (fs_command_scheduler().ok()?).ongoing.lock()
+    let task = ongoing.values().find(|task| task.id == task_id)?
+    let snap = TaskSnap__from(task)
+    Option::Some(ExplorerYaziTaskState { running: snap.prog.running(), failed: snap.prog.failed(), logs: task.logs.clone(), snap: snap.into() })
+
+fn explorer_yazi_task_error(state: &ExplorerYaziTaskState) -> String:
+    (*state).logs.lines().rev().map(str__trim).find(|line| !line_.is_empty()).map(ToOwned__to_owned).unwrap_or_else(|| format!("{} failed", (*state).snap.name))
+
+fn await_explorer_yazi_task(ticket: yazi_scheduler::TaskTicket, registration: ExplorerTaskRegistration) -> Result<String, String>:
+    ensure_yazi_runtime()?
+    ()
+    let task_id = ticket.id.to_string()
+    register_explorer_task(task_id.clone(), registration.clone(), Option::Some(ExplorerTaskCancelContext::Yazi { scheduler_task_id: ticket.id }))
+    ()
+    let mut last_state: Option<ExplorerYaziTaskState> = none
+    loop:
+        if explorer_task_cancel_requested(&task_id):
+            match fs_command_scheduler():
+                Ok(scheduler) =>
+                    scheduler.cancel(ticket.id)
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            ()
+        if ticket.done.completed() == Option::Some(true):
+            if explorer_task_cancel_requested(&task_id):
+                let _ = cancel_manual_explorer_task(&task_id, none)
+                return Result::Err(EXPLORER_TASK_CANCELLED_ERROR.to_string())
+            match &last_state:
+                Some(state) =>
+                    if state.failed:
+                        let error_message = explorer_yazi_task_error(state)
+                        let _ = fail_manual_explorer_task(&task_id, error_message.clone())
+                        match fs_command_scheduler():
+                            Ok(scheduler) =>
+                                scheduler.cancel(ticket.id)
+                                ()
+                                ()
+                                ()
+                                ()
+                            _ =>
+                                ()
+                                ()
+                        return Result::Err(error_message)
+                    ()
+                _ =>
+                    ()
+                    ()
+            let _ = complete_manual_explorer_task(&task_id, Option::Some(registration.detail.clone()), none)
+            return Result::Ok(task_id)
+        match current_explorer_yazi_task_state(ticket.id):
+            Some(state) =>
+                if match last_state:
+                    Option::Some(__kain_option_as_ref_value) => Option::Some(&__kain_option_as_ref_value)
+                    Option::None => none.map(|previous| previous.snap != state.snap).unwrap_or(true):
+                    let _ = sync_yazi_task_record(&task_id, &state.snap)
+                    ()
+                if !state.running:
+                    if explorer_task_cancel_requested(&task_id):
+                        let _ = cancel_manual_explorer_task(&task_id, none)
+                        return Result::Err(EXPLORER_TASK_CANCELLED_ERROR.to_string())
+                    if state.failed:
+                        let error_message = explorer_yazi_task_error(&state)
+                        let _ = fail_manual_explorer_task(&task_id, error_message.clone())
+                        match fs_command_scheduler():
+                            Ok(scheduler) =>
+                                scheduler.cancel(ticket.id)
+                                ()
+                                ()
+                                ()
+                                ()
+                            _ =>
+                                ()
+                                ()
+                        return Result::Err(error_message)
+                    let _ = complete_manual_explorer_task(&task_id, Option::Some(registration.detail.clone()), none)
+                    return Result::Ok(task_id)
+                last_state = Option::Some(state)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                match &last_state:
+                    Some(state) =>
+                        if explorer_task_cancel_requested(&task_id):
+                            let _ = cancel_manual_explorer_task(&task_id, none)
+                            return Result::Err(EXPLORER_TASK_CANCELLED_ERROR.to_string())
+                        if state.failed:
+                            let error_message = explorer_yazi_task_error(state)
+                            let _ = fail_manual_explorer_task(&task_id, error_message.clone())
+                            match fs_command_scheduler():
+                                Ok(scheduler) =>
+                                    scheduler.cancel(ticket.id)
+                                    ()
+                                    ()
+                                    ()
+                                    ()
+                                _ =>
+                                    ()
+                                    ()
+                            return Result::Err(error_message)
+                        let _ = complete_manual_explorer_task(&task_id, Option::Some(registration.detail.clone()), none)
+                        return Result::Ok(task_id)
+                    _ =>
+                        ()
+                        ()
+        await tokio__time__sleep(Duration__from_millis(40))
+        ()
+
+fn path_cache_key(path: &std::path::Path) -> ExplorerPathKey:
+    ExplorerPathKey__from_path(path)
+
+fn path_cache_key_string(path: &std::path::Path) -> String:
+    path_cache_key(path).into_string()
+
+fn prune_expired_dir_list_cache(cache: &mut Map<ExplorerPathKey, CachedDirListingVariants>):
+    let ttl = fs_cache_policy().dir_list_cache_ttl
+    if ttl.is_zero():
+        cache.clear()
+        ()
+        return
+    for variants in cache.values_mut():
+        if variants.visible_only.map(|listing| listing.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.visible_only = none
+            ()
+            ()
+            ()
+            ()
+        if variants.include_hidden.map(|listing| listing.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.include_hidden = none
+            ()
+    ()
+    cache.retain(|_, variants| variants.visible_only.is_some() or variants.include_hidden.is_some())
+    ()
+
+fn prune_expired_search_name_index_cache(cache: &mut Map<ExplorerPathKey, CachedSearchIndexVariants>):
+    let ttl = fs_cache_policy().search_name_index_cache_ttl
+    if ttl.is_zero():
+        cache.clear()
+        ()
+        return
+    for variants in cache.values_mut():
+        if variants.visible_only.map(|index| index.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.visible_only = none
+            ()
+            ()
+            ()
+            ()
+        if variants.include_hidden.map(|index| index.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.include_hidden = none
+            ()
+    ()
+    cache.retain(|_, variants| variants.visible_only.is_some() or variants.include_hidden.is_some())
+    ()
+
+fn prune_expired_search_content_index_cache(cache: &mut Map<ExplorerPathKey, CachedSearchContentIndexVariants>):
+    let ttl = fs_cache_policy().search_content_index_cache_ttl
+    if ttl.is_zero():
+        cache.clear()
+        ()
+        return
+    for variants in cache.values_mut():
+        if variants.visible_only.map(|index| index.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.visible_only = none
+            ()
+            ()
+            ()
+            ()
+        if variants.include_hidden.map(|index| index.cached_at.elapsed() > ttl).unwrap_or(false):
+            variants.include_hidden = none
+            ()
+    ()
+    cache.retain(|_, variants| variants.visible_only.is_some() or variants.include_hidden.is_some())
+    ()
+
+fn search_request_scope(path: String, request_scope: Option<String>) -> String:
+    request_scope.map(|scope| scope.trim().to_string()).filter(|scope| !scope.is_empty()).unwrap_or_else(|| path_cache_key_string(Path__new_(path)))
+
+fn register_search_request(scope: String, request_id: Option<u64>) -> u64:
+    let mut active = search_requests().lock().expect("search request map poisoned")
+    match request_id:
+        Some(id) =>
+            active.insert(scope.to_string(), id)
+            ()
+            id
+        None =>
+            let next_request_id = active.get(scope).copied().unwrap_or(0).saturating_add(1)
+            active.insert(scope.to_string(), next_request_id)
+            ()
+            next_request_id
+
+fn is_search_request_active(scope: String, request_id: u64) -> Bool:
+    search_requests().lock().ok().and_then(|active| active.get(scope).copied()) == Option::Some(request_id)
+
+fn pause_search_entry_scan_for_tests():
+    ()
+
+fn record_search_entry_scan_for_tests():
+    ()
+
+fn invalidate_entry_size_cache(path: &std::path::Path):
+    let key = path_cache_key_string(path)
+    let key_with_separator = if key.ends_with(std__path__MAIN_SEPARATOR):
+        key.clone()
+    else:
+        format!("{key}{}", std__path__MAIN_SEPARATOR)
+    match entry_size_cache().lock():
+        Ok(mut cache) =>
+            cache.retain(
+                |cached_path, _| block:
+                    if cached_path == &key or cached_path.starts_with(&key_with_separator):
+                        return false
+                    let cached_path_with_separator = if cached_path.ends_with(std__path__MAIN_SEPARATOR):
+                        cached_path.clone()
+                    else:
+                        format!("{cached_path}{}", std__path__MAIN_SEPARATOR)
+                    !key.starts_with(&cached_path_with_separator)
+            )
+            ()
+        _ => ()
+
+fn invalidate_dir_list_cache(path: &std::path::Path):
+    let key = path_cache_key(path)
+    match dir_list_cache().lock():
+        Ok(mut cache) =>
+            cache.retain(|cached_path, _| !cached_path.is_same_or_descendant_of(&key))
+            ()
+        _ => ()
+
+fn invalidate_search_name_index_cache(path: &std::path::Path):
+    let key = path_cache_key(path)
+    match search_name_index_cache().lock():
+        Ok(mut cache) =>
+            cache.retain(
+                |cached_path, _| block:
+                    if cached_path.is_same_or_descendant_of(&key):
+                        return false
+                    !key.is_same_or_descendant_of(cached_path)
+            )
+            ()
+        _ => ()
+
+fn invalidate_search_content_index_cache(path: &std::path::Path):
+    let key = path_cache_key(path)
+    match search_content_index_cache().lock():
+        Ok(mut cache) =>
+            cache.retain(
+                |cached_path, _| block:
+                    if cached_path.is_same_or_descendant_of(&key):
+                        return false
+                    !key.is_same_or_descendant_of(cached_path)
+            )
+            ()
+        _ => ()
+
+fn invalidate_persisted_entry_size(path: &std::path::Path):
+    let _ = entry_size_cache__delete_entry_size_subtree(path)
+    let _ = entry_size_cache__mark_path_and_ancestors_dirty(path)
+
+fn invalidate_all_entry_size_caches(path: &std::path::Path):
+    invalidate_entry_size_cache(path)
+    ()
+    invalidate_persisted_entry_size(path)
+    ()
+
+fn invalidate_all_fs_caches(path: &std::path::Path):
+    invalidate_all_entry_size_caches(path)
+    ()
+    invalidate_dir_list_cache(path)
+    ()
+    invalidate_search_name_index_cache(path)
+    ()
+    invalidate_search_content_index_cache(path)
+    ()
+
+fn invalidate_all_fs_caches_for_path(path: &std::path::Path):
+    invalidate_all_fs_caches(path)
+    ()
+    match path.parent():
+        Some(parent) =>
+            invalidate_dir_list_cache(parent)
+            ()
+        _ => ()
+
+struct MeasuredPathSize:
+    bytes: u64
+    is_dir: Bool
+    is_complete: Bool
+    modified_ms: Option<u64>
+    entry_bytes: Option<u64>
+
+fn metadata_modified_ms(metadata: &std::fs::Metadata) -> Option<u64>:
+    metadata.modified().ok().and_then(|value| value.duration_since(std__time__UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64)
+
+fn metadata_created_ms(metadata: &std::fs::Metadata) -> Option<u64>:
+    metadata.created().ok().and_then(|value| value.duration_since(std__time__UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64)
+
+fn metadata_accessed_ms(metadata: &std::fs::Metadata) -> Option<u64>:
+    metadata.accessed().ok().and_then(|value| value.duration_since(std__time__UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64)
+
+fn unix_permissions_octal(metadata: &std::fs::Metadata) -> u32:
+    metadata.permissions().mode() & 511
+
+fn format_unix_permissions(mode: u32) -> String:
+    let mut rendered = |__kain_ctor_arg0| String::new()(9)
+    for shift in [6, 3, 0]:
+        rendered.push(
+            if (mode & (4 << shift)) != 0:
+                "r"
+            else:
+                "-"
+        )
+        ()
+        rendered.push(
+            if (mode & (2 << shift)) != 0:
+                "w"
+            else:
+                "-"
+        )
+        ()
+        rendered.push(
+            if (mode & (1 << shift)) != 0:
+                "x"
+            else:
+                "-"
+        )
+        ()
+    ()
+    rendered
+
+fn describe_permissions(metadata: &std::fs::Metadata) -> FsPermissionInfo:
+    let mode = unix_permissions_octal(metadata)
+    return FsPermissionInfo { readonly: metadata.permissions().readonly(), display: format!("{} ({mode:03o})", format_unix_permissions(mode)), unix_mode: Option::Some(mode), unix_mode_octal: Option::Some(format!("{mode:03o}")) }
+    let readonly = metadata.permissions().readonly()
+    FsPermissionInfo { readonly: readonly, display: if readonly:
+        "Read-only".to_string()
+    else:
+        "Read/Write".to_string(), unix_mode: none, unix_mode_octal: none }
+
+fn read_item_properties(path: &std::path::Path) -> Result<FsItemPropertiesInfo, String>:
+    let metadata = std__fs__symlink_metadata(path).map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?
+    Result::Ok(FsItemPropertiesInfo { path: path.to_string_lossy().to_string(), name: path.file_name().map(|value| value.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string_lossy().to_string()), is_dir: metadata.is_dir(), is_symlink: metadata.file_type().is_symlink(), bytes: if metadata.is_dir():
+        0
+    else:
+        metadata.len(), modified_at_ms: metadata_modified_ms(&metadata), created_at_ms: metadata_created_ms(&metadata), accessed_at_ms: metadata_accessed_ms(&metadata), permissions: describe_permissions(&metadata) })
+
+fn cha_modified_ms(metadata: &yazi_fs::cha::Cha) -> Option<u64>:
+    (*metadata).mtime.and_then(|value| value.duration_since(std__time__UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64)
+
+fn build_local_entry_content_revision(size: u64, modified_ms: u64, is_dir: Bool, is_symlink: Bool) -> String:
+    explorer_identity__build_content_revision(size, modified_ms, is_dir, is_symlink)
+
+fn build_local_entry_identity(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, path: &std::path::Path, size: u64, modified_ms: u64, is_dir: Bool, is_symlink: Bool) -> Result<(String, ExplorerIdentityKind, String), String>:
+    let content_revision = build_local_entry_content_revision(size, modified_ms, is_dir, is_symlink)
+    let resolved_identity = explorer_identity__resolve_local_identity(app, identity_manager, path, &content_revision)?
+    Result::Ok((resolved_identity.entity_id, resolved_identity.identity_kind, resolved_identity.content_revision))
+
+fn build_local_entry_listing_identity(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, path: &std::path::Path, size: u64, modified_ms: u64, is_dir: Bool, is_symlink: Bool) -> Result<(String, ExplorerIdentityKind, String), String>:
+    let _ = app
+    let content_revision = build_local_entry_content_revision(size, modified_ms, is_dir, is_symlink)
+    let resolved_identity = explorer_identity__resolve_fast_local_listing_identity(identity_manager, path, &content_revision)
+    Result::Ok((resolved_identity.entity_id, resolved_identity.identity_kind, resolved_identity.content_revision))
+    ()
+    ()
+    build_local_entry_identity(app, identity_manager, path, size, modified_ms, is_dir, is_symlink)
+
+fn build_transfer_result_from_destination(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, source_path: &std::path::Path, destination_path: &std::path::Path, operation: FileTransferOperation, collision_policy: FileTransferCollisionPolicy, disposition: FileTransferDisposition) -> Result<FileTransferResult, String>:
+    let metadata = std__fs__symlink_metadata(destination_path).map_err(|error| format!("Failed to inspect transferred destination '{}': {error}", destination_path.display()))?
+    let is_symlink = metadata.file_type().is_symlink()
+    let is_dir = metadata.is_dir()
+    let size = if is_dir:
+        0
+    else:
+        metadata.len()
+    let modified = metadata_modified_ms(&metadata).unwrap_or(0)
+    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(app, identity_manager, destination_path, size, modified, is_dir, is_symlink)?
+    Result::Ok(FileTransferResult { source_path: source_path.to_string_lossy().to_string(), destination_path: destination_path.to_string_lossy().to_string(), operation: operation, collision_policy: collision_policy, disposition: disposition, entity_id: entity_id, identity_kind: identity_kind, content_revision: content_revision })
+
+fn build_transfer_result_from_source(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, source_path: &std::path::Path, destination_path: &std::path::Path, operation: FileTransferOperation, collision_policy: FileTransferCollisionPolicy, disposition: FileTransferDisposition) -> Result<FileTransferResult, String>:
+    let metadata = std__fs__symlink_metadata(source_path).map_err(|error| format!("Failed to inspect transfer source '{}': {error}", source_path.display()))?
+    let is_symlink = metadata.file_type().is_symlink()
+    let is_dir = metadata.is_dir()
+    let size = if is_dir:
+        0
+    else:
+        metadata.len()
+    let modified = metadata_modified_ms(&metadata).unwrap_or(0)
+    let (entity_id, identity_kind, content_revision) = build_local_entry_identity(app, identity_manager, source_path, size, modified, is_dir, is_symlink)?
+    Result::Ok(FileTransferResult { source_path: source_path.to_string_lossy().to_string(), destination_path: destination_path.to_string_lossy().to_string(), operation: operation, collision_policy: collision_policy, disposition: disposition, entity_id: entity_id, identity_kind: identity_kind, content_revision: content_revision })
+
+fn current_time_millis() -> u64:
+    SystemTime__now().duration_since(std__time__UNIX_EPOCH).map(|duration| duration.as_millis() as u64).unwrap_or(0)
+
+fn persisted_entry_is_valid(path: &std::path::Path, entry: &PersistedEntrySize) -> Bool:
+    if (*entry).dirty:
+        return false
+    let metadata = match std__fs__symlink_metadata(path):
+        Ok(metadata) => metadata
+        Err(_) => return false
+    let file_type = metadata.file_type()
+    if file_type.is_symlink():
+        return (*entry).bytes == 0 and (*entry).is_complete
+    if (*entry).is_dir != metadata.is_dir():
+        return false
+    let modified_ms = metadata_modified_ms(&metadata)
+    if (*entry).modified_ms != modified_ms:
+        return false
+    if metadata.is_file():
+        return (*entry).entry_bytes == Option::Some(metadata.len())
+    metadata.is_dir()
+
+fn measured_to_persisted_entry(path: &std::path::Path, measurement: &MeasuredPathSize) -> PersistedEntrySize:
+    PersistedEntrySize { path: path_cache_key_string(path), bytes: (*measurement).bytes, is_dir: (*measurement).is_dir, is_complete: (*measurement).is_complete, modified_ms: (*measurement).modified_ms, entry_bytes: (*measurement).entry_bytes, measured_at_ms: current_time_millis(), dirty: false }
+
+fn measure_path_size_with_cancel(path: &std::path::Path, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<MeasuredPathSize, String>:
+    match cancellation_token:
+        Some(token) =>
+            token.throw_if_cancelled()?
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    let metadata = match std__fs__symlink_metadata(path):
+        Ok(metadata) => metadata
+        Err(_) =>
+            return Result::Ok(MeasuredPathSize { bytes: 0, is_dir: false, is_complete: false, modified_ms: none, entry_bytes: none })
+    let file_type = metadata.file_type()
+    let modified_ms = metadata_modified_ms(&metadata)
+    if file_type.is_symlink():
+        return Result::Ok(MeasuredPathSize { bytes: 0, is_dir: path.is_dir(), is_complete: true, modified_ms: modified_ms, entry_bytes: none })
+    if metadata.is_file():
+        return Result::Ok(MeasuredPathSize { bytes: metadata.len(), is_dir: false, is_complete: true, modified_ms: modified_ms, entry_bytes: Option::Some(metadata.len()) })
+    if !metadata.is_dir():
+        return Result::Ok(MeasuredPathSize { bytes: 0, is_dir: false, is_complete: false, modified_ms: modified_ms, entry_bytes: none })
+    let mut total_bytes = 0
+    let mut stack = vec!(path.to_path_buf())
+    let mut visited = HashSet__new_()
+    let deadline = Instant__now() + fs_cache_policy().entry_size_scan_budget
+    loop:
+        match stack.pop():
+            Some(dir) =>
+                match cancellation_token:
+                    Some(token) =>
+                        token.throw_if_cancelled()?
+                        ()
+                        ()
+                        ()
+                        ()
+                    _ =>
+                        ()
+                        ()
+                if Instant__now() >= deadline:
+                    return Result::Ok(MeasuredPathSize { bytes: total_bytes, is_dir: true, is_complete: false, modified_ms: modified_ms, entry_bytes: none })
+                let canonical = dir.canonicalize().unwrap_or(dir.clone())
+                if !visited.insert(canonical):
+                    continue
+                let read_dir = match std__fs__read_dir(&dir):
+                    Ok(entries) => entries
+                    Err(_) => continue
+                for entry in read_dir.flatten():
+                    match cancellation_token:
+                        Some(token) =>
+                            token.throw_if_cancelled()?
+                            ()
+                            ()
+                            ()
+                            ()
+                        _ =>
+                            ()
+                            ()
+                    if Instant__now() >= deadline:
+                        return Result::Ok(MeasuredPathSize { bytes: total_bytes, is_dir: true, is_complete: false, modified_ms: modified_ms, entry_bytes: none })
+                    let entry_path = entry.path()
+                    let entry_metadata = match std__fs__symlink_metadata(&entry_path):
+                        Ok(metadata) => metadata
+                        Err(_) => continue
+                    let entry_type = entry_metadata.file_type()
+                    if entry_type.is_symlink():
+                        continue
+                    if entry_type.is_dir():
+                        stack.push(entry_path)
+                        ()
+                        continue
+                    if entry_type.is_file():
+                        total_bytes = total_bytes.saturating_add(entry_metadata.len())
+                        ()
+            _ => break
+    ()
+    Result::Ok(MeasuredPathSize { bytes: total_bytes, is_dir: true, is_complete: true, modified_ms: modified_ms, entry_bytes: none })
+
+fn measure_entry_sizes_blocking_with_cancel(paths: Array<String>, force_refresh: Bool, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<Array<EntryStorageInfo>, String>:
+    let now = Instant__now()
+    let entry_size_cache_ttl = fs_cache_policy().entry_size_cache_ttl
+    let mut results = |__kain_ctor_arg0| Vec::new()(paths.len())
+    let mut pending: Array<(usize, std::path::PathBuf, String)> = Vec__new_()
+    let path_bufs = paths.iter().map(PathBuf__from).collect()
+    let persisted = if force_refresh:
+        HashMap__new_()
+    else:
+        entry_size_cache__load_entry_size_cache(&path_bufs).unwrap_or_default()
+    match entry_size_cache().lock():
+        Ok(cache) =>
+            for (index, raw_path) in paths.iter().enumerate():
+                let path = PathBuf__from(raw_path)
+                let key = path_cache_key_string(&path)
+                let cached = if force_refresh:
+                    none
+                else:
+                    cache.get(&key).filter(|entry| !entry_size_cache_ttl.is_zero() and now.duration_since(entry.measured_at) <= entry_size_cache_ttl).cloned()
+                match cached:
+                    Some(entry) =>
+                        results.push(EntryStorageInfo { path: key, bytes: entry.bytes, is_dir: entry.is_dir, is_complete: entry.is_complete })
+                        ()
+                    _ =>
+                        match persisted.get(&key).filter(|entry| persisted_entry_is_valid(&path, entry)):
+                            Some(entry) =>
+                                results.push(EntryStorageInfo { path: entry.path.clone(), bytes: entry.bytes, is_dir: entry.is_dir, is_complete: entry.is_complete })
+                                ()
+                            _ =>
+                                results.push(EntryStorageInfo { path: key.clone(), bytes: 0, is_dir: path.is_dir(), is_complete: !path.is_dir() })
+                                ()
+                                pending.push((index, path, key))
+                                ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    if pending.is_empty():
+        return Result::Ok(results)
+    let mut cache_updates = |__kain_ctor_arg0| Vec::new()(pending.len())
+    let mut persisted_updates = |__kain_ctor_arg0| Vec::new()(pending.len())
+    for (index, path, key) in pending:
+        match cancellation_token:
+            Some(token) =>
+                token.throw_if_cancelled()?
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        let measured = measure_path_size_with_cancel(&path, cancellation_token)?
+        results[index] = EntryStorageInfo { path: key.clone(), bytes: measured.bytes, is_dir: measured.is_dir, is_complete: measured.is_complete }
+        ()
+        cache_updates.push((key, CachedEntrySize { bytes: measured.bytes, is_dir: measured.is_dir, is_complete: measured.is_complete, measured_at: now }))
+        ()
+        persisted_updates.push(measured_to_persisted_entry(&path, &measured))
+        ()
+    ()
+    match entry_size_cache().lock():
+        Ok(mut cache) =>
+            if !entry_size_cache_ttl.is_zero():
+                for (key, entry) in cache_updates:
+                    cache.insert(key, entry)
+                    ()
+                ()
+                ()
+            ()
+        _ =>
+            ()
+            ()
+    let _ = entry_size_cache__upsert_entry_size_cache(&persisted_updates)
+    Result::Ok(results)
+
+enum FileTransferOperation:
+    Copy
+    Move
+
+enum FileTransferCollisionPolicy:
+    KeepBoth
+    Replace
+    Skip
+
+enum FileTransferDisposition:
+    Transferred
+    SkippedExisting
+
+struct FileTransferCollision:
+    source_path: String
+    source_name: String
+    destination_path: String
+    operation: FileTransferOperation
+    destination_exists: Bool
+    destination_is_dir: Bool
+
+struct FileTransferResult:
+    source_path: String
+    destination_path: String
+    operation: FileTransferOperation
+    collision_policy: FileTransferCollisionPolicy
+    disposition: FileTransferDisposition
+    entity_id: String
+    identity_kind: ExplorerIdentityKind
+    content_revision: String
+
+enum FileSearchMatchKind:
+    Name
+    Content
+    NameAndContent
+
+struct FileSearchResult:
+    name: String
+    path: String
+    relative_path: String
+    is_dir: Bool
+    size: u64
+    modified: u64
+    extension: String
+    is_hidden: Bool
+    is_symlink: Bool
+    match_kind: FileSearchMatchKind
+    snippet: String
+    line_number: Option<u64>
+    entity_id: String
+    identity_kind: ExplorerIdentityKind
+    content_revision: String
+
+enum FileSearchExecutionStrategy:
+    NameIndexCacheHit
+    ContentIndexCacheHit
+    LiveScan
+
+enum FileSearchContentCacheStatus:
+    NotRequested
+    CacheHit
+    Warmed
+    Disabled
+    OverBudgetFallback
+    ReadFailureFallback
+
+struct FileSearchDiagnostics:
+    execution_strategy: FileSearchExecutionStrategy
+    content_cache_status: FileSearchContentCacheStatus
+    scanned_entry_count: u64
+    indexed_entry_count: u64
+    content_cache_stored_file_count: u64
+    content_cache_stored_byte_count: u64
+    truncated_by_scan_budget: Bool
+
+struct FileSearchResponse:
+    results: Array<FileSearchResult>
+    diagnostics: FileSearchDiagnostics
+
+struct ListedFileEntry:
+    sort_name: String
+    entry: FileEntry
+
+struct SearchableEntry:
+    path: std::path::PathBuf
+    name_lower: String
+    result: FileSearchResult
+    content_searchable: Bool
+
+fn build_listed_file_entry(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, entry: T, show_hidden: Bool) -> Result<Option<ListedFileEntry>, String>:
+    let name = entry.name().to_string_lossy().into_owned()
+    let path = entry.path().to_os_owned().map_err(|error| format!("Failed to resolve Yazi entry path: {error}"))?
+    let provider = Local__regular(&path)
+    let entry_metadata = (await provider.symlink_metadata()).map_err(|error| format!("Failed to read entry metadata '{}': {error}", path.to_string_lossy()))?
+    let entry_type = ChaType__from(entry_metadata.mode)
+    let is_hidden = entry_metadata.is_hidden() or is_hidden_name(&name)
+    if is_hidden and !show_hidden:
+        return Result::Ok(none)
+    let target_metadata = if entry_type == yazi_fs::cha::ChaType::Link:
+        (await provider.metadata()).ok()
+    else:
+        none
+    let metadata = target_metadata.unwrap_or(&entry_metadata)
+    let is_symlink = entry_type == yazi_fs::cha::ChaType::Link
+    let is_dir = entry_type.is_dir() or ChaType__from(metadata.mode).is_dir()
+    let size = if is_dir:
+        0
+    else:
+        metadata.len
+    let modified = cha_modified_ms(metadata).unwrap_or(0)
+    let (entity_id, identity_kind, content_revision) = build_local_entry_listing_identity(app, identity_manager, &path, size, modified, is_dir, is_symlink)?
+    Result::Ok(Option::Some(ListedFileEntry { sort_name: name.to_lowercase(), entry: FileEntry { name: name, path: path.to_string_lossy().to_string(), is_dir: is_dir, size: size, modified: modified, extension: if is_dir:
+        String__new_()
+    else:
+        normalized_extension(&path), is_hidden: is_hidden, is_symlink: is_symlink, entity_id: entity_id, identity_kind: identity_kind, content_revision: content_revision } }))
+
+fn list_dir_via_yazi(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, dir_path: &std::path::Path, show_hidden: Bool) -> Result<Array<FileEntry>, String>:
+    let mut read_dir = (await Local__regular(dir_path).read_dir()).map_err(|error| format!("Failed to read directory: {error}"))?
+    let mut entries = Vec__new_()
+    loop:
+        match (await read_dir.next()).map_err(|error| format!("Failed to read directory: {error}"))?:
+            Some(entry) =>
+                match (await build_listed_file_entry(app, identity_manager, entry, show_hidden))?:
+                    Some(listed) =>
+                        entries.push(listed)
+                        ()
+                    _ => ()
+            _ => break
+    ()
+    entries.sort_unstable_by(
+        |left, right| match (left.entry.is_dir, right.entry.is_dir):
+            (true, false) => cmp::Ordering::Less
+            (false, true) => cmp::Ordering::Greater
+            _ => left.sort_name.cmp(&right.sort_name)
+    )
+    ()
+    Result::Ok(entries.into_iter().map(|listed| listed.entry).collect())
+
+fn build_searchable_entry(entry: T, root: &std::path::Path, show_hidden: Bool, max_search_content_file_bytes: u64) -> Option<SearchableEntry>:
+    let name = entry.name().to_string_lossy().into_owned()
+    let path = entry.path().to_os_owned().ok()?
+    let provider = Local__regular(&path)
+    let entry_metadata = (await provider.symlink_metadata()).ok()?
+    let entry_type = ChaType__from(entry_metadata.mode)
+    let is_hidden = entry_metadata.is_hidden() or is_hidden_name(&name)
+    if is_hidden and !show_hidden:
+        return none
+    let target_metadata = if entry_type == yazi_fs::cha::ChaType::Link:
+        (await provider.metadata()).ok()
+    else:
+        none
+    let metadata = target_metadata.unwrap_or(&entry_metadata)
+    let is_symlink = entry_type == yazi_fs::cha::ChaType::Link
+    let is_dir = entry_type.is_dir() or ChaType__from(metadata.mode).is_dir()
+    let size = if is_dir:
+        0
+    else:
+        metadata.len
+    let modified = cha_modified_ms(metadata).unwrap_or(0)
+    let relative_path = path.strip_prefix(root).map(|relative| relative.to_string_lossy().to_string()).unwrap_or_else(|_| path.to_string_lossy().to_string())
+    let content_revision = build_local_entry_content_revision(size, modified, is_dir, is_symlink)
+    let identity = explorer_identity__build_virtual_identity("local-search-path", &path.to_string_lossy(), &content_revision)
+    Option::Some(SearchableEntry { content_searchable: !is_dir and metadata.len <= max_search_content_file_bytes and is_searchable_text_file(&path), name_lower: name.to_ascii_lowercase(), path: path.clone(), result: FileSearchResult { name: name, path: path.to_string_lossy().to_string(), relative_path: relative_path, is_dir: is_dir, size: size, modified: modified, extension: if is_dir:
+        String__new_()
+    else:
+        normalized_extension(&path), is_hidden: is_hidden, is_symlink: is_symlink, match_kind: FileSearchMatchKind::Name, snippet: String__new_(), line_number: none, entity_id: identity.entity_id, identity_kind: identity.identity_kind, content_revision: identity.content_revision } })
+
+fn list_dir(app: &tauri::AppHandle, identity_manager: &ExplorerIdentityManager, dir_path: std::path::PathBuf, show_hidden: Bool, bypass_cache: Bool) -> Result<Array<FileEntry>, String>:
+    let policy = fs_cache_policy()
+    let path_label = dir_path.to_string_lossy().to_string()
+    if !dir_path.exists():
+        return Result::Err(format!("Path does not exist: {}", path_label))
+    if !dir_path.is_dir():
+        return Result::Err(format!("Path is not a directory: {}", path_label))
+    let cache_key = path_cache_key(&dir_path)
+    let directory_modified_ms = std__fs__metadata(&dir_path).ok().and_then(|metadata| metadata_modified_ms(&metadata))
+    if !bypass_cache and !policy.dir_list_cache_ttl.is_zero():
+        match dir_list_cache().lock():
+            Ok(mut cache) =>
+                prune_expired_dir_list_cache(&mut cache)
+                ()
+                match cache.get(&cache_key).and_then(|variants| variants.get(show_hidden)):
+                    Some(cached) =>
+                        if cached.directory_modified_ms == directory_modified_ms:
+                            return Result::Ok(cached.entries.clone())
+                        ()
+                    _ =>
+                        ()
+                        ()
+                ()
+            _ =>
+                ()
+                ()
+        ()
+    let entries = (await list_dir_via_yazi(app, identity_manager, &dir_path, show_hidden))?
+    if !policy.dir_list_cache_ttl.is_zero():
+        match dir_list_cache().lock():
+            Ok(mut cache) =>
+                prune_expired_dir_list_cache(&mut cache)
+                ()
+                cache.entry(cache_key).or_default().set(show_hidden, CachedDirListing { entries: entries.clone(), directory_modified_ms: directory_modified_ms, cached_at: Instant__now() })
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        ()
+    Result::Ok(entries)
+
+fn parse_native_pool_args(request: tauri::native_control::NativeControlRequest) -> Result<T, String>:
+    serde_json__from_value(request.args).map_err(|error| format!("Invalid native pool explorer args: {error}"))
+
+fn require_native_pool_stream_id(stream_id: String) -> Result<String, String>:
+    let trimmed = stream_id.trim()
+    if trimmed.is_empty():
+        return Result::Err("native pool explorer request requires streamId".to_string())
+    Result::Ok(trimmed.to_string())
+
+fn require_native_pool_webview_label(request: &tauri::native_control::NativeControlRequest) -> Result<String, String>:
+    (*request).webview_label.map(|label| label.trim()).filter(|label| !label.is_empty()).map(ToString__to_string).ok_or_else(|| "native pool explorer request requires a WebView label".to_string())
+
+fn directory_snapshot_identity_kind(value: ExplorerIdentityKind) -> DirectoryListingSnapshotIdentityKind:
+    match value:
+        ExplorerIdentityKind::Native => DirectoryListingSnapshotIdentityKind::Native
+        ExplorerIdentityKind::Operation => DirectoryListingSnapshotIdentityKind::Operation
+        ExplorerIdentityKind::Derived => DirectoryListingSnapshotIdentityKind::Derived
+
+fn encode_file_entries_snapshot(entries: &Slice<FileEntry>) -> Result<Array<u8>, String>:
+    let snapshot_entries = entries.iter().map(|entry| DirectoryListingSnapshotEntry { name: &entry.name, path: &entry.path, extension: &entry.extension, entity_id: &entry.entity_id, content_revision: &entry.content_revision, size: entry.size, modified: entry.modified, is_dir: entry.is_dir, is_hidden: entry.is_hidden, is_symlink: entry.is_symlink, identity_kind: directory_snapshot_identity_kind(entry.identity_kind) }).collect()
+    native_pool_snapshots__encode_directory_listing_snapshot(&snapshot_entries)
+
+fn post_native_pool_payload(app: &tauri::AppHandle, webview_label: String, stream_id: String, bytes: Array<u8>, schema_version: Option<u32>, entry_count: Option<u64>) -> Result<NativePoolPostedPayloadResponse, String>:
+    let Some(webview_window) = app.get_webview_window(webview_label)
+    let state = app.state()
+    let metrics = tauri__native_buffer_pool__post_pooled_packet_to_webview(webview_window, state.inner(), webview_label, &stream_id, 0, &bytes)?
+    Result::Ok(NativePoolPostedPayloadResponse { stream_id: stream_id, sequence: 0, byte_length: bytes.len() as u64, schema_version: schema_version, entry_count: entry_count, allocation_count: metrics.allocation_count, reuse_count: metrics.reuse_count, copy_count: metrics.copy_count, copied_bytes: metrics.copied_bytes, webview_post_time_us: metrics.webview_post_time_us })
+
+fn serialize_native_pool_response(response: NativePoolPostedPayloadResponse) -> Result<serde_json::Value, String>:
+    serde_json__to_value(response).map_err(|error| format!("Failed to serialize native pool explorer response: {error}"))
+
+fn serialize_native_control_response(response: T) -> Result<serde_json::Value, String>:
+    serde_json__to_value(response).map_err(|error| format!("Failed to serialize native control response: {error}"))
+
+fn publish_native_stream_json_line(app: &tauri::AppHandle, stream_id: String, kind: String, payload: &T) -> Result<(), String>:
+    let mut bytes = serde_json__to_vec(payload).map_err(|error| format!("Failed to serialize native stream payload: {error}"))?
+    bytes.push(10)
+    ()
+    tauri__native_stream__publish_byte_stream(app, stream_id, kind, &bytes)?
+    ()
+    Result::Ok(())
+
+fn publish_search_response_to_native_stream(app: &tauri::AppHandle, stream_id: String, response: &FileSearchResponse) -> Result<(), String>:
+    for chunk in (*response).results.chunks(SEARCH_RESULT_BATCH_SIZE):
+        publish_native_stream_json_line(app, stream_id, "search-results", &serde_json::json!())?
+        ()
+    ()
+    publish_native_stream_json_line(app, stream_id, "search-results", &serde_json::json!())
+
+fn register_native_pool_handlers(app: &tauri::AppHandle) -> Result<(), String>:
+    let app_for_list_dir = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "explorer",
+        "listDirSnapshot",
+        |request| block:
+            let webview_label = require_native_pool_webview_label(&request)?
+            let args: NativePoolListDirSnapshotArgs = parse_native_pool_args(request)?
+            let stream_id = require_native_pool_stream_id(args.stream_id)?
+            let entries = tauri__async_runtime__block_on(
+                async:
+                    let identity_manager = app_for_list_dir.state()
+                    await list_dir(&app_for_list_dir, &identity_manager, PathBuf__from(args.path), args.show_hidden, args.bypass_cache.unwrap_or(false))
+            )?
+            let entry_count = entries.len() as u64
+            let bytes = encode_file_entries_snapshot(&entries)?
+            serialize_native_pool_response(post_native_pool_payload(&app_for_list_dir, &webview_label, stream_id, bytes, Option::Some(1), Option::Some(entry_count))?)
+    )?
+    ()
+    let app_for_preview = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "explorer",
+        "readPreviewBytes",
+        |request| block:
+            let webview_label = require_native_pool_webview_label(&request)?
+            let args: NativePoolReadPreviewBytesArgs = parse_native_pool_args(request)?
+            let stream_id = require_native_pool_stream_id(args.stream_id)?
+            let response = tauri__async_runtime__block_on(
+                async:
+                    let native_task_graph = app_for_preview.state()
+                    let preview_streaming = app_for_preview.state()
+                    await fs_read_preview_bytes_impl(native_task_graph.inner(), preview_streaming.inner(), args.path, args.max_bytes)
+            )?
+            let bytes: Array<u8> = response.into()
+            serialize_native_pool_response(post_native_pool_payload(&app_for_preview, &webview_label, stream_id, bytes, none, none)?)
+    )?
+    ()
+    let app_for_archive_preview = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "explorer",
+        "readArchiveEntryPreviewBytes",
+        |request| block:
+            let webview_label = require_native_pool_webview_label(&request)?
+            let args: NativePoolReadArchiveEntryPreviewBytesArgs = parse_native_pool_args(request)?
+            let stream_id = require_native_pool_stream_id(args.stream_id)?
+            let response = tauri__async_runtime__block_on(
+                async:
+                    let native_task_graph = app_for_archive_preview.state()
+                    let preview_streaming = app_for_archive_preview.state()
+                    await fs_read_archive_entry_preview_bytes_impl(native_task_graph.inner(), preview_streaming.inner(), args.archive_path, args.entry_path, args.max_bytes)
+            )?
+            let bytes: Array<u8> = response.into()
+            serialize_native_pool_response(post_native_pool_payload(&app_for_archive_preview, &webview_label, stream_id, bytes, none, none)?)
+    )?
+    ()
+    let app_for_thumbnail_artifact = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "explorer",
+        "readThumbnailArtifact",
+        |request| block:
+            let args: ExplorerEntryThumbnailRequest = parse_native_pool_args(request)?
+            let artifact = tauri__async_runtime__block_on(thumbnail_commands__fs_read_entry_thumbnail_artifact(app_for_thumbnail_artifact.clone(), args))?
+            serialize_native_control_response(artifact)
+    )?
+    ()
+    let app_for_search_stream = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "explorer",
+        "searchEntriesStream",
+        |request| block:
+            let args: NativeSearchEntriesStreamArgs = parse_native_pool_args(request)?
+            let stream_id = require_native_pool_stream_id(args.stream_id)?
+            let response = tauri__async_runtime__block_on(
+                async:
+                    let native_task_graph = app_for_search_stream.state()
+                    await execute_search_entries_command(native_task_graph.inner(), args.path, args.query, args.show_hidden, args.include_content.unwrap_or(false), args.limit, args.request_id, args.request_scope)
+            )?
+            publish_search_response_to_native_stream(&app_for_search_stream, &stream_id, &response)?
+            ()
+            serialize_native_control_response(serde_json::json!())
+    )?
+    ()
+    let app_for_launch_at_startup = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "setLaunchAtStartup",
+        |request| block:
+            let args: NativeSetLaunchAtStartupArgs = parse_native_pool_args(request)?
+            let enabled = tauri__async_runtime__block_on(startup_commands__startup_set_launch_at_startup(app_for_launch_at_startup.clone(), args.enabled))?
+            serialize_native_control_response(enabled)
+    )?
+    ()
+    let app_for_telemetry_configure = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "telemetryConfigure",
+        |request| block:
+            let config: TelemetryConfig = parse_native_pool_args(request)?
+            let telemetry = app_for_telemetry_configure.state()
+            telemetry.configure(config)?
+            ()
+            serialize_native_control_response(())
+    )?
+    ()
+    let app_for_telemetry_status = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "telemetryStatus",
+        |_request| block:
+            let telemetry = app_for_telemetry_status.state()
+            serialize_native_control_response(telemetry.status(&app_for_telemetry_status)?)
+    )?
+    ()
+    let app_for_telemetry_export = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "telemetryExportSupportBundle",
+        |_request| block:
+            let telemetry = app_for_telemetry_export.state()
+            serialize_native_control_response(telemetry.export_support_bundle(&app_for_telemetry_export)?)
+    )?
+    ()
+    let app_for_telemetry_clear = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "telemetryClearSessions",
+        |_request| block:
+            let telemetry = app_for_telemetry_clear.state()
+            telemetry.clear_sessions(&app_for_telemetry_clear)?
+            ()
+            serialize_native_control_response(())
+    )?
+    ()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "openLocalPath",
+        |request| block:
+            let args: NativeLocalPathArgs = parse_native_pool_args(request)?
+            tauri__async_runtime__block_on(fs_open_file(args.path))?
+            ()
+            serialize_native_control_response(())
+    )?
+    ()
+    tauri__native_control__register_handler(
+        app,
+        "settings",
+        "createDirectory",
+        |request| block:
+            let args: NativeLocalPathArgs = parse_native_pool_args(request)?
+            tauri__async_runtime__block_on(fs_create_dir(args.path))?
+            ()
+            serialize_native_control_response(())
+    )?
+    ()
+    let app_for_native_ring = app.clone()
+    tauri__native_control__register_handler(
+        app,
+        "diagnostics",
+        "nativeRingBenchmark",
+        |request| block:
+            let webview_label = require_native_pool_webview_label(&request)?
+            let args: NativeRingBenchmarkArgs = parse_native_pool_args(request)?
+            let ring_id = args.ring_id.filter(|value| !value.trim().is_empty()).unwrap_or_else(|| "terminal-output-comparison".to_string())
+            let packets = args.packets.unwrap_or(256).clamp(1, 16384)
+            let packet_bytes = args.packet_bytes.unwrap_or(4096).clamp(1, 256 * 1024)
+            let capacity = args.capacity.unwrap_or(4 * 1024 * 1024).clamp(packet_bytes, 64 * 1024 * 1024)
+            serialize_native_control_response(tauri__native_ring__post_ring_benchmark(&app_for_native_ring, &webview_label, &ring_id, packets, packet_bytes, capacity)?)
+    )?
+    ()
+    Result::Ok(())
+
+fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy:
+    fs_cache_policy().snapshot()
+
+fn fs_list_dir(app: tauri::AppHandle, identity_manager: tauri::State<_, ExplorerIdentityManager>, path: String, show_hidden: Bool) -> Result<Array<FileEntry>, String>:
+    let span = telemetry__start_native_span(&app, "rust", "fs_list_dir", HashMap__from([("path".to_string(), path.clone()), ("showHidden".to_string(), show_hidden.to_string()), ("cached".to_string(), "true".to_string())]).into_iter().collect())
+    let result = await list_dir(&app, &identity_manager, PathBuf__from(path), show_hidden, false)
+    let status = if result.is_ok():
+        "ok"
+    else:
+        "error"
+    let error = result.err().cloned()
+    let entry_count = result.ok().map(|entries| entries.len().to_string()).unwrap_or_else(|| "0".to_string())
+    telemetry__finish_native_span(&app, span, status, HashMap__from([("entryCount".to_string(), entry_count)]).into_iter().collect(), error)
+    ()
+    result
+
+fn fs_list_dir_uncached(app: tauri::AppHandle, identity_manager: tauri::State<_, ExplorerIdentityManager>, path: String, show_hidden: Bool) -> Result<Array<FileEntry>, String>:
+    let span = telemetry__start_native_span(&app, "rust", "fs_list_dir_uncached", HashMap__from([("path".to_string(), path.clone()), ("showHidden".to_string(), show_hidden.to_string()), ("cached".to_string(), "false".to_string())]).into_iter().collect())
+    let result = await list_dir(&app, &identity_manager, PathBuf__from(path), show_hidden, true)
+    let status = if result.is_ok():
+        "ok"
+    else:
+        "error"
+    let error = result.err().cloned()
+    let entry_count = result.ok().map(|entries| entries.len().to_string()).unwrap_or_else(|| "0".to_string())
+    telemetry__finish_native_span(&app, span, status, HashMap__from([("entryCount".to_string(), entry_count)]).into_iter().collect(), error)
+    ()
+    result
+
+fn fs_measure_entry_sizes(app: tauri::AppHandle, native_task_graph: tauri::State<_, NativeTaskGraphManager>, paths: Array<String>, force_refresh: Option<Bool>) -> Result<Array<EntryStorageInfo>, String>:
+    let path_count = paths.len()
+    let span = telemetry__start_native_span(&app, "rust", "fs_measure_entry_sizes", HashMap__from([("pathCount".to_string(), path_count.to_string()), ("forceRefresh".to_string(), force_refresh.unwrap_or(false).to_string())]).into_iter().collect())
+    let deduped_paths = paths.into_iter().filter(|path| !path.trim().is_empty()).collect()
+    let force_refresh_value = force_refresh.unwrap_or(false)
+    let result = match native_task_graph.submit_blocking(NativeTaskRequest__new_(NativeTaskLane::DirectoryScan, NativeTaskPriority::Visible, "measure entry sizes").with_work_key(NativeTaskWorkKey__new_(format!("measure-entry-sizes:{}:{}", force_refresh_value, deduped_paths.join("|")))), |token| measure_entry_sizes_blocking_with_cancel(deduped_paths, force_refresh_value, Option::Some(&token))):
+        Ok(submission) => await submission.wait()
+        Err(error) => Result::Err(error)
+    let status = if result.is_ok():
+        "ok"
+    else:
+        "error"
+    let error = result.err().cloned()
+    let output_count = result.ok().map(|entries| entries.len().to_string()).unwrap_or_else(|| "0".to_string())
+    telemetry__finish_native_span(&app, span, status, HashMap__from([("pathCount".to_string(), path_count.to_string()), ("resultCount".to_string(), output_count)]).into_iter().collect(), error)
+    ()
+    result
+
+fn fs_calculate_recursive_sizes(native_task_graph: tauri::State<_, NativeTaskGraphManager>, paths: Array<String>, force_refresh: Option<Bool>) -> Result<Array<EntryStorageInfo>, String>:
+    let (_, results) = (await run_recursive_size_task(&native_task_graph, paths.into_iter().filter(|path| !path.trim().is_empty()).collect(), force_refresh.unwrap_or(false)))?
+    Result::Ok(results)
+
+fn fs_calculate_checksums(native_task_graph: tauri::State<_, NativeTaskGraphManager>, paths: Array<String>) -> Result<Array<FsChecksumEntryInfo>, String>:
+    let (_, results) = (await run_checksum_task(&native_task_graph, paths.into_iter().filter(|path| !path.trim().is_empty()).collect()))?
+    Result::Ok(results)
+
+fn fs_get_item_properties(path: String) -> Result<FsItemPropertiesInfo, String>:
+    let target = PathBuf__from(&path)
+    if !target.exists():
+        return Result::Err(format!("Path does not exist: {path}"))
+    read_item_properties(&target)
+
+fn fs_fuzzy_filter_entries(request: FsJumpFilterRequest) -> Result<Array<FsJumpFilterMatch>, String>:
+    let limit = request.limit.unwrap_or(usize__MAX)
+    let mut matches = request.entries.into_iter().filter_map(|entry| fuzzy_score_entry(&request.query, &entry).map(|__kain_closure_arg1| FsJumpFilterMatch { path: entry.path, name: entry.name, is_dir: entry.is_dir, sort_order: entry.sort_order, score: __kain_closure_arg1.__kain_tuple_0, matched_indices: __kain_closure_arg1.__kain_tuple_1 })).collect()
+    matches.sort_by(|left, right| right.score.cmp(&left.score).then_with(|| left.sort_order.cmp(&right.sort_order)).then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())).then_with(|| left.path.cmp(&right.path)))
+    ()
+    matches.truncate(limit)
+    ()
+    Result::Ok(matches)
+
+fn fs_get_drives() -> Result<Array<DriveInfo>, String>:
+    volume_inventory__list_local_volumes()
+
+fn shell_quote_single(value: String) -> String:
+    format!("'{}'", value.replace("'", "'\\''"))
+
+fn escape_applescript_string(value: String) -> String:
+    value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+fn normalized_extension(path: &std::path::Path) -> String:
+    path.extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase()
+
+fn is_hidden_name(name: String) -> Bool:
+    name.starts_with(".")
+
+fn is_searchable_text_file(path: &std::path::Path) -> Bool:
+    let ext = normalized_extension(path)
+    if EXTENSIONS.contains(&ext.as_str()):
+        return true
+    let name = path.file_name().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase()
+    matches!(name.as_str(), "dockerfile" | "makefile" | "readme" | "license" | "changelog" | ".gitignore" | ".gitattributes" | ".env" | ".env.local" | ".env.development" | ".env.production")
+
+fn build_search_snippet(line: String, query_lower: String) -> String:
+    let normalized = line_.trim().replace("\t", " ")
+    if normalized.is_empty():
+        return String__new_()
+    let lower = normalized.to_ascii_lowercase()
+    match lower.find(query_lower):
+        Some(pos) =>
+            let mut start = pos.saturating_sub(40)
+            let mut end = (pos + query_lower.len() + 80).min(normalized.len())
+            while start > 0 and !normalized.is_char_boundary(start):
+                start = start - 1
+                ()
+            ()
+            while end < normalized.len() and !normalized.is_char_boundary(end):
+                end = end + 1
+                ()
+            ()
+            let mut snippet = normalized[start..end].trim().to_string()
+            if start > 0:
+                snippet = format!("…{}", snippet)
+                ()
+                ()
+                ()
+                ()
+            if end < normalized.len():
+                snippet.push("…")
+                ()
+                ()
+                ()
+                ()
+            return snippet
+        _ =>
+            ()
+            ()
+    let mut snippet: String = normalized.chars().take(180).collect()
+    if normalized.chars().count() > 180:
+        snippet.push("…")
+        ()
+        ()
+        ()
+        ()
+    snippet
+
+fn search_reader_for_match(reader: R, query_lower: String, request_scope: String, request_id: u64, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<Option<(String, Option<u64>)>, ()>:
+    for (idx, line_result) in reader.lines().enumerate():
+        if idx % 32 == 0:
+            if cancellation_token.map(|token| token.is_cancelled()).unwrap_or(false) or !is_search_request_active(request_scope, request_id):
+                return Result::Err(())
+            ()
+        let line_ = match line_result:
+            Ok(value) => value
+            Err(_) => return Result::Ok(none)
+        if line_.to_ascii_lowercase().contains(query_lower):
+            return Result::Ok(Option::Some((build_search_snippet(&line_, query_lower), Option::Some((idx + 1) as u64))))
+    ()
+    Result::Ok(none)
+
+fn search_file_content_for_match(path: &std::path::Path, query_lower: String, request_scope: String, request_id: u64, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<Option<(String, Option<u64>)>, ()>:
+    let file = match File__open(path):
+        Ok(value) => value
+        Err(_) => return Result::Ok(none)
+    search_reader_for_match(BufReader__new_(file), query_lower, request_scope, request_id, cancellation_token)
+
+fn search_cached_content_for_match(content: String, query_lower: String, request_scope: String, request_id: u64, cancellation_token: Option<&NativeTaskCancellationToken>) -> Result<Option<(String, Option<u64>)>, ()>:
+    search_reader_for_match(Cursor__new_(content.as_bytes()), query_lower, request_scope, request_id, cancellation_token)
+
+fn sort_search_results(results: &mut Slice<FileSearchResult>):
+    results.sort_by(
+        |a, b| block:
+            let rank = fn(kind: FileSearchMatchKind): match kind:
+                FileSearchMatchKind::NameAndContent => 0
+                FileSearchMatchKind::Content => 1
+                FileSearchMatchKind::Name => 2
+            rank(a.match_kind).cmp(&rank(b.match_kind)).then_with(|| a.path.to_ascii_lowercase().cmp(&b.path.to_ascii_lowercase())).then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+    )
+    ()
+
+fn sort_cached_name_entries(entries: &mut Slice<CachedSearchNameEntry>):
+    entries.sort_by(|left, right| left.path_lower.cmp(&right.path_lower).then_with(|| left.name_lower.cmp(&right.name_lower)))
+    ()
+
+fn sort_cached_content_entries(entries: &mut Slice<CachedSearchContentEntry>):
+    entries.sort_by(|left, right| left.path_lower.cmp(&right.path_lower).then_with(|| left.name_lower.cmp(&right.name_lower)))
+    ()
+
+fn lookup_cached_name_search_results(root: &std::path::Path, query_lower: String, show_hidden: Bool, max_results: usize) -> Option<(Array<FileSearchResult>, usize)>:
+    if fs_cache_policy().search_name_index_cache_ttl.is_zero():
+        return none
+    let key = path_cache_key(root)
+    let cached_entries = block:
+        let mut cache = search_name_index_cache().lock().expect("search name index cache poisoned")
+        prune_expired_search_name_index_cache(&mut cache)
+        ()
+        Arc__clone(&((cache.get(&key)?).get(show_hidden)?).entries)
+    let indexed_entry_count = cached_entries.len()
+    let mut results = |__kain_ctor_arg0| Vec::new()(max_results.min(indexed_entry_count))
+    for entry in cached_entries.iter():
+        if !entry.name_lower.contains(query_lower):
+            continue
+        results.push(entry.result.clone())
+        ()
+        if results.len() >= max_results:
+            break
+    ()
+    Option::Some((results, indexed_entry_count))
+
+fn store_search_name_index(root: &std::path::Path, show_hidden: Bool, entries: Array<CachedSearchNameEntry>):
+    if fs_cache_policy().search_name_index_cache_ttl.is_zero():
+        return
+    let key = path_cache_key(root)
+    let mut sorted_entries = entries
+    sort_cached_name_entries(&mut sorted_entries)
+    ()
+    let mut cache = search_name_index_cache().lock().expect("search name index cache poisoned")
+    prune_expired_search_name_index_cache(&mut cache)
+    ()
+    cache.entry(key).or_default().set(show_hidden, CachedSearchIndex { entries: Arc__from(sorted_entries), cached_at: Instant__now() })
+    ()
+
+fn lookup_cached_content_search_results(root: &std::path::Path, query_lower: String, show_hidden: Bool, max_results: usize, request_scope: String, request_id: u64) -> Option<(Array<FileSearchResult>, usize)>:
+    let policy = fs_cache_policy()
+    if policy.search_content_index_cache_ttl.is_zero() or policy.search_content_index_total_bytes_budget == 0:
+        return none
+    let key = path_cache_key(root)
+    let cached_entries = block:
+        let mut cache = search_content_index_cache().lock().expect("search content index cache poisoned")
+        prune_expired_search_content_index_cache(&mut cache)
+        ()
+        Arc__clone(&((cache.get(&key)?).get(show_hidden)?).entries)
+    let mut combined_matches: Array<FileSearchResult> = Vec__new_()
+    let mut content_matches: Array<FileSearchResult> = Vec__new_()
+    let mut name_matches: Array<FileSearchResult> = Vec__new_()
+    for (index, entry) in cached_entries.iter().enumerate():
+        if index % 32 == 0 and !is_search_request_active(request_scope, request_id):
+            return Option::Some((Vec__new_(), cached_entries.len()))
+        let name_hit = entry.name_lower.contains(query_lower)
+        let content_match = match entry.content:
+            Some(content) =>
+                match search_cached_content_for_match(content, query_lower, request_scope, request_id, none):
+                    Ok(value) => value
+                    Err(()) => return Option::Some((Vec__new_(), cached_entries.len()))
+            None => none
+        let content_hit = content_match.is_some()
+        if !name_hit and !content_hit:
+            continue
+        let mut result = entry.result.clone()
+        result.match_kind = match (name_hit, content_hit):
+            (true, true) => FileSearchMatchKind::NameAndContent
+            (false, true) => FileSearchMatchKind::Content
+            _ => FileSearchMatchKind::Name
+        ()
+        match content_match:
+            Some((snippet, line_number)) =>
+                result.snippet = snippet
+                ()
+                result.line_number = line_number
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        match result.match_kind:
+            FileSearchMatchKind::NameAndContent =>
+                combined_matches.push(result)
+                ()
+            FileSearchMatchKind::Content =>
+                content_matches.push(result)
+                ()
+            FileSearchMatchKind::Name =>
+                name_matches.push(result)
+                ()
+        if combined_matches.len() >= max_results:
+            break
+    ()
+    let mut results = |__kain_ctor_arg0| Vec::new()(max_results.min(cached_entries.len()))
+    results.extend(combined_matches.into_iter().take(max_results))
+    ()
+    if results.len() < max_results:
+        results.extend(content_matches.into_iter().take(max_results.saturating_sub(results.len())))
+        ()
+        ()
+        ()
+        ()
+    if results.len() < max_results:
+        results.extend(name_matches.into_iter().take(max_results.saturating_sub(results.len())))
+        ()
+        ()
+        ()
+        ()
+    Option::Some((results, cached_entries.len()))
+
+fn store_search_content_index(root: &std::path::Path, show_hidden: Bool, entries: Array<CachedSearchContentEntry>):
+    let policy = fs_cache_policy()
+    if policy.search_content_index_cache_ttl.is_zero() or policy.search_content_index_total_bytes_budget == 0:
+        return
+    let key = path_cache_key(root)
+    let mut sorted_entries = entries
+    sort_cached_content_entries(&mut sorted_entries)
+    ()
+    let mut cache = search_content_index_cache().lock().expect("search content index cache poisoned")
+    prune_expired_search_content_index_cache(&mut cache)
+    ()
+    cache.entry(key).or_default().set(show_hidden, CachedSearchContentIndex { entries: Arc__from(sorted_entries), cached_at: Instant__now() })
+    ()
+
+fn empty_search_response(execution_strategy: FileSearchExecutionStrategy, content_cache_status: FileSearchContentCacheStatus, scanned_entry_count: u64, indexed_entry_count: u64, truncated_by_scan_budget: Bool) -> FileSearchResponse:
+    FileSearchResponse { results: Vec__new_(), diagnostics: FileSearchDiagnostics { execution_strategy: execution_strategy, content_cache_status: content_cache_status, scanned_entry_count: scanned_entry_count, indexed_entry_count: indexed_entry_count, content_cache_stored_file_count: 0, content_cache_stored_byte_count: 0, truncated_by_scan_budget: truncated_by_scan_budget } }
+
+fn search_entries(native_task_graph: &NativeTaskGraphManager, path: String, query: String, show_hidden: Bool, include_content: Bool, limit: Option<usize>, request_scope: String, request_id: u64) -> Result<FileSearchResponse, String>:
+    let policy = fs_cache_policy()
+    let root = PathBuf__from(&path)
+    if !root.exists():
+        return Result::Err(format!("Path does not exist: {}", path))
+    if !root.is_dir():
+        return Result::Err(format!("Path is not a directory: {}", path))
+    let query = query.trim().to_string()
+    if query.is_empty():
+        return Result::Ok(empty_search_response(
+            FileSearchExecutionStrategy::LiveScan,
+            if include_content:
+                if policy.search_content_index_cache_ttl.is_zero() or policy.search_content_index_total_bytes_budget == 0:
+                    FileSearchContentCacheStatus::Disabled
+                else:
+                    FileSearchContentCacheStatus::Warmed
+            else:
+                FileSearchContentCacheStatus::NotRequested,
+            0,
+            0,
+            false
+        ))
+    let query_lower = query.to_ascii_lowercase()
+    let max_results = limit.unwrap_or(250).clamp(1, 1000)
+    if include_content:
+        match lookup_cached_content_search_results(&root, &query_lower, show_hidden, max_results, &request_scope, request_id):
+            Some((results, indexed_entry_count)) =>
+                if !is_search_request_active(&request_scope, request_id):
+                    return Result::Ok(empty_search_response(FileSearchExecutionStrategy::ContentIndexCacheHit, FileSearchContentCacheStatus::CacheHit, 0, indexed_entry_count as u64, false))
+                return Result::Ok(FileSearchResponse { results: results, diagnostics: FileSearchDiagnostics { execution_strategy: FileSearchExecutionStrategy::ContentIndexCacheHit, content_cache_status: FileSearchContentCacheStatus::CacheHit, scanned_entry_count: 0, indexed_entry_count: indexed_entry_count as u64, content_cache_stored_file_count: 0, content_cache_stored_byte_count: 0, truncated_by_scan_budget: false } })
+            _ =>
+                ()
+                ()
+        ()
+    else:
+        match lookup_cached_name_search_results(&root, &query_lower, show_hidden, max_results):
+            Some((results, indexed_entry_count)) =>
+                if !is_search_request_active(&request_scope, request_id):
+                    return Result::Ok(empty_search_response(FileSearchExecutionStrategy::NameIndexCacheHit, FileSearchContentCacheStatus::NotRequested, 0, indexed_entry_count as u64, false))
+                return Result::Ok(FileSearchResponse { results: results, diagnostics: FileSearchDiagnostics { execution_strategy: FileSearchExecutionStrategy::NameIndexCacheHit, content_cache_status: FileSearchContentCacheStatus::NotRequested, scanned_entry_count: 0, indexed_entry_count: indexed_entry_count as u64, content_cache_stored_file_count: 0, content_cache_stored_byte_count: 0, truncated_by_scan_budget: false } })
+            _ =>
+                ()
+                ()
+        ()
+    let root_for_scan = root.clone()
+    let query_lower_for_scan = query_lower.clone()
+    let request_scope_for_scan = request_scope.clone()
+    let search_work_key = NativeTaskWorkKey__new_(format!("recursive-search:{}:{}:{}", request_scope, show_hidden, include_content))
+    let submission = native_task_graph.submit_async(
+        NativeTaskRequest__new_(NativeTaskLane::RecursiveSearch, NativeTaskPriority::Visible, "recursive search live scan").with_work_key(search_work_key).with_generation(request_id).cancel_stale(true),
+        |token| async:
+            let policy = fs_cache_policy()
+            let root = root_for_scan
+            let query_lower = query_lower_for_scan
+            let request_scope = request_scope_for_scan
+            let mut stack = vec!(root.clone())
+            let mut combined_matches: Array<FileSearchResult> = Vec__new_()
+            let mut content_matches: Array<FileSearchResult> = Vec__new_()
+            let mut name_matches: Array<FileSearchResult> = Vec__new_()
+            let mut cached_name_entries: Array<CachedSearchNameEntry> = Vec__new_()
+            let mut cached_content_entries = include_content.then(|| Vec__new_())
+            let mut content_cache_complete = include_content
+            let mut cached_content_bytes = 0
+            let mut truncated_by_scan_budget = false
+            let content_cache_enabled = include_content and !policy.search_content_index_cache_ttl.is_zero() and policy.search_content_index_total_bytes_budget > 0
+            let mut scanned_entry_count = 0
+            let mut content_cache_status = if include_content:
+                if content_cache_enabled:
+                    FileSearchContentCacheStatus::Warmed
+                else:
+                    FileSearchContentCacheStatus::Disabled
+            else:
+                FileSearchContentCacheStatus::NotRequested
+            loop:
+                match stack.pop():
+                    Some(current_dir) =>
+                        if token.is_cancelled() or !is_search_request_active(&request_scope, request_id):
+                            return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+                        token.throw_if_cancelled()?
+                        ()
+                        let mut read_dir = match await Local__regular(&current_dir).read_dir():
+                            Ok(entries) => entries
+                            Err(_) => continue
+                        loop:
+                            if token.is_cancelled() or !is_search_request_active(&request_scope, request_id):
+                                return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+                            token.throw_if_cancelled()?
+                            ()
+                            pause_search_entry_scan_for_tests()
+                            ()
+                            record_search_entry_scan_for_tests()
+                            ()
+                            if scanned_entry_count >= policy.search_max_indexed_entries as u64:
+                                truncated_by_scan_budget = true
+                                ()
+                                break
+                            let entry = match await read_dir.next():
+                                Ok(Some(value)) => value
+                                Ok(None) => break
+                                Err(_) => break
+                            scanned_entry_count = scanned_entry_count.saturating_add(1)
+                            ()
+                            let Some(candidate) = await build_searchable_entry(entry, &root, show_hidden, policy.max_search_content_file_bytes)
+                            let SearchableEntry { path: path_buf, name_lower: name_lower, result: cached_name_result, content_searchable: content_searchable } = candidate
+                            cached_name_entries.push(CachedSearchNameEntry { name_lower: name_lower.clone(), path_lower: cached_name_result.path.to_ascii_lowercase(), result: cached_name_result.clone() })
+                            ()
+                            let name_hit = name_lower.contains(&query_lower)
+                            if cached_name_result.is_dir:
+                                if name_hit:
+                                    name_matches.push(cached_name_result.clone())
+                                    ()
+                                    ()
+                                    ()
+                                    ()
+                                if !cached_name_result.is_symlink:
+                                    stack.push(path_buf)
+                                    ()
+                                    ()
+                                    ()
+                                    ()
+                                continue
+                            let mut content_hit = false
+                            let mut snippet = String__new_()
+                            let mut line_number = none
+                            let mut cached_content = none
+                            if include_content and content_searchable:
+                                if content_cache_complete and cached_content_bytes.saturating_add(cached_name_result.size) <= policy.search_content_index_total_bytes_budget:
+                                    match await Local__regular(&path_buf).read_to_string():
+                                        Ok(content) =>
+                                            match search_cached_content_for_match(&content, &query_lower, &request_scope, request_id, Option::Some(&token)):
+                                                Ok(Some((matched_snippet, matched_line_number))) =>
+                                                    content_hit = true
+                                                    ()
+                                                    snippet = matched_snippet
+                                                    ()
+                                                    line_number = matched_line_number
+                                                    ()
+                                                    ()
+                                                    ()
+                                                    ()
+                                                Ok(None) =>
+                                                    ()
+                                                Err(()) =>
+                                                    return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+                                            cached_content_bytes = cached_content_bytes.saturating_add(cached_name_result.size)
+                                            ()
+                                            cached_content = Option::Some(Arc__from(content))
+                                            ()
+                                            ()
+                                            ()
+                                            ()
+                                        Err(_) =>
+                                            content_cache_complete = false
+                                            ()
+                                            if content_cache_enabled:
+                                                content_cache_status = FileSearchContentCacheStatus::ReadFailureFallback
+                                                ()
+                                                ()
+                                                ()
+                                                ()
+                                            match search_file_content_for_match(&path_buf, &query_lower, &request_scope, request_id, Option::Some(&token)):
+                                                Ok(Some((matched_snippet, matched_line_number))) =>
+                                                    content_hit = true
+                                                    ()
+                                                    snippet = matched_snippet
+                                                    ()
+                                                    line_number = matched_line_number
+                                                    ()
+                                                    ()
+                                                    ()
+                                                    ()
+                                                Ok(None) =>
+                                                    ()
+                                                Err(()) =>
+                                                    return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+                                            ()
+                                    ()
+                                else:
+                                    content_cache_complete = false
+                                    ()
+                                    if content_cache_enabled:
+                                        content_cache_status = FileSearchContentCacheStatus::OverBudgetFallback
+                                        ()
+                                        ()
+                                        ()
+                                        ()
+                                    match search_file_content_for_match(&path_buf, &query_lower, &request_scope, request_id, Option::Some(&token)):
+                                        Ok(Some((matched_snippet, matched_line_number))) =>
+                                            content_hit = true
+                                            ()
+                                            snippet = matched_snippet
+                                            ()
+                                            line_number = matched_line_number
+                                            ()
+                                            ()
+                                            ()
+                                            ()
+                                        Ok(None) =>
+                                            ()
+                                        Err(()) =>
+                                            return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+                                    ()
+                                ()
+                            match cached_content_entries:
+                                Some(entries) =>
+                                    entries.push(CachedSearchContentEntry { name_lower: name_lower.clone(), path_lower: cached_name_result.path.to_ascii_lowercase(), result: cached_name_result.clone(), content: cached_content })
+                                    ()
+                                    ()
+                                    ()
+                                    ()
+                                _ =>
+                                    ()
+                                    ()
+                            if !name_hit and !content_hit:
+                                continue
+                            let mut result = cached_name_result
+                            result.match_kind = match (name_hit, content_hit):
+                                (true, true) => FileSearchMatchKind::NameAndContent
+                                (false, true) => FileSearchMatchKind::Content
+                                _ => FileSearchMatchKind::Name
+                            ()
+                            result.snippet = snippet
+                            ()
+                            result.line_number = line_number
+                            ()
+                            match result.match_kind:
+                                FileSearchMatchKind::NameAndContent => combined_matches.push(result)
+                                FileSearchMatchKind::Content => content_matches.push(result)
+                                FileSearchMatchKind::Name => name_matches.push(result)
+                    _ => break
+            ()
+            if token.is_cancelled() or !is_search_request_active(&request_scope, request_id):
+                return Result::Ok(empty_search_response(FileSearchExecutionStrategy::LiveScan, content_cache_status, scanned_entry_count, cached_name_entries.len() as u64, truncated_by_scan_budget))
+            let indexed_entry_count = cached_name_entries.len() as u64
+            if !truncated_by_scan_budget:
+                store_search_name_index(&root, show_hidden, cached_name_entries)
+                ()
+                ()
+                ()
+                ()
+            let mut content_cache_stored_file_count = 0
+            let mut content_cache_stored_byte_count = 0
+            if content_cache_complete and !truncated_by_scan_budget:
+                match cached_content_entries:
+                    Some(entries) =>
+                        content_cache_stored_file_count = entries.iter().filter(|entry| entry.content.is_some()).count() as u64
+                        ()
+                        content_cache_stored_byte_count = cached_content_bytes
+                        ()
+                        store_search_content_index(&root, show_hidden, entries)
+                        ()
+                        ()
+                        ()
+                        ()
+                    _ =>
+                        ()
+                        ()
+                ()
+            let mut results = Vec__new_()
+            results.extend(combined_matches)
+            ()
+            results.extend(content_matches)
+            ()
+            results.extend(name_matches)
+            ()
+            sort_search_results(&mut results)
+            ()
+            results.truncate(max_results)
+            ()
+            Result::Ok(FileSearchResponse { results: results, diagnostics: FileSearchDiagnostics { execution_strategy: FileSearchExecutionStrategy::LiveScan, content_cache_status: content_cache_status, scanned_entry_count: scanned_entry_count, indexed_entry_count: indexed_entry_count, content_cache_stored_file_count: content_cache_stored_file_count, content_cache_stored_byte_count: content_cache_stored_byte_count, truncated_by_scan_budget: truncated_by_scan_budget } })
+    )?
+    await submission.wait()
+
+fn execute_search_entries_command(native_task_graph: &NativeTaskGraphManager, path: String, query: String, show_hidden: Bool, include_content: Bool, limit: Option<usize>, request_id: Option<u64>, request_scope: Option<String>) -> Result<FileSearchResponse, String>:
+    let scope = search_request_scope(&path, request_scope)
+    let active_request_id = register_search_request(&scope, request_id)
+    await search_entries(native_task_graph, path, query, show_hidden, include_content, limit, scope, active_request_id)
+
+fn fs_cancel_search_entries(native_task_graph: tauri::State<_, NativeTaskGraphManager>, path: String, request_id: Option<u64>, request_scope: Option<String>) -> Result<(), String>:
+    let scope = search_request_scope(&path, request_scope)
+    register_search_request(&scope, request_id)
+    ()
+    let work_key = NativeTaskWorkKey__new_(format!("recursive-search:{}:{}:{}", scope, true, true))
+    native_task_graph.cancel_work_key(&work_key)
+    ()
+    let work_key = NativeTaskWorkKey__new_(format!("recursive-search:{}:{}:{}", scope, true, false))
+    native_task_graph.cancel_work_key(&work_key)
+    ()
+    let work_key = NativeTaskWorkKey__new_(format!("recursive-search:{}:{}:{}", scope, false, true))
+    native_task_graph.cancel_work_key(&work_key)
+    ()
+    let work_key = NativeTaskWorkKey__new_(format!("recursive-search:{}:{}:{}", scope, false, false))
+    native_task_graph.cancel_work_key(&work_key)
+    ()
+    Result::Ok(())
+
+fn fs_search_entries(app: tauri::AppHandle, native_task_graph: tauri::State<_, NativeTaskGraphManager>, path: String, query: String, show_hidden: Bool, include_content: Bool, limit: Option<usize>, request_id: Option<u64>, request_scope: Option<String>) -> Result<Array<FileSearchResult>, String>:
+    let span = telemetry__start_native_span(&app, "rust", "fs_search_entries", HashMap__from([("path".to_string(), path.clone()), ("queryLength".to_string(), query.len().to_string()), ("showHidden".to_string(), show_hidden.to_string()), ("includeContent".to_string(), include_content.to_string()), ("limit".to_string(), limit.unwrap_or_default().to_string())]).into_iter().collect())
+    let result = await execute_search_entries_command(&native_task_graph, path, query, show_hidden, include_content, limit, request_id, request_scope)
+    let status = if result.is_ok():
+        "ok"
+    else:
+        "error"
+    let error = result.err().cloned()
+    let result_count = result.ok().map(|response| response.results.len().to_string()).unwrap_or_else(|| "0".to_string())
+    telemetry__finish_native_span(&app, span, status, HashMap__from([("resultCount".to_string(), result_count)]).into_iter().collect(), error)
+    ()
+    Result::Ok((result?).results)
+
+fn fs_search_entries_with_diagnostics(app: tauri::AppHandle, native_task_graph: tauri::State<_, NativeTaskGraphManager>, path: String, query: String, show_hidden: Bool, include_content: Bool, limit: Option<usize>, request_id: Option<u64>, request_scope: Option<String>) -> Result<FileSearchResponse, String>:
+    let span = telemetry__start_native_span(&app, "rust", "fs_search_entries_with_diagnostics", HashMap__from([("path".to_string(), path.clone()), ("queryLength".to_string(), query.len().to_string()), ("showHidden".to_string(), show_hidden.to_string()), ("includeContent".to_string(), include_content.to_string()), ("limit".to_string(), limit.unwrap_or_default().to_string())]).into_iter().collect())
+    let result = await execute_search_entries_command(&native_task_graph, path, query, show_hidden, include_content, limit, request_id, request_scope)
+    let status = if result.is_ok():
+        "ok"
+    else:
+        "error"
+    let error = result.err().cloned()
+    let result_count = result.ok().map(|response| response.results.len().to_string()).unwrap_or_else(|| "0".to_string())
+    telemetry__finish_native_span(&app, span, status, HashMap__from([("resultCount".to_string(), result_count)]).into_iter().collect(), error)
+    ()
+    result
+
+fn map_default_open_result(result: file_opening::OpenResult) -> Result<(), String>:
+    match result:
+        file_opening::OpenResult::Success => Result::Ok(())
+        file_opening::OpenResult::FileNotFound { path: path } => Result::Err(format!("File not found: {}", path))
+        file_opening::OpenResult::AppNotFound { app_id: app_id } => Result::Err(format!("Application not found for file open request: {}", app_id))
+        file_opening::OpenResult::PermissionDenied { path: path } =>
+            Result::Err(format!("Permission denied while opening: {}", path))
+        file_opening::OpenResult::PlatformError { message: message } => Result::Err(message)
+
+fn should_execute_path(path: &std::path::Path) -> Bool:
+    if path.is_dir():
+        return false
+    let extension = normalized_extension(path)
+    if matches!(extension.as_str(), "exe" | "msi" | "com" | "bat" | "cmd" | "ps1" | "sh" | "bash" | "zsh" | "fish"):
+        return true
+    return std__fs__metadata(path).map(|metadata| (metadata.permissions().mode() & 73) != 0).unwrap_or(false)
+    false
+
+fn open_with_default_application(path: &std::path::Path) -> Result<(), String>:
+    let opener = file_opening_windows__WindowsFileOpener
+    return map_default_open_result(opener.open_with_default(path).map_err(|error| error.to_string())?)
+    let opener = file_opening_macos__MacFileOpener
+    return map_default_open_result(opener.open_with_default(path).map_err(|error| error.to_string())?)
+    Command__new_("xdg-open").arg(path).spawn_().map_err(|error| error.to_string())?
+    ()
+    return Result::Ok(())
+    Result::Err("Opening files is not supported on this platform.".to_string())
+
+fn escape_powershell_single_quoted_string(value: String) -> String:
+    value.replace("'", "''")
+
+fn open_with_system_picker(path: &std::path::Path) -> Result<(), String>:
+    open_with__open_native_open_with_dialog(path.to_string_lossy().into_owned()).into_result()
+
+fn show_path_properties(path: &std::path::Path) -> Result<(), String>:
+    let _ = path
+    let script = format!("$path = '{}'; $shell = New-Object -ComObject Shell.Application; $folder = Split-Path -LiteralPath $path; $name = Split-Path -Leaf -LiteralPath $path; $item = $shell.Namespace($folder).ParseName($name); if ($null -eq $item) {{ throw 'Unable to resolve shell item.' }}; $item.InvokeVerb('properties')", escape_powershell_single_quoted_string(&path.to_string_lossy()))
+    Command__new_("powershell").arg("-NoProfile").arg("-Command").arg(script).spawn_().map_err(|error| error.to_string())?
+    ()
+    return Result::Ok(())
+    let script = format!("tell application \"Finder\"\n  activate\n  set targetItem to POSIX file \"{}\" as alias\n  select targetItem\n  open information window of targetItem\nend tell", escape_applescript_string(&path.to_string_lossy()))
+    Command__new_("osascript").arg("-e").arg(script).spawn_().map_err(|error| error.to_string())?
+    ()
+    return Result::Ok(())
+    Result::Err("Native file properties are not currently supported on Linux.".to_string())
+    ()
+    ()
+    Result::Err("File properties are not supported on this platform.".to_string())
+
+fn execute_path(path: &std::path::Path) -> Result<(), String>:
+    let extension = normalized_extension(path)
+    if extension == "ps1":
+        let mut command = Command__new_("powershell")
+        command.arg("-NoProfile").arg("-ExecutionPolicy").arg("Bypass").arg("-File").arg(path)
+        ()
+        match path.parent():
+            Some(parent) =>
+                command.current_dir(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        command.spawn_().map_err(|error| error.to_string())?
+        ()
+        return Result::Ok(())
+    if matches!(extension.as_str(), "sh" | "bash" | "zsh" | "fish"):
+        for shell in ["bash", "sh"]:
+            let mut command = Command__new_(shell)
+            command.arg(path)
+            ()
+            match path.parent():
+                Some(parent) =>
+                    command.current_dir(parent)
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            match command.spawn_():
+                Ok(_) => return Result::Ok(())
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue
+                Err(error) => return Result::Err(error.to_string())
+        ()
+        return Result::Err("No supported shell interpreter was found in PATH for this script.".to_string())
+    return open_with_default_application(path)
+    let extension = normalized_extension(path)
+    if matches!(extension.as_str(), "sh" | "bash" | "zsh" | "fish"):
+        let interpreter = match extension.as_str():
+            "bash" => "bash"
+            "zsh" => "zsh"
+            "fish" => "fish"
+            _ => "sh"
+        let mut command = Command__new_(interpreter)
+        command.arg(path)
+        ()
+        match path.parent():
+            Some(parent) =>
+                command.current_dir(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        command.spawn_().map_err(|error| error.to_string())?
+        ()
+        return Result::Ok(())
+    if extension == "ps1":
+        for shell in ["pwsh", "powershell"]:
+            let mut command = Command__new_(shell)
+            command.arg("-NoProfile").arg("-ExecutionPolicy").arg("Bypass").arg("-File").arg(path)
+            ()
+            match path.parent():
+                Some(parent) =>
+                    command.current_dir(parent)
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            match command.spawn_():
+                Ok(_) => return Result::Ok(())
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue
+                Err(error) => return Result::Err(error.to_string())
+        ()
+        return Result::Err("No supported PowerShell interpreter was found in PATH for this script.".to_string())
+    let mut command = Command__new_(path)
+    match path.parent():
+        Some(parent) =>
+            command.current_dir(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    command.spawn_().map_err(|error| error.to_string())?
+    ()
+    return Result::Ok(())
+    Result::Err("Executing files is not supported on this platform.".to_string())
+
+fn run_native_blocking_task(native_task_graph: &NativeTaskGraphManager, request: NativeTaskRequest, work: F) -> Result<T, String>:
+    match native_task_graph.submit_blocking(request, work):
+        Ok(submission) => await submission.wait()
+        Err(error) => Result::Err(error)
+
+fn fs_read_text_file(native_task_graph: tauri::State<_, NativeTaskGraphManager>, preview_streaming: tauri::State<_, PreviewStreamingManager>, path: String) -> Result<String, String>:
+    let target = PathBuf__from(&path)
+    let policy = preview_streaming.policy().clone()
+    await run_native_blocking_task(&native_task_graph, NativeTaskRequest__new_(NativeTaskLane::PreviewRead, NativeTaskPriority::Visible, "read text preview").with_work_key(NativeTaskWorkKey__new_(format!("preview-text:{path}"))), |token| preview_streaming__read_local_text_file(&target, &policy, &token))
+
+fn fs_open_file(path: String) -> Result<(), String>:
+    let target = PathBuf__from(&path)
+    if !target.exists():
+        return Result::Err(format!("Path does not exist: {}", path))
+    if should_execute_path(&target):
+        return execute_path(&target)
+    open_with_default_application(&target)
+
+fn fs_open_archive(native_task_graph: tauri::State<_, NativeTaskGraphManager>, path: String) -> Result<FsArchiveExtractionResult, String>:
+    let target = PathBuf__from(path)
+    let work_key = format!("archive-open:{}", target.display())
+    await run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest__new_(NativeTaskLane::Archive, NativeTaskPriority::Visible, "open archive").with_work_key(NativeTaskWorkKey__new_(work_key)),
+        |token| block:
+            token.throw_if_cancelled()?
+            ()
+            let result = archive_ops__open_archive_cached(&target)
+            token.throw_if_cancelled()?
+            ()
+            result
+    )
+
+fn fs_inspect_archive(native_task_graph: tauri::State<_, NativeTaskGraphManager>, path: String) -> Result<Array<String>, String>:
+    let target = PathBuf__from(path)
+    let work_key = format!("archive-inspect:{}", target.display())
+    await run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest__new_(NativeTaskLane::Archive, NativeTaskPriority::Visible, "inspect archive").with_work_key(NativeTaskWorkKey__new_(work_key)),
+        |token| block:
+            token.throw_if_cancelled()?
+            ()
+            let result = archive_ops__inspect_archive(&target)
+            token.throw_if_cancelled()?
+            ()
+            result
+    )
+
+fn fs_list_archive_dir(native_task_graph: tauri::State<_, NativeTaskGraphManager>, archive_path: String, directory_path: String) -> Result<Array<FsArchiveEntryListingEntry>, String>:
+    let target = PathBuf__from(&archive_path)
+    let work_key = format!("archive-list:{archive_path}:{directory_path}")
+    await run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest__new_(NativeTaskLane::Archive, NativeTaskPriority::Visible, "list archive directory").with_work_key(NativeTaskWorkKey__new_(work_key)),
+        |token| block:
+            token.throw_if_cancelled()?
+            ()
+            let result = archive_ops__list_archive_dir(&target, &directory_path)
+            token.throw_if_cancelled()?
+            ()
+            result
+    )
+
+fn fs_materialize_archive_entry(native_task_graph: tauri::State<_, NativeTaskGraphManager>, request: FsArchiveEntryMaterializationRequest) -> Result<FsArchiveEntryMaterializationResult, String>:
+    let work_key = format!("archive-materialize:{}:{}:{}:{:?}", request.archive_path, request.entry_path, request.entry_is_dir, request.mode)
+    await run_native_blocking_task(
+        &native_task_graph,
+        NativeTaskRequest__new_(NativeTaskLane::Archive, NativeTaskPriority::UserInitiated, "materialize archive entry").with_work_key(NativeTaskWorkKey__new_(work_key)),
+        |token| block:
+            token.throw_if_cancelled()?
+            ()
+            let result = archive_ops__materialize_archive_entry(&request)
+            token.throw_if_cancelled()?
+            ()
+            result
+    )
+
+fn fs_extract_archive(native_task_graph: tauri::State<_, NativeTaskGraphManager>, request: FsArchiveExtractionRequest) -> Result<FsArchiveExtractionResult, String>:
+    if request.mode == FsArchiveExtractionMode::OpenCached:
+        return Result::Err("Use fs_open_archive for cached archive opening.".to_string())
+    let (_, result) = (await run_archive_extraction_task_with_result(&native_task_graph, request))?
+    Result::Ok(result)
+
+fn fs_open_with_dialog(path: String) -> Result<(), String>:
+    let target = PathBuf__from(&path)
+    if !target.exists():
+        return Result::Err(format!("Path does not exist: {}", path))
+    open_with_system_picker(&target)
+
+fn fs_open_as_admin(path: String) -> Result<(), String>:
+    let verb: Array<u16> = OsStr__new_("runas").encode_wide().chain(std__iter__once(0)).collect()
+    let file: Array<u16> = OsStr__new_(&path).encode_wide().chain(std__iter__once(0)).collect()
+    let result = windows_sys::Win32::UI::Shell::ShellExecuteW(std__ptr__null_mut(), verb.as_ptr(), file.as_ptr(), std__ptr__null(), std__ptr__null(), 1)
+    if result as isize <= 32:
+        return Result::Err(format!("ShellExecuteW failed with code: {}", result as isize))
+    return Result::Ok(())
+    let display = std__env__var_("DISPLAY").unwrap_or_default()
+    let xauthority = std__env__var_("XAUTHORITY").unwrap_or_default()
+    let runtime_dir = std__env__var_("XDG_RUNTIME_DIR").unwrap_or_default()
+    let command = format!("DISPLAY={} XAUTHORITY={} XDG_RUNTIME_DIR={} xdg-open {}", shell_quote_single(&display), shell_quote_single(&xauthority), shell_quote_single(&runtime_dir), shell_quote_single(&path))
+    Command__new_("pkexec").arg("sh").arg("-lc").arg(command).spawn_().map_err(|e| e.to_string())?
+    ()
+    return Result::Ok(())
+    let shell_command = format!("open {}", shell_quote_single(&path))
+    let script = format!("do shell script \"{}\" with administrator privileges", escape_applescript_string(&shell_command))
+    Command__new_("osascript").arg("-e").arg(script).spawn_().map_err(|e| e.to_string())?
+    ()
+    return Result::Ok(())
+    Result::Err("Admin elevation is not implemented for this operating system.".to_string())
+
+fn fs_reveal_in_explorer(path: String) -> Result<(), String>:
+    Command__new_("explorer").arg("/select,").arg(&path).spawn_().map_err(|e| e.to_string())?
+    ()
+    return Result::Ok(())
+    Command__new_("open").arg("-R").arg(&path).spawn_().map_err(|e| e.to_string())?
+    ()
+    return Result::Ok(())
+    Command__new_("xdg-open").arg(Path__new_(&path).parent().unwrap_or(Path__new_("/"))).spawn_().map_err(|e| e.to_string())?
+    ()
+    return Result::Ok(())
+
+fn fs_show_item_properties(path: String) -> Result<(), String>:
+    let target = PathBuf__from(&path)
+    if !target.exists():
+        return Result::Err(format!("Path does not exist: {}", path))
+    show_path_properties(&target)
+
+fn fs_delete(path: String, recursive: Bool) -> Result<(), String>:
+    let p = Path__new_(&path)
+    ensure_nonrecursive_delete_allowed(p, recursive)?
+    ()
+    (await delete_path_with_scheduler(p, recursive))?
+    ()
+    invalidate_all_fs_caches(p)
+    ()
+    match p.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    Result::Ok(())
+
+fn fs_delete_many(paths: Array<String>) -> Result<(), String>:
+    (await run_delete_many_task(paths))?
+    ()
+    Result::Ok(())
+
+fn fs_rename(app: tauri::AppHandle, identity_manager: tauri::State<_, ExplorerIdentityManager>, old_path: String, new_path: String) -> Result<(), String>:
+    let old_path_ref = Path__new_(&old_path)
+    let new_path_ref = Path__new_(&new_path)
+    let continuity_entity_id = std__fs__symlink_metadata(old_path_ref).ok().and_then(
+        |metadata| block:
+            let is_symlink = metadata.file_type().is_symlink()
+            let is_dir = metadata.is_dir()
+            let size = if is_dir:
+                0
+            else:
+                metadata.len()
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0)
+            let content_revision = build_local_entry_content_revision(size, modified, is_dir, is_symlink)
+            explorer_identity__prepare_move_operation_continuity(&app, &identity_manager, old_path_ref, &content_revision).ok().flatten()
+    )
+    std__fs__rename(old_path_ref, new_path_ref).map_err(|error| error.to_string())?
+    ()
+    let _ = explorer_identity__apply_move_operation_continuity(&app, &identity_manager, old_path_ref, new_path_ref, continuity_entity_id)
+    invalidate_all_fs_caches(old_path_ref)
+    ()
+    invalidate_all_fs_caches(new_path_ref)
+    ()
+    match old_path_ref.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    match new_path_ref.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    return Result::Ok(())
+    ensure_yazi_runtime()?
+    ()
+    let result = (await yazi_vfs__provider__rename(UrlBuf__from(old_path_ref), UrlBuf__from(new_path_ref))).map_err(|error| error.to_string())
+    if result.is_ok():
+        let _ = explorer_identity__apply_move_operation_continuity(&app, &identity_manager, old_path_ref, new_path_ref, continuity_entity_id)
+        invalidate_all_fs_caches(old_path_ref)
+        ()
+        invalidate_all_fs_caches(new_path_ref)
+        ()
+        match old_path_ref.parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        match new_path_ref.parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        ()
+    result
+
+fn fs_move(app: tauri::AppHandle, identity_manager: tauri::State<_, ExplorerIdentityManager>, src: String, dst: String) -> Result<(), String>:
+    let src_path = Path__new_(&src)
+    let dst_path = Path__new_(&dst)
+    validate_transfer_destination(src_path, dst_path, FileTransferOperation::Move)?
+    ()
+    let continuity_entity_id = std__fs__symlink_metadata(src_path).ok().and_then(
+        |metadata| block:
+            let is_symlink = metadata.file_type().is_symlink()
+            let is_dir = metadata.is_dir()
+            let size = if is_dir:
+                0
+            else:
+                metadata.len()
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0)
+            let content_revision = build_local_entry_content_revision(size, modified, is_dir, is_symlink)
+            explorer_identity__prepare_move_operation_continuity(&app, &identity_manager, src_path, &content_revision).ok().flatten()
+    )
+    (await move_path(src_path, dst_path, true))?
+    ()
+    let _ = explorer_identity__apply_move_operation_continuity(&app, &identity_manager, src_path, dst_path, continuity_entity_id)
+    invalidate_all_fs_caches(src_path)
+    ()
+    invalidate_all_fs_caches(dst_path)
+    ()
+    match src_path.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    match dst_path.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    Result::Ok(())
+
+fn fs_copy(src: String, dst: String) -> Result<(), String>:
+    let src_path = Path__new_(&src)
+    let dst_path = Path__new_(&dst)
+    validate_transfer_destination(src_path, dst_path, FileTransferOperation::Copy)?
+    ()
+    (await copy_path(src_path, dst_path, true))?
+    ()
+    invalidate_all_fs_caches(dst_path)
+    ()
+    match dst_path.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    Result::Ok(())
+
+fn fs_plan_transfer_items(target_dir: String, sources: Array<String>, operation: FileTransferOperation) -> Result<Array<FileTransferCollision>, String>:
+    let target_dir_path = Path__new_(&target_dir)
+    if !target_dir_path.exists():
+        return Result::Err(format!("Target directory does not exist: {}", target_dir))
+    if !target_dir_path.is_dir():
+        return Result::Err(format!("Target path is not a directory: {}", target_dir))
+    let mut collisions = Vec__new_()
+    for source in sources:
+        let source_path = PathBuf__from(&source)
+        if !source_path.exists():
+            return Result::Err(format!("Source path does not exist: {}", source))
+        let Some(file_name) = source_path.file_name()
+        let preferred_destination = target_dir_path.join(file_name)
+        if preferred_destination == source_path:
+            continue
+        if !preferred_destination.exists():
+            continue
+        collisions.push(FileTransferCollision { source_path: source_path.to_string_lossy().to_string(), source_name: file_name.to_string_lossy().to_string(), destination_path: preferred_destination.to_string_lossy().to_string(), operation: operation, destination_exists: true, destination_is_dir: preferred_destination.is_dir() })
+        ()
+    ()
+    Result::Ok(collisions)
+
+fn fs_transfer_items(app: tauri::AppHandle, identity_manager: tauri::State<_, ExplorerIdentityManager>, target_dir: String, sources: Array<String>, operation: FileTransferOperation, collision_policy: Option<FileTransferCollisionPolicy>) -> Result<Array<FileTransferResult>, String>:
+    let target_dir_path = Path__new_(&target_dir)
+    if !target_dir_path.exists():
+        return Result::Err(format!("Target directory does not exist: {}", target_dir))
+    if !target_dir_path.is_dir():
+        return Result::Err(format!("Target path is not a directory: {}", target_dir))
+    let mut results = Vec__new_()
+    let resolved_collision_policy = collision_policy.unwrap_or(FileTransferCollisionPolicy::KeepBoth)
+    for source in sources:
+        let source_path = PathBuf__from(&source)
+        if !source_path.exists():
+            return Result::Err(format!("Source path does not exist: {}", source))
+        let Some(file_name) = source_path.file_name()
+        let preferred_destination = target_dir_path.join(file_name)
+        let destination = resolve_transfer_destination(preferred_destination.clone(), operation, &source_path, resolved_collision_policy)
+        if source_path == destination:
+            continue
+        if resolved_collision_policy == FileTransferCollisionPolicy::Skip and preferred_destination.exists() and preferred_destination != source_path:
+            results.push(build_transfer_result_from_source(&app, &identity_manager, &source_path, &preferred_destination, operation, resolved_collision_policy, FileTransferDisposition::SkippedExisting)?)
+            ()
+            continue
+        validate_transfer_destination(&source_path, &destination, operation)?
+        ()
+        let continuity_entity_id = if operation == FileTransferOperation::Move:
+            let metadata = std__fs__symlink_metadata(&source_path).map_err(|error| format!("Failed to inspect transfer source '{}': {error}", source_path.display()))?
+            let is_symlink = metadata.file_type().is_symlink()
+            let is_dir = metadata.is_dir()
+            let size = if is_dir:
+                0
+            else:
+                metadata.len()
+            let modified = metadata_modified_ms(&metadata).unwrap_or(0)
+            let content_revision = build_local_entry_content_revision(size, modified, is_dir, is_symlink)
+            explorer_identity__prepare_move_operation_continuity(&app, &identity_manager, &source_path, &content_revision)?
+        else:
+            none
+        let operation_result = match operation:
+            FileTransferOperation::Copy => await copy_path(&source_path, &destination, true)
+            FileTransferOperation::Move => await move_path(&source_path, &destination, true)
+        match operation_result:
+            Err(error) =>
+                return Result::Err(error)
+            _ =>
+                ()
+                ()
+        if operation == FileTransferOperation::Move:
+            let _ = explorer_identity__apply_move_operation_continuity(&app, &identity_manager, &source_path, &destination, continuity_entity_id)
+            ()
+        results.push(build_transfer_result_from_destination(&app, &identity_manager, &source_path, &destination, operation, resolved_collision_policy, FileTransferDisposition::Transferred)?)
+        ()
+    ()
+    for result in &results:
+        invalidate_all_fs_caches(Path__new_(&result.source_path))
+        ()
+        invalidate_all_fs_caches(Path__new_(&result.destination_path))
+        ()
+        match Path__new_(&result.source_path).parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        match Path__new_(&result.destination_path).parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+            _ => ()
+    ()
+    Result::Ok(results)
+
+fn fs_list_explorer_tasks() -> Result<Array<ExplorerTaskRecord>, String>:
+    list_explorer_tasks_snapshot()
+
+fn should_clear_explorer_task(scope: ExplorerTaskHistoryClearScope, status: ExplorerTaskStatus) -> Bool:
+    match scope:
+        ExplorerTaskHistoryClearScope::Completed => status == ExplorerTaskStatus::Succeeded
+        ExplorerTaskHistoryClearScope::Failed =>
+            matches!(status, ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled)
+        ExplorerTaskHistoryClearScope::Finished => status != ExplorerTaskStatus::Running
+
+fn fs_clear_explorer_task_history(scope: ExplorerTaskHistoryClearScope) -> Result<(), String>:
+    let mut registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let retained_task_ids = registry.order.iter().filter_map(
+        |task_id| registry.entries.get(task_id).and_then(
+            |entry| if should_clear_explorer_task(scope, entry.record.status):
+                none
+            else:
+                Option::Some(task_id.clone())
+        )
+    ).collect()
+    registry.order = retained_task_ids
+    ()
+    registry.entries.retain(|_, entry| !should_clear_explorer_task(scope, entry.record.status))
+    ()
+    Result::Ok(())
+
+fn retry_context_for_task(task_id: String) -> Result<ExplorerTaskRetryContext, String>:
+    let registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let entry = registry.entries.get(task_id).ok_or_else(|| format!("Explorer task not found: {task_id}"))?
+    if !entry.record.can_retry:
+        return Result::Err(format!("Explorer task is not retryable: {task_id}"))
+    entry.retry_context.clone().ok_or_else(|| format!("Explorer task has no retry context: {task_id}"))
+
+fn fs_retry_explorer_task(app: tauri::AppHandle, native_task_graph: tauri::State<_, NativeTaskGraphManager>, task_id: String) -> Result<ExplorerTaskRecord, String>:
+    let retry_context = retry_context_for_task(&task_id)?
+    let next_task_id = match retry_context:
+        ExplorerTaskRetryContext::Copy { source_path: source_path, destination_path: destination_path } => (await copy_path(Path__new_(&source_path), Path__new_(&destination_path), true))?
+        ExplorerTaskRetryContext::Move { source_path: source_path, destination_path: destination_path } => (await move_path(Path__new_(&source_path), Path__new_(&destination_path), true))?
+        ExplorerTaskRetryContext::Delete { path: path, recursive: recursive } =>
+            let path_ref = Path__new_(&path)
+            ensure_nonrecursive_delete_allowed(path_ref, recursive)?
+            ()
+            (await delete_path_with_scheduler(path_ref, recursive))?
+        ExplorerTaskRetryContext::DeleteMany { paths: paths } => (await run_delete_many_task(paths))?
+        ExplorerTaskRetryContext::BatchRename { items: items } =>
+            (await explorer_pro_commands__run_batch_rename_task(items))?
+        ExplorerTaskRetryContext::DuplicateScan { root_path: root_path } =>
+            explorer_pro_commands__start_duplicate_scan_task(app, root_path)?
+        ExplorerTaskRetryContext::RecursiveSize { paths: paths, force_refresh: force_refresh } =>
+            ((await run_recursive_size_task(&native_task_graph, paths, force_refresh))?).field_0
+        ExplorerTaskRetryContext::Checksum { paths: paths } =>
+            ((await run_checksum_task(&native_task_graph, paths))?).field_0
+        ExplorerTaskRetryContext::ArchiveExtraction { request: request } =>
+            (await run_archive_extraction_task(&native_task_graph, request))?
+        ExplorerTaskRetryContext::AudioTransform { request: request } =>
+            ((await audio_commands__audio_export_transform(app, request))?).task_id
+        ExplorerTaskRetryContext::AudioBatchProcess { request: request } =>
+            ((await audio_commands__audio_batch_process(app, request))?).task_id
+    let tasks = list_explorer_tasks_snapshot()?
+    tasks.into_iter().find(|record| record.id == next_task_id).ok_or_else(|| format!("Retried explorer task was not registered: {next_task_id}"))
+
+fn cancel_context_for_task(task_id: String) -> Result<ExplorerTaskCancelContext, String>:
+    let mut registry = explorer_task_registry().lock().map_err(|_| "Explorer task registry lock was poisoned.".to_string())?
+    let entry = registry.entries.get_mut(task_id).ok_or_else(|| format!("Explorer task not found: {task_id}"))?
+    if !entry.record.can_cancel:
+        return Result::Err(format!("Explorer task is not cancellable: {task_id}"))
+    entry.cancel_requested = true
+    ()
+    entry.cancel_context.clone().ok_or_else(|| format!("Explorer task has no cancel context: {task_id}"))
+
+fn fs_cancel_explorer_task(native_task_graph: tauri::State<_, NativeTaskGraphManager>, task_id: String) -> Result<ExplorerTaskRecord, String>:
+    let cancel_context = cancel_context_for_task(&task_id)?
+    match cancel_context:
+        ExplorerTaskCancelContext::Yazi { scheduler_task_id: scheduler_task_id } =>
+            match fs_command_scheduler():
+                Ok(scheduler) =>
+                    scheduler.cancel(scheduler_task_id)
+                    ()
+                    ()
+                    ()
+                    ()
+                _ =>
+                    ()
+                    ()
+            ()
+        ExplorerTaskCancelContext::NativeTaskGraph { task_id: task_id } =>
+            native_task_graph.cancel(&task_id)
+            ()
+            ()
+            ()
+            ()
+        ExplorerTaskCancelContext::DuplicateScan { scan_id: scan_id } =>
+            explorer_pro_commands__cancel_duplicate_scan_task(&scan_id)?
+            ()
+            ()
+            ()
+            ()
+        ExplorerTaskCancelContext::AudioOperation { operation_id: operation_id } =>
+            audio_commands__cancel_audio_task(&operation_id)?
+            ()
+            ()
+            ()
+            ()
+    cancel_manual_explorer_task(&task_id, none)
+
+fn ensure_nonrecursive_delete_allowed(path: &std::path::Path, recursive: Bool) -> Result<(), String>:
+    if recursive or !path.is_dir():
+        return Result::Ok(())
+    let mut entries = std__fs__read_dir(path).map_err(|error| error.to_string())?
+    let has_entries = (entries.next().transpose().map_err(|error| error.to_string())?).is_some()
+    if has_entries:
+        return Result::Err(format!("Directory is not empty: {}", path.display()))
+    Result::Ok(())
+
+fn validate_transfer_destination(source_path: &std::path::Path, destination: &std::path::Path, operation: FileTransferOperation) -> Result<(), String>:
+    if !source_path.is_dir():
+        return Result::Ok(())
+    let normalized_source = if source_path.is_absolute():
+        source_path.to_path_buf()
+    else:
+        std__env__current_dir().map(|cwd| cwd.join(source_path)).unwrap_or_else(|_| source_path.to_path_buf())
+    let normalized_destination = if destination.is_absolute():
+        destination.to_path_buf()
+    else:
+        std__env__current_dir().map(|cwd| cwd.join(destination)).unwrap_or_else(|_| destination.to_path_buf())
+    if normalized_destination.starts_with(&normalized_source):
+        return Result::Err(format!("Cannot {:?} a folder into itself or one of its descendants: {} -> {}", operation, source_path.display(), destination.display()))
+    Result::Ok(())
+
+fn ensure_destination_parent_dir(path: &std::path::Path) -> Result<(), String>:
+    let Some(parent) = path.parent()
+    if parent.as_os_str().is_empty():
+        return Result::Ok(())
+    std__fs__create_dir_all(parent).map_err(|error| format!("Failed to create destination parent directory {}: {error}", parent.display()))?
+    ()
+    return Result::Ok(())
+    ensure_yazi_runtime()?
+    ()
+    (await yazi_vfs__provider__create_dir_all(UrlBuf__from(parent))).map_err(|error| format!("Failed to create destination parent directory {} via Yazi VFS: {error}", parent.display()))
+
+fn yazi_task_registration(kind: ExplorerTaskKind, title: String, detail: String, source_paths: Array<String>, destination_path: Option<String>, retry_context: Option<ExplorerTaskRetryContext>) -> ExplorerTaskRegistration:
+    ExplorerTaskRegistration { kind: kind, title: title, detail: detail, source_paths: source_paths, destination_path: destination_path, retry_context: retry_context, can_undo: false }
+
+fn archive_task_initial_output_path(request: &FsArchiveExtractionRequest) -> Option<String>:
+    match (*request).mode:
+        FsArchiveExtractionMode::ExtractHere => Path__new_(&(*request).archive_path).parent().map(|path| path.to_string_lossy().into_owned())
+        FsArchiveExtractionMode::ExtractToDirectory => (*request).target_directory.clone()
+        FsArchiveExtractionMode::OpenCached | FsArchiveExtractionMode::ExtractToNewFolder => none
+
+fn archive_task_registration(request: &FsArchiveExtractionRequest, output_path: Option<String>) -> ExplorerTaskRegistration:
+    let archive_path = Path__new_(&(*request).archive_path)
+    let archive_label = task_path_label(archive_path)
+    let (title_prefix, detail_suffix) = match (*request).mode:
+        FsArchiveExtractionMode::OpenCached => ("Open", "cached contents")
+        FsArchiveExtractionMode::ExtractHere => ("Extract", "here")
+        FsArchiveExtractionMode::ExtractToDirectory => ("Extract", "to selected folder")
+        FsArchiveExtractionMode::ExtractToNewFolder => ("Extract", "to a new folder")
+    let detail = match output_path:
+        Option::Some(__kain_option_as_ref_value) => Option::Some(&__kain_option_as_ref_value)
+        Option::None => none.map(|path| format!("{} -> {}", archive_path.display(), path)).unwrap_or_else(|| format!("{} -> {}", archive_path.display(), detail_suffix))
+    ExplorerTaskRegistration { kind: ExplorerTaskKind::ExtractArchive, title: format!("{title_prefix} {archive_label}"), detail: detail, source_paths: vec!((*request).archive_path.clone()), destination_path: output_path, retry_context: Option::Some(ExplorerTaskRetryContext::ArchiveExtraction { request: request.clone() }), can_undo: false }
+
+fn archive_task_success_detail(result: &FsArchiveExtractionResult) -> String:
+    if (*result).reused_cached_output:
+        return format!("Reused extracted contents at {}", (*result).output_path)
+    let item_label = if (*result).extracted_entry_count == 1:
+        "item"
+    else:
+        "items"
+    format!("Extracted {} {} to {}", (*result).extracted_entry_count, item_label, (*result).output_path)
+
+fn complete_archive_extraction_task(task_id: String, result: &FsArchiveExtractionResult) -> Result<ExplorerTaskRecord, String>:
+    mutate_explorer_task(
+        task_id,
+        |entry| block:
+            entry.record.status = ExplorerTaskStatus::Succeeded
+            ()
+            entry.record.finished_at = Option::Some(current_epoch_ms())
+            ()
+            entry.record.detail = archive_task_success_detail(result)
+            ()
+            entry.record.destination_path = Option::Some((*result).output_path.clone())
+            ()
+            entry.record.error_message = none
+            ()
+    )
+
+fn execute_archive_extraction(native_task_graph: &NativeTaskGraphManager, task_id: String, request: FsArchiveExtractionRequest) -> Result<FsArchiveExtractionResult, String>:
+    let work_key = format!("archive-extract:{}:{:?}", request.archive_path, request.mode)
+    await run_native_blocking_task(
+        native_task_graph,
+        NativeTaskRequest__new_(NativeTaskLane::Archive, NativeTaskPriority::UserInitiated, "extract archive").with_task_id(task_id.to_string()).with_work_key(NativeTaskWorkKey__new_(work_key)).user_visible(true),
+        |token| block:
+            token.throw_if_cancelled()?
+            ()
+            let result = archive_ops__extract_archive(&request)
+            token.throw_if_cancelled()?
+            ()
+            result
+    )
+
+fn run_archive_extraction_task_with_result(native_task_graph: &NativeTaskGraphManager, request: FsArchiveExtractionRequest) -> Result<(String, FsArchiveExtractionResult), String>:
+    let task_id = create_manual_explorer_task(archive_task_registration(&request, archive_task_initial_output_path(&request)))
+    let _ = set_manual_explorer_task_cancel_context(&task_id, ExplorerTaskCancelContext::NativeTaskGraph { task_id: task_id.clone() })
+    match await execute_archive_extraction(native_task_graph, &task_id, request):
+        Ok(result) =>
+            complete_archive_extraction_task(&task_id, &result)?
+            ()
+            Result::Ok((task_id, result))
+        Err(error) =>
+            if native_task_graph__is_native_task_cancelled_error(&error):
+                let _ = cancel_manual_explorer_task(&task_id, Option::Some("Cancelled".to_string()))
+                ()
+            else:
+                let _ = fail_manual_explorer_task(&task_id, error.clone())
+                ()
+            Result::Err(error)
+
+fn run_archive_extraction_task(native_task_graph: &NativeTaskGraphManager, request: FsArchiveExtractionRequest) -> Result<String, String>:
+    let (task_id, _) = (await run_archive_extraction_task_with_result(native_task_graph, request))?
+    Result::Ok(task_id)
+
+fn copy_path(src: &std::path::Path, dst: &std::path::Path, force: Bool) -> Result<String, String>:
+    let _ = force
+    (await ensure_destination_parent_dir(dst))?
+    ()
+    copy_path_direct(src, dst)?
+    ()
+    return Result::Ok(String__new_())
+    (await ensure_destination_parent_dir(dst))?
+    ()
+    let ticket = (fs_command_scheduler()?).file_copy_ticket(UrlBuf__from(src), UrlBuf__from(dst), force, false)
+    await await_explorer_yazi_task(ticket, yazi_task_registration(ExplorerTaskKind::Copy, format!("Copy {}", task_path_label(src)), format!("{} -> {}", src.display(), dst.display()), vec!(src.to_string_lossy().to_string()), Option::Some(dst.to_string_lossy().to_string()), Option::Some(ExplorerTaskRetryContext::Copy { source_path: src.to_string_lossy().to_string(), destination_path: dst.to_string_lossy().to_string() })))
+
+fn yazi_path_metadata(path: &std::path::Path) -> Result<Option<yazi_fs::cha::Cha>, String>:
+    ensure_yazi_runtime()?
+    ()
+    match await yazi_vfs__provider__symlink_metadata(UrlBuf__from(path)):
+        Ok(metadata) => Result::Ok(Option::Some(metadata))
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Result::Ok(none)
+        Err(error) => Result::Err(format!("Failed to inspect {} via Yazi VFS: {error}", path.display()))
+
+fn cleanup_residual_move_source(source: &std::path::Path, metadata: yazi_fs::cha::Cha) -> Result<(), String>:
+    let url = UrlBuf__from(source)
+    let cleanup_result = if metadata.is_dir() and !metadata.is_link():
+        await yazi_vfs__provider__remove_dir_all(url)
+    else:
+        await yazi_vfs__provider__remove_file(url)
+    cleanup_result.map_err(|error| format!("Move completed but residual source cleanup failed for {}: {error}", source.display()))
+
+fn move_path(src: &std::path::Path, dst: &std::path::Path, force: Bool) -> Result<String, String>:
+    let _ = force
+    (await ensure_destination_parent_dir(dst))?
+    ()
+    move_path_direct(src, dst)?
+    ()
+    return Result::Ok(String__new_())
+    (await ensure_destination_parent_dir(dst))?
+    ()
+    let ticket = (fs_command_scheduler()?).file_cut_ticket(UrlBuf__from(src), UrlBuf__from(dst), force)
+    let task_id = (await await_explorer_yazi_task(ticket, yazi_task_registration(ExplorerTaskKind::Move, format!("Move {}", task_path_label(src)), format!("{} -> {}", src.display(), dst.display()), vec!(src.to_string_lossy().to_string()), Option::Some(dst.to_string_lossy().to_string()), Option::Some(ExplorerTaskRetryContext::Move { source_path: src.to_string_lossy().to_string(), destination_path: dst.to_string_lossy().to_string() }))))?
+    let destination_metadata = (await yazi_path_metadata(dst))?
+    let source_metadata = (await yazi_path_metadata(src))?
+    match (destination_metadata, source_metadata):
+        (None, _) => Result::Err(format!("Move completed but destination is missing: {}", dst.display()))
+        (Some(_), None) => Result::Ok(())
+        (Some(_), Some(metadata)) => await cleanup_residual_move_source(src, metadata)?
+    ()
+    Result::Ok(task_id)
+
+fn delete_path_with_scheduler(path: &std::path::Path, recursive: Bool) -> Result<String, String>:
+    let _ = recursive
+    delete_path_direct(path)?
+    ()
+    return Result::Ok(String__new_())
+    let ticket = (fs_command_scheduler()?).file_delete_ticket(UrlBuf__from(path))
+    await await_explorer_yazi_task(ticket, yazi_task_registration(ExplorerTaskKind::Delete, format!("Delete {}", task_path_label(path)), path.display().to_string(), vec!(path.to_string_lossy().to_string()), none, Option::Some(ExplorerTaskRetryContext::Delete { path: path.to_string_lossy().to_string(), recursive: recursive })))
+
+fn resolve_transfer_destination(preferred_path: std::path::PathBuf, operation: FileTransferOperation, source_path: &std::path::Path, collision_policy: FileTransferCollisionPolicy) -> std::path::PathBuf:
+    match collision_policy:
+        FileTransferCollisionPolicy::KeepBoth =>
+            collision_free_destination(preferred_path, operation, source_path)
+        FileTransferCollisionPolicy::Replace | FileTransferCollisionPolicy::Skip => preferred_path
+
+fn collision_free_destination(preferred_path: std::path::PathBuf, operation: FileTransferOperation, source_path: &std::path::Path) -> std::path::PathBuf:
+    if !preferred_path.exists() or preferred_path == source_path:
+        return preferred_path
+    let parent = preferred_path.parent().map(Path__to_path_buf).unwrap_or_else(|| PathBuf__from("."))
+    let file_name = preferred_path.file_name().map(|value| value.to_string_lossy().to_string()).unwrap_or_else(|| "item".to_string())
+    if preferred_path.is_dir() or source_path.is_dir():
+        return numbered_destination(&parent, &file_name, "", operation)
+    let stem = preferred_path.file_stem().map(|value| value.to_string_lossy().to_string()).unwrap_or_else(|| file_name.clone())
+    let ext = preferred_path.extension().map(|value| format!(".{}", value.to_string_lossy())).unwrap_or_default()
+    numbered_destination(&parent, &stem, &ext, operation)
+
+fn numbered_destination(parent: &std::path::Path, base_name: String, extension: String, operation: FileTransferOperation) -> std::path::PathBuf:
+    let copy_suffix = "copy"
+    let first_candidate = match operation:
+        FileTransferOperation::Copy => format!("{base_name} ({copy_suffix}){extension}")
+        FileTransferOperation::Move => format!("{base_name} (moved){extension}")
+    let first_path = parent.join(&first_candidate)
+    if !first_path.exists():
+        return first_path
+    for index in 2..10000:
+        let candidate = match operation:
+            FileTransferOperation::Copy =>
+                format!("{base_name} ({copy_suffix} {index}){extension}")
+            FileTransferOperation::Move => format!("{base_name} (moved {index}){extension}")
+        let candidate_path = parent.join(candidate)
+        if !candidate_path.exists():
+            return candidate_path
+    ()
+    parent.join(format!("{base_name}-fallback{extension}"))
+
+fn fs_create_dir(path: String) -> Result<(), String>:
+    let path_ref = Path__new_(&path)
+    std__fs__create_dir_all(path_ref).map_err(|error| error.to_string())?
+    ()
+    invalidate_all_fs_caches(path_ref)
+    ()
+    match path_ref.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    return Result::Ok(())
+    ensure_yazi_runtime()?
+    ()
+    let result = (await yazi_vfs__provider__create_dir_all(UrlBuf__from(Path__new_(&path)))).map_err(|e| e.to_string())
+    if result.is_ok():
+        let path_ref = Path__new_(&path)
+        invalidate_all_fs_caches(path_ref)
+        ()
+        match path_ref.parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        ()
+    result
+
+fn fs_write_file(path: String, content: FsWriteFileContent) -> Result<(), String>:
+    let path_ref = Path__new_(&path)
+    match path_ref.parent():
+        Some(parent) =>
+            std__fs__create_dir_all(parent).map_err(|error| error.to_string())?
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    let bytes = match content:
+        FsWriteFileContent::Text(text) => text.into_bytes()
+        FsWriteFileContent::Bytes(bytes) => bytes
+    std__fs__write(path_ref, bytes).map_err(|error| error.to_string())?
+    ()
+    invalidate_all_fs_caches(path_ref)
+    ()
+    match path_ref.parent():
+        Some(parent) =>
+            invalidate_all_fs_caches(parent)
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    return Result::Ok(())
+    match Path__new_(&path).parent():
+        Some(parent) =>
+            ensure_yazi_runtime()?
+            ()
+            (await yazi_vfs__provider__create_dir_all(UrlBuf__from(parent))).map_err(|e| e.to_string())?
+            ()
+            ()
+            ()
+            ()
+        _ =>
+            ()
+            ()
+    let bytes = match content:
+        FsWriteFileContent::Text(text) => text.into_bytes()
+        FsWriteFileContent::Bytes(bytes) => bytes
+    let result = (await yazi_vfs__provider__write(UrlBuf__from(Path__new_(&path)), bytes)).map(|_| ()).map_err(|e| e.to_string())
+    if result.is_ok():
+        let path_ref = Path__new_(&path)
+        invalidate_all_fs_caches(path_ref)
+        ()
+        match path_ref.parent():
+            Some(parent) =>
+                invalidate_all_fs_caches(parent)
+                ()
+                ()
+                ()
+                ()
+            _ =>
+                ()
+                ()
+        ()
+    result
+
+fn git_command_program() -> String:
+    std__env__var_("OVERLAYTERM_GIT_EXECUTABLE").ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty()).unwrap_or_else(|| "git".to_string())
+
+fn run_git_command(repo_path: String, args: &Slice<String>, timeout: std::time::Duration) -> Result<String, String>:
+    let program = git_command_program()
+    let mut cmd = Command__new_(&program)
+    cmd.current_dir(repo_path).args(args).stdout(Stdio__piped()).stderr(Stdio__piped())
+    ()
+    cmd.creation_flags(CREATE_NO_WINDOW)
+    ()
+    ()
+    ()
+    ()
+    let mut child = cmd.spawn_().map_err(|e| format!("Failed to run git via '{}': {}", program, e))?
+    let started = Instant__now()
+    loop:
+        match child.try_wait():
+            Ok(Some(_)) =>
+                let output = child.wait_with_output().map_err(|e| format!("Failed to collect git output: {}", e))?
+                return if output.status.success():
+                    Result::Ok(String__from_utf8_lossy(&output.stdout).to_string())
+                else:
+                    let stderr = String__from_utf8_lossy(&output.stderr).trim().to_string()
+                    let stdout = String__from_utf8_lossy(&output.stdout).trim().to_string()
+                    let exit_code = output.status.code().map(|code| code.to_string()).unwrap_or_else(|| "signal".to_string())
+                    let output_detail = if !stderr.is_empty():
+                        stderr
+                    else if !stdout.is_empty():
+                        stdout
+                    else:
+                        "no output".to_string()
+                    Result::Err(format!("Git command failed (exit {}): {}", exit_code, output_detail))
+            Ok(None) =>
+                if started.elapsed() >= timeout:
+                    let _ = child.kill()
+                    let _ = child.wait()
+                    return Result::Err(format!("Git command timed out after {}s: {} {}", timeout.as_secs(), program, args.join(" ")))
+                std__thread__sleep(Duration__from_millis(15))
+                ()
+            Err(e) => return Result::Err(format!("Failed while waiting for git: {}", e))
+
+fn git_exec(repo_path: String, args: Array<String>) -> Result<String, String>:
+    (await tauri__async_runtime__spawn_blocking(|| run_git_command(&repo_path, &args, GIT_EXEC_TIMEOUT))).map_err(|join_error| format!("Git task join failure: {}", join_error))?
+
+fn fs_read_file_base64(native_task_graph: tauri::State<_, NativeTaskGraphManager>, preview_streaming: tauri::State<_, PreviewStreamingManager>, path: String) -> Result<String, String>:
+    let target = PathBuf__from(&path)
+    let policy = preview_streaming.policy().clone()
+    await run_native_blocking_task(&native_task_graph, NativeTaskRequest__new_(NativeTaskLane::PreviewRead, NativeTaskPriority::Visible, "read data uri preview").with_work_key(NativeTaskWorkKey__new_(format!("preview-data-uri:{path}"))), |token| preview_streaming__read_local_file_data_url(&target, &policy, &token))
+
+fn fs_read_preview_bytes_impl(native_task_graph: &NativeTaskGraphManager, preview_streaming: &PreviewStreamingManager, path: String, max_bytes: Option<u64>) -> Result<tauri::transport::BinaryResponse, String>:
+    let target = PathBuf__from(&path)
+    let policy = preview_streaming.policy().clone()
+    let bytes = (await run_native_blocking_task(&native_task_graph, NativeTaskRequest__new_(NativeTaskLane::PreviewRead, NativeTaskPriority::Visible, "read preview bytes").with_work_key(NativeTaskWorkKey__new_(format!("preview-bytes:{path}"))), |token| preview_streaming__read_local_preview_bytes(&target, max_bytes, &policy, &token)))?
+    Result::Ok(BinaryResponse__new_(bytes))
+
+fn fs_read_preview_bytes(native_task_graph: tauri::State<_, NativeTaskGraphManager>, preview_streaming: tauri::State<_, PreviewStreamingManager>, path: String, max_bytes: Option<u64>) -> Result<tauri::transport::BinaryResponse, String>:
+    await fs_read_preview_bytes_impl(native_task_graph.inner(), preview_streaming.inner(), path, max_bytes)
+
+fn fs_read_archive_entry_preview_bytes_impl(native_task_graph: &NativeTaskGraphManager, preview_streaming: &PreviewStreamingManager, archive_path: String, entry_path: String, max_bytes: Option<u64>) -> Result<tauri::transport::BinaryResponse, String>:
+    let target = PathBuf__from(&archive_path)
+    let policy = preview_streaming.policy().clone()
+    let allowed_bytes = preview_streaming__resolve_preview_byte_limit(max_bytes, policy.archive_entry_max_bytes)
+    let chunk_bytes = policy.chunk_bytes
+    let work_key = format!("archive-entry-preview:{archive_path}:{entry_path}")
+    let bytes = (await run_native_blocking_task(&native_task_graph, NativeTaskRequest__new_(NativeTaskLane::PreviewRead, NativeTaskPriority::Visible, "read archive entry preview bytes").with_work_key(NativeTaskWorkKey__new_(work_key)), |token| archive_ops__read_archive_entry_preview_bytes(&target, &entry_path, allowed_bytes, chunk_bytes, &token)))?
+    Result::Ok(BinaryResponse__new_(bytes))
+
+fn fs_read_archive_entry_preview_bytes(native_task_graph: tauri::State<_, NativeTaskGraphManager>, preview_streaming: tauri::State<_, PreviewStreamingManager>, archive_path: String, entry_path: String, max_bytes: Option<u64>) -> Result<tauri::transport::BinaryResponse, String>:
+    await fs_read_archive_entry_preview_bytes_impl(native_task_graph.inner(), preview_streaming.inner(), archive_path, entry_path, max_bytes)
+
+fn fs_read_image_thumbnail(path: String, max_width: u32, max_height: u32) -> Result<String, String>:
+    thumbnail_commands__build_image_thumbnail_data_url_with_runtime(gpu_runtime__global_gpu_runtime(), Path__new_(&path), max_width, max_height)
+
+fn fs_get_home_dir() -> Result<String, String>:
+    dirs__home_dir().map(|p| p.to_string_lossy().to_string()).ok_or_else(|| "Could not determine home directory".to_string())
+
+fn current_process_is_elevated() -> Result<Bool, String>:
+    let mut token_handle = std__ptr__null_mut()
+    if windows_sys::Win32::System::Threading::OpenProcessToken(windows_sys::Win32::System::Threading::GetCurrentProcess(), windows_sys::Win32::Security::TOKEN_QUERY, &mut token_handle) == 0:
+        return Result::Err(Error__last_os_error().to_string())
+    struct TokenGuard:
+        field_0: isize
+
+    impl Drop for TokenGuard:
+        fn drop(_self: &mut TokenGuard):
+            windows_sys::Win32::Foundation::CloseHandle((*_self).field_0 as _)
+            ()
+
+
+    let token_guard = TokenGuard(token_handle as isize)
+    let mut elevation = windows_sys::Win32::Security::TOKEN_ELEVATION { TokenIsElevated: 0 }
+    let mut bytes_returned = 0
+    if windows_sys::Win32::Security::GetTokenInformation(token_handle, windows_sys::Win32::Security::TokenElevation, &mut elevation as PtrMut<_> as PtrMut<_>, std__mem__size_of() as u32, &mut bytes_returned) == 0:
+        return Result::Err(Error__last_os_error().to_string())
+    Result::Ok(elevation.TokenIsElevated != 0)
+
+fn fs_is_process_elevated() -> Result<Bool, String>:
+    return current_process_is_elevated()
+    Result::Ok(false)
+

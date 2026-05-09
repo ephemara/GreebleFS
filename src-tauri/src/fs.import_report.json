@@ -1,0 +1,18 @@
+{
+  "input_path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+  "output_path": "D:\\GreebleFS\\src-tauri\\src\\fs.kn",
+  "target": null,
+  "recursive": true,
+  "flat": false,
+  "include_filters": [],
+  "exclude_filters": [],
+  "discovered_files": 1,
+  "imported_files": 1,
+  "skipped_files": 0,
+  "failed_files": [],
+  "lossy_diagnostics": [],
+  "diagnostics_by_class": {},
+  "generated_kain_path": "D:\\GreebleFS\\src-tauri\\src\\fs.kn",
+  "compiled_output_path": null,
+  "generated_at_utc": "2026-05-09T04:01:37.111605300+00:00"
+}

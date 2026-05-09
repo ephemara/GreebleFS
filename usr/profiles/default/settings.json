@@ -1,14 +1,14 @@
 {
   "appearance": {
     "accentColor": "#f5f5f5",
-    "activeAppearancePackId": "doors:doors-appearance",
+    "activeAppearancePackId": null,
     "activeDockThemeId": null,
     "activeIconThemeId": "greeblefs_canonical_icons",
     "activeShaderId": null,
     "activeShellRendererId": null,
-    "activeThemeEngineId": "doors:doors-engine",
-    "activeThemeId": "doors",
-    "activeThemeRecipeId": "doors:doors-shell",
+    "activeThemeEngineId": null,
+    "activeThemeId": "monokai",
+    "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
     "activityBarPosition": "side",
@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1.025,
+    "appZoom": 0.7499999999999998,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -465,13 +465,24 @@
     "dockThemeMode": "follow-app",
     "interactionMotionEnabled": true,
     "interactionMotionIntensity": 1,
-    "interactionMotionModuleOverrides": {},
+    "interactionMotionModuleOverrides": {
+      "fileItems": {
+        "enabled": false,
+        "intensityMultiplier": 1,
+        "modifierValuesByPresetId": {},
+        "presetId": null
+      }
+    },
     "interactionMotionPresetId": null,
     "interactionMotionSurfaceOverrides": {},
     "layoutDynamicsEnabled": true,
     "layoutDynamicsIntensity": 1,
     "layoutDynamicsPresetId": "heavy-orbit",
-    "layoutDynamicsSurfaceOverrides": {},
+    "layoutDynamicsSurfaceOverrides": {
+      "explorerStatusBar": {
+        "intensityMultiplier": 1.5
+      }
+    },
     "panelTransparency": 0,
     "shaderControlValues": {},
     "shaderPerformanceMode": "performance",
@@ -509,7 +520,7 @@
       "x": -139,
       "y": 523
     },
-    "placementMode": "bottom-edge",
+    "placementMode": "floating",
     "previewEnabled": true,
     "previewSplitMode": "pane",
     "topBarId": "dock-control-strip"
@@ -1411,38 +1422,6 @@
               "zone": "secondaryEnd"
             },
             {
-              "controlId": "railIdentity",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "start"
-            },
-            {
-              "controlId": "railBookmarkSummary",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "center"
-            },
-            {
-              "controlId": "railClose",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "railManageToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
               "controlId": "statusItemCount",
               "hidden": false,
               "offsetPx": 0,
@@ -1483,10 +1462,19 @@
               "zone": "end"
             },
             {
+              "controlId": "statusViewSize",
+              "hidden": false,
+              "offsetPx": 42,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "widthPx": 220,
+              "zone": "end"
+            },
+            {
               "controlId": "terminalDrawerToggle",
               "hidden": false,
               "offsetPx": 0,
-              "order": 20,
+              "order": 30,
               "surfaceId": "explorerStatusBar",
               "zone": "end"
             },
@@ -1494,8 +1482,9 @@
               "controlId": "statusViewToggles",
               "hidden": false,
               "offsetPx": 0,
-              "order": 30,
+              "order": 40,
               "surfaceId": "explorerStatusBar",
+              "widthPx": 292,
               "zone": "end"
             },
             {
@@ -2233,7 +2222,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.38,
+    "gridZoom": 0.18,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2261,7 +2250,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-m"
+    "viewMode": "details"
   },
   "home": {
     "activePackId": null,
@@ -2384,7 +2373,7 @@
         ]
       },
       "overlay-classic": {
-        "activePanelId": "explorer",
+        "activePanelId": "storage",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",
@@ -2657,7 +2646,7 @@
     "shellProfile": "auto",
     "showSidebar": false,
     "windowMode": "windowed",
-    "windowedHeight": 560,
-    "windowedWidth": 871
+    "windowedHeight": 936,
+    "windowedWidth": 800
   }
 }
