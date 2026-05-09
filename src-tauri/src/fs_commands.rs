@@ -18,6 +18,10 @@ use crate::explorer_identity::{
 };
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::explorer_pro_commands::FsBatchRenameItem;
+use crate::native_pool_snapshots::{
+    encode_directory_listing_snapshot, DirectoryListingSnapshotEntry,
+    DirectoryListingSnapshotIdentityKind,
+};
 use crate::native_task_graph::{
     is_native_task_cancelled_error, NativeTaskCancellationToken, NativeTaskGraphManager,
     NativeTaskLane, NativeTaskPriority, NativeTaskRequest, NativeTaskWorkKey,
@@ -39,7 +43,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 use uuid::Uuid;
 use yazi_fs::{
@@ -80,6 +84,47 @@ pub struct FileEntry {
     pub identity_kind: ExplorerIdentityKind,
     #[serde(rename = "contentRevision")]
     pub content_revision: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePoolListDirSnapshotArgs {
+    path: String,
+    show_hidden: bool,
+    bypass_cache: Option<bool>,
+    stream_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePoolReadPreviewBytesArgs {
+    path: String,
+    max_bytes: Option<u64>,
+    stream_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePoolReadArchiveEntryPreviewBytesArgs {
+    archive_path: String,
+    entry_path: String,
+    max_bytes: Option<u64>,
+    stream_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePoolPostedPayloadResponse {
+    stream_id: String,
+    sequence: u64,
+    byte_length: u64,
+    schema_version: Option<u32>,
+    entry_count: Option<u64>,
+    allocation_count: u64,
+    reuse_count: u64,
+    copy_count: u64,
+    copied_bytes: u64,
+    webview_post_time_us: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
@@ -2866,6 +2911,196 @@ async fn list_dir(
     }
 
     Ok(entries)
+}
+
+fn parse_native_pool_args<T: for<'de> Deserialize<'de>>(
+    request: tauri::native_control::NativeControlRequest,
+) -> Result<T, String> {
+    serde_json::from_value(request.args)
+        .map_err(|error| format!("Invalid native pool explorer args: {error}"))
+}
+
+fn require_native_pool_stream_id(stream_id: String) -> Result<String, String> {
+    let trimmed = stream_id.trim();
+    if trimmed.is_empty() {
+        return Err("native pool explorer request requires streamId".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn require_native_pool_webview_label(
+    request: &tauri::native_control::NativeControlRequest,
+) -> Result<String, String> {
+    request
+        .webview_label
+        .as_ref()
+        .map(|label| label.trim())
+        .filter(|label| !label.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| "native pool explorer request requires a WebView label".to_string())
+}
+
+fn directory_snapshot_identity_kind(
+    value: ExplorerIdentityKind,
+) -> DirectoryListingSnapshotIdentityKind {
+    match value {
+        ExplorerIdentityKind::Native => DirectoryListingSnapshotIdentityKind::Native,
+        ExplorerIdentityKind::Operation => DirectoryListingSnapshotIdentityKind::Operation,
+        ExplorerIdentityKind::Derived => DirectoryListingSnapshotIdentityKind::Derived,
+    }
+}
+
+fn encode_file_entries_snapshot(entries: &[FileEntry]) -> Result<Vec<u8>, String> {
+    let snapshot_entries = entries
+        .iter()
+        .map(|entry| DirectoryListingSnapshotEntry {
+            name: &entry.name,
+            path: &entry.path,
+            extension: &entry.extension,
+            entity_id: &entry.entity_id,
+            content_revision: &entry.content_revision,
+            size: entry.size,
+            modified: entry.modified,
+            is_dir: entry.is_dir,
+            is_hidden: entry.is_hidden,
+            is_symlink: entry.is_symlink,
+            identity_kind: directory_snapshot_identity_kind(entry.identity_kind),
+        })
+        .collect::<Vec<_>>();
+    encode_directory_listing_snapshot(&snapshot_entries)
+}
+
+fn post_native_pool_payload(
+    app: &AppHandle,
+    webview_label: &str,
+    stream_id: String,
+    bytes: Vec<u8>,
+    schema_version: Option<u32>,
+    entry_count: Option<u64>,
+) -> Result<NativePoolPostedPayloadResponse, String> {
+    let Some(webview_window) = app.get_webview_window(webview_label) else {
+        return Err(format!(
+            "native pool explorer WebView not found for label '{webview_label}'"
+        ));
+    };
+    let state = app.state::<tauri::native_buffer_pool::NativeBufferPoolState>();
+    let metrics = tauri::native_buffer_pool::post_pooled_packet_to_webview(
+        webview_window.as_ref(),
+        state.inner(),
+        webview_label,
+        &stream_id,
+        0,
+        &bytes,
+    )?;
+    Ok(NativePoolPostedPayloadResponse {
+        stream_id,
+        sequence: 0,
+        byte_length: bytes.len() as u64,
+        schema_version,
+        entry_count,
+        allocation_count: metrics.allocation_count,
+        reuse_count: metrics.reuse_count,
+        copy_count: metrics.copy_count,
+        copied_bytes: metrics.copied_bytes,
+        webview_post_time_us: metrics.webview_post_time_us,
+    })
+}
+
+fn serialize_native_pool_response(
+    response: NativePoolPostedPayloadResponse,
+) -> Result<serde_json::Value, String> {
+    serde_json::to_value(response)
+        .map_err(|error| format!("Failed to serialize native pool explorer response: {error}"))
+}
+
+pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
+    let app_for_list_dir = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "listDirSnapshot", move |request| {
+        let webview_label = require_native_pool_webview_label(&request)?;
+        let args: NativePoolListDirSnapshotArgs = parse_native_pool_args(request)?;
+        let stream_id = require_native_pool_stream_id(args.stream_id)?;
+        let entries = tauri::async_runtime::block_on(async {
+            let identity_manager = app_for_list_dir.state::<ExplorerIdentityManager>();
+            list_dir(
+                &app_for_list_dir,
+                &identity_manager,
+                PathBuf::from(args.path),
+                args.show_hidden,
+                args.bypass_cache.unwrap_or(false),
+            )
+            .await
+        })?;
+        let entry_count = entries.len() as u64;
+        let bytes = encode_file_entries_snapshot(&entries)?;
+        serialize_native_pool_response(post_native_pool_payload(
+            &app_for_list_dir,
+            &webview_label,
+            stream_id,
+            bytes,
+            Some(1),
+            Some(entry_count),
+        )?)
+    })?;
+
+    let app_for_preview = app.clone();
+    tauri::native_control::register_handler(app, "explorer", "readPreviewBytes", move |request| {
+        let webview_label = require_native_pool_webview_label(&request)?;
+        let args: NativePoolReadPreviewBytesArgs = parse_native_pool_args(request)?;
+        let stream_id = require_native_pool_stream_id(args.stream_id)?;
+        let response = tauri::async_runtime::block_on(async {
+            let native_task_graph = app_for_preview.state::<NativeTaskGraphManager>();
+            let preview_streaming = app_for_preview.state::<PreviewStreamingManager>();
+            fs_read_preview_bytes_impl(
+                native_task_graph.inner(),
+                preview_streaming.inner(),
+                args.path,
+                args.max_bytes,
+            )
+            .await
+        })?;
+        let bytes: Vec<u8> = response.into();
+        serialize_native_pool_response(post_native_pool_payload(
+            &app_for_preview,
+            &webview_label,
+            stream_id,
+            bytes,
+            None,
+            None,
+        )?)
+    })?;
+
+    let app_for_archive_preview = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "readArchiveEntryPreviewBytes",
+        move |request| {
+            let webview_label = require_native_pool_webview_label(&request)?;
+            let args: NativePoolReadArchiveEntryPreviewBytesArgs = parse_native_pool_args(request)?;
+            let stream_id = require_native_pool_stream_id(args.stream_id)?;
+            let response = tauri::async_runtime::block_on(async {
+                let native_task_graph = app_for_archive_preview.state::<NativeTaskGraphManager>();
+                let preview_streaming = app_for_archive_preview.state::<PreviewStreamingManager>();
+                fs_read_archive_entry_preview_bytes_impl(
+                    native_task_graph.inner(),
+                    preview_streaming.inner(),
+                    args.archive_path,
+                    args.entry_path,
+                    args.max_bytes,
+                )
+                .await
+            })?;
+            let bytes: Vec<u8> = response.into();
+            serialize_native_pool_response(post_native_pool_payload(
+                &app_for_archive_preview,
+                &webview_label,
+                stream_id,
+                bytes,
+                None,
+                None,
+            )?)
+        },
+    )
 }
 
 #[tauri::command]

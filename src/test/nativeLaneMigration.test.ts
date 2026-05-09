@@ -9,24 +9,26 @@ import {
 } from "../config/nativeLaneMigration";
 
 describe("native lane migration planning", () => {
-  it("keeps every future native lane disabled by default", () => {
+  it("enables proven finite-payload pool lanes by default and keeps future stream lanes off", () => {
     expect(DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS).toEqual({
       thumbnailGenerationNativeBufferPool: false,
-      previewByteReadsNativeBufferPool: false,
-      directoryListingNativeBufferPool: false,
+      previewByteReadsNativeBufferPool: true,
+      directoryListingNativeBufferPool: true,
       searchResultsNativeRing: false,
       taskOutputNativeRing: false,
       terminalOutputNativeRingComparison: false,
     });
   });
 
-  it("falls back to current invoke or transport behavior without flags and capabilities", () => {
+  it("falls back to current invoke or transport behavior without runtime capabilities", () => {
     for (const plan of GREEBLE_NATIVE_LANE_SYSTEM_PLANS) {
       expect(resolveGreebleNativeLaneSelection(plan.systemId)).toMatchObject({
         systemId: plan.systemId,
         activeLane: plan.fallbackLane,
         fallbackLane: plan.fallbackLane,
-        nativeRequested: false,
+        nativeRequested:
+          plan.systemId === "previewByteReads" ||
+          plan.systemId === "directoryListingSnapshots",
         nativeAvailable: false,
       });
     }

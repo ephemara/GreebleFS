@@ -17,8 +17,18 @@ import {
 import { EXPLORER_PREVIEW_STREAMING_POLICY } from "../config/explorerPerformance";
 import { isExecutableBinaryExtension } from "../config/filePreview";
 import type { RuntimePlatform } from "../config/platform";
+import { resolveGreebleNativeLaneSelection } from "../config/nativeLaneMigration";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { readIpcBinaryBytes } from "./ipc";
+import {
+  isExplorerNativePoolAvailable,
+  listLocalExplorerDirectorySnapshotViaNativePool,
+  readArchiveEntryExplorerPreviewBytesViaNativePool,
+  readLocalExplorerPreviewBytesViaNativePool,
+  recordExplorerNativePoolAttempt,
+  recordExplorerNativePoolFallback,
+  recordExplorerNativePoolSuccess,
+} from "./explorerNativePool";
 import { useExplorerStore } from "../store/explorerStore";
 import {
   bootstrapExplorerPolicySession as bootstrapGoExplorerPolicySession,
@@ -812,6 +822,43 @@ export async function listExplorerArchiveDir(
   return entries.map((entry) => toExplorerArchiveVirtualEntry(archivePath, entry));
 }
 
+function shouldUseExplorerNativeBufferPool(
+  systemId: "directoryListingSnapshots" | "previewByteReads",
+): boolean {
+  return resolveGreebleNativeLaneSelection(
+    systemId,
+    {},
+    { nativeBufferPool: isExplorerNativePoolAvailable() },
+  ).activeLane === "native_buffer_pool";
+}
+
+async function listLocalExplorerDirWithFallback(
+  path: string,
+  showHidden: boolean,
+  bypassCache: boolean,
+): Promise<ExplorerFileEntry[]> {
+  if (shouldUseExplorerNativeBufferPool("directoryListingSnapshots")) {
+    recordExplorerNativePoolAttempt("directoryListingSnapshots");
+    try {
+      const entries = await listLocalExplorerDirectorySnapshotViaNativePool({
+        path,
+        showHidden,
+        bypassCache,
+      });
+      recordExplorerNativePoolSuccess("directoryListingSnapshots");
+      return entries;
+    } catch (error) {
+      recordExplorerNativePoolFallback("directoryListingSnapshots", error);
+    }
+  }
+
+  return unwrapTauriResult(
+    bypassCache
+      ? await commands.fsListDirUncached(path, showHidden)
+      : await commands.fsListDir(path, showHidden),
+  );
+}
+
 export async function listExplorerLocation(
   path: string,
   showHidden: boolean,
@@ -854,8 +901,10 @@ export async function listExplorerLocation(
   }
 
   const normalizedPath = /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
-  const entries = unwrapTauriResult(
-    await commands.fsListDir(normalizedPath, showHidden),
+  const entries = await listLocalExplorerDirWithFallback(
+    normalizedPath,
+    showHidden,
+    false,
   );
   return {
     kind: "local",
@@ -879,8 +928,10 @@ export async function listExplorerLocationUncached(
   }
 
   const normalizedPath = /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
-  const entries = unwrapTauriResult(
-    await commands.fsListDirUncached(normalizedPath, showHidden),
+  const entries = await listLocalExplorerDirWithFallback(
+    normalizedPath,
+    showHidden,
+    true,
   );
   return {
     kind: "local",
@@ -1624,6 +1675,20 @@ export async function readExplorerPreviewBytes(
 ): Promise<Uint8Array> {
   const archiveLocation = parseExplorerArchiveVirtualPath(path);
   if (archiveLocation) {
+    if (shouldUseExplorerNativeBufferPool("previewByteReads")) {
+      recordExplorerNativePoolAttempt("previewByteReads");
+      try {
+        const bytes = await readArchiveEntryExplorerPreviewBytesViaNativePool({
+          archivePath: archiveLocation.archivePath,
+          entryPath: archiveLocation.entryPath,
+          maxBytes,
+        });
+        recordExplorerNativePoolSuccess("previewByteReads");
+        return bytes;
+      } catch (error) {
+        recordExplorerNativePoolFallback("previewByteReads", error);
+      }
+    }
     return readIpcBinaryBytes(
       "archiveEntryPreviewBytes",
       archiveLocation.archivePath,
@@ -1638,6 +1703,19 @@ export async function readExplorerPreviewBytes(
     case "remote":
       return readIpcBinaryBytes("remotePreviewBytes", path, maxBytes);
     case "local":
+      if (shouldUseExplorerNativeBufferPool("previewByteReads")) {
+        recordExplorerNativePoolAttempt("previewByteReads");
+        try {
+          const bytes = await readLocalExplorerPreviewBytesViaNativePool(
+            path,
+            maxBytes,
+          );
+          recordExplorerNativePoolSuccess("previewByteReads");
+          return bytes;
+        } catch (error) {
+          recordExplorerNativePoolFallback("previewByteReads", error);
+        }
+      }
       return readIpcBinaryBytes("fsPreviewBytes", path, maxBytes);
     default:
       throw new Error("Preview bytes are only available for local, remote, or cloud items.");

@@ -20,6 +20,7 @@ const tauronApiSourceRelativePaths = [
   path.join("packages", "api", "src", "global.d.ts"),
   path.join("packages", "api", "src", "index.ts"),
   path.join("packages", "api", "src", "mocks.ts"),
+  path.join("packages", "api", "src", "native-buffer-pool.ts"),
   path.join("packages", "api", "src", "native-control.ts"),
   path.join("packages", "api", "src", "native-stream.ts"),
   path.join("packages", "api", "src", "transport.ts"),
@@ -30,6 +31,7 @@ const tauronApiDistRequiredRelativePaths = [
   path.join("packages", "api", "dist", "package.json"),
   path.join("packages", "api", "dist", "core.js"),
   path.join("packages", "api", "dist", "index.js"),
+  path.join("packages", "api", "dist", "native-buffer-pool.js"),
   path.join("packages", "api", "dist", "native-control.js"),
   path.join("packages", "api", "dist", "native-stream.js"),
   path.join("packages", "api", "dist", "transport.js"),
@@ -38,6 +40,7 @@ const tauronApiDistRequiredRelativePaths = [
 const tauronApiDistGeneratedRelativePaths = [
   path.join("packages", "api", "dist", "core.js"),
   path.join("packages", "api", "dist", "index.js"),
+  path.join("packages", "api", "dist", "native-buffer-pool.js"),
   path.join("packages", "api", "dist", "native-control.js"),
   path.join("packages", "api", "dist", "native-stream.js"),
   path.join("packages", "api", "dist", "transport.js"),

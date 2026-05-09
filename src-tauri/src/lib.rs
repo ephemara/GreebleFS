@@ -44,6 +44,7 @@ pub mod lan_share;
 #[cfg(not(test))]
 mod linux_graphics;
 pub mod message_ring;
+pub mod native_pool_snapshots;
 pub mod native_task_graph;
 #[cfg(not(test))]
 pub mod native_terminal;
@@ -268,6 +269,8 @@ pub fn run() {
                 eprintln!("GreebleFS: failed to bootstrap bundled usr content: {error}");
             }
             initialize_fs_command_events(app.handle().clone());
+            tauri::native_buffer_pool::register_native_control_handlers(&app.handle())?;
+            fs_commands::register_native_pool_handlers(&app.handle())?;
             initialize_explorer_identity_store(app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
             gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());

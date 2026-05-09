@@ -20,6 +20,27 @@
 - Next recommended step:
   - Turn `greeblefs.lattice.shell-control` into a real rendered KCM-style Settings module by converting its component/render document into the existing semantic scaffold IR, then wire the first host action (`kain.ui.reload`) through Tauron's Kain bridge reload call.
 
+# 2026-05-09 - Native Pool Directory And Preview Snapshot Pass
+
+- Migrated the first finite GreebleFS hot payloads onto Tauron's native-control + native_buffer_pool lane while keeping old invokes as fallback.
+  - Tauron now exposes `@tauri-apps/api/native-buffer-pool` with one-shot pooled-buffer receive/decode/release helpers, `releaseBatch`, and telemetry access.
+  - GreebleFS registers native-control handlers under `explorer.listDirSnapshot`, `explorer.readPreviewBytes`, and `explorer.readArchiveEntryPreviewBytes`.
+  - Local directory listings now try a WebView2 pooled shared-buffer snapshot first, using `src-tauri/src/native_pool_snapshots.rs` binary `GFLS` v1 encoding and `src/runtime/explorerNativePool.ts` decoding into the existing `FileEntry[]` shape.
+  - Local and archive preview bytes now try pooled shared buffers first and copy into retained `Uint8Array` values before releasing the pooled buffer; cloud/remote preview bytes remain on binary invoke lanes.
+- Durable design rule:
+  - Use native_buffer_pool for finite snapshots/blobs only. Keep search, task output, and terminal-like append streams on ring/native-stream candidates. Do not replace the v1 directory snapshot with JSON-in-a-buffer; preserve the versioned binary record table plus UTF-8 string table, then optimize frontend materialization later.
+- Validation:
+  - Passed: `pnpm --dir D:/tauron/packages/api ts:check`
+  - Passed: `pnpm --dir D:/tauron build:api`
+  - Passed: `cargo fmt --manifest-path D:/GreebleFS/src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Passed: standalone snapshot encoder test: `rustc --edition=2021 --test src-tauri/src/native_pool_snapshots.rs -o target\native_pool_snapshots_tests.exe; target\native_pool_snapshots_tests.exe --nocapture`
+  - Passed: `bunx vitest run src/test/nativeBufferPoolApi.test.ts src/test/explorerNativePool.test.ts src/test/explorerBackend.nativePool.test.ts src/test/nativeLaneMigration.test.ts src/test/nativeControl.test.ts src/test/explorerBackend.bindings.test.ts --reporter=dot --testTimeout=30000`
+  - Not clean: filtered Cargo unit test launch for `native_pool_snapshots` hit Windows `STATUS_ENTRYPOINT_NOT_FOUND` after concurrent Cargo build churn; standalone Rust tests passed the same encoder assertions.
+- Current repo state note:
+  - Pre-existing dirty files remain untouched: `public/icons/shortcut_arrow.svg`, `src/generated/tauri.ts`, deleted `usr/kain-ui/main.kn`, and `usr/profiles/default/settings.json`.
+  - A separate untracked `src-kain/ffi/` appeared during this pass and was left untouched.
+
 # 2026-05-08 - Kain Semantic UI Scaffold First Pass
 
 - Added the first Kain-authored semantic UI scaffold lane without replacing existing React surfaces.

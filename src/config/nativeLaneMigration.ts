@@ -49,8 +49,8 @@ export interface GreebleNativeLaneSelection {
 
 export const DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS: GreebleNativeLaneFeatureFlags = Object.freeze({
   thumbnailGenerationNativeBufferPool: false,
-  previewByteReadsNativeBufferPool: false,
-  directoryListingNativeBufferPool: false,
+  previewByteReadsNativeBufferPool: true,
+  directoryListingNativeBufferPool: true,
   searchResultsNativeRing: false,
   taskOutputNativeRing: false,
   terminalOutputNativeRingComparison: false,
