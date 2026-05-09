@@ -1320,7 +1320,7 @@ function getLatestExplorerContextMenuPanel() {
   const panels = Array.from(
     document.querySelectorAll("[data-overlay-explorer-context-menu-panel]"),
   ) as HTMLElement[];
-  const panel = panels.at(-1) ?? null;
+  const panel = panels[panels.length - 1] ?? null;
   if (!panel) {
     throw new Error("Latest explorer context menu panel not found");
   }
@@ -8145,6 +8145,7 @@ const value = 1;
         workflowTabId,
         onRegisterWorkflowTabs,
         onRegisterContextMenuRegistration,
+        onRegisterWorkbenchStatus,
       }) {
         React.useEffect(() => {
           onRegisterWorkflowTabs?.([
@@ -8186,6 +8187,14 @@ const value = 1;
           });
           return () => onRegisterContextMenuRegistration?.(null);
         }, [onRegisterContextMenuRegistration]);
+
+        React.useEffect(() => {
+          onRegisterWorkbenchStatus?.({
+            label: "Ready",
+            tone: "success",
+          });
+          return () => onRegisterWorkbenchStatus?.(null);
+        }, [onRegisterWorkbenchStatus]);
 
         return (
           <div
@@ -8730,7 +8739,10 @@ const value = 1;
       if (command === "explorer_tags_set_for_paths") {
         return docsTagSnapshot;
       }
-      return baseInvokeImplementation(command, args);
+      return baseInvokeImplementation(
+        command,
+        args as Parameters<typeof baseInvokeImplementation>[1],
+      );
     });
 
     renderExplorer();

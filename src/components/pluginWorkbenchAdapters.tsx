@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getExplorerArchiveDescriptor } from '../config/explorerArchives';
 import {
@@ -121,6 +121,12 @@ const TEXT_PYTHON_WORKFLOW_TABS = [
   { id: 'run', label: 'Run', baseMode: 'preview' },
   { id: 'runtime', label: 'Runtime', baseMode: 'preview' },
 ] as const;
+
+function useLatestPreviewRegistrationRef<TValue>(value: TValue) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
 
 async function readStandaloneTextPreviewFile(
   filePath: string,
@@ -551,37 +557,21 @@ export function TextWorkbenchPreviewAdapter({
   const renderKind = textWorkbench?.renderKind ?? standaloneState.renderKind;
   const language = textWorkbench?.language ?? getMonacoLanguage(file.extension);
   const editorSettings = textWorkbench?.editorSettings ?? standaloneState.editorSettings;
-
-  useEffect(() => {
-    if (!onRegisterWorkflowTabs) {
-      return undefined;
-    }
-
-    if (textWorkbench?.pythonPreview) {
-      onRegisterWorkflowTabs([...TEXT_PYTHON_WORKFLOW_TABS]);
-      return () => onRegisterWorkflowTabs(null);
-    }
-
-    if (textWorkbench?.scriptPreview) {
-      onRegisterWorkflowTabs([...TEXT_SCRIPT_WORKFLOW_TABS]);
-      return () => onRegisterWorkflowTabs(null);
-    }
-
-    onRegisterWorkflowTabs(null);
-    return () => onRegisterWorkflowTabs(null);
-  }, [
+  const registerWorkflowTabsRef = useLatestPreviewRegistrationRef(
     onRegisterWorkflowTabs,
-    textWorkbench?.pythonPreview,
-    textWorkbench?.scriptPreview,
-  ]);
-
-  useEffect(() => {
-    if (!onRegisterWorkbenchStatus) {
-      return undefined;
-    }
-
-    if (textWorkbench) {
-      onRegisterWorkbenchStatus({
+  );
+  const registerWorkbenchStatusRef = useLatestPreviewRegistrationRef(
+    onRegisterWorkbenchStatus,
+  );
+  const hasWorkflowTabRegistrar = onRegisterWorkflowTabs != null;
+  const hasWorkbenchStatusRegistrar = onRegisterWorkbenchStatus != null;
+  const workflowTabsRegistrationKind = textWorkbench?.pythonPreview
+    ? 'python'
+    : textWorkbench?.scriptPreview
+      ? 'script'
+      : 'none';
+  const workbenchStatus: OverlayPluginPreviewWorkbenchStatus = textWorkbench
+    ? {
         label: textWorkbench.isSaving
           ? 'Saving?'
           : textWorkbench.error
@@ -594,24 +584,44 @@ export function TextWorkbenchPreviewAdapter({
           : textWorkbench.isSaving
             ? 'neutral'
             : 'success',
-      });
-      return () => onRegisterWorkbenchStatus(null);
+      }
+    : {
+        label: standaloneState.loading
+          ? 'Loading'
+          : standaloneState.error
+            ? 'Error'
+            : 'Preview',
+        tone: standaloneState.error ? 'danger' : 'neutral',
+      };
+
+  useEffect(() => {
+    if (!hasWorkflowTabRegistrar) {
+      return undefined;
     }
 
-    onRegisterWorkbenchStatus({
-      label: standaloneState.loading
-        ? 'Loading'
-        : standaloneState.error
-          ? 'Error'
-          : 'Preview',
-      tone: standaloneState.error ? 'danger' : 'neutral',
-    });
-    return () => onRegisterWorkbenchStatus(null);
+    const tabs =
+      workflowTabsRegistrationKind === 'python'
+        ? [...TEXT_PYTHON_WORKFLOW_TABS]
+        : workflowTabsRegistrationKind === 'script'
+          ? [...TEXT_SCRIPT_WORKFLOW_TABS]
+          : null;
+
+    registerWorkflowTabsRef.current?.(tabs);
+    return () => registerWorkflowTabsRef.current?.(null);
+  }, [hasWorkflowTabRegistrar, registerWorkflowTabsRef, workflowTabsRegistrationKind]);
+
+  useEffect(() => {
+    if (!hasWorkbenchStatusRegistrar) {
+      return undefined;
+    }
+
+    registerWorkbenchStatusRef.current?.(workbenchStatus);
+    return () => registerWorkbenchStatusRef.current?.(null);
   }, [
-    onRegisterWorkbenchStatus,
-    standaloneState.error,
-    standaloneState.loading,
-    textWorkbench,
+    hasWorkbenchStatusRegistrar,
+    registerWorkbenchStatusRef,
+    workbenchStatus.label,
+    workbenchStatus.tone,
   ]);
 
   if (!textWorkbench && standaloneState.loading) {

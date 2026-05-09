@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   Blocks,
@@ -47,6 +47,25 @@ const TEXT = 'var(--overlay-text-primary)';
 
 type FolderPluginHostMode = 'panel-tab' | 'manager-preview';
 type PluginManagerSurface = 'workbench-preview' | 'panel-entry';
+
+function arePluginManagerWorkflowTabRegistrationsEqual(
+  current: readonly ExplorerPreviewWildcardWorkflowTab[],
+  next: readonly ExplorerPreviewWildcardWorkflowTab[],
+): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+
+  return current.every((tab, index) => {
+    const nextTab = next[index];
+    return (
+      nextTab != null &&
+      tab.id === nextTab.id &&
+      tab.label === nextTab.label &&
+      tab.baseMode === nextTab.baseMode
+    );
+  });
+}
 
 type FolderPluginHostLayout = {
   viewportPadding: number;
@@ -771,21 +790,26 @@ function PluginWorkbenchPreviewTestHost({
     }
   }, [activeWorkflowTab.baseMode, activeWorkflowTab.id, viewMode, workflowTabId]);
 
-  const handleWorkflowTabSelect = (tab: ExplorerPreviewWorkflowTab) => {
+  const handleWorkflowTabSelect = useCallback((tab: ExplorerPreviewWorkflowTab) => {
     setWorkflowTabId(tab.id);
     setViewMode(tab.baseMode);
-  };
-  const handleViewModeChange = (mode: 'preview' | 'edit') => {
+  }, []);
+  const handleViewModeChange = useCallback((mode: 'preview' | 'edit') => {
     setViewMode(mode);
     setWorkflowTabId(current => (
       current === 'preview' || current === 'edit' ? mode : current
     ));
-  };
-  const handleRegisteredWorkflowTabsChange = (
+  }, []);
+  const handleRegisteredWorkflowTabsChange = useCallback((
     tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
   ) => {
-    setRegisteredWildcardTabs(tabs ?? []);
-  };
+    const nextTabs = tabs ? [...tabs] : [];
+    setRegisteredWildcardTabs(current => (
+      arePluginManagerWorkflowTabRegistrationsEqual(current, nextTabs)
+        ? current
+        : nextTabs
+    ));
+  }, []);
 
   if (!lane || !testFile) {
     return (

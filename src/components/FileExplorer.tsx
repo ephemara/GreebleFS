@@ -267,6 +267,7 @@ import {
   createPluginPreviewRuntimeBridge,
   type OverlayPluginPreviewHostContext,
   type OverlayPluginPreviewWorkbenchContext,
+  type OverlayPluginPreviewWorkbenchStatus,
 } from "./pluginRuntime";
 import {
   listenToFileOperationsTransferCompleted,
@@ -4317,6 +4318,57 @@ function buildPreviewPluginHostContext(
   };
 }
 
+type PreviewPluginWorkbenchStatusState = {
+  label: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+};
+
+function arePreviewWorkflowTabRegistrationsEqual(
+  current: readonly ExplorerPreviewWildcardWorkflowTab[],
+  next: readonly ExplorerPreviewWildcardWorkflowTab[],
+): boolean {
+  if (current.length !== next.length) {
+    return false;
+  }
+
+  return current.every((tab, index) => {
+    const nextTab = next[index];
+    return (
+      nextTab != null &&
+      tab.id === nextTab.id &&
+      tab.label === nextTab.label &&
+      tab.baseMode === nextTab.baseMode
+    );
+  });
+}
+
+function normalizePreviewPluginWorkbenchStatus(
+  status: OverlayPluginPreviewWorkbenchStatus | null,
+): PreviewPluginWorkbenchStatusState | null {
+  if (!status) {
+    return null;
+  }
+
+  return {
+    label: status.label,
+    tone: status.tone ?? "neutral",
+  };
+}
+
+function arePreviewPluginWorkbenchStatusesEqual(
+  current: PreviewPluginWorkbenchStatusState | null,
+  next: PreviewPluginWorkbenchStatusState | null,
+): boolean {
+  if (current === next) {
+    return true;
+  }
+  if (!current || !next) {
+    return false;
+  }
+
+  return current.label === next.label && current.tone === next.tone;
+}
+
 class PreviewPluginErrorBoundary extends React.Component<
   { children: React.ReactNode; laneTitle: string },
   { error: string | null }
@@ -4607,10 +4659,8 @@ function PreviewPanel({
   const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
     ExplorerPreviewWildcardWorkflowTab[]
   >([]);
-  const [pluginWorkbenchStatus, setPluginWorkbenchStatus] = useState<{
-    label: string;
-    tone: "neutral" | "success" | "warning" | "danger";
-  } | null>(null);
+  const [pluginWorkbenchStatus, setPluginWorkbenchStatus] =
+    useState<PreviewPluginWorkbenchStatusState | null>(null);
   const [showWorkbenchChooser, setShowWorkbenchChooser] = useState(false);
   const workbenchChooserAnchorRef = useRef<HTMLDivElement>(null);
   const currentViewModeRef = useRef(viewMode);
@@ -4800,12 +4850,33 @@ function PreviewPanel({
       return;
     }
 
-    setWildcardWorkflowTabs([...PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS]);
+    const nextTabs = [...PYTHON_PREVIEW_WILDCARD_WORKFLOW_TABS];
+    setWildcardWorkflowTabs((current) =>
+      arePreviewWorkflowTabRegistrationsEqual(current, nextTabs)
+        ? current
+        : nextTabs,
+    );
   }, [activePythonPreviewMetadata, preview.path, preview.type]);
 
   const handleWildcardWorkflowTabsChange = useCallback(
     (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
-      setWildcardWorkflowTabs(tabs ?? []);
+      const nextTabs = tabs ? [...tabs] : [];
+      setWildcardWorkflowTabs((current) =>
+        arePreviewWorkflowTabRegistrationsEqual(current, nextTabs)
+          ? current
+          : nextTabs,
+      );
+    },
+    [],
+  );
+  const handlePluginWorkbenchStatusChange = useCallback(
+    (status: OverlayPluginPreviewWorkbenchStatus | null) => {
+      const nextStatus = normalizePreviewPluginWorkbenchStatus(status);
+      setPluginWorkbenchStatus((current) =>
+        arePreviewPluginWorkbenchStatusesEqual(current, nextStatus)
+          ? current
+          : nextStatus,
+      );
     },
     [],
   );
@@ -6595,16 +6666,7 @@ function PreviewPanel({
                   handlePreviewContextMenuRegistrationChange
                 }
                 onRegisterCloseGuard={onRegisterCloseGuard}
-                onRegisterWorkbenchStatus={(status) =>
-                  setPluginWorkbenchStatus(
-                    status
-                      ? {
-                          label: status.label,
-                          tone: status.tone ?? "neutral",
-                        }
-                      : null,
-                  )
-                }
+                onRegisterWorkbenchStatus={handlePluginWorkbenchStatusChange}
                 onRefreshPreviewEntry={onRefreshPreviewEntry}
                 onViewModeChange={onViewModeChange}
               />
@@ -8597,7 +8659,7 @@ interface FileExplorerProps {
   explorerLayouts?: LoadedExplorerLayoutDefinition[];
   homePacks?: LoadedExplorerHomePack[];
   menuPacks?: LoadedExplorerMenuPack[];
-  onOpenPanel?: (panelId: string) => void;
+  onOpenPanel?: (panelId: string, payload?: Record<string, string>) => void;
   onOpenSettingsSection?: (section: SettingsSectionKey) => void;
   actions?: LoadedExplorerAction[];
   pluginActions?: OverlayPluginExplorerActionContribution[];
@@ -23813,8 +23875,8 @@ export function FileExplorer({
         revealPath: (path) => {
           explorerInteractiveHostRuntimeRef.current?.revealPath(path);
         },
-        openPanel: (panelId) => {
-          explorerInteractiveHostRuntimeRef.current?.openPanel(panelId);
+        openPanel: (panelId, payload) => {
+          explorerInteractiveHostRuntimeRef.current?.openPanel(panelId, payload);
         },
         openWorkflow: (workflowId, options) => {
           explorerInteractiveHostRuntimeRef.current?.openWorkflow(

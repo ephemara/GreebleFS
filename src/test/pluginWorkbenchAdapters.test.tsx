@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { readExplorerTextFileMock } = vi.hoisted(() => ({
@@ -165,5 +166,70 @@ describe('pluginWorkbenchAdapters text loader', () => {
     expect(await screen.findByTestId('mock-text-workbench')).toHaveTextContent(
       'notes.md|# Browser Read|preview|markdown',
     );
+  });
+
+  it('does not re-register text workbench status just because parent callbacks and host objects are recreated', async () => {
+    const statusRegistrations: string[] = [];
+
+    function TextWorkbenchRegistrationHarness() {
+      const [registrationRevision, setRegistrationRevision] = useState(0);
+      const textWorkbench = {
+        content: '# Host Context',
+        language: 'markdown',
+        renderKind: 'markdown',
+        scriptPreview: null,
+        pythonPreview: null,
+        focusTarget: null,
+        isDirty: false,
+        isSaving: false,
+        lastSavedAt: null,
+        error: null,
+        editorSettings: {
+          fontFamily: 'monospace',
+          fontSize: 13,
+          lineHeight: 1.5,
+          tabSize: 2,
+          wordWrap: 'off',
+        },
+        pythonRuntimeConfig: null,
+        pythonBootstrapPackageInput: '',
+        onChange: vi.fn(),
+        onSave: async () => true,
+      };
+
+      return (
+        <div>
+          <div data-testid="registration-revision">{registrationRevision}</div>
+          <TextWorkbenchPreviewAdapter
+            {...makeTextWorkbenchProps({
+              workbench: {
+                delegateDescriptor: null,
+                text: textWorkbench,
+              },
+              onRegisterWorkbenchStatus: (
+                status: { label: string; tone?: string } | null,
+              ) => {
+                statusRegistrations.push(
+                  status ? `${status.label}:${status.tone ?? 'neutral'}` : 'null',
+                );
+                if (status) {
+                  setRegistrationRevision((current) => current + 1);
+                }
+              },
+            })}
+          />
+        </div>
+      );
+    }
+
+    render(<TextWorkbenchRegistrationHarness />);
+
+    expect(await screen.findByTestId('mock-text-workbench')).toHaveTextContent(
+      'notes.md|# Host Context|preview|markdown',
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('registration-revision')).toHaveTextContent('1');
+    });
+    expect(statusRegistrations).toEqual(['Saved:success']);
   });
 });

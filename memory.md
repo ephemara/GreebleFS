@@ -8720,3 +8720,17 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/kainUiScaffold.test.ts src/test/kainLatticeCatalog.test.ts src/test/kainSemanticUiRuntime.test.ts src/test/kainSemanticSurfaceHost.test.tsx src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`
   - Passed: `bun run proof:ui:usr`
   - Repo-wide `bunx tsc --noEmit --pretty false` still exits nonzero from baseline diagnostics, but a filtered scan produced no diagnostics for the touched Kain semantic files.
+
+# 2026-05-09 - Text Workbench Registration Loop Hardened
+
+- Fixed the recurring React "Maximum update depth exceeded" path in the extension-backed text workbench. The failure mode was host registration churn: preview lanes registered workflow tabs or workbench status from effects, the host recreated registration callbacks or accepted equivalent new arrays/objects, and the resulting parent state update caused the effect to run again indefinitely.
+- Durable implementation shape:
+  - `src/components/pluginWorkbenchAdapters.tsx` now registers text-workbench workflow tabs and status by semantic keys (`none` / `script` / `python`, status label/tone) through latest-callback refs instead of depending on host callback identity or the whole `workbench.text` object.
+  - `src/components/FileExplorer.tsx` now passes a stable `handlePluginWorkbenchStatusChange` into plugin lanes and only updates wildcard workflow tabs or plugin status when the incoming registration actually differs.
+  - `src/components/PluginsManager.tsx` mirrors the same idempotent workflow-tab registration behavior for package preview test hosts, so the manager preview cannot loop when a package renderer registers tabs from an effect.
+- Durable rule:
+  - Preview/plugin registration callbacks must be stable where possible, and their host setters must be idempotent. Treat arrays/objects from plugin effects as declarations, not as state changes by identity.
+- Validation:
+  - Passed: `bunx vitest run src/test/pluginWorkbenchAdapters.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets plugin preview lanes claim files and register workflow tabs plus preview context actions" --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript filter produced no diagnostics for the text-workbench touched files. The live MCP/WebView session was attachable, but its Explorer smoke path was blocked by an unrelated `tauriAvailable=false` / `invoke` startup failure in the running dev app.
