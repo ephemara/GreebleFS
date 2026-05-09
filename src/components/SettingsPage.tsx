@@ -150,6 +150,7 @@ import { openExplorerPicker } from "../runtime/explorerPicker";
 import type { UsrProfileRuntimeSnapshot } from "../runtime/usrProfiles";
 import type { KainUiGraph } from "../runtime/kainUiGraph";
 import type { KainAppManifest } from "../runtime/kainManifest";
+import type { KainUiScaffold } from "../runtime/kainUiScaffold";
 import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
@@ -3195,6 +3196,8 @@ export function SettingsPage({
   kainUiGraphError = null,
   kainManifest = null,
   kainManifestError = null,
+  kainUiScaffold = null,
+  kainUiScaffoldError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -3335,6 +3338,8 @@ export function SettingsPage({
   kainUiGraphError?: string | null;
   kainManifest?: KainAppManifest | null;
   kainManifestError?: string | null;
+  kainUiScaffold?: KainUiScaffold | null;
+  kainUiScaffoldError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -15284,6 +15289,8 @@ export function SettingsPage({
             error={kainUiGraphError}
             manifest={kainManifest}
             manifestError={kainManifestError}
+            scaffold={kainUiScaffold}
+            scaffoldError={kainUiScaffoldError}
           />
         )}
 

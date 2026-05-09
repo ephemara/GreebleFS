@@ -343,6 +343,10 @@ import {
   loadKainManifest,
   type KainAppManifest,
 } from './runtime/kainManifest';
+import {
+  loadKainUiScaffold,
+  type KainUiScaffold,
+} from './runtime/kainUiScaffold';
 import { sendNativeNotification } from './runtime/nativeNotifications';
 import {
   applyLookdevScopedOverridesToSettings,
@@ -936,6 +940,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [kainUiGraphError, setKainUiGraphError] = useState<string | null>(null);
   const [kainManifest, setKainManifest] = useState<KainAppManifest | null>(null);
   const [kainManifestError, setKainManifestError] = useState<string | null>(null);
+  const [kainUiScaffold, setKainUiScaffold] = useState<KainUiScaffold | null>(null);
+  const [kainUiScaffoldError, setKainUiScaffoldError] = useState<string | null>(null);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -1082,6 +1088,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
       setKainManifest(result.manifest);
       setKainManifestError(result.error);
+    });
+    void loadKainUiScaffold({
+      profileId: usrProfileRuntimeActiveProfileId,
+      revision: usrProfileRuntimeRevision,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setKainUiScaffold(result.scaffold);
+      setKainUiScaffoldError(result.error);
     });
 
     return () => {
@@ -5347,6 +5363,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         kainUiGraphError,
         kainManifest,
         kainManifestError,
+        kainUiScaffold,
+        kainUiScaffoldError,
         onSwitchUsrProfile: handleSwitchUsrProfile,
         onCreateUsrProfile: handleCreateUsrProfile,
         onCreateUsrProfileFromVariant: handleCreateUsrProfileFromVariant,
@@ -5626,6 +5644,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       kainUiGraphError,
       kainManifest,
       kainManifestError,
+      kainUiScaffold,
+      kainUiScaffoldError,
       usrProfileRuntimeSnapshot,
     ],
   );

@@ -1,5 +1,7 @@
 import type { KainUiGraph } from "@/runtime/kainUiGraph";
 import type { KainAppManifest } from "@/runtime/kainManifest";
+import type { KainUiScaffold } from "@/runtime/kainUiScaffold";
+import { KainUiRenderer } from "@/components/kain/KainUiRenderer";
 import {
   SettingsRow,
   SettingsRowGroup,
@@ -12,11 +14,15 @@ export function KainUiSettingsSection({
   error,
   manifest,
   manifestError,
+  scaffold,
+  scaffoldError,
 }: {
   graph: KainUiGraph | null;
   error: string | null;
   manifest: KainAppManifest | null;
   manifestError: string | null;
+  scaffold: KainUiScaffold | null;
+  scaffoldError: string | null;
 }) {
   const settingsMode = graph?.settings.mode ?? "fallback";
   const categoryCount = graph?.settings.categories.length ?? 0;
@@ -28,6 +34,12 @@ export function KainUiSettingsSection({
   const pipelineCount = manifest?.pipelines.length ?? 0;
   const ffiLaneCount = manifest?.ffiLanes.length ?? 0;
   const manifestStatus = manifest ? "live" : "offline";
+  const scaffoldStatus = scaffold ? "live" : "offline";
+  const scaffoldSurfaceCount = scaffold?.surfaces.length ?? 0;
+  const scaffoldPrimitiveCount = scaffold?.primitives.length ?? 0;
+  const scaffoldTokenCount = scaffold?.tokens.length ?? 0;
+  const scaffoldActionCount = scaffold?.actions.length ?? 0;
+  const previewSurface = scaffold?.surfaces[0] ?? null;
   const nextPipeline = manifest?.pipelines.find((pipeline) => pipeline.status === "next")
     ?? manifest?.pipelines[0]
     ?? null;
@@ -39,6 +51,9 @@ export function KainUiSettingsSection({
       data-kain-manifest-kind={manifest?.kind ?? "missing"}
       data-kain-manifest-capabilities={capabilityCount}
       data-kain-manifest-dispatch={dispatchCount}
+      data-kain-ui-scaffold-proof={scaffoldStatus}
+      data-kain-ui-scaffold-surfaces={scaffoldSurfaceCount}
+      data-kain-ui-scaffold-primitives={scaffoldPrimitiveCount}
     >
       <SettingsSectionBlock
         title="Kain UI"
@@ -96,6 +111,33 @@ export function KainUiSettingsSection({
             control={<SettingsStatusPill active={ffiLaneCount > 0}>{ffiLaneCount}</SettingsStatusPill>}
           />
         </SettingsRowGroup>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Kain UI Scaffold"
+        subtitle={scaffold?.summary ?? scaffoldError ?? "Waiting for greeblefs.ui.scaffold"}
+        badges={[scaffold ? "Semantic V1" : "No Scaffold", `${scaffoldSurfaceCount} surfaces`]}
+      >
+        <SettingsRowGroup>
+          <SettingsRow
+            title="Stdlib"
+            description={scaffold?.stdlib ?? "src-kain/stdlib/greeblefs/ui.kn"}
+            control={<SettingsStatusPill active={Boolean(scaffold)}>{scaffold ? "loaded" : "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Renderer"
+            description={scaffold?.renderer ?? "src/components/kain/KainUiRenderer.tsx"}
+            control={<SettingsStatusPill active={Boolean(scaffold)}>{scaffold ? "wired" : "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Vocabulary"
+            description={`${scaffoldPrimitiveCount} primitives | ${scaffoldTokenCount} tokens | ${scaffoldActionCount} actions`}
+            control={<SettingsStatusPill active={scaffoldPrimitiveCount > 0}>{scaffoldPrimitiveCount}</SettingsStatusPill>}
+          />
+        </SettingsRowGroup>
+        <div className="mt-3">
+          <KainUiRenderer surface={previewSurface} />
+        </div>
       </SettingsSectionBlock>
     </div>
   );

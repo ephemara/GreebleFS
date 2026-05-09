@@ -149,6 +149,155 @@ fn build_ui_profile() -> Any:
     json_object_set(profile, "overlays", string_array_2("usr/kain-ui/main.kn", "usr/profiles/<active>/kain-ui/main.kn"))
     return profile
 
+fn build_ui_node(id: String, node_kind: String, title: String, description: String) -> Any:
+    let node = json_object_new()
+    json_object_set(node, "id", id)
+    json_object_set(node, "kind", node_kind)
+    if len(title) > 0:
+        json_object_set(node, "title", title)
+    if len(description) > 0:
+        json_object_set(node, "description", description)
+    json_object_set(node, "children", json_array_new())
+    return node
+
+fn set_ui_node_text(node: Any, text: String, role: String) -> Int:
+    json_object_set(node, "text", text)
+    if len(role) > 0:
+        json_object_set(node, "role", role)
+    return 0
+
+fn set_ui_node_label(node: Any, label: String, tone: String, active: Bool) -> Int:
+    json_object_set(node, "label", label)
+    if len(tone) > 0:
+        json_object_set(node, "tone", tone)
+    json_object_set(node, "active", active)
+    return 0
+
+fn set_ui_node_action(node: Any, action_id: String) -> Int:
+    json_object_set(node, "actionId", action_id)
+    return 0
+
+fn set_ui_node_layout(node: Any, direction: String, gap: String, padding: String) -> Int:
+    let layout = json_object_new()
+    json_object_set(layout, "direction", direction)
+    json_object_set(layout, "gap", gap)
+    if len(padding) > 0:
+        json_object_set(layout, "padding", padding)
+    json_object_set(node, "layout", layout)
+    return 0
+
+fn append_ui_child(parent: Any, child: Any) -> Int:
+    json_array_push(json_get(parent, "children"), child)
+    return 0
+
+fn append_ui_primitive(items, primitive_kind: String, maps_to: String, status: String) -> Int:
+    let primitive = json_object_new()
+    json_object_set(primitive, "kind", primitive_kind)
+    json_object_set(primitive, "mapsTo", maps_to)
+    json_object_set(primitive, "status", status)
+    json_array_push(items, primitive)
+    return 0
+
+fn append_ui_token(items, id: String, category: String, value: String, maps_to: String) -> Int:
+    let token = json_object_new()
+    json_object_set(token, "id", id)
+    json_object_set(token, "category", category)
+    json_object_set(token, "value", value)
+    json_object_set(token, "mapsTo", maps_to)
+    json_array_push(items, token)
+    return 0
+
+fn append_ui_action(items, id: String, label: String, command: String, status: String) -> Int:
+    let action = json_object_new()
+    json_object_set(action, "id", id)
+    json_object_set(action, "label", label)
+    json_object_set(action, "command", command)
+    json_object_set(action, "status", status)
+    json_array_push(items, action)
+    return 0
+
+fn build_kain_authored_settings_surface() -> Any:
+    let surface = json_object_new()
+    let root = build_ui_node("settings.kain-authoring.root", "stack", "", "")
+    set_ui_node_layout(root, "column", "compact", "none")
+
+    let status_section = build_ui_node("settings.kain-authoring.status", "section", "Kain Authored Surface", "Semantic UI is coming from Kain, then React renders known primitives without replacing the current app.")
+    let stdlib_row = build_ui_node("settings.kain-authoring.stdlib", "row", "Stdlib", "src-kain/stdlib/greeblefs/ui.kn defines the app-facing UI vocabulary.")
+    let stdlib_pill = build_ui_node("settings.kain-authoring.stdlib.pill", "status-pill", "", "")
+    set_ui_node_label(stdlib_pill, "scaffold", "live", true)
+    append_ui_child(stdlib_row, stdlib_pill)
+
+    let renderer_row = build_ui_node("settings.kain-authoring.renderer", "row", "Renderer", "src/components/kain/KainUiRenderer.tsx maps Kain nodes onto existing GreebleFS primitives.")
+    let renderer_pill = build_ui_node("settings.kain-authoring.renderer.pill", "status-pill", "", "")
+    set_ui_node_label(renderer_pill, "wired", "live", true)
+    append_ui_child(renderer_row, renderer_pill)
+
+    let action_row = build_ui_node("settings.kain-authoring.reload", "row", "Reload", "The first real action lane will ask Tauron to reload the resident Kain graph after edits.")
+    let action_button = build_ui_node("settings.kain-authoring.reload.button", "button", "", "")
+    set_ui_node_label(action_button, "reload", "pending", false)
+    set_ui_node_action(action_button, "kain.ui.reload")
+    append_ui_child(action_row, action_button)
+
+    append_ui_child(status_section, stdlib_row)
+    append_ui_child(status_section, renderer_row)
+    append_ui_child(status_section, action_row)
+    append_ui_child(root, status_section)
+
+    let note = build_ui_node("settings.kain-authoring.note", "text", "", "")
+    set_ui_node_text(note, "This is the first Kain-owned UI document: compact, semantic, normalized, and safe to grow one surface at a time.", "caption")
+    append_ui_child(root, note)
+
+    json_object_set(surface, "id", "settings.kain-authoring-proof")
+    json_object_set(surface, "kind", "settings-section")
+    json_object_set(surface, "title", "Kain UI Authoring Proof")
+    json_object_set(surface, "summary", "Kain can now describe a small UI surface as data while GreebleFS keeps the current React shell.")
+    json_object_set(surface, "root", root)
+    return surface
+
+fn build_ui_scaffold(request: Any) -> Any:
+    let scaffold = json_object_new()
+    let surfaces = json_array_new()
+    let primitives = json_array_new()
+    let tokens = json_array_new()
+    let actions = json_array_new()
+    let consumers = json_array_new()
+
+    json_array_push(surfaces, build_kain_authored_settings_surface())
+
+    append_ui_primitive(primitives, "stack", "flex column/row layout wrapper", "wired")
+    append_ui_primitive(primitives, "section", "SettingsSectionBlock", "wired")
+    append_ui_primitive(primitives, "row", "SettingsRow", "wired")
+    append_ui_primitive(primitives, "status-pill", "SettingsStatusPill", "wired")
+    append_ui_primitive(primitives, "text", "semantic text node", "wired")
+    append_ui_primitive(primitives, "button", "theme-aware button/action host", "scaffold")
+
+    append_ui_token(tokens, "control.button.size.tight", "geometry", "tight", "Kain UI graph chrome.buttonSize")
+    append_ui_token(tokens, "surface.settings.gap.compact", "spacing", "compact", "Settings row and block spacing")
+    append_ui_token(tokens, "surface.settings.status.live", "interaction", "live", "SettingsStatusPill active state")
+    append_ui_token(tokens, "surface.settings.text.caption", "typography", "caption", "Compact explanatory text")
+
+    append_ui_action(actions, "kain.ui.reload", "Reload Kain UI", "tauron.kain.reload", "planned")
+    append_ui_action(actions, "kain.ui.emit-artifact", "Emit UI Artifact", "greeblefs.ui.emit", "planned")
+
+    json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
+    json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+
+    json_object_set(scaffold, "schemaVersion", 1)
+    json_object_set(scaffold, "kind", "greeblefs.ui.scaffold")
+    json_object_set(scaffold, "source", "src-kain/app/main.kn")
+    json_object_set(scaffold, "stdlib", "src-kain/stdlib/greeblefs/ui.kn")
+    json_object_set(scaffold, "renderer", "src/components/kain/KainUiRenderer.tsx")
+    json_object_set(scaffold, "summary", "Kain-authored semantic UI scaffold for defining GreebleFS surfaces, controls, layout intent, and action ids before deeper migration.")
+    json_object_set(scaffold, "namespace", json_string_field(request, "namespace"))
+    json_object_set(scaffold, "method", json_string_field(request, "method"))
+    json_object_set(scaffold, "surfaces", surfaces)
+    json_object_set(scaffold, "primitives", primitives)
+    json_object_set(scaffold, "tokens", tokens)
+    json_object_set(scaffold, "actions", actions)
+    json_object_set(scaffold, "consumers", consumers)
+    return scaffold
+
 fn append_manifest_capability(items, id: String, lane: String, label: String, summary: String, status: String, implemented: Bool) -> Int:
     let capability = json_object_new()
     json_object_set(capability, "id", id)
@@ -226,6 +375,7 @@ fn build_kain_manifest(request: Any) -> Any:
 
     append_manifest_capability(capabilities, "kain.app.manifest", "bridge", "Kain app manifest", "Kain can describe the app-level features it contributes to GreebleFS.", "live", true)
     append_manifest_capability(capabilities, "kain.ui.graph", "ui", "Kain UI graph", "Kain supplies theme, chrome, layout, motion, settings, and profile intent.", "live", true)
+    append_manifest_capability(capabilities, "kain.ui.scaffold", "ui", "Kain semantic UI scaffold", "Kain can describe compact UI surfaces, primitive nodes, layout intent, tokens, and action ids for React to render.", "live", true)
     append_manifest_capability(capabilities, "kain.settings.navigation", "settings", "Settings navigation ownership", "Kain can author Settings groups and hide compatibility lanes while GreebleFS keeps fallbacks.", "consumed", true)
     append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can emit GreebleFS-compatible plugin and action artifacts from typed intent.", "planned", false)
     append_manifest_capability(capabilities, "kain.host.reflection", "rust", "Rust host reflection", "Rust/Tauron can describe host capabilities for Kain to route or generate wrappers.", "planned", false)
@@ -234,17 +384,20 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_capability(capabilities, "kain.c.runtime", "ffi", "C runtime bridge", "Kain can talk to C libraries, DLLs, compiled tools, SDKs, and legacy code.", "available-in-kain", false)
 
     append_manifest_dispatch(dispatch, "greeblefs.ui", "graph", "Return the Kain-authored UI graph consumed by Settings and app defaults.", "src/runtime/kainUiGraph.ts")
+    append_manifest_dispatch(dispatch, "greeblefs.ui", "scaffold", "Return Kain-authored semantic UI surfaces and primitive vocabulary for React rendering.", "src/runtime/kainUiScaffold.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ui", "ping", "Smoke-test the resident bridge process.", "dev/mcp smoke")
     append_manifest_dispatch(dispatch, "greeblefs.kain", "manifest", "Return the Kain app manifest that declares first-class GreebleFS contributions.", "src/runtime/kainManifest.ts")
 
     append_manifest_artifact(generated_artifacts, "kain.plugin.proof", "plugin-manifest", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn", "generated/plugin-proof.json", "proof")
     append_manifest_artifact(generated_artifacts, "kain.settings.proof", "settings-schema", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated/settings-proof.json", "proof")
     append_manifest_artifact(generated_artifacts, "kain.ui.graph", "runtime-graph", "src-kain/app/main.kn", "src/runtime/kainUiGraph.ts", "live")
+    append_manifest_artifact(generated_artifacts, "kain.ui.scaffold", "semantic-ui-ir", "src-kain/app/main.kn", "src/runtime/kainUiScaffold.ts", "live")
 
     append_manifest_schema(settings_schemas, "greeblefs.kain.ui", "Kain UI Settings", "src-kain/app/main.kn", "Settings > Kain UI", "live")
     append_manifest_schema(settings_schemas, "greeblefs.kain.controlPlane", "Kain Control Plane Settings", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated proof", "proof")
 
     append_manifest_pipeline(pipelines, "kain.settings.first-class", "Settings ownership", "Kain authors Settings grouping now, then graduates schema/default/migration ownership per section.", "active")
+    append_manifest_pipeline(pipelines, "kain.ui.semantic-renderer", "Semantic UI renderer", "Kain defines small UI surfaces as data and React renders known GreebleFS primitives until full codegen is ready.", "active")
     append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Plugin manifest generation", "Kain emits plugin/action manifests that GreebleFS can load as compatibility artifacts.", "next")
     append_manifest_pipeline(pipelines, "kain.reflection.codegen", "Rust reflection codegen", "Kain consumes Rust/Tauron host shape and emits wrapper glue instead of hand-maintained mappings.", "planned")
     append_manifest_pipeline(pipelines, "kain.gpu.artifacts", "GPU artifact lane", "Kain compiles SPIR-V/shader artifacts for preview/lookdev pipelines.", "planned")
@@ -255,6 +408,8 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_ffi_lane(ffi_lanes, "spirv", "SPIR-V", "Compile shader/compute artifacts that GreebleFS can cache and consume.", "available-in-kain")
 
     json_array_push(consumers, "src/runtime/kainManifest.ts")
+    json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
+    json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
     json_array_push(consumers, "MCP greeblefs-dev-mcp smoke")
 
@@ -303,6 +458,9 @@ fn kain_bridge_dispatch(request_json: String) -> Any:
 
     if request_namespace == "greeblefs.ui" and request_method == "graph":
         return build_ui_graph(request)
+
+    if request_namespace == "greeblefs.ui" and request_method == "scaffold":
+        return build_ui_scaffold(request)
 
     if request_namespace == "greeblefs.ui" and request_method == "ping":
         let result = json_object_new()

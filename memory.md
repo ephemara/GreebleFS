@@ -1,3 +1,25 @@
+# 2026-05-08 - Kain Semantic UI Scaffold First Pass
+
+- Added the first Kain-authored semantic UI scaffold lane without replacing existing React surfaces.
+  - `src-kain/app/main.kn` now dispatches `greeblefs.ui.scaffold` beside `greeblefs.ui.graph` and `greeblefs.kain.manifest`.
+  - The manifest now advertises `kain.ui.scaffold`, the `greeblefs.ui.scaffold` dispatch endpoint, the `kain.ui.scaffold` generated-artifact lane, and the active `kain.ui.semantic-renderer` pipeline.
+  - `src-kain/stdlib/greeblefs/ui.kn` defines the first reusable Kain helper vocabulary for semantic GreebleFS UI nodes and surfaces.
+  - `src-kain/ui/kain_ui_scaffold.kn` is a runnable reference surface, and `src-kain/ui/README.md` documents the contract.
+  - `src/runtime/kainUiScaffold.ts` normalizes the semantic UI IR, while `src/components/kain/KainUiRenderer.tsx` maps known primitives onto trusted Settings primitives.
+  - `App.tsx`, `panelRegistry.tsx`, `SettingsPage.tsx`, and `KainUiSettingsSection.tsx` now load/pass/render the scaffold in Settings > Kain UI with MCP-proof hooks.
+- Durable design rule:
+  - Keep the Kain UI lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, tokens, and action ids; GreebleFS should own trusted rendering, theme variables, permissions, host action dispatch, and fallback behavior.
+- Validation:
+  - Passed: staged Kain bridge smoke for `greeblefs.ui.scaffold`.
+  - Passed: staged Kain bridge smoke for `greeblefs.kain.manifest` with the new scaffold capability and dispatch endpoint.
+  - Passed: `D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\src-kain\ui\kain_ui_scaffold.kn`.
+  - Passed: `bunx vitest run src/test/kainManifest.test.ts src/test/kainUiScaffold.test.ts src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`.
+  - Passed: GreebleFS MCP native-CDP app proof in Settings > Kain UI: `data-kain-ui-scaffold-proof="live"`, `data-kain-ui-scaffold-surfaces="1"`, `data-kain-ui-scaffold-primitives="6"`, manifest capability count `9`, renderer `semantic-v1`, surface `settings.kain-authoring-proof`. Screenshot: `D:/GreebleFS/MCP/.state/screenshots/kain-scaffold-proof.png`.
+  - Not clean: filtered repo `tsc` still reports existing baseline errors in `src/App.tsx`, `src-mobile/App.tsx`, and `src/windows/PickerWindowApp.tsx`; no Kain scaffold-specific diagnostics appeared.
+  - Not clean: `git diff --check` still reports pre-existing trailing whitespace in dirty `src/generated/tauri.ts`.
+- Next recommended step:
+  - Turn the scaffolded `button` primitive into a real action dispatch path, starting with `kain.ui.reload`, then move one tiny Settings sub-surface from JSX-authored structure into Kain-authored semantic IR.
+
 # 2026-05-08 - GreebleFS Native Lane Migration Prep Map
 
 - Inventoried the first GreebleFS hot payload candidates for future Tauron native lanes without changing product behavior.

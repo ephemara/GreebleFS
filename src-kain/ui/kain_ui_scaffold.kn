@@ -1,0 +1,42 @@
+fn build_reference_surface() -> Any:
+    let root = json_object_new()
+    json_object_set(root, "id", "reference.kain-ui.root")
+    json_object_set(root, "kind", "stack")
+    json_object_set(root, "children", json_array_new())
+
+    let section = json_object_new()
+    json_object_set(section, "id", "reference.kain-ui.section")
+    json_object_set(section, "kind", "section")
+    json_object_set(section, "title", "Kain UI Reference Surface")
+    json_object_set(section, "description", "A minimal semantic surface shape that the GreebleFS renderer can consume.")
+    json_object_set(section, "children", json_array_new())
+
+    let row = json_object_new()
+    json_object_set(row, "id", "reference.kain-ui.row")
+    json_object_set(row, "kind", "row")
+    json_object_set(row, "title", "Authoring")
+    json_object_set(row, "description", "Define layout, labels, state, and action ids in Kain first.")
+    json_object_set(row, "children", json_array_new())
+
+    let pill = json_object_new()
+    json_object_set(pill, "id", "reference.kain-ui.row.pill")
+    json_object_set(pill, "kind", "status-pill")
+    json_object_set(pill, "label", "semantic")
+    json_object_set(pill, "tone", "live")
+    json_object_set(pill, "active", true)
+    json_object_set(pill, "children", json_array_new())
+
+    json_array_push(json_get(row, "children"), pill)
+    json_array_push(json_get(section, "children"), row)
+    json_array_push(json_get(root, "children"), section)
+
+    let surface = json_object_new()
+    json_object_set(surface, "id", "reference.kain-ui.surface")
+    json_object_set(surface, "kind", "settings-section")
+    json_object_set(surface, "title", "Kain UI Reference")
+    json_object_set(surface, "summary", "Reference shape for future Kain-authored GreebleFS surfaces.")
+    json_object_set(surface, "root", root)
+    return surface
+
+fn main() -> Any:
+    return build_reference_surface()

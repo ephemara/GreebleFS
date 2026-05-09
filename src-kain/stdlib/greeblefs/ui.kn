@@ -1,0 +1,71 @@
+fn gfs_ui_node(id: String, node_kind: String, title: String, description: String) -> Any:
+    let node = json_object_new()
+    json_object_set(node, "id", id)
+    json_object_set(node, "kind", node_kind)
+    if len(title) > 0:
+        json_object_set(node, "title", title)
+    if len(description) > 0:
+        json_object_set(node, "description", description)
+    json_object_set(node, "children", json_array_new())
+    return node
+
+fn gfs_ui_stack(id: String, direction: String, gap: String) -> Any:
+    let node = gfs_ui_node(id, "stack", "", "")
+    let layout = json_object_new()
+    json_object_set(layout, "direction", direction)
+    json_object_set(layout, "gap", gap)
+    json_object_set(node, "layout", layout)
+    return node
+
+fn gfs_ui_section(id: String, title: String, description: String) -> Any:
+    return gfs_ui_node(id, "section", title, description)
+
+fn gfs_ui_row(id: String, title: String, description: String) -> Any:
+    return gfs_ui_node(id, "row", title, description)
+
+fn gfs_ui_text(id: String, text: String, role: String) -> Any:
+    let node = gfs_ui_node(id, "text", "", "")
+    json_object_set(node, "text", text)
+    if len(role) > 0:
+        json_object_set(node, "role", role)
+    return node
+
+fn gfs_ui_status_pill(id: String, label: String, tone: String, active: Bool) -> Any:
+    let node = gfs_ui_node(id, "status-pill", "", "")
+    json_object_set(node, "label", label)
+    json_object_set(node, "tone", tone)
+    json_object_set(node, "active", active)
+    return node
+
+fn gfs_ui_button(id: String, label: String, action_id: String) -> Any:
+    let node = gfs_ui_node(id, "button", "", "")
+    json_object_set(node, "label", label)
+    json_object_set(node, "actionId", action_id)
+    return node
+
+fn gfs_ui_append(parent: Any, child: Any) -> Any:
+    json_array_push(json_get(parent, "children"), child)
+    return parent
+
+fn gfs_ui_surface(id: String, surface_kind: String, title: String, summary: String, root: Any) -> Any:
+    let surface = json_object_new()
+    json_object_set(surface, "id", id)
+    json_object_set(surface, "kind", surface_kind)
+    json_object_set(surface, "title", title)
+    json_object_set(surface, "summary", summary)
+    json_object_set(surface, "root", root)
+    return surface
+
+fn gfs_ui_scaffold(source: String, renderer: String) -> Any:
+    let scaffold = json_object_new()
+    json_object_set(scaffold, "schemaVersion", 1)
+    json_object_set(scaffold, "kind", "greeblefs.ui.scaffold")
+    json_object_set(scaffold, "source", source)
+    json_object_set(scaffold, "stdlib", "src-kain/stdlib/greeblefs/ui.kn")
+    json_object_set(scaffold, "renderer", renderer)
+    json_object_set(scaffold, "surfaces", json_array_new())
+    json_object_set(scaffold, "primitives", json_array_new())
+    json_object_set(scaffold, "tokens", json_array_new())
+    json_object_set(scaffold, "actions", json_array_new())
+    json_object_set(scaffold, "consumers", json_array_new())
+    return scaffold

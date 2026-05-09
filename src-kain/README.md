@@ -16,6 +16,8 @@ Current hard wiring:
 - GreebleFS grants `kain:default` in `src-tauri/capabilities/default.json`.
 - GreebleFS wraps the API in `src/runtime/kainTauronBridge.ts`.
 - GreebleFS normalizes the app-level Kain contribution manifest in `src/runtime/kainManifest.ts`.
+- GreebleFS normalizes the app-level Kain semantic UI scaffold in `src/runtime/kainUiScaffold.ts`.
+- GreebleFS renders the first known Kain UI primitives through `src/components/kain/KainUiRenderer.tsx`.
 - First-party Kain runtime packages still live here under `src-kain/runtimes/**`.
 
 Simple model:
@@ -32,10 +34,12 @@ This means Kain can become a source-of-truth/orchestration layer while Tauron st
 
 ## App Manifest Dispatch
 
-`src-kain/app/main.kn` now exposes two app-level dispatch lanes through `kain_bridge_dispatch`:
+`src-kain/app/main.kn` now exposes app-level dispatch lanes through `kain_bridge_dispatch`:
 
 - `greeblefs.ui.graph`
   Returns the Kain-authored UI graph consumed by Settings and app defaults.
+- `greeblefs.ui.scaffold`
+  Returns Kain-authored semantic UI surfaces, primitive vocabulary, token hints, and action ids consumed by `src/runtime/kainUiScaffold.ts`.
 - `greeblefs.kain.manifest`
   Returns the first-class Kain contribution manifest consumed by `src/runtime/kainManifest.ts` and surfaced in Settings > Kain UI.
 
@@ -58,8 +62,46 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-manifest-kind`
 - `data-kain-manifest-capabilities`
 - `data-kain-manifest-dispatch`
+- `data-kain-ui-scaffold-proof`
+- `data-kain-ui-scaffold-surfaces`
+- `data-kain-ui-scaffold-primitives`
 
 If the Kain file changes while the app is already running, restart or reload the resident Tauron Kain runtime before judging the in-app proof. The old process can otherwise keep serving the previous `src-kain/app/main.kn` dispatch table.
+
+## Semantic UI Scaffold
+
+The first Kain UI authoring scaffold is additive. It does not replace existing React surfaces yet.
+
+Current files:
+
+- `src-kain/stdlib/greeblefs/ui.kn`
+  Reusable Kain helper vocabulary for semantic GreebleFS UI nodes and surfaces.
+- `src-kain/ui/kain_ui_scaffold.kn`
+  Standalone reference surface that can run through the Kain CLI.
+- `src/runtime/kainUiScaffold.ts`
+  TypeScript normalization boundary for `greeblefs.ui.scaffold`.
+- `src/components/kain/KainUiRenderer.tsx`
+  Trusted React renderer for known semantic primitives.
+
+The model is:
+
+```text
+Kain .kn surface intent
+  -> greeblefs.ui.scaffold semantic IR
+  -> TypeScript normalizer
+  -> GreebleFS renderer primitives
+```
+
+First primitives:
+
+- `stack`
+- `section`
+- `row`
+- `status-pill`
+- `text`
+- `button`
+
+Keep this lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, state, and action ids. GreebleFS should own rendering, theme variables, trusted host actions, permissions, and fallbacks. Graduate one consumer at a time.
 
 ## What Is Possible Now
 
@@ -195,6 +237,8 @@ This is where Kain should reduce cross-domain slop: one orchestration source, ma
 
 ## First Next Passes
 
+- Turn `button` scaffold actions into a real Kain action dispatch path, starting with `kain.ui.reload`.
+- Move one small Settings sub-surface from React-authored JSX to Kain-authored semantic IR while keeping the same renderer primitive output.
 - Promote the `greeblefs-kain-control-plane` proof actions into a consumed generated-artifact lane.
 - Convert one proof artifact from `greeblefs.kain.manifest.generatedArtifacts` into a real generated plugin/action manifest loaded by the plugin system.
 - Replace the proof plugin/settings artifacts with one real GreebleFS plugin/action manifest and one real settings/profile artifact.
