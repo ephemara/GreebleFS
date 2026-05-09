@@ -1,0 +1,7 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.spirv"
+displayName = "Kain SPIR-V"
+kind = "gpu-artifacts"
+entry = "main.kn"
+status = "scaffold"
+purpose = "Use Kain to compile shader and compute artifacts that GreebleFS can cache and consume."

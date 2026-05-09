@@ -1,0 +1,11 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.kain.ffi.lane")
+    json_object_set(lane, "id", "python")
+    json_object_set(lane, "label", "Python FFI")
+    json_object_set(lane, "status", "sidecar-hooked")
+    json_object_set(lane, "hostRuntimeId", "greeblefs-python-sidecar")
+    json_object_set(lane, "hostActionId", "kain.ffi.catalog")
+    json_object_set(lane, "summary", "Kain routes Python-heavy analysis and package work through the existing managed GreebleFS Python sidecar.")
+    return lane

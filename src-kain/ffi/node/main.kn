@@ -1,0 +1,9 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.kain.ffi.lane")
+    json_object_set(lane, "id", "node")
+    json_object_set(lane, "label", "Node FFI")
+    json_object_set(lane, "status", "scaffold")
+    json_object_set(lane, "summary", "Kain calls Node/native npm packages for importers, codegen, asset tools, and package automation.")
+    return lane

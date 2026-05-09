@@ -1,0 +1,22 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi"
+displayName = "GreebleFS Kain FFI"
+entry = "registry.kn"
+root = "src-kain/ffi"
+
+lanes = [
+  "python",
+  "node",
+  "c-runtime",
+  "rust-reflection",
+  "tauri-view",
+  "spirv",
+]
+
+[status]
+python = "sidecar-hooked"
+node = "scaffold"
+cRuntime = "scaffold"
+rustReflection = "scaffold"
+tauriView = "bridge-live"
+spirv = "scaffold"

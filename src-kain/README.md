@@ -42,6 +42,8 @@ This means Kain can become a source-of-truth/orchestration layer while Tauron st
   Returns Kain-authored semantic UI surfaces, primitive vocabulary, token hints, and action ids consumed by `src/runtime/kainUiScaffold.ts`.
 - `greeblefs.lattice.catalog`
   Returns the Kain Lattice QML-like package/component catalog consumed by `src/runtime/kainLatticeCatalog.ts`.
+- `greeblefs.ffi.catalog`
+  Returns the Kain FFI monorepo lane catalog consumed by `src/runtime/kainFfiCatalog.ts`.
 - `greeblefs.kain.manifest`
   Returns the first-class Kain contribution manifest consumed by `src/runtime/kainManifest.ts` and surfaced in Settings > Kain UI.
 
@@ -70,6 +72,9 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-lattice-proof`
 - `data-kain-lattice-packages`
 - `data-kain-lattice-host-objects`
+- `data-kain-ffi-proof`
+- `data-kain-ffi-lanes`
+- `data-kain-ffi-python`
 
 If the Kain file changes while the app is already running, restart or reload the resident Tauron Kain runtime before judging the in-app proof. The old process can otherwise keep serving the previous `src-kain/app/main.kn` dispatch table.
 
@@ -139,6 +144,27 @@ This sits above the semantic UI scaffold. The scaffold defines renderable nodes;
 ## What Is Possible Now
 
 These are capability lanes Kain can grow into inside GreebleFS. Some are active now, some are next-step architecture targets unlocked by the bridge.
+
+## Kain FFI Monorepo
+
+`src-kain/ffi/` is the monorepo-style home for Kain cross-language bridge lanes:
+
+- `python/`
+  Hooked to the existing `greeblefs-python-sidecar` through the Python sidecar action `kain.ffi.catalog`.
+- `node/`
+  Scaffold for Node/native npm package FFI.
+- `c-runtime/`
+  Scaffold for C ABI, DLL, SDK, and legacy native-library integration.
+- `rust-reflection/`
+  Scaffold for Rust/Tauron host reflection and generated wrappers.
+- `tauri-view/`
+  Live Tauron Kain bridge view lane.
+- `spirv/`
+  Scaffold for shader and compute artifact generation.
+
+The app-level `greeblefs.ffi.catalog` dispatch advertises these lanes to the frontend and Settings > Kain UI. The root runnable reference is `src-kain/ffi/registry.kn`.
+
+The Python lane is intentionally first because Kain's Python bridge is already serious machinery, not just "run a script." The reference smokes in `D:/Kain-Lang/smoketest/python/{numpy_supernova,pygame_poster,trimesh_glb_forge}` show `std::python::bridge`, `std::python::numpy`, `std::python::pygame`, `std::python::trimesh`, and DCC image/tensor/mesh wrappers doing shared-array, image, tensor, point-cloud, and GLB-style work. GreebleFS should use that same lane for the upcoming TS frontend UI inventory analyzer.
 
 ## Control Plane Runtime
 

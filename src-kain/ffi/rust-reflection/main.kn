@@ -1,0 +1,9 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.kain.ffi.lane")
+    json_object_set(lane, "id", "rust-reflection")
+    json_object_set(lane, "label", "Rust Reflection")
+    json_object_set(lane, "status", "scaffold")
+    json_object_set(lane, "summary", "Kain consumes Rust/Tauron reflected host shape to generate wrappers and route calls.")
+    return lane

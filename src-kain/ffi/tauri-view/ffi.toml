@@ -1,0 +1,7 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.tauri-view"
+displayName = "Kain Tauri View Bridge"
+kind = "tauri-view"
+entry = "main.kn"
+status = "bridge-live"
+purpose = "Use Tauron's Kain bridge to connect webviews, Kain-authored UI, reload/status, and host dispatch."

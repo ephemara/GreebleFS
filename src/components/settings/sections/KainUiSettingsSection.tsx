@@ -2,6 +2,7 @@ import type { KainUiGraph } from "@/runtime/kainUiGraph";
 import type { KainAppManifest } from "@/runtime/kainManifest";
 import type { KainUiScaffold } from "@/runtime/kainUiScaffold";
 import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
+import type { KainFfiCatalog } from "@/runtime/kainFfiCatalog";
 import { KainUiRenderer } from "@/components/kain/KainUiRenderer";
 import {
   SettingsRow,
@@ -19,6 +20,8 @@ export function KainUiSettingsSection({
   scaffoldError,
   latticeCatalog,
   latticeCatalogError,
+  ffiCatalog,
+  ffiCatalogError,
 }: {
   graph: KainUiGraph | null;
   error: string | null;
@@ -28,6 +31,8 @@ export function KainUiSettingsSection({
   scaffoldError: string | null;
   latticeCatalog: KainLatticeCatalog | null;
   latticeCatalogError: string | null;
+  ffiCatalog: KainFfiCatalog | null;
+  ffiCatalogError: string | null;
 }) {
   const settingsMode = graph?.settings.mode ?? "fallback";
   const categoryCount = graph?.settings.categories.length ?? 0;
@@ -52,6 +57,12 @@ export function KainUiSettingsSection({
   const nextLatticeMilestone = latticeCatalog?.milestones.find((milestone) => milestone.status === "next")
     ?? latticeCatalog?.milestones[0]
     ?? null;
+  const ffiStatus = ffiCatalog ? "live" : "offline";
+  const ffiCatalogLaneCount = ffiCatalog?.lanes.length ?? 0;
+  const ffiImplementedLaneCount = ffiCatalog?.lanes.filter((lane) => lane.implemented).length ?? 0;
+  const ffiAnalysisCount = ffiCatalog?.analysisPipelines.length ?? 0;
+  const pythonFfiLane = ffiCatalog?.lanes.find((lane) => lane.id === "python") ?? null;
+  const nextFfiLane = ffiCatalog?.lanes.find((lane) => !lane.implemented) ?? ffiCatalog?.lanes[0] ?? null;
   const previewSurface = scaffold?.surfaces[0] ?? null;
   const nextPipeline = manifest?.pipelines.find((pipeline) => pipeline.status === "next")
     ?? manifest?.pipelines[0]
@@ -70,6 +81,9 @@ export function KainUiSettingsSection({
       data-kain-lattice-proof={latticeStatus}
       data-kain-lattice-packages={latticePackageCount}
       data-kain-lattice-host-objects={latticeHostObjectCount}
+      data-kain-ffi-proof={ffiStatus}
+      data-kain-ffi-lanes={ffiCatalogLaneCount}
+      data-kain-ffi-python={pythonFfiLane?.status ?? "missing"}
     >
       <SettingsSectionBlock
         title="Kain UI"
@@ -181,6 +195,35 @@ export function KainUiSettingsSection({
             title="Next"
             description={nextLatticeMilestone ? `${nextLatticeMilestone.label}: ${nextLatticeMilestone.summary}` : "No Lattice milestone reported"}
             control={<SettingsStatusPill active={nextLatticeMilestone?.status === "next"}>{nextLatticeMilestone?.status ?? "pending"}</SettingsStatusPill>}
+          />
+        </SettingsRowGroup>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Kain FFI"
+        subtitle={ffiCatalog?.summary ?? ffiCatalogError ?? "Waiting for greeblefs.ffi.catalog"}
+        badges={[ffiCatalog ? "Bridge Map" : "No Catalog", `${ffiImplementedLaneCount}/${ffiCatalogLaneCount} live`]}
+      >
+        <SettingsRowGroup>
+          <SettingsRow
+            title="Registry"
+            description={ffiCatalog ? `${ffiCatalog.name} | ${ffiCatalog.root}` : "Kain FFI catalog pending"}
+            control={<SettingsStatusPill active={Boolean(ffiCatalog)}>{ffiCatalog ? "live" : "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Python"
+            description={pythonFfiLane ? `${pythonFfiLane.bridge} | ${pythonFfiLane.hostPath}` : "Python sidecar hook pending"}
+            control={<SettingsStatusPill active={pythonFfiLane?.implemented}>{pythonFfiLane?.status ?? "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Lanes"
+            description={ffiCatalog?.lanes.map((lane) => lane.label).join(" | ") ?? "No FFI lanes reported"}
+            control={<SettingsStatusPill active={ffiCatalogLaneCount > 0}>{ffiCatalogLaneCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Next"
+            description={nextFfiLane ? `${nextFfiLane.label}: ${nextFfiLane.nextAction}` : "No FFI lane plan reported"}
+            control={<SettingsStatusPill active={ffiAnalysisCount > 0}>{ffiAnalysisCount}</SettingsStatusPill>}
           />
         </SettingsRowGroup>
       </SettingsSectionBlock>

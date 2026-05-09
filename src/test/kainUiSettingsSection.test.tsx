@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { KainUiSettingsSection } from '../components/settings/sections/KainUiSettingsSection';
 import type { KainAppManifest } from '../runtime/kainManifest';
+import type { KainFfiCatalog } from '../runtime/kainFfiCatalog';
 import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
 import type { KainUiGraph } from '../runtime/kainUiGraph';
 import type { KainUiScaffold } from '../runtime/kainUiScaffold';
@@ -242,8 +243,46 @@ const latticeCatalog: KainLatticeCatalog = {
   consumers: ['src/runtime/kainLatticeCatalog.ts'],
 };
 
+const ffiCatalog: KainFfiCatalog = {
+  schemaVersion: 1,
+  kind: 'greeblefs.ffi.catalog',
+  name: 'Kain FFI',
+  source: 'src-kain/app/main.kn',
+  registry: 'src-kain/ffi/registry.kn',
+  root: 'src-kain/ffi',
+  summary: 'Kain-owned cross-language bridge map.',
+  lanes: [
+    {
+      id: 'python',
+      label: 'Python FFI',
+      kind: 'python-sidecar',
+      sourcePath: 'src-kain/ffi/python',
+      hostPath: 'src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog',
+      bridge: 'GreebleFS Python sidecar + Kain Python FFI',
+      status: 'sidecar-hooked',
+      implemented: true,
+      summary: 'Python analysis lane.',
+      nextAction: 'Build analyzer.',
+    },
+    {
+      id: 'node',
+      label: 'Node FFI',
+      kind: 'node-ffi',
+      sourcePath: 'src-kain/ffi/node',
+      hostPath: 'Node/native npm packages',
+      bridge: 'Kain Node FFI',
+      status: 'scaffold',
+      implemented: false,
+      summary: 'Node package lane.',
+      nextAction: 'Expose a Node-backed analyzer.',
+    },
+  ],
+  analysisPipelines: ['ts-frontend-ui-inventory'],
+  consumers: ['src/runtime/kainFfiCatalog.ts'],
+};
+
 describe('KainUiSettingsSection', () => {
-  it('renders live Kain manifest, UI scaffold, and Lattice proof hooks', () => {
+  it('renders live Kain manifest, UI scaffold, Lattice, and FFI proof hooks', () => {
     const { container } = render(
       <KainUiSettingsSection
         graph={graph}
@@ -254,6 +293,8 @@ describe('KainUiSettingsSection', () => {
         scaffoldError={null}
         latticeCatalog={latticeCatalog}
         latticeCatalogError={null}
+        ffiCatalog={ffiCatalog}
+        ffiCatalogError={null}
       />,
     );
 
@@ -267,12 +308,17 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-lattice-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-lattice-packages', '1');
     expect(proof).toHaveAttribute('data-kain-lattice-host-objects', '1');
+    expect(proof).toHaveAttribute('data-kain-ffi-proof', 'live');
+    expect(proof).toHaveAttribute('data-kain-ffi-lanes', '2');
+    expect(proof).toHaveAttribute('data-kain-ffi-python', 'sidecar-hooked');
     expect(screen.getByText('Kain Manifest')).toBeInTheDocument();
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
     expect(screen.getByText('Kain Lattice')).toBeInTheDocument();
+    expect(screen.getByText('Kain FFI')).toBeInTheDocument();
     expect(screen.getByText(/QML-like Kain authoring system/)).toBeInTheDocument();
+    expect(screen.getByText(/Kain-owned cross-language bridge map/)).toBeInTheDocument();
     expect(screen.getByText('Kain Authored Surface')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
-    expect(screen.getByText(/Node FFI/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Node FFI/).length).toBeGreaterThan(0);
   });
 });

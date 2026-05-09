@@ -351,6 +351,10 @@ import {
   loadKainLatticeCatalog,
   type KainLatticeCatalog,
 } from './runtime/kainLatticeCatalog';
+import {
+  loadKainFfiCatalog,
+  type KainFfiCatalog,
+} from './runtime/kainFfiCatalog';
 import { sendNativeNotification } from './runtime/nativeNotifications';
 import {
   applyLookdevScopedOverridesToSettings,
@@ -948,6 +952,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const [kainUiScaffoldError, setKainUiScaffoldError] = useState<string | null>(null);
   const [kainLatticeCatalog, setKainLatticeCatalog] = useState<KainLatticeCatalog | null>(null);
   const [kainLatticeCatalogError, setKainLatticeCatalogError] = useState<string | null>(null);
+  const [kainFfiCatalog, setKainFfiCatalog] = useState<KainFfiCatalog | null>(null);
+  const [kainFfiCatalogError, setKainFfiCatalogError] = useState<string | null>(null);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [activeExplorerPickerRequest, setActiveExplorerPickerRequest] =
     useState<ExplorerPickerRequest | null>(null);
@@ -1114,6 +1120,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       }
       setKainLatticeCatalog(result.catalog);
       setKainLatticeCatalogError(result.error);
+    });
+    void loadKainFfiCatalog({
+      profileId: usrProfileRuntimeActiveProfileId,
+      revision: usrProfileRuntimeRevision,
+    }).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      setKainFfiCatalog(result.catalog);
+      setKainFfiCatalogError(result.error);
     });
 
     return () => {
@@ -5383,6 +5399,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         kainUiScaffoldError,
         kainLatticeCatalog,
         kainLatticeCatalogError,
+        kainFfiCatalog,
+        kainFfiCatalogError,
         onSwitchUsrProfile: handleSwitchUsrProfile,
         onCreateUsrProfile: handleCreateUsrProfile,
         onCreateUsrProfileFromVariant: handleCreateUsrProfileFromVariant,
@@ -5666,6 +5684,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       kainUiScaffoldError,
       kainLatticeCatalog,
       kainLatticeCatalogError,
+      kainFfiCatalog,
+      kainFfiCatalogError,
       usrProfileRuntimeSnapshot,
     ],
   );

@@ -1,0 +1,49 @@
+fn append_lane(items, id: String, label: String, lane_kind: String, source_path: String, host_path: String, bridge: String, status: String, implemented: Bool, summary: String, next_action: String) -> Int:
+    let lane = json_object_new()
+    json_object_set(lane, "id", id)
+    json_object_set(lane, "label", label)
+    json_object_set(lane, "kind", lane_kind)
+    json_object_set(lane, "sourcePath", source_path)
+    json_object_set(lane, "hostPath", host_path)
+    json_object_set(lane, "bridge", bridge)
+    json_object_set(lane, "status", status)
+    json_object_set(lane, "implemented", implemented)
+    json_object_set(lane, "summary", summary)
+    json_object_set(lane, "nextAction", next_action)
+    json_array_push(items, lane)
+    return 0
+
+fn build_kain_ffi_catalog() -> Any:
+    let catalog = json_object_new()
+    let lanes = json_array_new()
+    let consumers = json_array_new()
+    let analysis = json_array_new()
+
+    append_lane(lanes, "python", "Python FFI", "python-sidecar", "src-kain/ffi/python", "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog", "GreebleFS Python sidecar + Kain Python FFI", "sidecar-hooked", true, "Kain can route heavy analysis and Python package work through the existing managed Python sidecar.", "Build the TS frontend UI inventory analyzer under src-kain/ffi/python/analysis.")
+    append_lane(lanes, "node", "Node FFI", "node-ffi", "src-kain/ffi/node", "Node/native npm packages", "Kain Node FFI", "scaffold", false, "Kain can call Node/native packages for codegen, importers, and asset tools.", "Pick one npm-backed analyzer or generator and expose it through Kain.")
+    append_lane(lanes, "c-runtime", "C Runtime", "c-abi", "src-kain/ffi/c-runtime", "native DLLs, SDKs, and C libraries", "Kain C runtime", "scaffold", false, "Kain can talk to C libraries and legacy native tools behind explicit trust boundaries.", "Wrap one tiny C ABI probe before any product-critical native SDK.")
+    append_lane(lanes, "rust-reflection", "Rust Reflection", "rust-reflection", "src-kain/ffi/rust-reflection", "Tauron/GreebleFS reflected host schema", "Kain Rust reflection", "scaffold", false, "Rust and Tauron can describe host capabilities to Kain for generated wrappers and routed calls.", "Feed runtime host schema into generated Kain host wrappers.")
+    append_lane(lanes, "tauri-view", "Tauri View Bridge", "view-bridge", "src-kain/ffi/tauri-view", "@tauri-apps/api/kain + window.__KAIN_TAURI__", "Tauron Kain bridge", "bridge-live", true, "Webviews can call the Kain bridge for UI orchestration, reload, status, manifest, and dispatch.", "Turn Kain scaffold actions into real Tauron bridge calls.")
+    append_lane(lanes, "spirv", "SPIR-V", "gpu-artifacts", "src-kain/ffi/spirv", "GreebleFS shader/GPU runtime cache", "Kain SPIR-V compiler", "scaffold", false, "Kain can compile shader and compute artifacts for lookdev, preview, and GPU pipelines.", "Compile one proof shader artifact into a GreebleFS-consumable cache entry.")
+
+    json_array_push(analysis, "ts-frontend-ui-inventory")
+    json_array_push(analysis, "plugin-manifest-audit")
+    json_array_push(analysis, "settings-schema-drift")
+
+    json_array_push(consumers, "src/runtime/kainFfiCatalog.ts")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+    json_array_push(consumers, "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog")
+
+    json_object_set(catalog, "schemaVersion", 1)
+    json_object_set(catalog, "kind", "greeblefs.ffi.catalog")
+    json_object_set(catalog, "name", "Kain FFI")
+    json_object_set(catalog, "source", "src-kain/ffi/registry.kn")
+    json_object_set(catalog, "root", "src-kain/ffi")
+    json_object_set(catalog, "summary", "Kain-owned cross-language bridge map for Python, Node, C, Rust reflection, Tauron view orchestration, and GPU artifacts.")
+    json_object_set(catalog, "lanes", lanes)
+    json_object_set(catalog, "analysisPipelines", analysis)
+    json_object_set(catalog, "consumers", consumers)
+    return catalog
+
+fn main() -> Any:
+    return build_kain_ffi_catalog()

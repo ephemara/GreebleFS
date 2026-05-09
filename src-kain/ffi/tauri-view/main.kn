@@ -1,0 +1,9 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.kain.ffi.lane")
+    json_object_set(lane, "id", "tauri-view")
+    json_object_set(lane, "label", "Tauri View Bridge")
+    json_object_set(lane, "status", "bridge-live")
+    json_object_set(lane, "summary", "Kain talks to Tauron webviews through @tauri-apps/api/kain and window.__KAIN_TAURI__.")
+    return lane

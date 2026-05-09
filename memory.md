@@ -1,3 +1,23 @@
+# 2026-05-08 - Kain FFI Monorepo And Python Sidecar Hook
+
+- Added the first Kain FFI monorepo scaffold so Kain is represented as more than a UI authoring layer.
+  - `src-kain/ffi/` now owns per-lane folders for Python, Node, C runtime, Rust reflection, Tauron view bridge, and SPIR-V/GPU artifact work.
+  - `src-kain/ffi/registry.kn` is the runnable top-level Kain FFI catalog, and `src-kain/app/main.kn` now dispatches `greeblefs.ffi.catalog` through the resident Tauron Kain bridge.
+  - `src/runtime/kainFfiCatalog.ts` normalizes the FFI catalog, while `App.tsx`, `panelRegistry.tsx`, `SettingsPage.tsx`, and `KainUiSettingsSection.tsx` load/pass/render it in Settings > Kain UI with proof hooks.
+  - The existing Python sidecar now advertises and implements `kain.ffi.catalog`, giving Kain a concrete handshake into `greeblefs-python-sidecar` before the frontend UI inventory analyzer lands.
+  - The Python FFI lane documents Kain's real Python bridge examples from `D:/Kain-Lang/smoketest/python/{numpy_supernova,pygame_poster,trimesh_glb_forge}`, including `std::python::bridge`, NumPy/Pygame/Trimesh, and DCC image/tensor/mesh wrappers.
+- Durable design rule:
+  - Put reusable Python analysis workers under `src-kain/ffi/python/analysis/` and route them through Kain/Python FFI. Do not let the upcoming TS UI inventory become a one-off Python script disconnected from Kain's bridge catalog.
+- Validation:
+  - Passed: `kain.exe run src-kain/ffi/registry.kn` and all per-lane `src-kain/ffi/*/main.kn` smoke runs.
+  - Passed: staged Kain bridge smoke for `greeblefs.ffi.catalog` and `greeblefs.kain.manifest`; manifest now reports 11 capabilities and 5 FFI lanes.
+  - Passed: `python -m py_compile src-python/greeblefs_sidecar/actions.py` and direct `dispatch_python_action("kain.ffi.catalog", ...)` smoke with `PYTHONPATH=src-python`.
+  - Passed: `bunx vitest run src/test/kainManifest.test.ts src/test/kainUiScaffold.test.ts src/test/kainLatticeCatalog.test.ts src/test/kainFfiCatalog.test.ts src/test/kainUiSettingsSection.test.tsx --reporter=dot --testTimeout=30000`.
+  - Not clean: filtered repo `tsc` still reports existing baseline errors in `src/App.tsx`, `src-mobile/App.tsx`, and `src/windows/PickerWindowApp.tsx`; no Kain FFI-specific diagnostics appeared.
+  - Not clean: `git diff --check` still reports pre-existing trailing whitespace in dirty `src/generated/tauri.ts`.
+- Next recommended step:
+  - Build `ts-frontend-ui-inventory` as the first Python analysis worker under `src-kain/ffi/python/analysis/`, then expose it through Kain as the first real consumer of the Python FFI lane.
+
 # 2026-05-08 - Kain Lattice QML-Like Authoring First Pass
 
 - Added Kain Lattice as the named QML-like authoring lane for GreebleFS UI systems.

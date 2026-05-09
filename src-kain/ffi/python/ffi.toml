@@ -1,0 +1,15 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.python"
+displayName = "Kain Python FFI"
+kind = "python-sidecar"
+entry = "main.kn"
+hostRuntimeId = "greeblefs-python-sidecar"
+hostActionId = "kain.ffi.catalog"
+hostManifest = "src-python/greeblefs-python-sidecar.json"
+hostImplementation = "src-python/greeblefs_sidecar/actions.py"
+status = "sidecar-hooked"
+
+[analysis]
+firstPipeline = "ts-frontend-ui-inventory"
+root = "analysis"
+purpose = "Reusable Python analysis workers called from Kain for frontend inventory, plugin audits, settings drift, and codebase reports."

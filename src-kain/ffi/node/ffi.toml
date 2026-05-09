@@ -1,0 +1,7 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.node"
+displayName = "Kain Node FFI"
+kind = "node-ffi"
+entry = "main.kn"
+status = "scaffold"
+purpose = "Use Node/native npm packages for importers, AST tools, codegen, asset processing, and package automation when that is faster than Rust or direct Kain."

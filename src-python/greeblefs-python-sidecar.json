@@ -62,6 +62,12 @@
       "payloadExampleJson": "{}"
     },
     {
+      "id": "kain.ffi.catalog",
+      "label": "Kain FFI Catalog",
+      "description": "Returns the Python-sidecar half of the Kain FFI bridge contract for analysis, ML, DCC, and codebase inventory pipelines.",
+      "payloadExampleJson": "{\"requestedBy\":\"kain\",\"pipelineId\":\"ts-frontend-ui-inventory\"}"
+    },
+    {
       "id": "ml.probe",
       "label": "ML Probe",
       "description": "Checks ONNX, ONNX Runtime, Torch, and CUDA availability inside the sidecar.",

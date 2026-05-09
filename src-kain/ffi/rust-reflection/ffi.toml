@@ -1,0 +1,7 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.rust-reflection"
+displayName = "Kain Rust Reflection"
+kind = "rust-reflection"
+entry = "main.kn"
+status = "scaffold"
+purpose = "Let Rust/Tauron describe trusted host capabilities to Kain so Kain can generate wrappers or route calls without hand-maintained duplicate glue."

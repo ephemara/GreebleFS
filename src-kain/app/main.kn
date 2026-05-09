@@ -446,6 +446,57 @@ fn build_lattice_catalog(request: Any) -> Any:
     json_object_set(catalog, "consumers", consumers)
     return catalog
 
+fn append_ffi_lane(items, id: String, label: String, lane_kind: String, source_path: String, host_path: String, bridge: String, status: String, implemented: Bool, summary: String, next_action: String) -> Int:
+    let lane = json_object_new()
+    json_object_set(lane, "id", id)
+    json_object_set(lane, "label", label)
+    json_object_set(lane, "kind", lane_kind)
+    json_object_set(lane, "sourcePath", source_path)
+    json_object_set(lane, "hostPath", host_path)
+    json_object_set(lane, "bridge", bridge)
+    json_object_set(lane, "status", status)
+    json_object_set(lane, "implemented", implemented)
+    json_object_set(lane, "summary", summary)
+    json_object_set(lane, "nextAction", next_action)
+    json_array_push(items, lane)
+    return 0
+
+fn build_ffi_catalog(request: Any) -> Any:
+    let catalog = json_object_new()
+    let lanes = json_array_new()
+    let analysis = json_array_new()
+    let consumers = json_array_new()
+
+    append_ffi_lane(lanes, "python", "Python FFI", "python-sidecar", "src-kain/ffi/python", "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog", "GreebleFS Python sidecar + Kain Python FFI", "sidecar-hooked", true, "Kain can route heavy analysis, AST inventory, ML/data tooling, and package work through the existing managed Python sidecar.", "Build the TS frontend UI inventory analyzer under src-kain/ffi/python/analysis.")
+    append_ffi_lane(lanes, "node", "Node FFI", "node-ffi", "src-kain/ffi/node", "Node/native npm packages", "Kain Node FFI", "scaffold", false, "Kain can call Node/native packages for codegen, importers, and asset tools.", "Expose one npm-backed analyzer or generator through Kain.")
+    append_ffi_lane(lanes, "c-runtime", "C Runtime", "c-abi", "src-kain/ffi/c-runtime", "native DLLs, SDKs, and C libraries", "Kain C runtime", "scaffold", false, "Kain can talk to C libraries and legacy native tools behind explicit trust boundaries.", "Wrap one tiny C ABI probe before product SDK work.")
+    append_ffi_lane(lanes, "rust-reflection", "Rust Reflection", "rust-reflection", "src-kain/ffi/rust-reflection", "Tauron/GreebleFS reflected host schema", "Kain Rust reflection", "scaffold", false, "Rust and Tauron can describe host capabilities to Kain for generated wrappers and routed calls.", "Feed runtime host schema into generated Kain wrappers.")
+    append_ffi_lane(lanes, "tauri-view", "Tauri View Bridge", "view-bridge", "src-kain/ffi/tauri-view", "@tauri-apps/api/kain + window.__KAIN_TAURI__", "Tauron Kain bridge", "bridge-live", true, "Webviews can call the Kain bridge for UI orchestration, reload, status, manifest, and dispatch.", "Turn Kain scaffold actions into real Tauron bridge calls.")
+    append_ffi_lane(lanes, "spirv", "SPIR-V", "gpu-artifacts", "src-kain/ffi/spirv", "GreebleFS shader/GPU runtime cache", "Kain SPIR-V compiler", "scaffold", false, "Kain can compile shader and compute artifacts for lookdev, preview, and GPU pipelines.", "Compile one proof shader artifact into a GreebleFS cache entry.")
+
+    json_array_push(analysis, "ts-frontend-ui-inventory")
+    json_array_push(analysis, "plugin-manifest-audit")
+    json_array_push(analysis, "settings-schema-drift")
+
+    json_array_push(consumers, "src/runtime/kainFfiCatalog.ts")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+    json_array_push(consumers, "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog")
+    json_array_push(consumers, "src-kain/ffi/README.md")
+
+    json_object_set(catalog, "schemaVersion", 1)
+    json_object_set(catalog, "kind", "greeblefs.ffi.catalog")
+    json_object_set(catalog, "name", "Kain FFI")
+    json_object_set(catalog, "source", "src-kain/app/main.kn")
+    json_object_set(catalog, "registry", "src-kain/ffi/registry.kn")
+    json_object_set(catalog, "root", "src-kain/ffi")
+    json_object_set(catalog, "summary", "Kain-owned cross-language bridge map for Python, Node, C, Rust reflection, Tauron view orchestration, and GPU artifacts.")
+    json_object_set(catalog, "namespace", json_string_field(request, "namespace"))
+    json_object_set(catalog, "method", json_string_field(request, "method"))
+    json_object_set(catalog, "lanes", lanes)
+    json_object_set(catalog, "analysisPipelines", analysis)
+    json_object_set(catalog, "consumers", consumers)
+    return catalog
+
 fn append_manifest_capability(items, id: String, lane: String, label: String, summary: String, status: String, implemented: Bool) -> Int:
     let capability = json_object_new()
     json_object_set(capability, "id", id)
@@ -529,6 +580,7 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can emit GreebleFS-compatible plugin and action artifacts from typed intent.", "planned", false)
     append_manifest_capability(capabilities, "kain.host.reflection", "rust", "Rust host reflection", "Rust/Tauron can describe host capabilities for Kain to route or generate wrappers.", "planned", false)
     append_manifest_capability(capabilities, "kain.shader.spirv", "gpu", "SPIR-V shader artifacts", "Kain can compile GPU/shader artifacts for lookdev, preview, and compute pipelines.", "available-in-kain", false)
+    append_manifest_capability(capabilities, "kain.python.ffi", "ffi", "Python FFI bridge", "Kain can route Python-heavy analysis and package workflows through the existing managed Python sidecar.", "sidecar-hooked", true)
     append_manifest_capability(capabilities, "kain.node.ffi", "ffi", "Node FFI bridge", "Kain can call Node/native packages when that is the fastest authoring path.", "available-in-kain", false)
     append_manifest_capability(capabilities, "kain.c.runtime", "ffi", "C runtime bridge", "Kain can talk to C libraries, DLLs, compiled tools, SDKs, and legacy code.", "available-in-kain", false)
 
@@ -536,6 +588,7 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_dispatch(dispatch, "greeblefs.ui", "scaffold", "Return Kain-authored semantic UI surfaces and primitive vocabulary for React rendering.", "src/runtime/kainUiScaffold.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ui", "ping", "Smoke-test the resident bridge process.", "dev/mcp smoke")
     append_manifest_dispatch(dispatch, "greeblefs.lattice", "catalog", "Return the Kain Lattice QML-like package/component catalog.", "src/runtime/kainLatticeCatalog.ts")
+    append_manifest_dispatch(dispatch, "greeblefs.ffi", "catalog", "Return the Kain FFI monorepo lane catalog.", "src/runtime/kainFfiCatalog.ts")
     append_manifest_dispatch(dispatch, "greeblefs.kain", "manifest", "Return the Kain app manifest that declares first-class GreebleFS contributions.", "src/runtime/kainManifest.ts")
 
     append_manifest_artifact(generated_artifacts, "kain.plugin.proof", "plugin-manifest", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn", "generated/plugin-proof.json", "proof")
@@ -543,6 +596,7 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_artifact(generated_artifacts, "kain.ui.graph", "runtime-graph", "src-kain/app/main.kn", "src/runtime/kainUiGraph.ts", "live")
     append_manifest_artifact(generated_artifacts, "kain.ui.scaffold", "semantic-ui-ir", "src-kain/app/main.kn", "src/runtime/kainUiScaffold.ts", "live")
     append_manifest_artifact(generated_artifacts, "kain.lattice.catalog", "lattice-package-catalog", "src-kain/app/main.kn", "src/runtime/kainLatticeCatalog.ts", "live")
+    append_manifest_artifact(generated_artifacts, "kain.ffi.catalog", "ffi-lane-catalog", "src-kain/ffi/registry.kn", "src/runtime/kainFfiCatalog.ts", "live")
 
     append_manifest_schema(settings_schemas, "greeblefs.kain.ui", "Kain UI Settings", "src-kain/app/main.kn", "Settings > Kain UI", "live")
     append_manifest_schema(settings_schemas, "greeblefs.kain.controlPlane", "Kain Control Plane Settings", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated proof", "proof")
@@ -550,10 +604,12 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_pipeline(pipelines, "kain.settings.first-class", "Settings ownership", "Kain authors Settings grouping now, then graduates schema/default/migration ownership per section.", "active")
     append_manifest_pipeline(pipelines, "kain.ui.semantic-renderer", "Semantic UI renderer", "Kain defines small UI surfaces as data and React renders known GreebleFS primitives until full codegen is ready.", "active")
     append_manifest_pipeline(pipelines, "kain.lattice.qml-like-shell", "Kain Lattice", "Kain becomes the QML-like authoring layer for GreebleFS packages, KCM-style settings modules, applets, panels, actions, bindings, and host models.", "active")
+    append_manifest_pipeline(pipelines, "kain.ffi.monorepo", "Kain FFI monorepo", "Kain owns a lane catalog for Python, Node, C, Rust reflection, Tauron view, and SPIR-V bridge work.", "active")
     append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Plugin manifest generation", "Kain emits plugin/action manifests that GreebleFS can load as compatibility artifacts.", "next")
     append_manifest_pipeline(pipelines, "kain.reflection.codegen", "Rust reflection codegen", "Kain consumes Rust/Tauron host shape and emits wrapper glue instead of hand-maintained mappings.", "planned")
     append_manifest_pipeline(pipelines, "kain.gpu.artifacts", "GPU artifact lane", "Kain compiles SPIR-V/shader artifacts for preview/lookdev pipelines.", "planned")
 
+    append_manifest_ffi_lane(ffi_lanes, "python", "Python FFI", "Use the managed GreebleFS Python sidecar for dependency-heavy analysis, AST inventory, ML, data tooling, and reusable reports.", "sidecar-hooked")
     append_manifest_ffi_lane(ffi_lanes, "node", "Node FFI", "Use Node/native npm packages for authoring, codegen, and asset tooling.", "available-in-kain")
     append_manifest_ffi_lane(ffi_lanes, "c-runtime", "C runtime", "Use native C libraries, DLLs, SDKs, and compiled tools behind explicit host lanes.", "available-in-kain")
     append_manifest_ffi_lane(ffi_lanes, "rust-reflection", "Rust reflection", "Let Rust describe trusted host capabilities and let Kain generate or route calls.", "planned")
@@ -562,6 +618,7 @@ fn build_kain_manifest(request: Any) -> Any:
     json_array_push(consumers, "src/runtime/kainManifest.ts")
     json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
     json_array_push(consumers, "src/runtime/kainLatticeCatalog.ts")
+    json_array_push(consumers, "src/runtime/kainFfiCatalog.ts")
     json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
     json_array_push(consumers, "MCP greeblefs-dev-mcp smoke")
@@ -623,6 +680,9 @@ fn kain_bridge_dispatch(request_json: String) -> Any:
 
     if request_namespace == "greeblefs.lattice" and request_method == "catalog":
         return build_lattice_catalog(request)
+
+    if request_namespace == "greeblefs.ffi" and request_method == "catalog":
+        return build_ffi_catalog(request)
 
     if request_namespace == "greeblefs.kain" and request_method == "manifest":
         return build_kain_manifest(request)

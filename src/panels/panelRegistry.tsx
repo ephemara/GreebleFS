@@ -55,6 +55,7 @@ import type { KainUiGraph } from '../runtime/kainUiGraph';
 import type { KainAppManifest } from '../runtime/kainManifest';
 import type { KainUiScaffold } from '../runtime/kainUiScaffold';
 import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
+import type { KainFfiCatalog } from '../runtime/kainFfiCatalog';
 import type { UsrProfileSettingsVariantDefinition } from '../config/usrProfileSettingsVariants';
 import type {
   LoadedOverlayPlugin,
@@ -261,6 +262,8 @@ export function createBuiltInPanelDefinitions({
   kainUiScaffoldError = null,
   kainLatticeCatalog = null,
   kainLatticeCatalogError = null,
+  kainFfiCatalog = null,
+  kainFfiCatalogError = null,
   onSwitchUsrProfile = async () => {},
   onCreateUsrProfile = async () => {},
   onCreateUsrProfileFromVariant = async () => {},
@@ -438,6 +441,8 @@ export function createBuiltInPanelDefinitions({
   kainUiScaffoldError?: string | null;
   kainLatticeCatalog?: KainLatticeCatalog | null;
   kainLatticeCatalogError?: string | null;
+  kainFfiCatalog?: KainFfiCatalog | null;
+  kainFfiCatalogError?: string | null;
   onSwitchUsrProfile?: (profileId: string) => Promise<void>;
   onCreateUsrProfile?: (name: string, seedSettingsJson?: string | null) => Promise<void>;
   onCreateUsrProfileFromVariant?: (variantId: string, name: string) => Promise<void>;
@@ -834,6 +839,8 @@ export function createBuiltInPanelDefinitions({
             kainUiScaffoldError={kainUiScaffoldError}
             kainLatticeCatalog={kainLatticeCatalog}
             kainLatticeCatalogError={kainLatticeCatalogError}
+            kainFfiCatalog={kainFfiCatalog}
+            kainFfiCatalogError={kainFfiCatalogError}
             onSwitchUsrProfile={onSwitchUsrProfile}
             onCreateUsrProfile={onCreateUsrProfile}
             onCreateUsrProfileFromVariant={onCreateUsrProfileFromVariant}

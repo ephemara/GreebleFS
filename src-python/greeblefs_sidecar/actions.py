@@ -126,6 +126,58 @@ def runtime_summary_action(payload: Any, context: PythonActionContext) -> dict[s
     }
 
 
+@python_action("kain.ffi.catalog")
+def kain_ffi_catalog_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    request = _payload_dict(payload)
+    return {
+        "schemaVersion": 1,
+        "kind": "greeblefs.kain.python-sidecar-ffi",
+        "requestedBy": request.get("requestedBy", "unknown"),
+        "pipelineId": request.get("pipelineId", "ffi.catalog"),
+        "runtimeId": "greeblefs-python-sidecar",
+        "actionId": context.action_id,
+        "workspaceRoot": str(context.workspace_root),
+        "runtimeRoot": str(context.runtime_root),
+        "source": "src-python/greeblefs_sidecar/actions.py",
+        "kainLane": "src-kain/ffi/python",
+        "bridgeModules": [
+            "std::python::bridge",
+            "std::python::numpy",
+            "std::python::pygame",
+            "std::python::trimesh",
+            "std::dcc::image",
+            "std::dcc::tensor",
+            "std::dcc::mesh",
+        ],
+        "referenceSmokes": [
+            "D:/Kain-Lang/smoketest/python/numpy_supernova",
+            "D:/Kain-Lang/smoketest/python/pygame_poster",
+            "D:/Kain-Lang/smoketest/python/trimesh_glb_forge",
+        ],
+        "analysisPipelines": [
+            {
+                "id": "ts-frontend-ui-inventory",
+                "status": "next",
+                "summary": "Inventory React/TS UI components, primitives, buttons, panels, settings surfaces, and Kain migration candidates.",
+                "root": "src-kain/ffi/python/analysis",
+            },
+            {
+                "id": "plugin-manifest-audit",
+                "status": "planned",
+                "summary": "Inspect plugin manifests, package surfaces, and generated artifact drift.",
+                "root": "src-kain/ffi/python/analysis",
+            },
+            {
+                "id": "settings-schema-drift",
+                "status": "planned",
+                "summary": "Compare settings store, shipped JSON, Kain schemas, and rendered Settings sections.",
+                "root": "src-kain/ffi/python/analysis",
+            },
+        ],
+        "availableActions": list_python_actions(),
+    }
+
+
 @python_action("ml.probe")
 def ml_probe_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
     _ = payload

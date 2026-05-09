@@ -1,0 +1,7 @@
+schemaVersion = 1
+id = "greeblefs.kain.ffi.c-runtime"
+displayName = "Kain C Runtime"
+kind = "c-abi"
+entry = "main.kn"
+status = "scaffold"
+purpose = "Use Kain to wrap C libraries, DLLs, vendor SDKs, and legacy native tools behind explicit trust boundaries."
