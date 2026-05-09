@@ -8789,3 +8789,15 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/pluginWorkbenchAdapters.test.tsx --reporter=dot --testTimeout=30000`
   - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "lets plugin preview lanes claim files and register workflow tabs plus preview context actions" --reporter=dot --testTimeout=30000`
   - Touched-file TypeScript filter produced no diagnostics for the text-workbench touched files. The live MCP/WebView session was attachable, but its Explorer smoke path was blocked by an unrelated `tauriAvailable=false` / `invoke` startup failure in the running dev app.
+
+# 2026-05-09 - Explorer Workflow Modals Keep Scoped Theme Variables
+
+- Fixed the Batch Rename workflow modal rendering as transparent text over Explorer. The shared `AppModalSurface` body portal was losing explorer-scoped CSS variables such as `--overlay-explorer-modal-surface`, so the modal panel's var-backed border/background/radius collapsed.
+- Durable implementation shape:
+  - Keep React Aria `OverlayContainer` on its normal body portal unless a caller explicitly provides a portal container.
+  - `AppModalSurface` now places a local anchor at the call site, reads the nearest `[data-overlay-explorer]`, `[data-app-modal-portal-root]`, or `.overlay-window-host`, and copies `--overlay-*` / `--gfs-ui-*` custom properties onto the portaled underlay so dialog children inherit the active explorer theme.
+  - Do not fix scoped modal styling by portaling directly into `[data-overlay-explorer]`; React Aria can throw `An OverlayContainer must not be inside another container` in the real app.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerWorkflowModal.test.tsx --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript filter produced no diagnostics for `src/components/AppModal.tsx` or `src/test/explorerWorkflowModal.test.tsx`; full repo `tsc` remains red from baseline diagnostics.
+  - Native WebView CDP proof opened Batch Rename and captured `MCP/.state/screenshots/batch-rename-fixed-native.png`; computed styles showed a real `rgb(11, 19, 27)` modal surface, solid border, scrim, and copied explorer variables.

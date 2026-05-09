@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { CSSProperties } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ExplorerWorkflowModal } from '../components/explorer/ExplorerWorkflowModal';
@@ -41,9 +42,39 @@ function createWorkflowSession(
 }
 
 describe('ExplorerWorkflowModal', () => {
+  it('copies scoped explorer theme variables into the modal portal', async () => {
+    const onRequestClose = vi.fn();
+    const explorerScopeStyle = {
+      '--overlay-explorer-modal-surface': 'rgb(1, 2, 3)',
+      '--overlay-text-primary': 'rgb(4, 5, 6)',
+    } as CSSProperties;
+
+    render(
+      <div
+        data-overlay-explorer
+        data-testid="explorer-scope"
+        style={explorerScopeStyle}
+      >
+        <ExplorerWorkflowModal
+          session={createWorkflowSession()}
+          onRequestClose={onRequestClose}
+        >
+          <div>Workflow body</div>
+        </ExplorerWorkflowModal>
+      </div>,
+    );
+
+    await screen.findByRole('dialog');
+    expect(
+      screen.getByRole('presentation', { hidden: true }).getAttribute('style'),
+    ).toContain(
+      '--overlay-explorer-modal-surface: rgb(1, 2, 3)',
+    );
+  });
+
   it('renders the shared workflow shell and honors normal dismiss actions', async () => {
     const onRequestClose = vi.fn();
-    render(
+    const { unmount } = render(
       <ExplorerWorkflowModal
         session={createWorkflowSession()}
         onRequestClose={onRequestClose}
@@ -64,11 +95,29 @@ describe('ExplorerWorkflowModal', () => {
       ).toHaveFocus(),
     );
 
-    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.mouseDown(screen.getByRole('presentation', { hidden: true }));
     expect(onRequestClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.mouseDown(screen.getByRole('presentation'));
-    expect(onRequestClose).toHaveBeenCalledTimes(2);
+    unmount();
+    onRequestClose.mockClear();
+
+    render(
+      <ExplorerWorkflowModal
+        session={createWorkflowSession()}
+        onRequestClose={onRequestClose}
+      >
+        <div>Workflow body</div>
+      </ExplorerWorkflowModal>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Close workflow' }),
+      ).toHaveFocus(),
+    );
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onRequestClose).toHaveBeenCalledTimes(1);
   });
 
   it('suppresses dismiss actions while the workflow session is busy', () => {
@@ -93,7 +142,7 @@ describe('ExplorerWorkflowModal', () => {
 
     fireEvent.click(closeButton);
     fireEvent.keyDown(window, { key: 'Escape' });
-    fireEvent.mouseDown(screen.getByRole('presentation'));
+    fireEvent.mouseDown(screen.getByRole('presentation', { hidden: true }));
 
     expect(onRequestClose).not.toHaveBeenCalled();
     expect(screen.getByText('Working')).toBeInTheDocument();

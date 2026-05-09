@@ -1,9 +1,12 @@
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
+  useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
 import {
@@ -81,6 +84,9 @@ export function AppModalSurface({
   portalContainer,
   shouldCloseOnInteractOutside,
 }: AppModalSurfaceProps) {
+  const portalAnchorRef = useRef<HTMLSpanElement>(null);
+  const [inheritedPortalStyle, setInheritedPortalStyle] =
+    useState<CSSProperties>({});
   const panelRef = useRef<HTMLDivElement>(null);
   const state = useOverlayTriggerState({
     defaultOpen: true,
@@ -90,43 +96,134 @@ export function AppModalSurface({
       }
     },
   });
+
+  useLayoutEffect(() => {
+    setInheritedPortalStyle(
+      resolveAppModalInheritedCssVariables(portalAnchorRef.current),
+    );
+  }, [portalContainer]);
+
   const { modalProps, underlayProps } = useModalOverlay({
     isDismissable: closeOnBackdrop && !dismissDisabled,
     isKeyboardDismissDisabled: dismissDisabled || !closeOnEscape,
     shouldCloseOnInteractOutside,
   }, state, panelRef);
 
+  useEffect(() => {
+    if (dismissDisabled || !closeOnEscape) {
+      return;
+    }
+
+    const handleEscapeKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      event.preventDefault();
+      state.close();
+    };
+
+    window.addEventListener('keydown', handleEscapeKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleEscapeKeyDown, true);
+    };
+  }, [closeOnEscape, dismissDisabled, state]);
+
+  const handleUnderlayMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    underlayProps.onMouseDown?.(event);
+    if (
+      event.defaultPrevented ||
+      event.target !== event.currentTarget ||
+      dismissDisabled ||
+      !closeOnBackdrop
+    ) {
+      return;
+    }
+    state.close();
+  };
+
   if (!state.isOpen) {
     return null;
   }
 
   return (
-    <OverlayContainer portalContainer={portalContainer}>
-      <div
-        {...underlayProps}
-        style={{
-          ...overlayStyle,
-          ...overlayStyleOverride,
-        }}
-      >
-        <FocusScope contain restoreFocus autoFocus>
-          <div
-            {...modalProps}
-            ref={panelRef}
-            style={{
-              outline: 'none',
-              minWidth: 0,
-              ...containerStyle,
-            }}
-          >
-            {!dismissDisabled ? <DismissButton onDismiss={state.close} /> : null}
-            {children}
-            {!dismissDisabled ? <DismissButton onDismiss={state.close} /> : null}
-          </div>
-        </FocusScope>
-      </div>
-    </OverlayContainer>
+    <>
+      <span
+        ref={portalAnchorRef}
+        aria-hidden="true"
+        style={portalAnchorStyle}
+      />
+      <OverlayContainer portalContainer={portalContainer}>
+        <div
+          {...underlayProps}
+          role="presentation"
+          onMouseDown={handleUnderlayMouseDown}
+          style={{
+            ...inheritedPortalStyle,
+            ...overlayStyle,
+            ...overlayStyleOverride,
+          }}
+        >
+          <FocusScope contain restoreFocus autoFocus>
+            <div
+              {...modalProps}
+              ref={panelRef}
+              style={{
+                outline: 'none',
+                minWidth: 0,
+                ...containerStyle,
+              }}
+            >
+              {!dismissDisabled ? (
+                <DismissButton onDismiss={state.close} />
+              ) : null}
+              {children}
+              {!dismissDisabled ? (
+                <DismissButton onDismiss={state.close} />
+              ) : null}
+            </div>
+          </FocusScope>
+        </div>
+      </OverlayContainer>
+    </>
   );
+}
+
+function resolveAppModalInheritedCssVariables(
+  anchor: Element | null,
+): CSSProperties {
+  if (typeof document === 'undefined') {
+    return {};
+  }
+
+  const themedSource = anchor?.closest(
+    '[data-overlay-explorer], [data-app-modal-portal-root], .overlay-window-host',
+  );
+  if (!themedSource) {
+    return {};
+  }
+
+  const inheritedStyle: Record<string, string> = {};
+  if (themedSource instanceof HTMLElement) {
+    copyAppModalCssVariables(themedSource.style, inheritedStyle);
+  }
+  copyAppModalCssVariables(getComputedStyle(themedSource), inheritedStyle);
+
+  return inheritedStyle as CSSProperties;
+}
+
+function copyAppModalCssVariables(
+  style: CSSStyleDeclaration,
+  target: Record<string, string>,
+) {
+  for (let index = 0; index < style.length; index += 1) {
+    const propertyName = style.item(index);
+    if (
+      propertyName.startsWith('--overlay-') ||
+      propertyName.startsWith('--gfs-ui-')
+    ) {
+      target[propertyName] = style.getPropertyValue(propertyName);
+    }
+  }
 }
 
 export function AppDialogFrame({
@@ -329,6 +426,10 @@ const overlayStyle: CSSProperties = {
   justifyContent: 'center',
   padding: 'clamp(12px, 2vw, 20px)',
   background: 'var(--overlay-explorer-modal-scrim, var(--overlay-bg-scrim))',
+};
+
+const portalAnchorStyle: CSSProperties = {
+  display: 'contents',
 };
 
 const panelStyle: CSSProperties = {
