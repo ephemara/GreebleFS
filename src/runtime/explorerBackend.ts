@@ -29,6 +29,14 @@ import {
   recordExplorerNativePoolFallback,
   recordExplorerNativePoolSuccess,
 } from "./explorerNativePool";
+import {
+  isExplorerNativeRingSearchStreamAvailable,
+  searchExplorerEntriesWithDiagnosticsViaNativeStream,
+} from "./explorerNativeStreams";
+import {
+  callGreebleNativeWithInvokeFallback,
+  isGreebleNativeControlAvailable,
+} from "./nativeControl";
 import { useExplorerStore } from "../store/explorerStore";
 import {
   bootstrapExplorerPolicySession as bootstrapGoExplorerPolicySession,
@@ -832,6 +840,24 @@ function shouldUseExplorerNativeBufferPool(
   ).activeLane === "native_buffer_pool";
 }
 
+function shouldUseExplorerNativeControl(
+  systemId: "thumbnailGeneration" | "settingsButtonActions",
+): boolean {
+  return resolveGreebleNativeLaneSelection(
+    systemId,
+    {},
+    { nativeControl: isGreebleNativeControlAvailable() },
+  ).activeLane === "native_control";
+}
+
+function shouldUseExplorerNativeRing(systemId: "searchResultStreams"): boolean {
+  return resolveGreebleNativeLaneSelection(
+    systemId,
+    {},
+    { nativeRing: isExplorerNativeRingSearchStreamAvailable() },
+  ).activeLane === "native_ring";
+}
+
 async function listLocalExplorerDirWithFallback(
   path: string,
   showHidden: boolean,
@@ -1269,6 +1295,15 @@ export async function searchExplorerEntriesWithDiagnostics(args: {
     throw new Error("Search is only available for local filesystem roots.");
   }
 
+  if (shouldUseExplorerNativeRing("searchResultStreams")) {
+    try {
+      return await searchExplorerEntriesWithDiagnosticsViaNativeStream(args);
+    } catch {
+      // Older Tauron builds expose no consumable native-ring data plane yet.
+      // The generated invoke path remains the correctness fallback.
+    }
+  }
+
   return unwrapTauriResult(
     await commands.fsSearchEntriesWithDiagnostics(
       args.path,
@@ -1323,6 +1358,17 @@ export async function openExplorerPath(path: string): Promise<void> {
   }
   if (isRemoteExplorerPath(path)) {
     unwrapTauriResult(await commands.remoteOpenFile(path));
+    return;
+  }
+  if (shouldUseExplorerNativeControl("settingsButtonActions")) {
+    await callGreebleNativeWithInvokeFallback<void, { path: string }>(
+      "settings",
+      "openLocalPath",
+      { path },
+      async () => {
+        unwrapTauriResult(await commands.fsOpenFile(path));
+      },
+    );
     return;
   }
   unwrapTauriResult(await commands.fsOpenFile(path));
@@ -1451,6 +1497,17 @@ export async function createExplorerDir(path: string): Promise<void> {
   if (isRemoteExplorerPath(path)) {
     unwrapTauriResult(
       await commands.remoteCreateDirectory(getParentDir(path), getLeafName(path)),
+    );
+    return;
+  }
+  if (shouldUseExplorerNativeControl("settingsButtonActions")) {
+    await callGreebleNativeWithInvokeFallback<void, { path: string }>(
+      "settings",
+      "createDirectory",
+      { path },
+      async () => {
+        unwrapTauriResult(await commands.fsCreateDir(path));
+      },
     );
     return;
   }
@@ -1816,6 +1873,17 @@ export async function readExplorerThumbnailArtifact(
   if (getExplorerPathSourceKind(request.path) !== "local") {
     throw new Error(
       "Generated thumbnail artifacts are only available for local filesystem items.",
+    );
+  }
+  if (shouldUseExplorerNativeControl("thumbnailGeneration")) {
+    return callGreebleNativeWithInvokeFallback<
+      ExplorerThumbnailArtifactData,
+      ExplorerEntryThumbnailInput
+    >(
+      "explorer",
+      "readThumbnailArtifact",
+      request,
+      () => commands.fsReadEntryThumbnailArtifact(request).then(unwrapTauriResult),
     );
   }
   return unwrapTauriResult(await commands.fsReadEntryThumbnailArtifact(request));

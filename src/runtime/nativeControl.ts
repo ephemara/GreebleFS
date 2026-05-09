@@ -12,6 +12,9 @@ export interface GreebleNativeCallOptions {
 }
 
 export function isGreebleNativeControlAvailable(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
   return isNativeControlAvailable()
 }
 
@@ -26,6 +29,24 @@ export async function callGreebleNative<TResult = unknown, TArgs = unknown>(
   options: GreebleNativeCallOptions = {}
 ): Promise<TResult> {
   return nativeCall<TResult, TArgs>(namespace, method, args, options)
+}
+
+export async function callGreebleNativeWithInvokeFallback<TResult, TArgs = unknown>(
+  namespace: string,
+  method: string,
+  args: TArgs | undefined,
+  fallback: () => Promise<TResult>,
+  options: GreebleNativeCallOptions = {}
+): Promise<TResult> {
+  if (!isGreebleNativeControlAvailable()) {
+    return fallback()
+  }
+
+  try {
+    return await callGreebleNative<TResult, TArgs>(namespace, method, args, options)
+  } catch {
+    return fallback()
+  }
 }
 
 export async function pingGreebleNative<TArgs = unknown>(args?: TArgs): Promise<unknown> {

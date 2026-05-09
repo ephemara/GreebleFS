@@ -1,3 +1,23 @@
+# 2026-05-09 - Native Lane God Mode Follow-Up
+
+- Moved the next native-lane candidates beyond directory listings while preserving generated invoke/transport fallbacks.
+  - Thumbnail artifacts now prefer native control through `explorer.readThumbnailArtifact` and keep the existing IPC artifact/resource-handle descriptors; the legacy data-URL thumbnail path remains the compatibility path.
+  - Search now has a native-control + native byte-stream live lane: `explorer.searchEntriesStream` emits newline-delimited result batches on a native stream, while `fs_search_entries_with_diagnostics` remains the final-response fallback.
+  - Explorer task progress now also publishes `tasks.progress` and `tasks.output` host events into the task-output message ring so task consumers can replay bounded task state/output without relying only on fire-and-forget Tauri events.
+  - Settings/startup/telemetry button-style actions now use `callGreebleNativeWithInvokeFallback(...)` through native-control handlers for launch-at-startup and telemetry configure/status/export/clear, falling back to generated commands when native control is unavailable.
+  - Terminal native-ring work is comparison-only for now: `diagnostics.nativeRingBenchmark` calls Tauron's benchmark/probe API, and `src/runtime/nativeRingComparison.ts` pairs that with native-stream telemetry. Current Tauron does not yet expose a production JS native-ring reader.
+- Durable design rule:
+  - Treat Tauron native-control as the compact control/action lane, native_buffer_pool as the finite blob/snapshot lane, native byte streams as the current live shared-buffer stream lane, and GreebleFS message rings as replay truth. Do not pretend Tauron's `native_ring` is production-readable until the fork exposes a real JS reader; benchmark it beside native-stream first.
+- Validation:
+  - Passed: `cargo fmt --manifest-path D:/GreebleFS/src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/nativeLaneMigration.test.ts src/test/nativeControl.test.ts src/test/explorerBackend.nativeLanes.test.ts src/test/nativeRingComparison.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/nativeLaneMigration.test.ts src/test/nativeControl.test.ts src/test/explorerBackend.nativePool.test.ts src/test/explorerBackend.nativeLanes.test.ts src/test/nativeRingComparison.test.ts --reporter=dot --testTimeout=30000`
+  - Not clean: `cargo test --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib message_ring` compiled the test binary but hit the known Windows lib-test startup failure `STATUS_ENTRYPOINT_NOT_FOUND` / `0xc0000139`.
+  - Not clean: Cargo emitted pre-existing dependency/app warnings plus Windows incremental-cache cleanup warnings (`Access is denied`) during check/test; there was no compile failure in `cargo check`.
+- Current repo state note:
+  - Pre-existing dirty files remain unrelated and should stay out of this lane commit unless the user explicitly asks: `public/icons/shortcut_arrow.svg`, `src/generated/tauri.ts`, deleted `usr/kain-ui/main.kn`, `usr/profiles/default/settings.json`, and untracked `src-tauri/src/fs.kn`.
+
 # 2026-05-09 - Tauron Dev Observatory Integration
 
 - Wired GreebleFS into Tauron's new standalone dev observatory.

@@ -7,6 +7,7 @@ import type {
 } from '../generated/tauri';
 import { commands, events, unwrapTauriResult } from './tauriClient';
 import { useSettingsStore } from '../store/settingsStore';
+import { callGreebleNativeWithInvokeFallback } from './nativeControl';
 
 export type OverlayTelemetryConfig = TelemetryConfig;
 export type OverlayTelemetryRecord = TelemetryRecord;
@@ -31,11 +32,21 @@ export function buildTelemetryConfigFromSettings(): OverlayTelemetryConfig {
 }
 
 export async function configureTelemetry(config: OverlayTelemetryConfig = buildTelemetryConfigFromSettings()): Promise<void> {
-  await commands.telemetryConfigure(config).then(unwrapTauriResult);
+  await callGreebleNativeWithInvokeFallback<void, OverlayTelemetryConfig>(
+    'settings',
+    'telemetryConfigure',
+    config,
+    () => commands.telemetryConfigure(config).then(unwrapTauriResult),
+  );
 }
 
 export async function getTelemetryStatus(): Promise<OverlayTelemetrySessionStatus> {
-  return commands.telemetryGetStatus().then(unwrapTauriResult);
+  return callGreebleNativeWithInvokeFallback<OverlayTelemetrySessionStatus>(
+    'settings',
+    'telemetryStatus',
+    undefined,
+    () => commands.telemetryGetStatus().then(unwrapTauriResult),
+  );
 }
 
 export async function getRecentTelemetryRecords(limit = 60): Promise<OverlayTelemetryRecord[]> {
@@ -43,11 +54,21 @@ export async function getRecentTelemetryRecords(limit = 60): Promise<OverlayTele
 }
 
 export async function exportTelemetrySupportBundle(): Promise<OverlayTelemetrySupportBundleResult> {
-  return commands.telemetryExportSupportBundle().then(unwrapTauriResult);
+  return callGreebleNativeWithInvokeFallback<OverlayTelemetrySupportBundleResult>(
+    'settings',
+    'telemetryExportSupportBundle',
+    undefined,
+    () => commands.telemetryExportSupportBundle().then(unwrapTauriResult),
+  );
 }
 
 export async function clearTelemetrySessions(): Promise<void> {
-  await commands.telemetryClearSessions().then(unwrapTauriResult);
+  await callGreebleNativeWithInvokeFallback<void>(
+    'settings',
+    'telemetryClearSessions',
+    undefined,
+    () => commands.telemetryClearSessions().then(unwrapTauriResult),
+  );
 }
 
 export async function listenToTelemetryRecords(

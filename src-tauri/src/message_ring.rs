@@ -429,7 +429,7 @@ impl MessageStreamsPolicy {
 
         match topic {
             "terminal.output" => self.terminal.clone(),
-            "tasks.output" => self.task_output.clone(),
+            "tasks.output" | "tasks.progress" => self.task_output.clone(),
             _ => self.default_topic.clone(),
         }
     }
@@ -740,5 +740,16 @@ mod tests {
         assert_eq!(policy.terminal.max_frame_bytes, 65536);
         assert_eq!(policy.terminal.replay_response_limit, 64);
         assert!(!policy.terminal.enabled);
+    }
+
+    #[test]
+    fn task_progress_host_topic_uses_task_output_policy() {
+        let policy = MessageStreamsPolicy::default();
+
+        assert_eq!(
+            policy.host_topic_policy("tasks.progress"),
+            policy.task_output
+        );
+        assert_eq!(policy.host_topic_policy("tasks.output"), policy.task_output);
     }
 }

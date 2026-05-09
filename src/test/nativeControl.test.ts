@@ -46,6 +46,37 @@ describe('nativeControl runtime', () => {
     )
   })
 
+  it('uses invoke fallbacks when native control is absent', async () => {
+    const { callGreebleNativeWithInvokeFallback } = await import('../runtime/nativeControl')
+    const fallback = vi.fn().mockResolvedValue({ ok: true })
+
+    await expect(
+      callGreebleNativeWithInvokeFallback('settings', 'status', undefined, fallback)
+    ).resolves.toEqual({ ok: true })
+
+    expect(nativeControlMock.nativeCall).not.toHaveBeenCalled()
+    expect(fallback).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back after a native control call fails', async () => {
+    const { callGreebleNativeWithInvokeFallback } = await import('../runtime/nativeControl')
+    const fallback = vi.fn().mockResolvedValue({ recovered: true })
+    nativeControlMock.available = true
+    nativeControlMock.nativeCall.mockRejectedValue(new Error('native lane unavailable'))
+
+    await expect(
+      callGreebleNativeWithInvokeFallback('settings', 'status', { compact: true }, fallback)
+    ).resolves.toEqual({ recovered: true })
+
+    expect(nativeControlMock.nativeCall).toHaveBeenCalledWith(
+      'settings',
+      'status',
+      { compact: true },
+      {}
+    )
+    expect(fallback).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps capability probing centralized', async () => {
     const { getGreebleNativeControlCapabilities } = await import('../runtime/nativeControl')
     nativeControlMock.nativeControlCapabilities.mockResolvedValue({

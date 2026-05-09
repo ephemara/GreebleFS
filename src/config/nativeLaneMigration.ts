@@ -11,15 +11,17 @@ export type GreebleNativeLaneSystemId =
   | "directoryListingSnapshots"
   | "searchResultStreams"
   | "taskOutputStreams"
-  | "terminalOutputComparison";
+  | "terminalOutputComparison"
+  | "settingsButtonActions";
 
 export interface GreebleNativeLaneFeatureFlags {
-  thumbnailGenerationNativeBufferPool: boolean;
+  thumbnailGenerationNativeControl: boolean;
   previewByteReadsNativeBufferPool: boolean;
   directoryListingNativeBufferPool: boolean;
   searchResultsNativeRing: boolean;
   taskOutputNativeRing: boolean;
   terminalOutputNativeRingComparison: boolean;
+  settingsButtonsNativeControl: boolean;
 }
 
 export interface GreebleNativeLaneRuntimeCapabilities {
@@ -48,12 +50,13 @@ export interface GreebleNativeLaneSelection {
 }
 
 export const DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS: GreebleNativeLaneFeatureFlags = Object.freeze({
-  thumbnailGenerationNativeBufferPool: false,
+  thumbnailGenerationNativeControl: true,
   previewByteReadsNativeBufferPool: true,
   directoryListingNativeBufferPool: true,
-  searchResultsNativeRing: false,
-  taskOutputNativeRing: false,
-  terminalOutputNativeRingComparison: false,
+  searchResultsNativeRing: true,
+  taskOutputNativeRing: true,
+  terminalOutputNativeRingComparison: true,
+  settingsButtonsNativeControl: true,
 });
 
 export const DEFAULT_GREEBLE_NATIVE_LANE_RUNTIME_CAPABILITIES: GreebleNativeLaneRuntimeCapabilities = Object.freeze({
@@ -66,10 +69,10 @@ export const GREEBLE_NATIVE_LANE_SYSTEM_PLANS: readonly GreebleNativeLaneSystemP
   {
     systemId: "thumbnailGeneration",
     currentLane: "transport_fallback_replay",
-    recommendedLane: "native_buffer_pool",
+    recommendedLane: "native_control",
     fallbackLane: "transport_fallback_replay",
-    featureFlag: "thumbnailGenerationNativeBufferPool",
-    requiredCapability: "nativeBufferPool",
+    featureFlag: "thumbnailGenerationNativeControl",
+    requiredCapability: "nativeControl",
     migrationState: "candidate",
   },
   {
@@ -116,6 +119,15 @@ export const GREEBLE_NATIVE_LANE_SYSTEM_PLANS: readonly GreebleNativeLaneSystemP
     featureFlag: "terminalOutputNativeRingComparison",
     requiredCapability: "nativeRing",
     migrationState: "comparison-only",
+  },
+  {
+    systemId: "settingsButtonActions",
+    currentLane: "invoke",
+    recommendedLane: "native_control",
+    fallbackLane: "invoke",
+    featureFlag: "settingsButtonsNativeControl",
+    requiredCapability: "nativeControl",
+    migrationState: "candidate",
   },
 ]);
 

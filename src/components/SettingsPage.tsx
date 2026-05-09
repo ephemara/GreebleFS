@@ -435,6 +435,7 @@ import {
   getTelemetryStatus,
   type OverlayTelemetrySessionStatus,
 } from "../runtime/telemetryBackend";
+import { setLaunchAtStartupNativeFirst } from "../runtime/settingsNativeActions";
 import {
   bootstrapManagedPythonRuntime,
   getManagedPythonRuntimeStatus,
@@ -7662,9 +7663,7 @@ export function SettingsPage({
       setStartupSyncPending(true);
       setStartupSyncError(null);
       try {
-        const nextValue = await commands
-          .startupSetLaunchAtStartup(enabled)
-          .then(unwrapTauriResult);
+        const nextValue = await setLaunchAtStartupNativeFirst(enabled);
         updateSystem({ launchAtStartup: nextValue });
       } catch (error) {
         setStartupSyncError(String(error));

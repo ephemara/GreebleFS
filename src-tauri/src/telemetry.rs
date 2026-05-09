@@ -255,7 +255,7 @@ impl TelemetryManager {
         Ok(())
     }
 
-    fn configure(&self, config: TelemetryConfig) -> Result<(), String> {
+    pub(crate) fn configure(&self, config: TelemetryConfig) -> Result<(), String> {
         let mut inner = self
             .inner
             .lock()
@@ -264,7 +264,7 @@ impl TelemetryManager {
         Ok(())
     }
 
-    fn status(&self, app: &AppHandle) -> Result<TelemetrySessionStatus, String> {
+    pub(crate) fn status(&self, app: &AppHandle) -> Result<TelemetrySessionStatus, String> {
         let mut inner = self
             .inner
             .lock()
@@ -294,7 +294,10 @@ impl TelemetryManager {
         })
     }
 
-    fn recent_records(&self, limit: Option<usize>) -> Result<Vec<TelemetryRecord>, String> {
+    pub(crate) fn recent_records(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<TelemetryRecord>, String> {
         let inner = self
             .inner
             .lock()
@@ -308,7 +311,7 @@ impl TelemetryManager {
             .collect())
     }
 
-    fn clear_sessions(&self, app: &AppHandle) -> Result<(), String> {
+    pub(crate) fn clear_sessions(&self, app: &AppHandle) -> Result<(), String> {
         let mut inner = self
             .inner
             .lock()
@@ -327,7 +330,7 @@ impl TelemetryManager {
         Ok(())
     }
 
-    fn export_support_bundle(
+    pub(crate) fn export_support_bundle(
         &self,
         app: &AppHandle,
     ) -> Result<TelemetrySupportBundleResult, String> {

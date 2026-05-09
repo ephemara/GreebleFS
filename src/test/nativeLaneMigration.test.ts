@@ -9,14 +9,15 @@ import {
 } from "../config/nativeLaneMigration";
 
 describe("native lane migration planning", () => {
-  it("enables proven finite-payload pool lanes by default and keeps future stream lanes off", () => {
+  it("enables the native-first hot lanes by default and keeps runtime capability checks authoritative", () => {
     expect(DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS).toEqual({
-      thumbnailGenerationNativeBufferPool: false,
+      thumbnailGenerationNativeControl: true,
       previewByteReadsNativeBufferPool: true,
       directoryListingNativeBufferPool: true,
-      searchResultsNativeRing: false,
-      taskOutputNativeRing: false,
-      terminalOutputNativeRingComparison: false,
+      searchResultsNativeRing: true,
+      taskOutputNativeRing: true,
+      terminalOutputNativeRingComparison: true,
+      settingsButtonsNativeControl: true,
     });
   });
 
@@ -26,9 +27,7 @@ describe("native lane migration planning", () => {
         systemId: plan.systemId,
         activeLane: plan.fallbackLane,
         fallbackLane: plan.fallbackLane,
-        nativeRequested:
-          plan.systemId === "previewByteReads" ||
-          plan.systemId === "directoryListingSnapshots",
+        nativeRequested: true,
         nativeAvailable: false,
       });
     }
@@ -92,13 +91,39 @@ describe("native lane migration planning", () => {
     });
   });
 
+  it("routes generated thumbnail artifacts through native control instead of data URL invoke", () => {
+    const selected = resolveGreebleNativeLaneSelection(
+      "thumbnailGeneration",
+      { thumbnailGenerationNativeControl: true },
+      { nativeControl: true },
+    );
+
+    expect(selected).toMatchObject({
+      activeLane: "native_control",
+      recommendedLane: "native_control",
+      fallbackLane: "transport_fallback_replay",
+      nativeRequested: true,
+      nativeAvailable: true,
+    });
+  });
+
+  it("tracks settings button actions as native-control candidates with invoke fallback", () => {
+    expect(getGreebleNativeLaneSystemPlan("settingsButtonActions")).toMatchObject({
+      recommendedLane: "native_control",
+      fallbackLane: "invoke",
+      requiredCapability: "nativeControl",
+      migrationState: "candidate",
+    });
+  });
+
   it.each([
-    ["thumbnailGeneration", "thumbnailGenerationNativeBufferPool"],
+    ["thumbnailGeneration", "thumbnailGenerationNativeControl"],
     ["previewByteReads", "previewByteReadsNativeBufferPool"],
     ["directoryListingSnapshots", "directoryListingNativeBufferPool"],
     ["searchResultStreams", "searchResultsNativeRing"],
     ["taskOutputStreams", "taskOutputNativeRing"],
     ["terminalOutputComparison", "terminalOutputNativeRingComparison"],
+    ["settingsButtonActions", "settingsButtonsNativeControl"],
   ] satisfies Array<[GreebleNativeLaneSystemId, keyof GreebleNativeLaneFeatureFlags]>)(
     "keeps %s behind the %s switch",
     (systemId, featureFlag) => {

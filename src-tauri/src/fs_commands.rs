@@ -30,7 +30,12 @@ use crate::preview_streaming::{
     read_local_file_data_url, read_local_preview_bytes, read_local_text_file,
     resolve_preview_byte_limit, PreviewStreamingManager,
 };
-use crate::telemetry::{finish_native_span, start_native_span};
+use crate::runtime_pipeline::{
+    HostEventBusState, HostEventScope, HOST_EVENT_TOPIC_TASKS_OUTPUT,
+    HOST_EVENT_TOPIC_TASKS_PROGRESS,
+};
+use crate::telemetry::{finish_native_span, start_native_span, TelemetryConfig, TelemetryManager};
+use crate::thumbnail_commands::ExplorerEntryThumbnailRequest;
 pub use crate::volume_inventory::DriveInfo;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
@@ -110,6 +115,40 @@ struct NativePoolReadArchiveEntryPreviewBytesArgs {
     entry_path: String,
     max_bytes: Option<u64>,
     stream_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeSearchEntriesStreamArgs {
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: Option<bool>,
+    limit: Option<usize>,
+    request_id: Option<u64>,
+    request_scope: Option<String>,
+    stream_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeSetLaunchAtStartupArgs {
+    enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeLocalPathArgs {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeRingBenchmarkArgs {
+    ring_id: Option<String>,
+    packets: Option<u64>,
+    packet_bytes: Option<usize>,
+    capacity: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -782,11 +821,65 @@ fn emit_explorer_task_progress(record: &ExplorerTaskRecord) {
         return;
     };
 
-    let _ = ExplorerTaskProgressEvent {
+    let event = ExplorerTaskProgressEvent {
         task_id: record.id.clone(),
         task: record.clone(),
+    };
+
+    let _ = event.emit(app);
+    publish_explorer_task_progress_to_message_ring(app, record, &event);
+}
+
+fn publish_explorer_task_progress_to_message_ring(
+    app: &AppHandle,
+    record: &ExplorerTaskRecord,
+    event: &ExplorerTaskProgressEvent,
+) {
+    let Some(host_event_bus) = app.try_state::<HostEventBusState>() else {
+        return;
+    };
+
+    let path = record
+        .destination_path
+        .clone()
+        .or_else(|| record.source_paths.first().cloned());
+    let scope = HostEventScope {
+        path,
+        task_id: Some(record.id.clone()),
+        ..HostEventScope::default()
+    };
+
+    if let Ok(payload_json) = serde_json::to_string(event) {
+        let _ = host_event_bus.publish_host_topic(
+            HOST_EVENT_TOPIC_TASKS_PROGRESS,
+            Some(payload_json),
+            None,
+            scope.clone(),
+            false,
+        );
     }
-    .emit(app);
+
+    let output_payload = serde_json::json!({
+        "taskId": &record.id,
+        "kind": record.kind,
+        "status": record.status,
+        "title": &record.title,
+        "detail": &record.detail,
+        "progressCurrent": record.progress_current,
+        "progressTotal": record.progress_total,
+        "sourcePaths": &record.source_paths,
+        "destinationPath": &record.destination_path,
+        "errorMessage": &record.error_message,
+        "finishedAt": record.finished_at,
+    });
+
+    let _ = host_event_bus.publish_host_topic(
+        HOST_EVENT_TOPIC_TASKS_OUTPUT,
+        Some(output_payload.to_string()),
+        None,
+        scope,
+        false,
+    );
 }
 
 fn sort_explorer_tasks(tasks: &mut [ExplorerTaskRecord]) {
@@ -3013,6 +3106,55 @@ fn serialize_native_pool_response(
         .map_err(|error| format!("Failed to serialize native pool explorer response: {error}"))
 }
 
+fn serialize_native_control_response<T: Serialize>(
+    response: T,
+) -> Result<serde_json::Value, String> {
+    serde_json::to_value(response)
+        .map_err(|error| format!("Failed to serialize native control response: {error}"))
+}
+
+fn publish_native_stream_json_line<T: Serialize>(
+    app: &AppHandle,
+    stream_id: &str,
+    kind: &str,
+    payload: &T,
+) -> Result<(), String> {
+    let mut bytes = serde_json::to_vec(payload)
+        .map_err(|error| format!("Failed to serialize native stream payload: {error}"))?;
+    bytes.push(b'\n');
+    tauri::native_stream::publish_byte_stream(app, stream_id, kind, &bytes)?;
+    Ok(())
+}
+
+fn publish_search_response_to_native_stream(
+    app: &AppHandle,
+    stream_id: &str,
+    response: &FileSearchResponse,
+) -> Result<(), String> {
+    const SEARCH_RESULT_BATCH_SIZE: usize = 128;
+    for chunk in response.results.chunks(SEARCH_RESULT_BATCH_SIZE) {
+        publish_native_stream_json_line(
+            app,
+            stream_id,
+            "search-results",
+            &serde_json::json!({
+                "kind": "resultBatch",
+                "results": chunk,
+            }),
+        )?;
+    }
+    publish_native_stream_json_line(
+        app,
+        stream_id,
+        "search-results",
+        &serde_json::json!({
+            "kind": "complete",
+            "diagnostics": &response.diagnostics,
+            "resultCount": response.results.len(),
+        }),
+    )
+}
+
 pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
     let app_for_list_dir = app.clone();
     tauri::native_control::register_handler(app, "explorer", "listDirSnapshot", move |request| {
@@ -3100,7 +3242,162 @@ pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
                 None,
             )?)
         },
-    )
+    )?;
+
+    let app_for_thumbnail_artifact = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "readThumbnailArtifact",
+        move |request| {
+            let args: ExplorerEntryThumbnailRequest = parse_native_pool_args(request)?;
+            let artifact = tauri::async_runtime::block_on(
+                crate::thumbnail_commands::fs_read_entry_thumbnail_artifact(
+                    app_for_thumbnail_artifact.clone(),
+                    args,
+                ),
+            )?;
+            serialize_native_control_response(artifact)
+        },
+    )?;
+
+    let app_for_search_stream = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "searchEntriesStream",
+        move |request| {
+            let args: NativeSearchEntriesStreamArgs = parse_native_pool_args(request)?;
+            let stream_id = require_native_pool_stream_id(args.stream_id)?;
+            let response = tauri::async_runtime::block_on(async {
+                let native_task_graph = app_for_search_stream.state::<NativeTaskGraphManager>();
+                execute_search_entries_command(
+                    native_task_graph.inner(),
+                    args.path,
+                    args.query,
+                    args.show_hidden,
+                    args.include_content.unwrap_or(false),
+                    args.limit,
+                    args.request_id,
+                    args.request_scope,
+                )
+                .await
+            })?;
+            publish_search_response_to_native_stream(
+                &app_for_search_stream,
+                &stream_id,
+                &response,
+            )?;
+            serialize_native_control_response(serde_json::json!({
+                "streamId": stream_id,
+                "resultCount": response.results.len(),
+            }))
+        },
+    )?;
+
+    let app_for_launch_at_startup = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "settings",
+        "setLaunchAtStartup",
+        move |request| {
+            let args: NativeSetLaunchAtStartupArgs = parse_native_pool_args(request)?;
+            let enabled = tauri::async_runtime::block_on(
+                crate::startup_commands::startup_set_launch_at_startup(
+                    app_for_launch_at_startup.clone(),
+                    args.enabled,
+                ),
+            )?;
+            serialize_native_control_response(enabled)
+        },
+    )?;
+
+    let app_for_telemetry_configure = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "settings",
+        "telemetryConfigure",
+        move |request| {
+            let config: TelemetryConfig = parse_native_pool_args(request)?;
+            let telemetry = app_for_telemetry_configure.state::<TelemetryManager>();
+            telemetry.configure(config)?;
+            serialize_native_control_response(())
+        },
+    )?;
+
+    let app_for_telemetry_status = app.clone();
+    tauri::native_control::register_handler(app, "settings", "telemetryStatus", move |_request| {
+        let telemetry = app_for_telemetry_status.state::<TelemetryManager>();
+        serialize_native_control_response(telemetry.status(&app_for_telemetry_status)?)
+    })?;
+
+    let app_for_telemetry_export = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "settings",
+        "telemetryExportSupportBundle",
+        move |_request| {
+            let telemetry = app_for_telemetry_export.state::<TelemetryManager>();
+            serialize_native_control_response(
+                telemetry.export_support_bundle(&app_for_telemetry_export)?,
+            )
+        },
+    )?;
+
+    let app_for_telemetry_clear = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "settings",
+        "telemetryClearSessions",
+        move |_request| {
+            let telemetry = app_for_telemetry_clear.state::<TelemetryManager>();
+            telemetry.clear_sessions(&app_for_telemetry_clear)?;
+            serialize_native_control_response(())
+        },
+    )?;
+
+    tauri::native_control::register_handler(app, "settings", "openLocalPath", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_open_file(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    tauri::native_control::register_handler(app, "settings", "createDirectory", move |request| {
+        let args: NativeLocalPathArgs = parse_native_pool_args(request)?;
+        tauri::async_runtime::block_on(fs_create_dir(args.path))?;
+        serialize_native_control_response(())
+    })?;
+
+    let app_for_native_ring = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "diagnostics",
+        "nativeRingBenchmark",
+        move |request| {
+            let webview_label = require_native_pool_webview_label(&request)?;
+            let args: NativeRingBenchmarkArgs = parse_native_pool_args(request)?;
+            let ring_id = args
+                .ring_id
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "terminal-output-comparison".to_string());
+            let packets = args.packets.unwrap_or(256).clamp(1, 16_384);
+            let packet_bytes = args.packet_bytes.unwrap_or(4096).clamp(1, 256 * 1024);
+            let capacity = args
+                .capacity
+                .unwrap_or(4 * 1024 * 1024)
+                .clamp(packet_bytes, 64 * 1024 * 1024);
+            serialize_native_control_response(tauri::native_ring::post_ring_benchmark(
+                &app_for_native_ring,
+                &webview_label,
+                &ring_id,
+                packets,
+                packet_bytes,
+                capacity,
+            )?)
+        },
+    )?;
+
+    Ok(())
 }
 
 #[tauri::command]
