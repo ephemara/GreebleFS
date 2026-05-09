@@ -47,16 +47,53 @@ fn build_shell_control_component() -> Any:
     json_object_set(component_node, "render", render)
     return component_node
 
+fn build_runtime_status_applet_component() -> Any:
+    let component_node = json_object_new()
+    let properties = json_array_new()
+    let bindings = json_array_new()
+    let actions = json_array_new()
+    let render = json_object_new()
+
+    let runtime_property = json_object_new()
+    json_object_set(runtime_property, "name", "runtimeLabel")
+    json_object_set(runtime_property, "type", "String")
+    json_object_set(runtime_property, "default", "Kain")
+    json_array_push(properties, runtime_property)
+
+    let status_binding = json_object_new()
+    json_object_set(status_binding, "target", "status")
+    json_object_set(status_binding, "expression", "host.kainBridge.runtime.running")
+    json_array_push(bindings, status_binding)
+
+    let reload_action = json_object_new()
+    json_object_set(reload_action, "id", "kain.ui.reload")
+    json_object_set(reload_action, "hostCall", "tauron.kain.reload")
+    json_array_push(actions, reload_action)
+
+    json_object_set(render, "primitive", "shell-applet")
+    json_object_set(render, "surface", "applet:kain-runtime-status")
+    json_object_set(render, "mountSlot", "workbench.topbar.trailing")
+
+    json_object_set(component_node, "id", "RuntimeStatusApplet")
+    json_object_set(component_node, "kind", "shell-applet")
+    json_object_set(component_node, "properties", properties)
+    json_object_set(component_node, "bindings", bindings)
+    json_object_set(component_node, "signals", string_array_2("activated", "reloadRequested"))
+    json_object_set(component_node, "actions", actions)
+    json_object_set(component_node, "render", render)
+    return component_node
+
 fn build_shell_control_package() -> Any:
     let package_node = json_object_new()
     let components = json_array_new()
     json_array_push(components, build_shell_control_component())
+    json_array_push(components, build_runtime_status_applet_component())
 
     json_object_set(package_node, "schemaVersion", 1)
     json_object_set(package_node, "kind", "greeblefs.lattice.package")
     json_object_set(package_node, "id", "greeblefs.lattice.shell-control")
     json_object_set(package_node, "title", "Shell Control")
-    json_object_set(package_node, "summary", "Reference Kain Lattice package for QML-like settings and applet authoring.")
+    json_object_set(package_node, "summary", "Reference Kain Lattice package for QML-like settings modules and compact shell applets.")
     json_object_set(package_node, "entry", "src-kain/lattice/greeblefs-shell-control/main.kn")
     json_object_set(package_node, "imports", string_array_4("gfs.shell", "gfs.settings", "gfs.actions", "gfs.ui"))
     json_object_set(package_node, "hostModels", string_array_4("host.settings", "host.kainBridge", "host.windowShell", "host.profile"))

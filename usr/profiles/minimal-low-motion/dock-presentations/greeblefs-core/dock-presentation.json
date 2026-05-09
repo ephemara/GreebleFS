@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-dock-presentations",
+  "name": "GreebleFS Core Dock Presentations",
+  "description": "Canonical shipped dock-mode presentation policies for placement, sizing, preview behavior, and dock chrome.",
+  "tags": [
+    "canonical",
+    "shipped",
+    "dock",
+    "presentation"
+  ],
+  "dockPresentations": [
+    {
+      "id": "yakuake-workbench",
+      "name": "Yakuake Workbench",
+      "description": "A compact explorer-first dock shell that supports top-edge, bottom-edge, and floating placement while keeping preview available on a tighter inline policy.",
+      "defaultPlacement": "bottom-edge",
+      "allowedPlacements": [
+        "top-edge",
+        "bottom-edge",
+        "floating"
+      ],
+      "defaultSize": {
+        "width": 1560,
+        "height": 432
+      },
+      "minSize": {
+        "width": 400,
+        "height": 150
+      },
+      "defaultTerminalGrid": {
+        "rows": 18,
+        "columns": 176
+      },
+      "topBarId": "dock-ox-strip",
+      "preview": {
+        "enabled": true,
+        "splitMode": "inline"
+      },
+      "tags": [
+        "default",
+        "compact",
+        "explorer-first",
+        "floating"
+      ]
+    }
+  ]
+}

@@ -15,6 +15,8 @@ interface KainSemanticSurfaceHostProps {
   surfaceId?: string | null;
   mountId?: string | null;
   packageId?: string | null;
+  variant?: "settings" | "applet";
+  showActionStatus?: boolean;
   onAction?: (actionId: string, node: KainUiNode) => void | Promise<void>;
 }
 
@@ -24,6 +26,8 @@ export function KainSemanticSurfaceHost({
   surfaceId,
   mountId,
   packageId,
+  variant = "settings",
+  showActionStatus = true,
   onAction,
 }: KainSemanticSurfaceHostProps) {
   const [actionState, setActionState] = useState("idle");
@@ -36,7 +40,16 @@ export function KainSemanticSurfaceHost({
     [scaffold, latticeCatalog, surfaceId, mountId, packageId],
   );
 
+  const isActionEnabled = useCallback((actionId: string) => {
+    return Boolean(onAction) || actionId === "kain.ui.reload";
+  }, [onAction]);
+
   const handleAction = useCallback(async (actionId: string, node: KainUiNode) => {
+    if (!isActionEnabled(actionId)) {
+      setActionState("blocked");
+      return;
+    }
+
     setActionState("running");
     try {
       if (onAction) {
@@ -51,7 +64,7 @@ export function KainSemanticSurfaceHost({
     } catch {
       setActionState("error");
     }
-  }, [onAction]);
+  }, [isActionEnabled, onAction]);
 
   if (!surface) {
     return null;
@@ -62,6 +75,8 @@ export function KainSemanticSurfaceHost({
       data-kain-semantic-surface-host="true"
       data-kain-semantic-surface={surface.id}
       data-kain-semantic-mount={mount?.id ?? "direct"}
+      data-kain-semantic-mount-slot={mount?.mountSlot ?? "none"}
+      data-kain-semantic-order={mount?.order ?? 0}
       data-kain-semantic-package={mount?.packageId ?? "none"}
       data-kain-semantic-component={mount?.componentId ?? "none"}
       data-kain-semantic-host-models={mount?.hostModels.length ?? 0}
@@ -71,9 +86,11 @@ export function KainSemanticSurfaceHost({
     >
       <KainUiRenderer
         surface={surface}
+        variant={variant}
+        isActionEnabled={isActionEnabled}
         onAction={handleAction}
       />
-      {actionState !== "idle" ? (
+      {showActionStatus && actionState !== "idle" ? (
         <div data-kain-semantic-action-status="true">
           <SettingsStatusPill active={actionState === "ok"}>
             {actionState}

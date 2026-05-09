@@ -86,6 +86,9 @@ import {
   getTopBarControlLabel,
 } from '../config/topBars';
 import { LayoutDynamicsCanvas } from './layoutDynamics/LayoutDynamicsCanvas';
+import { KainSemanticAppletStrip } from './kain/KainSemanticAppletStrip';
+import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
+import type { KainUiScaffold } from '../runtime/kainUiScaffold';
 
 interface WorkbenchTopBarProps {
   appearance: ResolvedOverlayAppearance;
@@ -169,6 +172,8 @@ interface WorkbenchTopBarProps {
   onCommitTopBarLayoutSnapshot: (
     snapshot: LayoutDynamicsAuthoringSnapshot,
   ) => void;
+  kainUiScaffold?: KainUiScaffold | null;
+  kainLatticeCatalog?: KainLatticeCatalog | null;
   surfaceMode?: WorkbenchTopBarSurfaceMode;
 }
 
@@ -429,6 +434,8 @@ export function WorkbenchTopBar({
   onToggleTopBarCustomize,
   topBarLayoutSnapshot,
   onCommitTopBarLayoutSnapshot,
+  kainUiScaffold = null,
+  kainLatticeCatalog = null,
   surfaceMode = 'full',
 }: WorkbenchTopBarProps) {
   const borderColor = appearance.theme.palette.border;
@@ -2633,6 +2640,12 @@ export function WorkbenchTopBar({
     .filter(controlId => controlId !== 'shell-mode')
     .map((controlId, index) => renderCompactControl(controlId, 320 + index))
     .filter((entry): entry is ReactNode => entry != null);
+  const kainTopBarAppletStrip = (
+    <KainSemanticAppletStrip
+      scaffold={kainUiScaffold}
+      latticeCatalog={kainLatticeCatalog}
+    />
+  );
 
   const centerContent = showsTabStrip ? (
     <OverlayScrollArea
@@ -2997,6 +3010,7 @@ export function WorkbenchTopBar({
       {topBarUsesLayoutDynamics ? null : renderControlZone(leadingControls, 'leading')}
       {topBarMainSurface}
       {topBarUsesLayoutDynamics ? null : renderControlZone(shellModeControls, 'trailing')}
+      {kainTopBarAppletStrip}
       {topBarUsesLayoutDynamics ? null : renderControlZone(trailingControls, 'trailing')}
       {shouldShowTrailingWindowControls ? (
         <div

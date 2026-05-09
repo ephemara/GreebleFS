@@ -39,6 +39,11 @@ import {
   createFolderPluginPanelDefinitions,
 } from '../panels/panelRegistry';
 import { iconThemeSystemConfig } from '../config/iconThemePackages';
+import {
+  PANEL_LATTICE_PACKAGE_ID,
+  buildBuiltInPanelCatalogFromLattice,
+  builtInPanelLatticeDescriptors,
+} from '../config/panelLatticeRegistry';
 import { topBarSystemConfig } from '../config/topBarPackages';
 
 function createBuiltInPanelDefinitionArgs(
@@ -159,6 +164,37 @@ describe('createBuiltInPanelDefinitions', () => {
       label: 'Storage',
       kind: 'built-in-panel',
     });
+  });
+
+  it('uses Lattice descriptors as the built-in panel metadata source of truth', () => {
+    const panels = createPanelsForTest();
+    const panelIds = panels.map(panel => panel.id);
+    const descriptorIds = builtInPanelLatticeDescriptors.map(descriptor => descriptor.id);
+
+    expect(panelIds).toEqual(descriptorIds);
+    for (const descriptor of builtInPanelLatticeDescriptors) {
+      const panel = panels.find(candidate => candidate.id === descriptor.id);
+      expect(panel).toMatchObject({
+        label: descriptor.label,
+        description: descriptor.description,
+        defaultOpen: descriptor.defaultOpen,
+        keepMounted: descriptor.keepMounted,
+        navigation: descriptor.navigation,
+        dock: {
+          defaultPlacement: descriptor.dock.defaultPlacement,
+          defaultOrder: descriptor.dock.defaultOrder,
+          defaultVisibility: descriptor.dock.defaultVisibility,
+          railShortcut: descriptor.dock.railShortcut,
+          ideRole: descriptor.dock.ideRole,
+          ideNavigationTier: descriptor.dock.ideNavigationTier,
+        },
+      });
+      expect(descriptor.lattice.packageId).toBe(PANEL_LATTICE_PACKAGE_ID);
+    }
+  });
+
+  it('builds the visible built-in catalog from the Lattice descriptor registry', () => {
+    expect(buildBuiltInCatalog()).toEqual(buildBuiltInPanelCatalogFromLattice());
   });
 
   it('keeps the disabled screenshot manager out of the visible panel suite', () => {

@@ -6,7 +6,20 @@ fn gfs_ui_node(id: String, node_kind: String, title: String, description: String
         json_object_set(node, "title", title)
     if len(description) > 0:
         json_object_set(node, "description", description)
+    json_object_set(node, "props", json_object_new())
     json_object_set(node, "children", json_array_new())
+    return node
+
+fn gfs_ui_prop_string(node: Any, key: String, value: String) -> Any:
+    json_object_set(json_get(node, "props"), key, value)
+    return node
+
+fn gfs_ui_prop_int(node: Any, key: String, value: Int) -> Any:
+    json_object_set(json_get(node, "props"), key, value)
+    return node
+
+fn gfs_ui_prop_bool(node: Any, key: String, value: Bool) -> Any:
+    json_object_set(json_get(node, "props"), key, value)
     return node
 
 fn gfs_ui_stack(id: String, direction: String, gap: String) -> Any:
@@ -41,6 +54,35 @@ fn gfs_ui_button(id: String, label: String, action_id: String) -> Any:
     let node = gfs_ui_node(id, "button", "", "")
     json_object_set(node, "label", label)
     json_object_set(node, "actionId", action_id)
+    return node
+
+fn gfs_ui_icon_button(id: String, label: String, action_id: String) -> Any:
+    let node = gfs_ui_node(id, "icon-button", "", "")
+    json_object_set(node, "label", label)
+    json_object_set(node, "actionId", action_id)
+    return node
+
+fn gfs_ui_indicator(id: String, label: String, tone: String, active: Bool) -> Any:
+    let node = gfs_ui_node(id, "indicator", "", "")
+    json_object_set(node, "label", label)
+    json_object_set(node, "tone", tone)
+    json_object_set(node, "active", active)
+    return node
+
+fn gfs_ui_key_value(id: String, key: String, value: String) -> Any:
+    let node = gfs_ui_node(id, "key-value", key, "")
+    gfs_ui_prop_string(node, "key", key)
+    gfs_ui_prop_string(node, "value", value)
+    return node
+
+fn gfs_ui_notice(id: String, text: String) -> Any:
+    let node = gfs_ui_node(id, "notice", "", "")
+    json_object_set(node, "text", text)
+    return node
+
+fn gfs_ui_applet(id: String, title: String, tooltip: String) -> Any:
+    let node = gfs_ui_node(id, "applet", title, "")
+    gfs_ui_prop_string(node, "tooltip", tooltip)
     return node
 
 fn gfs_ui_append(parent: Any, child: Any) -> Any:

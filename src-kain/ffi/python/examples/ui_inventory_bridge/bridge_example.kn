@@ -1,0 +1,41 @@
+use std::python::bridge
+
+fn example_root() -> String:
+    return "D:/GreebleFS/src-kain/ffi/python/examples/ui_inventory_bridge"
+
+fn workspace_root() -> String:
+    return "D:/GreebleFS"
+
+fn example_output(name: String) -> String:
+    return example_root() + "/outputs/" + name
+
+fn install_ui_inventory_kernel():
+    py_bridge_exec("import importlib.util\nimport json\nimport os\nimport sys\nfrom pathlib import Path\n\n_WORKSPACE_ROOT = Path(r'D:/GreebleFS')\n_MODULE_PATH = _WORKSPACE_ROOT / 'src-kain' / 'ffi' / 'python' / 'analysis' / 'ui_inventory.py'\n_SPEC = importlib.util.spec_from_file_location('greeblefs_kain_ui_inventory', _MODULE_PATH)\n_MODULE = importlib.util.module_from_spec(_SPEC)\nassert _SPEC is not None and _SPEC.loader is not None\nsys.modules[_SPEC.name] = _MODULE\n_SPEC.loader.exec_module(_MODULE)\n\ndef kain_ui_inventory_summary(max_files):\n    report = _MODULE.analyze_ui_inventory(_WORKSPACE_ROOT, max_files=int(max_files))\n    top_files = report.get('topFiles', [])\n    summary = report.get('summary', {})\n    first = top_files[0] if top_files else {}\n    return {\n        'kind': report.get('kind'),\n        'files_visited': int(summary.get('filesVisited', 0)),\n        'files_with_findings': int(summary.get('filesWithFindings', 0)),\n        'total_findings': int(summary.get('totalFindings', 0)),\n        'hardcoded_score': int(summary.get('hardcodedScore', 0)),\n        'top_file': first.get('path', ''),\n        'top_surface': first.get('surface', ''),\n        'top_lane': first.get('migrationLane', ''),\n    }\n\ndef kain_ui_inventory_report(path, max_files):\n    report = _MODULE.analyze_ui_inventory(_WORKSPACE_ROOT, max_files=int(max_files))\n    output_path = Path(path)\n    output_path.parent.mkdir(parents=True, exist_ok=True)\n    output_path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\\n', encoding='utf-8')\n    summary = report.get('summary', {})\n    return {\n        'path': str(output_path),\n        'bytes': os.path.getsize(output_path),\n        'files_visited': int(summary.get('filesVisited', 0)),\n        'files_with_findings': int(summary.get('filesWithFindings', 0)),\n        'total_findings': int(summary.get('totalFindings', 0)),\n    }\n")
+
+test ui_inventory_bridge_summary:
+    install_ui_inventory_kernel()
+    let summary = py_bridge_call("kain_ui_inventory_summary", [6])
+    assert(summary.kind == "greeblefs.ui.hardcoded-surface-map", "expected hardcoded UI surface map")
+    assert(summary.files_visited > 0, "expected scanned source files")
+    assert(summary.files_with_findings > 0, "expected UI findings")
+    assert(summary.hardcoded_score > 0, "expected non-zero hardcoded score")
+
+fn main() -> String:
+    install_ui_inventory_kernel()
+    let summary = py_bridge_call("kain_ui_inventory_summary", [12])
+    let report_info = py_bridge_call("kain_ui_inventory_report", [example_output("ui-hardcoded-surface-map.json"), 40])
+
+    let report = "GreebleFS Kain Python FFI UI inventory\n"
+    let report = report + "kind: " + str(summary.kind) + "\n"
+    let report = report + "files_visited: " + str(summary.files_visited) + "\n"
+    let report = report + "files_with_findings: " + str(summary.files_with_findings) + "\n"
+    let report = report + "total_findings: " + str(summary.total_findings) + "\n"
+    let report = report + "hardcoded_score: " + str(summary.hardcoded_score) + "\n"
+    let report = report + "top_file: " + str(summary.top_file) + "\n"
+    let report = report + "top_surface: " + str(summary.top_surface) + "\n"
+    let report = report + "top_lane: " + str(summary.top_lane) + "\n"
+    let report = report + "json_path: " + str(report_info.path) + "\n"
+    let report = report + "json_bytes: " + str(report_info.bytes)
+    write_file(example_output("ui_inventory_bridge_report.txt"), report + "\n")
+    println(report)
+    return report

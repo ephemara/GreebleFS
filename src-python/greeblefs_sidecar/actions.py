@@ -111,6 +111,48 @@ def _optional_module_probe(module_name: str) -> dict[str, Any]:
     return result
 
 
+def _load_kain_python_analysis_module(module_name: str, context: PythonActionContext) -> Any:
+    module_path = (
+        context.workspace_root
+        / "src-kain"
+        / "ffi"
+        / "python"
+        / "analysis"
+        / f"{module_name}.py"
+    )
+    if not module_path.exists():
+        raise FileNotFoundError(f"Kain Python analysis module not found: {module_path}")
+
+    import_name = f"greeblefs_kain_analysis_{module_name}"
+    spec = importlib.util.spec_from_file_location(import_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load Kain Python analysis module: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[import_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _payload_string_list(value: Any) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+    items = [item for item in value if isinstance(item, str) and item.strip()]
+    return items or None
+
+
+def _payload_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
+    if isinstance(value, int):
+        return max(minimum, min(maximum, value))
+    if isinstance(value, float) and value.is_integer():
+        return max(minimum, min(maximum, int(value)))
+    if isinstance(value, str):
+        try:
+            return max(minimum, min(maximum, int(value)))
+        except ValueError:
+            return fallback
+    return fallback
+
+
 @python_action("runtime.summary")
 def runtime_summary_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
     _ = payload
@@ -157,9 +199,12 @@ def kain_ffi_catalog_action(payload: Any, context: PythonActionContext) -> dict[
         "analysisPipelines": [
             {
                 "id": "ts-frontend-ui-inventory",
-                "status": "next",
-                "summary": "Inventory React/TS UI components, primitives, buttons, panels, settings surfaces, and Kain migration candidates.",
+                "status": "live",
+                "actionId": "kain.ffi.ui_inventory",
+                "kind": "greeblefs.ui.hardcoded-surface-map",
+                "summary": "Inventory React/TS UI components, primitives, buttons, panels, settings surfaces, hardcoded visual tokens, and Kain/Lattice migration candidates.",
                 "root": "src-kain/ffi/python/analysis",
+                "example": "src-kain/ffi/python/examples/ui_inventory_bridge/bridge_example.kn",
             },
             {
                 "id": "plugin-manifest-audit",
@@ -176,6 +221,21 @@ def kain_ffi_catalog_action(payload: Any, context: PythonActionContext) -> dict[
         ],
         "availableActions": list_python_actions(),
     }
+
+
+@python_action("kain.ffi.ui_inventory")
+def kain_ffi_ui_inventory_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    request = _payload_dict(payload)
+    roots = _payload_string_list(request.get("roots"))
+    max_files = _payload_int(request.get("maxFiles"), fallback=80, minimum=1, maximum=500)
+    include_tests = bool(request.get("includeTests", False))
+    module = _load_kain_python_analysis_module("ui_inventory", context)
+    return module.analyze_ui_inventory(
+        workspace_root=context.workspace_root,
+        roots=roots,
+        include_tests=include_tests,
+        max_files=max_files,
+    )
 
 
 @python_action("ml.probe")

@@ -1,0 +1,70 @@
+fn append_panel_descriptor(items, id: String, label: String, render_kind: String, default_placement: String, default_visibility: String, component_id: String) -> Int:
+    let descriptor = json_object_new()
+    json_object_set(descriptor, "id", id)
+    json_object_set(descriptor, "label", label)
+    json_object_set(descriptor, "renderKind", render_kind)
+    json_object_set(descriptor, "defaultPlacement", default_placement)
+    json_object_set(descriptor, "defaultVisibility", default_visibility)
+    json_object_set(descriptor, "componentId", component_id)
+    json_object_set(descriptor, "rendererHost", "src/panels/panelRegistry.tsx")
+    json_object_set(descriptor, "migrationStatus", "lattice-descriptor-live")
+    json_array_push(items, descriptor)
+    return 0
+
+fn build_panel_registry_package() -> Any:
+    let package_node = json_object_new()
+    let imports = json_array_new()
+    let host_models = json_array_new()
+    let actions = json_array_new()
+    let components = json_array_new()
+    let panels = json_array_new()
+    let render = json_object_new()
+
+    json_array_push(imports, "gfs.shell")
+    json_array_push(imports, "gfs.panels")
+    json_array_push(imports, "gfs.actions")
+    json_array_push(imports, "gfs.ui")
+
+    json_array_push(host_models, "host.panels")
+    json_array_push(host_models, "host.windowShell")
+    json_array_push(host_models, "host.explorer")
+    json_array_push(host_models, "host.profile")
+
+    json_array_push(actions, "panel.activate")
+    json_array_push(actions, "panel.open-window")
+    json_array_push(actions, "panel.dock-window")
+
+    append_panel_descriptor(panels, "explorer", "Explorer", "explorer-workspace", "center", "visible", "ExplorerPanel")
+    append_panel_descriptor(panels, "storage", "Storage", "storage-panel", "right-sidebar", "hidden", "StoragePanel")
+    append_panel_descriptor(panels, "terminal", "Terminal", "terminal-overlay", "bottom-panel", "collapsed", "TerminalPanel")
+    append_panel_descriptor(panels, "git", "Source", "git-manager", "bottom-panel", "collapsed", "SourcePanel")
+    append_panel_descriptor(panels, "notes", "Notes", "notes-manager", "right-sidebar", "hidden", "NotesPanel")
+    append_panel_descriptor(panels, "go-sample-panel", "Go Wasm", "go-wasm-smoke", "right-sidebar", "hidden", "GoWasmSmokePanel")
+    append_panel_descriptor(panels, "settings", "Settings", "settings-page", "right-sidebar", "hidden", "SettingsPanel")
+    append_panel_descriptor(panels, "plugins", "Plugins", "plugins-manager", "right-sidebar", "hidden", "PluginsPanel")
+
+    json_object_set(render, "primitive", "panel-registry")
+    json_object_set(render, "consumer", "src/config/panelLatticeRegistry.ts")
+    json_object_set(render, "panels", panels)
+
+    let component_node = json_object_new()
+    json_object_set(component_node, "id", "PanelRegistry")
+    json_object_set(component_node, "kind", "shell-panel-registry")
+    json_object_set(component_node, "render", render)
+    json_array_push(components, component_node)
+
+    json_object_set(package_node, "schemaVersion", 1)
+    json_object_set(package_node, "kind", "greeblefs.lattice.package")
+    json_object_set(package_node, "id", "greeblefs.lattice.panel-registry")
+    json_object_set(package_node, "title", "Panel Registry")
+    json_object_set(package_node, "summary", "Lattice descriptor package for GreebleFS built-in shell panels, dock defaults, navigation groups, and host-model contracts.")
+    json_object_set(package_node, "entry", "src-kain/lattice/greeblefs-panel-registry/main.kn")
+    json_object_set(package_node, "metadata", "src-kain/lattice/greeblefs-panel-registry/lattice.toml")
+    json_object_set(package_node, "imports", imports)
+    json_object_set(package_node, "hostModels", host_models)
+    json_object_set(package_node, "actions", actions)
+    json_object_set(package_node, "components", components)
+    return package_node
+
+fn main() -> Any:
+    return build_panel_registry_package()

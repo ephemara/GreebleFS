@@ -1,3 +1,27 @@
+# 2026-05-09 - UI Inventory And Panel Lattice Registry Pass
+
+- Added the first live UI hardcode inventory analyzer through the Kain/Python FFI lane.
+  - `src-kain/ffi/python/analysis/ui_inventory.py` scans React/TS/UI package roots for inline styles, colors, pixel values, icon imports, motion, z-index, drag/drop, pointer, keyboard, context-menu, and global listener surfaces, then emits `greeblefs.ui.hardcoded-surface-map`.
+  - `src-python/greeblefs_sidecar/actions.py` now exposes `kain.ffi.ui_inventory` beside `kain.ffi.catalog`, and the FFI catalog marks `ts-frontend-ui-inventory` as live.
+  - `src-kain/ffi/python/examples/ui_inventory_bridge/` contains a staged-payload smoke plus a real `std::python::bridge` example modeled after `D:/Kain-Lang/smoketest/python`.
+- Started the panel-registry-to-Lattice migration.
+  - `src/config/panelLatticeRegistry.ts` is now the descriptor source for built-in panel metadata, catalog rows, dock placement, IDE role/tier, icon slots, and Lattice component ids.
+  - `src/panels/panelRegistry.tsx` still owns trusted React renderers, but it overlays built-in panels from the Lattice descriptor registry and builds the visible catalog from the same source.
+  - `src-kain/lattice/greeblefs-panel-registry/` is the Kain-side package mirror for the built-in panel descriptors, and `src-kain/app/main.kn` advertises `greeblefs.lattice.panel-registry`, `kain.lattice.panelRegistry`, and `kain.ffi.uiInventory`.
+- Durable design rule:
+  - Treat Lattice descriptors as the next source of truth for UI engine metadata before moving renderers. First migrate catalog/dock/navigation/interaction policy into descriptors, then graduate trusted renderers only when the host contract is stable.
+  - Treat the UI inventory analyzer as the hardcoded-surface map for future migrations. Do not hand-pick Explorer conversions blindly; run the analyzer and use its lane/risk buckets to choose the next surface.
+- Validation:
+  - Passed: `python -m py_compile src-kain/ffi/python/analysis/ui_inventory.py src-python/greeblefs_sidecar/actions.py`
+  - Passed: direct `kain.ffi.ui_inventory` sidecar dispatch with `PYTHONPATH=src-python`.
+  - Passed: `kain.exe run src-kain/ffi/registry.kn`, `kain.exe run src-kain/lattice/greeblefs-panel-registry/main.kn`, `kain.exe run src-kain/ffi/python/examples/ui_inventory_bridge/smoke.kn`, and `kain.exe run src-kain/app/main.kn`.
+  - Passed: `bunx vitest run src/test/panelRegistry.test.tsx src/test/kainLatticeCatalog.test.ts src/test/kainFfiCatalog.test.ts src/test/kainManifest.test.ts --reporter=dot --testTimeout=30000`.
+  - Filtered TypeScript check found no diagnostics in the touched Kain/panel files; repo-wide `tsc` still has pre-existing baseline failures elsewhere.
+- Current limitation:
+  - The staged `toolchains/kain/payload/bin/kain.exe` does not currently expose `py_bridge_exec`, so `bridge_example.kn` is a reference for Python-enabled Kain builds while `smoke.kn` and the sidecar action validate the live GreebleFS path. Attempts to rebuild upstream `D:/Kain-Lang` during this pass hit Windows target/PDB file locks.
+- Next recommended step:
+  - Move Explorer drag/drop and interaction policy into a Lattice descriptor lane, then use the inventory report to prioritize the noisiest Explorer panels and chrome surfaces.
+
 # 2026-05-09 - Explorer Control Plane Native-Control Pass
 
 - Moved the next generated-invoke Explorer control surfaces onto Tauron native-control with generated-command fallback still intact.

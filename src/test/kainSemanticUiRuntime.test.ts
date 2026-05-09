@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildKainSemanticUiRegistry, resolveKainSemanticUiSurface } from '../runtime/kainSemanticUiRuntime';
+import {
+  buildKainSemanticUiRegistry,
+  resolveKainSemanticUiSurface,
+  selectKainSemanticUiMounts,
+} from '../runtime/kainSemanticUiRuntime';
 import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
 import type { KainUiScaffold } from '../runtime/kainUiScaffold';
 
@@ -20,11 +24,34 @@ const scaffold: KainUiScaffold = {
       packageId: 'greeblefs.lattice.shell-control',
       componentId: 'ShellControlModule',
       mountId: 'settings:kain-lattice-proof',
+      mountSlot: 'settings.kain-ui',
+      order: 10,
       hostModels: ['host.kainBridge'],
       actions: ['kain.ui.reload'],
       root: {
         id: 'root',
         kind: 'stack',
+        layout: {},
+        props: {},
+        children: [],
+      },
+    },
+    {
+      id: 'applet:kain-runtime-status',
+      kind: 'shell-applet',
+      title: 'Kain Runtime',
+      summary: 'Top bar applet.',
+      source: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+      packageId: 'greeblefs.lattice.shell-control',
+      componentId: 'RuntimeStatusApplet',
+      mountId: 'applet:kain-runtime-status',
+      mountSlot: 'workbench.topbar.trailing',
+      order: 20,
+      hostModels: ['host.kainBridge'],
+      actions: ['kain.ui.reload'],
+      root: {
+        id: 'applet-root',
+        kind: 'applet',
         layout: {},
         props: {},
         children: [],
@@ -57,14 +84,14 @@ const latticeCatalog: KainLatticeCatalog = {
   packages: [
     {
       id: 'greeblefs.lattice.shell-control',
-      kind: 'settings-module',
+      kind: 'shell-package',
       title: 'Shell Control',
       summary: 'Reference package.',
       packagePath: 'src-kain/lattice/greeblefs-shell-control',
       entry: 'src-kain/lattice/greeblefs-shell-control/main.kn',
       metadata: 'lattice.toml',
       imports: ['gfs.ui'],
-      surfaces: ['settings:kain-lattice-proof'],
+      surfaces: ['settings:kain-lattice-proof', 'applet:kain-runtime-status'],
       hostModels: ['host.settings', 'host.profile'],
       actions: ['settings.open'],
       permissions: ['kain.reload'],
@@ -79,11 +106,13 @@ describe('kainSemanticUiRuntime', () => {
   it('builds a mounted semantic registry from scaffold and Lattice package data', () => {
     const registry = buildKainSemanticUiRegistry(scaffold, latticeCatalog);
 
-    expect(registry.surfaces).toHaveLength(1);
+    expect(registry.surfaces).toHaveLength(2);
     expect(registry.mounts[0]).toMatchObject({
       id: 'settings:kain-lattice-proof',
       packageId: 'greeblefs.lattice.shell-control',
       componentId: 'ShellControlModule',
+      mountSlot: 'settings.kain-ui',
+      order: 10,
       status: 'lattice-mounted',
     });
     expect(registry.mounts[0]?.hostModels).toEqual(['host.kainBridge', 'host.settings', 'host.profile']);
@@ -102,5 +131,18 @@ describe('kainSemanticUiRuntime', () => {
     expect(resolveKainSemanticUiSurface(scaffold, latticeCatalog, {
       packageId: 'greeblefs.lattice.shell-control',
     }).surface?.id).toBe('settings:kain-lattice-proof');
+  });
+
+  it('selects ordered mounts by kind and mount slot', () => {
+    const registry = buildKainSemanticUiRegistry(scaffold, latticeCatalog);
+
+    expect(selectKainSemanticUiMounts(registry, {
+      kind: 'settings-module',
+      mountSlot: 'settings.kain-ui',
+    }).map((mount) => mount.id)).toEqual(['settings:kain-lattice-proof']);
+    expect(selectKainSemanticUiMounts(registry, {
+      kind: 'shell-applet',
+      mountSlot: 'workbench.topbar.trailing',
+    }).map((mount) => mount.id)).toEqual(['applet:kain-runtime-status']);
   });
 });

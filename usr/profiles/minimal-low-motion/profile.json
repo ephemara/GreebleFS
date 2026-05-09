@@ -1,0 +1,19 @@
+{
+  "id": "minimal-low-motion",
+  "name": "Minimal Low Motion",
+  "overrideSlices": [
+    "editor",
+    "presentation",
+    "dock",
+    "terminal",
+    "explorer",
+    "home",
+    "appearance",
+    "keybindings",
+    "layout",
+    "audio",
+    "plugins"
+  ],
+  "createdAtMs": 1778364444958,
+  "updatedAtMs": 1778364444958
+}

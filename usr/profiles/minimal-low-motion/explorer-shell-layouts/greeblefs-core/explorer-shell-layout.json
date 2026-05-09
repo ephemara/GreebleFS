@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-shell-layouts",
+  "name": "GreebleFS Core Explorer Shell Layouts",
+  "description": "Canonical shipped explorer pane composition presets for rail, preview, and width-bias behavior.",
+  "tags": ["canonical", "shipped", "explorer-shell-layouts"],
+  "shellLayouts": [
+    {
+      "id": "balanced",
+      "label": "Balanced",
+      "shortLabel": "Balanced",
+      "description": "Keep navigation, content, and preview in an even split.",
+      "defaultSourcesVisible": true,
+      "previewPlacement": "trailing",
+      "railWidthMultiplier": 1,
+      "previewWidthMultiplier": 1
+    },
+    {
+      "id": "navigator",
+      "label": "Navigator",
+      "shortLabel": "Navigator",
+      "description": "Give the rail more weight and keep the preview compact.",
+      "defaultSourcesVisible": true,
+      "previewPlacement": "trailing",
+      "railWidthMultiplier": 1.18,
+      "previewWidthMultiplier": 0.86
+    },
+    {
+      "id": "focus",
+      "label": "Focus",
+      "shortLabel": "Focus",
+      "description": "Hide the rail for a content-first browser view.",
+      "defaultSourcesVisible": false,
+      "previewPlacement": "trailing",
+      "railWidthMultiplier": 0.84,
+      "previewWidthMultiplier": 0.9
+    },
+    {
+      "id": "inspector",
+      "label": "Inspector",
+      "shortLabel": "Inspector",
+      "description": "Pull the preview pane forward and make it much larger.",
+      "defaultSourcesVisible": true,
+      "previewPlacement": "leading",
+      "railWidthMultiplier": 0.92,
+      "previewWidthMultiplier": 1.28
+    }
+  ]
+}

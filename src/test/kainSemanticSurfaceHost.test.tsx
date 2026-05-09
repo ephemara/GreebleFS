@@ -32,6 +32,8 @@ const scaffold: KainUiScaffold = {
       packageId: 'greeblefs.lattice.shell-control',
       componentId: 'ShellControlModule',
       mountId: 'settings:kain-lattice-proof',
+      mountSlot: 'settings.kain-ui',
+      order: 10,
       hostModels: ['host.kainBridge'],
       actions: ['kain.ui.reload'],
       root: {
@@ -81,7 +83,7 @@ const latticeCatalog: KainLatticeCatalog = {
   packages: [
     {
       id: 'greeblefs.lattice.shell-control',
-      kind: 'settings-module',
+      kind: 'shell-package',
       title: 'Shell Control',
       summary: 'Reference package.',
       packagePath: 'src-kain/lattice/greeblefs-shell-control',
@@ -111,6 +113,8 @@ describe('KainSemanticSurfaceHost', () => {
 
     const host = container.querySelector('[data-kain-semantic-surface-host]');
     expect(host).toHaveAttribute('data-kain-semantic-package', 'greeblefs.lattice.shell-control');
+    expect(host).toHaveAttribute('data-kain-semantic-mount-slot', 'settings.kain-ui');
+    expect(host).toHaveAttribute('data-kain-semantic-order', '10');
     expect(host).toHaveAttribute('data-kain-semantic-host-models', '2');
     expect(host).toHaveAttribute('data-kain-semantic-actions', '2');
 

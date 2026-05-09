@@ -28,6 +28,8 @@ export interface KainUiSurface {
   packageId?: string;
   componentId?: string;
   mountId?: string;
+  mountSlot?: string;
+  order: number;
   hostModels: string[];
   actions: string[];
   root: KainUiNode | null;
@@ -190,6 +192,8 @@ export function normalizeKainUiScaffold(value: unknown): KainUiScaffold | null {
         packageId: stringValue(item.packageId),
         componentId: stringValue(item.componentId),
         mountId: stringValue(item.mountId),
+        mountSlot: stringValue(item.mountSlot),
+        order: numberValue(item.order) ?? 0,
         hostModels: stringList(item.hostModels),
         actions: stringList(item.actions),
         root: normalizeUiNode(item.root),

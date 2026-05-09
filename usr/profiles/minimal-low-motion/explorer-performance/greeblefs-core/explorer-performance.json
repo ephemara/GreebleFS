@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-performance",
+  "name": "GreebleFS Core Explorer Performance",
+  "description": "Canonical Explorer hot-path interaction tuning and latency budgets.",
+  "folderActivation": {
+    "doubleClickPreviewPrimeDelayMs": 180,
+    "doubleClickSecondClickImmediateNavigation": true,
+    "doubleClickDedupeWindowMs": 96,
+    "pointerDownDirectoryWarmEnabled": true
+  },
+  "budgets": {
+    "doubleClickSecondClickToNavigateDispatchMs": 1
+  },
+  "viewportScheduling": {
+    "enabled": true,
+    "batchSize": 12,
+    "maxConcurrentThumbnailReads": 4,
+    "settleDelayMs": 88,
+    "forwardPrefetchViewports": 1,
+    "backwardPrefetchViewports": 0.5,
+    "cancelStaleBatches": true,
+    "maxCandidateQueueDepth": 96,
+    "queueOverflowStrategy": "drop-lowest-priority",
+    "previewPrefetch": {
+      "enabled": true,
+      "batchSize": 4,
+      "maxConcurrentPreviewReads": 2,
+      "forwardPrefetchViewports": 0.5,
+      "backwardPrefetchViewports": 0.25
+    }
+  },
+  "nativeTaskGraph": {
+    "enabled": true,
+    "maxQueuedTasks": 256,
+    "staleCancellationEnabled": true,
+    "telemetryEnabled": true,
+    "progressEmitIntervalMs": 80,
+    "overflowPolicy": "cancelStaleQueuedFirst",
+    "laneConcurrency": {
+      "directoryScan": 2,
+      "recursiveSearch": 2,
+      "checksum": 1,
+      "thumbnailDecode": 0,
+      "previewRead": 2,
+      "archive": 1,
+      "indexing": 0,
+      "maintenance": 0
+    }
+  },
+  "previewStreaming": {
+    "enabled": true,
+    "chunkBytes": 65536,
+    "textMaxBytes": 10485760,
+    "dataUriMaxBytes": 12582912,
+    "binaryMaxBytes": 268435456,
+    "archiveEntryMaxBytes": 268435456
+  },
+  "messageStreams": {
+    "enabled": true,
+    "telemetryEnabled": true,
+    "maxFrameBytes": 32768,
+    "replayResponseLimit": 512,
+    "overflowPolicy": "drop-oldest",
+    "defaultTopic": {
+      "maxMessages": 256,
+      "maxBytes": 1048576
+    },
+    "terminal": {
+      "maxMessages": 2048,
+      "maxBytes": 4194304
+    },
+    "taskOutput": {
+      "maxMessages": 1024,
+      "maxBytes": 2097152
+    },
+    "telemetry": {
+      "maxMessages": 400,
+      "maxBytes": 2097152
+    }
+  }
+}

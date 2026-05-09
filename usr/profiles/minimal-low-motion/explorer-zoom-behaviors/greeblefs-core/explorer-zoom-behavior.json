@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-zoom-behavior",
+  "name": "GreebleFS Core Explorer Zoom Behavior",
+  "description": "Canonical Explorer ctrl/cmd-wheel routing, wheel normalization, row/grid detents, and oversize layout scaling.",
+  "gridAnchors": {
+    "icons-s": 0,
+    "icons-m": 0.34,
+    "icons-l": 0.67,
+    "icons-xl": 1
+  },
+  "layoutDomain": {
+    "minimumRowZoom": -0.42,
+    "gridToTableEnterZoom": -0.08,
+    "tableToGridExitZoom": 0.04,
+    "tableToListEnterZoom": -0.3,
+    "listToTableExitZoom": -0.22,
+    "columnsDetailsMidpointZoom": -0.16,
+    "liveGridMaxZoom": 2.8
+  },
+  "wheel": {
+    "lineDeltaPixels": 40,
+    "pageDeltaFallbackPixels": 320,
+    "minimumGestureDeltaPixels": 0.1,
+    "precisionMinimumGestureDeltaPixels": 1.2,
+    "detentMinimumGestureDeltaPixels": 6,
+    "zoomSensitivity": 0.001,
+    "maxPerEventZoomDelta": 0.12,
+    "rowModeZoomMultiplier": 2.5,
+    "minimumAbsoluteZoomDelta": 0.001,
+    "microDeltaAccumulationMs": 80,
+    "commitIdleMs": 140
+  },
+  "oversize": {
+    "tileScaleMax": 3.2,
+    "rowScaleMax": 2.7,
+    "spacingScaleMax": 2.05,
+    "paddingScaleMax": 1.8,
+    "tileRadiusScaleMax": 1.6,
+    "nameLinesMax": 4
+  },
+  "presentation": {
+    "gridItemPadding": {
+      "topRatio": 0.1,
+      "horizontalRatio": 0.08,
+      "bottomRatio": 0.08,
+      "topMinPx": 8,
+      "topMaxPx": 18,
+      "horizontalMinPx": 6,
+      "horizontalMaxPx": 14,
+      "bottomMinPx": 6,
+      "bottomMaxPx": 14
+    },
+    "gridThumbnailRadius": {
+      "scale": 0.72,
+      "minPx": 10,
+      "maxPx": 32
+    },
+    "rowThumbnailStage": {
+      "addPx": 12,
+      "minPx": 28,
+      "maxPx": 72
+    }
+  },
+  "hudSegments": {
+    "list": 12,
+    "columns": 10,
+    "details": 10,
+    "grid": 48,
+    "oversize": 20
+  },
+  "curves": {
+    "gridSegmentCurve": "smootherstep",
+    "oversizeCurve": "easeOutCubic"
+  }
+}

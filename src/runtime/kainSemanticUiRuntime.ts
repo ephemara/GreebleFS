@@ -9,6 +9,8 @@ export interface KainSemanticUiMount {
   source: string;
   packageId?: string;
   componentId?: string;
+  mountSlot?: string;
+  order: number;
   hostModels: string[];
   actions: string[];
   status: string;
@@ -27,8 +29,18 @@ export interface KainSemanticUiSurfaceResolution {
   mount: KainSemanticUiMount | null;
 }
 
+export interface KainSemanticUiMountSelector {
+  kind?: string | null;
+  mountSlot?: string | null;
+  packageId?: string | null;
+}
+
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function byMountOrder(left: KainSemanticUiMount, right: KainSemanticUiMount): number {
+  return left.order - right.order || left.id.localeCompare(right.id);
 }
 
 function buildPackageLookup(catalog: KainLatticeCatalog | null): Record<string, KainLatticePackage> {
@@ -64,6 +76,8 @@ function buildMountForSurface(
     source: surface.source ?? packageNode?.entry ?? "",
     packageId,
     componentId: surface.componentId,
+    mountSlot: surface.mountSlot,
+    order: surface.order,
     hostModels: uniqueStrings([...surface.hostModels, ...packageHostModels]),
     actions: uniqueStrings([...surface.actions, ...packageActions]),
     status: packageNode ? "lattice-mounted" : "semantic-mounted",
@@ -90,6 +104,27 @@ export function buildKainSemanticUiRegistry(
     packagesById,
     hostModelIds,
   };
+}
+
+export function selectKainSemanticUiMounts(
+  registry: KainSemanticUiRegistry,
+  selector: KainSemanticUiMountSelector = {},
+): KainSemanticUiMount[] {
+  return registry.mounts
+    .filter((mount) => {
+      if (selector.kind && mount.kind !== selector.kind) {
+        return false;
+      }
+      if (selector.mountSlot && mount.mountSlot !== selector.mountSlot) {
+        return false;
+      }
+      if (selector.packageId && mount.packageId !== selector.packageId) {
+        return false;
+      }
+      return true;
+    })
+    .slice()
+    .sort(byMountOrder);
 }
 
 export function resolveKainSemanticUiSurface(

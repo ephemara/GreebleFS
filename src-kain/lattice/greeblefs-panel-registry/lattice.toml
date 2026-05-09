@@ -1,0 +1,15 @@
+schemaVersion = 1
+id = "greeblefs.lattice.panel-registry"
+displayName = "Panel Registry"
+kind = "shell-panel-registry"
+entry = "main.kn"
+status = "lattice-descriptor-live"
+hostModels = ["host.panels", "host.windowShell", "host.explorer", "host.profile"]
+permissions = ["panels.read", "panels.activate", "windows.open"]
+consumer = "src/panels/panelRegistry.tsx"
+descriptorSource = "src/config/panelLatticeRegistry.ts"
+
+[migration]
+firstConvertedSurface = "built-in-panel-metadata"
+rendererStatus = "react-renderer-hosted"
+nextSurface = "panel interaction and native-window policy"

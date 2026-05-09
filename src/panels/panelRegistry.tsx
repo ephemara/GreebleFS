@@ -47,6 +47,12 @@ import type {
   WorkbenchSurfaceDefaultVisibility,
   WorkbenchSurfaceIdeRole,
 } from '../config/ideWorkbenchLayout';
+import {
+  buildBuiltInPanelCatalogFromLattice,
+  getBuiltInPanelLatticeDescriptor,
+  type BuiltInPanelId,
+  type BuiltInPanelLatticeDescriptor,
+} from '../config/panelLatticeRegistry';
 import type { TerminalWindowMode } from '../store/settingsStore';
 import type { SettingsSectionKey } from '../config/settingsNavigation';
 import type { ExplorerPickerRequest } from '../runtime/explorerPicker';
@@ -212,6 +218,57 @@ export function buildWorkbenchSurfaceDefinitions(
       }
       return left.label.localeCompare(right.label);
     });
+}
+
+const BUILT_IN_PANEL_FALLBACK_ICONS = {
+  explorer: FolderOpen,
+  storage: HardDrive,
+  terminal: TerminalIcon,
+  git: GitBranch,
+  notes: StickyNote,
+  'go-sample-panel': Cpu,
+  settings: Settings2,
+  plugins: Puzzle,
+} satisfies Record<BuiltInPanelId, React.ElementType>;
+
+function buildBuiltInPanelIcon(descriptor: BuiltInPanelLatticeDescriptor): React.ReactNode {
+  return (
+    <ThemedPanelIcon
+      panelId={descriptor.id}
+      fallbackSlotId={descriptor.icon.fallbackSlotId}
+      fallbackIcon={BUILT_IN_PANEL_FALLBACK_ICONS[descriptor.id]}
+      size={12}
+    />
+  );
+}
+
+function applyBuiltInPanelLatticeDescriptor(
+  panel: OverlayPanelDefinition,
+): OverlayPanelDefinition {
+  const descriptor = getBuiltInPanelLatticeDescriptor(panel.id);
+  if (!descriptor) {
+    return panel;
+  }
+
+  return {
+    ...panel,
+    id: descriptor.id,
+    label: descriptor.label,
+    description: descriptor.description,
+    defaultOpen: descriptor.defaultOpen,
+    keepMounted: descriptor.keepMounted,
+    icon: buildBuiltInPanelIcon(descriptor),
+    navigation: { ...descriptor.navigation },
+    dock: {
+      defaultPlacement: descriptor.dock.defaultPlacement,
+      defaultOrder: descriptor.dock.defaultOrder,
+      defaultVisibility: descriptor.dock.defaultVisibility,
+      allowedPresentations: [...descriptor.dock.allowedPresentations],
+      railShortcut: descriptor.dock.railShortcut,
+      ideRole: descriptor.dock.ideRole,
+      ideNavigationTier: descriptor.dock.ideNavigationTier,
+    },
+  };
 }
 
 export function createBuiltInPanelDefinitions({
@@ -587,7 +644,7 @@ export function createBuiltInPanelDefinitions({
     textMuted: appearance.theme.palette.textMuted,
   };
 
-  return [
+  const panels: OverlayPanelDefinition[] = [
     {
       id: 'explorer',
       label: 'Explorer',
@@ -995,6 +1052,8 @@ export function createBuiltInPanelDefinitions({
       render: renderPluginsManager,
     },
   ];
+
+  return panels.map(applyBuiltInPanelLatticeDescriptor);
 }
 
 export function createFolderPluginPanelDefinitions({
@@ -1043,55 +1102,5 @@ export function createFolderPluginPanelDefinitions({
 }
 
 export function buildBuiltInCatalog(): PanelCatalogEntry[] {
-  return [
-    {
-      id: 'terminal',
-      label: 'Terminal',
-      description: 'Built-in panel plugin for terminal sessions.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'explorer',
-      label: 'Explorer',
-      description: 'Built-in panel plugin for file browsing.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'storage',
-      label: 'Storage',
-      description: 'Built-in panel plugin for storage scanning and cleanup.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'git',
-      label: 'Source',
-      description: 'Built-in panel plugin for Git workflows.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'notes',
-      label: 'Notes',
-      description: 'Built-in panel plugin for note taking.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'go-sample-panel',
-      label: 'Go Wasm',
-      description: 'Interactive Go/Wasm smoke test panel for the universal runtime host.',
-      kind: 'built-in-panel',
-      example: true,
-    },
-    {
-      id: 'settings',
-      label: 'Settings',
-      description: 'Built-in panel plugin for application-wide settings.',
-      kind: 'built-in-panel',
-    },
-    {
-      id: 'plugins',
-      label: 'Plugins',
-      description: 'Built-in panel plugin for managing folder plugins.',
-      kind: 'built-in-panel',
-    },
-  ];
+  return buildBuiltInPanelCatalogFromLattice();
 }

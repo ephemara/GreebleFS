@@ -1,0 +1,27 @@
+fn ion_lattice_color(id: String, value: String) -> Any:
+    let swatch = json_object_new()
+    json_object_set(swatch, "id", id)
+    json_object_set(swatch, "value", value)
+    return swatch
+
+fn greeblefs_kain_ui_theme_ion_lattice() -> Any:
+    let theme = json_object_new()
+    let swatches = json_array_new()
+
+    json_array_push(swatches, ion_lattice_color("cyan", "#40f6ff"))
+    json_array_push(swatches, ion_lattice_color("rose", "#ff6b91"))
+    json_array_push(swatches, ion_lattice_color("amber", "#f4c95d"))
+    json_array_push(swatches, ion_lattice_color("green", "#7cf6b9"))
+
+    json_object_set(theme, "id", "ion-lattice")
+    json_object_set(theme, "name", "Ion Lattice")
+    json_object_set(theme, "source", "usr/profiles/default/kain-ui/themes/ion-lattice/main.kn")
+    json_object_set(theme, "compatibilityThemeId", "kain-ion-lattice")
+    json_object_set(theme, "compatibilityBundlePath", "usr/themes/kain-ion-lattice/theme.json")
+    json_object_set(theme, "status", "selectable")
+    json_object_set(theme, "summary", "Usr-authored Kain theme source with a generated GreebleFS theme bundle for the current renderer.")
+    json_object_set(theme, "swatches", swatches)
+    return theme
+
+fn main():
+    println(json_string(greeblefs_kain_ui_theme_ion_lattice()))

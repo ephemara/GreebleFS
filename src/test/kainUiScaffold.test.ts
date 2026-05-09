@@ -16,6 +16,8 @@ describe('normalizeKainUiScaffold', () => {
           kind: 'settings-section',
           title: 'Kain UI Authoring Proof',
           summary: 'Proof.',
+          mountSlot: 'settings.kain-ui',
+          order: 30,
           root: {
             id: 'root',
             kind: 'stack',
@@ -49,6 +51,8 @@ describe('normalizeKainUiScaffold', () => {
     expect(scaffold?.surfaces).toHaveLength(1);
     expect(scaffold?.surfaces[0]?.root?.children[0]?.children[0]?.label).toBe('wired');
     expect(scaffold?.surfaces[0]?.root?.layout).toEqual({ direction: 'column', gap: 'compact' });
+    expect(scaffold?.surfaces[0]?.mountSlot).toBe('settings.kain-ui');
+    expect(scaffold?.surfaces[0]?.order).toBe(30);
     expect(scaffold?.actions[0]?.id).toBe('kain.ui.reload');
   });
 

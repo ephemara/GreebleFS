@@ -19,7 +19,7 @@ fn build_kain_ffi_catalog() -> Any:
     let consumers = json_array_new()
     let analysis = json_array_new()
 
-    append_lane(lanes, "python", "Python FFI", "python-sidecar", "src-kain/ffi/python", "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog", "GreebleFS Python sidecar + Kain Python FFI", "sidecar-hooked", true, "Kain can route heavy analysis and Python package work through the existing managed Python sidecar.", "Build the TS frontend UI inventory analyzer under src-kain/ffi/python/analysis.")
+    append_lane(lanes, "python", "Python FFI", "python-sidecar", "src-kain/ffi/python", "src-python/greeblefs_sidecar/actions.py:kain.ffi.ui_inventory", "GreebleFS Python sidecar + Kain Python FFI", "analysis-live", true, "Kain can route heavy analysis and Python package work through the existing managed Python sidecar and repo-local std::python::bridge examples.", "Use src-kain/ffi/python/examples/ui_inventory_bridge/bridge_example.kn as the GreebleFS Kain/Python FFI pattern.")
     append_lane(lanes, "node", "Node FFI", "node-ffi", "src-kain/ffi/node", "Node/native npm packages", "Kain Node FFI", "scaffold", false, "Kain can call Node/native packages for codegen, importers, and asset tools.", "Pick one npm-backed analyzer or generator and expose it through Kain.")
     append_lane(lanes, "c-runtime", "C Runtime", "c-abi", "src-kain/ffi/c-runtime", "native DLLs, SDKs, and C libraries", "Kain C runtime", "scaffold", false, "Kain can talk to C libraries and legacy native tools behind explicit trust boundaries.", "Wrap one tiny C ABI probe before any product-critical native SDK.")
     append_lane(lanes, "rust-reflection", "Rust Reflection", "rust-reflection", "src-kain/ffi/rust-reflection", "Tauron/GreebleFS reflected host schema", "Kain Rust reflection", "scaffold", false, "Rust and Tauron can describe host capabilities to Kain for generated wrappers and routed calls.", "Feed runtime host schema into generated Kain host wrappers.")
@@ -33,6 +33,9 @@ fn build_kain_ffi_catalog() -> Any:
     json_array_push(consumers, "src/runtime/kainFfiCatalog.ts")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
     json_array_push(consumers, "src-python/greeblefs_sidecar/actions.py:kain.ffi.catalog")
+    json_array_push(consumers, "src-python/greeblefs_sidecar/actions.py:kain.ffi.ui_inventory")
+    json_array_push(consumers, "src-kain/ffi/python/examples/ui_inventory_bridge/smoke.kn")
+    json_array_push(consumers, "src-kain/ffi/python/examples/ui_inventory_bridge/bridge_example.kn")
 
     json_object_set(catalog, "schemaVersion", 1)
     json_object_set(catalog, "kind", "greeblefs.ffi.catalog")

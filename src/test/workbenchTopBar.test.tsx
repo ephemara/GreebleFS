@@ -716,6 +716,98 @@ describe('WorkbenchTopBar', () => {
     expect(screen.queryByTitle(/open command palette/i)).not.toBeInTheDocument();
   });
 
+  it('mounts Kain-authored semantic applets in the trailing top-bar slot', () => {
+    renderWorkbenchTopBar({
+      kainUiScaffold: {
+        schemaVersion: 1,
+        kind: 'greeblefs.ui.scaffold',
+        source: 'src-kain/app/main.kn',
+        stdlib: 'src-kain/stdlib/greeblefs/ui.kn',
+        renderer: 'src/components/kain/KainUiRenderer.tsx',
+        summary: 'Semantic scaffold.',
+        surfaces: [
+          {
+            id: 'applet:kain-runtime-status',
+            kind: 'shell-applet',
+            title: 'Kain Runtime',
+            summary: 'Runtime applet.',
+            source: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+            packageId: 'greeblefs.lattice.shell-control',
+            componentId: 'RuntimeStatusApplet',
+            mountId: 'applet:kain-runtime-status',
+            mountSlot: 'workbench.topbar.trailing',
+            order: 20,
+            hostModels: ['host.kainBridge'],
+            actions: ['kain.ui.reload'],
+            root: {
+              id: 'applet-root',
+              kind: 'applet',
+              layout: {},
+              props: {},
+              children: [
+                {
+                  id: 'indicator',
+                  kind: 'indicator',
+                  label: 'Kain',
+                  active: true,
+                  layout: {},
+                  props: {},
+                  children: [],
+                },
+              ],
+            },
+          },
+        ],
+        primitives: [],
+        tokens: [],
+        actions: [{ id: 'kain.ui.reload', label: 'Reload', command: 'tauron.kain.reload', status: 'wired' }],
+        consumers: [],
+      },
+      kainLatticeCatalog: {
+        schemaVersion: 1,
+        kind: 'greeblefs.lattice.catalog',
+        name: 'Kain Lattice',
+        source: 'src-kain/app/main.kn',
+        stdlib: 'src-kain/stdlib/greeblefs/lattice.kn',
+        packageRoot: 'src-kain/lattice',
+        summary: 'Catalog.',
+        analogy: {
+          reference: 'reference/plasma-desktop-master',
+          qmlLike: 'components',
+          nativeModelLike: 'host models',
+          packageLike: 'packages',
+        },
+        imports: [],
+        primitives: [],
+        hostObjects: [],
+        packages: [
+          {
+            id: 'greeblefs.lattice.shell-control',
+            kind: 'shell-package',
+            title: 'Shell Control',
+            summary: 'Reference package.',
+            packagePath: 'src-kain/lattice/greeblefs-shell-control',
+            entry: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+            metadata: 'lattice.toml',
+            imports: ['gfs.ui'],
+            surfaces: ['applet:kain-runtime-status'],
+            hostModels: ['host.profile'],
+            actions: ['settings.open'],
+            permissions: ['kain.reload'],
+            configSchema: {},
+          },
+        ],
+        milestones: [],
+        consumers: [],
+      },
+    });
+
+    const strip = document.querySelector('[data-kain-semantic-applet-strip]');
+    expect(strip).toHaveAttribute('data-kain-semantic-applet-count', '1');
+    expect(strip).toHaveAttribute('data-kain-semantic-applet-packages', 'greeblefs.lattice.shell-control');
+    expect(document.querySelector('[data-kain-semantic-surface="applet:kain-runtime-status"]')).not.toBeNull();
+  });
+
   it('treats empty windowed chrome as a native drag region without stealing control clicks', async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     const currentWindow = getCurrentWindow() as unknown as {

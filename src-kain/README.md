@@ -69,12 +69,21 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-ui-scaffold-proof`
 - `data-kain-ui-scaffold-surfaces`
 - `data-kain-ui-scaffold-primitives`
+- `data-kain-semantic-settings-modules`
+- `data-kain-semantic-topbar-applets`
 - `data-kain-lattice-proof`
 - `data-kain-lattice-packages`
 - `data-kain-lattice-host-objects`
 - `data-kain-ffi-proof`
 - `data-kain-ffi-lanes`
 - `data-kain-ffi-python`
+
+The workbench top bar also exposes the compact applet strip through:
+
+- `data-kain-semantic-applet-strip`
+- `data-kain-semantic-applet-slot`
+- `data-kain-semantic-applet-count`
+- `data-kain-semantic-applet-packages`
 
 If the Kain file changes while the app is already running, restart or reload the resident Tauron Kain runtime before judging the in-app proof. The old process can otherwise keep serving the previous `src-kain/app/main.kn` dispatch table.
 
@@ -108,12 +117,24 @@ First primitives:
 - `stack`
 - `section`
 - `row`
+- `action-strip`
+- `divider`
+- `key-value`
+- `notice`
 - `status-pill`
 - `text`
 - `button`
+- `toggle`
+- `select`
+- `slider`
 - `settings-module`
+- `shell-applet`
+- `applet`
+- `indicator`
+- `icon-button`
+- `mini-meter`
 
-`src/runtime/kainSemanticUiRuntime.ts` is now the small semantic registry between scaffold data and Lattice package metadata. `src/components/kain/KainSemanticSurfaceHost.tsx` is the reusable frontend mount point: it resolves a scaffold surface, associates it with a Lattice package, renders through `KainUiRenderer`, and handles trusted actions such as `kain.ui.reload`.
+`src/runtime/kainSemanticUiRuntime.ts` is now the small semantic registry between scaffold data and Lattice package metadata. It preserves deterministic ordering through `order`, filters mounts by `kind` and `mountSlot`, and keeps legacy lookup by `surfaceId`, `mountId`, or `packageId`. `src/components/kain/KainSemanticSurfaceHost.tsx` is the reusable frontend mount point: it resolves a scaffold surface, associates it with a Lattice package, renders through `KainUiRenderer`, and handles trusted actions such as `kain.ui.reload`.
 
 Keep this lane semantic, not JSX codegen. Kain should own structure, labels, layout intent, state, host-model declarations, and action ids. GreebleFS should own rendering, theme variables, trusted host actions, permissions, and fallbacks. Graduate one consumer at a time.
 
@@ -128,9 +149,13 @@ Current files:
 - `src-kain/stdlib/greeblefs/lattice.kn`
   Kain helper vocabulary for packages, components, properties, bindings, signals, actions, and permissions.
 - `src-kain/lattice/`
-  Future package root for Kain Lattice packages.
+  Package root for Kain Lattice packages.
 - `src-kain/lattice/greeblefs-shell-control/`
   First reference package for a KCM-style Settings module and shell-control applet lane.
+- `src-kain/lattice/greeblefs-panel-registry/`
+  First panel-registry package that mirrors built-in panel metadata as Lattice source.
+- `src/config/panelLatticeRegistry.ts`
+  TypeScript descriptor registry that makes built-in panel metadata/catalog/dock placement come from Lattice-shaped data before the renderers move.
 - `src/runtime/kainLatticeCatalog.ts`
   TypeScript normalization boundary for `greeblefs.lattice.catalog`.
 
@@ -145,7 +170,9 @@ Plasma-inspired mapping:
 
 This sits above the semantic UI scaffold. The scaffold defines renderable nodes; Lattice defines packages and live object contracts that can produce those nodes.
 
-The first live Lattice mount is `settings:kain-lattice-proof`. It is authored by `src-kain/app/main.kn` from the reference package shape in `src-kain/lattice/greeblefs-shell-control/main.kn`, normalized by `src/runtime/kainUiScaffold.ts`, mounted by `KainSemanticSurfaceHost`, and rendered in Settings > Kain UI without adding a custom React component for that module.
+The first live Lattice mounts are `settings:kain-lattice-proof` in `settings.kain-ui` and `applet:kain-runtime-status` in `workbench.topbar.trailing`. They are authored by `src-kain/app/main.kn` from the reference package shape in `src-kain/lattice/greeblefs-shell-control/main.kn`, normalized by `src/runtime/kainUiScaffold.ts`, selected by `src/runtime/kainSemanticUiRuntime.ts`, and rendered by reusable hosts without adding custom React components for those surfaces.
+
+The first production panel migration is `greeblefs.lattice.panel-registry`: `src/config/panelLatticeRegistry.ts` owns built-in panel labels, catalog descriptions, dock placement, IDE roles, icon slots, and Lattice component ids. `src/panels/panelRegistry.tsx` still owns trusted React renderers, but its built-in catalog now derives from the descriptor registry instead of hand-built catalog rows.
 
 ## What Is Possible Now
 
@@ -156,7 +183,7 @@ These are capability lanes Kain can grow into inside GreebleFS. Some are active 
 `src-kain/ffi/` is the monorepo-style home for Kain cross-language bridge lanes:
 
 - `python/`
-  Hooked to the existing `greeblefs-python-sidecar` through the Python sidecar action `kain.ffi.catalog`.
+  Hooked to the existing `greeblefs-python-sidecar` through `kain.ffi.catalog` and the live UI inventory action `kain.ffi.ui_inventory`.
 - `node/`
   Scaffold for Node/native npm package FFI.
 - `c-runtime/`
@@ -170,7 +197,9 @@ These are capability lanes Kain can grow into inside GreebleFS. Some are active 
 
 The app-level `greeblefs.ffi.catalog` dispatch advertises these lanes to the frontend and Settings > Kain UI. The root runnable reference is `src-kain/ffi/registry.kn`.
 
-The Python lane is intentionally first because Kain's Python bridge is already serious machinery, not just "run a script." The reference smokes in `D:/Kain-Lang/smoketest/python/{numpy_supernova,pygame_poster,trimesh_glb_forge}` show `std::python::bridge`, `std::python::numpy`, `std::python::pygame`, `std::python::trimesh`, and DCC image/tensor/mesh wrappers doing shared-array, image, tensor, point-cloud, and GLB-style work. GreebleFS should use that same lane for the upcoming TS frontend UI inventory analyzer.
+The Python lane is intentionally first because Kain's Python bridge is already serious machinery, not just "run a script." The reference smokes in `D:/Kain-Lang/smoketest/python/{numpy_supernova,pygame_poster,trimesh_glb_forge}` show `std::python::bridge`, `std::python::numpy`, `std::python::pygame`, `std::python::trimesh`, and DCC image/tensor/mesh wrappers doing shared-array, image, tensor, point-cloud, and GLB-style work.
+
+The first GreebleFS analysis worker is live at `src-kain/ffi/python/analysis/ui_inventory.py` and emits `greeblefs.ui.hardcoded-surface-map` for inline styles, colors, pixel values, icons, drag/drop, pointer, keyboard, context-menu, and global listener surfaces. `src-python/greeblefs_sidecar/actions.py:kain.ffi.ui_inventory` exposes it through the Python sidecar. `src-kain/ffi/python/examples/ui_inventory_bridge/smoke.kn` is runnable on the staged payload today; `bridge_example.kn` is the true `std::python::bridge` example for Python-enabled Kain builds.
 
 ## Control Plane Runtime
 
@@ -302,9 +331,9 @@ This is where Kain should reduce cross-domain slop: one orchestration source, ma
 
 ## First Next Passes
 
-- Turn `button` scaffold actions into a real Kain action dispatch path, starting with `kain.ui.reload`.
-- Render the first Kain Lattice package as a real KCM-style Settings module.
-- Move one small Settings sub-surface from React-authored JSX to Kain-authored semantic IR while keeping the same renderer primitive output.
+- Move Explorer interaction policy, drag/drop, and panel placement toward Lattice descriptors one compact surface at a time.
+- Move one small production Settings sub-surface from React-authored JSX to Kain-authored semantic IR while keeping the same trusted renderer primitive output.
+- Add reflected host models so read-only `toggle`, `select`, and `slider` primitives can graduate into permissioned writes.
 - Promote the `greeblefs-kain-control-plane` proof actions into a consumed generated-artifact lane.
 - Convert one proof artifact from `greeblefs.kain.manifest.generatedArtifacts` into a real generated plugin/action manifest loaded by the plugin system.
 - Replace the proof plugin/settings artifacts with one real GreebleFS plugin/action manifest and one real settings/profile artifact.

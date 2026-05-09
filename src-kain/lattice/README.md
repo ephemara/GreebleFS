@@ -34,19 +34,35 @@ This directory is the future authoring root for real packages:
 
 - `greeblefs-shell-control/`
   First reference package for a KCM-style Settings module and shell-control applet.
+- `greeblefs-panel-registry/`
+  First real conversion package for built-in shell panel metadata. Panel identity, dock defaults, navigation groups, catalog ordering, icon slots, and host-model tags now resolve through `src/config/panelLatticeRegistry.ts`; React still owns trusted renderer functions in `src/panels/panelRegistry.tsx`.
 
 This is not JSX generation. Kain owns the declarative object graph; GreebleFS owns trusted rendering, permissions, host execution, and fallbacks.
 
-## First Live Mount
+## First Live Mounts
 
-`settings:kain-lattice-proof` is the first hand-authored Lattice surface mounted by the frontend. It proves the intended path:
+`settings:kain-lattice-proof` and `applet:kain-runtime-status` are the first hand-authored Lattice surfaces mounted by the frontend. They prove the intended path:
 
 ```text
 src-kain/lattice/greeblefs-shell-control/main.kn
   -> greeblefs.ui.scaffold surface metadata
   -> src/runtime/kainSemanticUiRuntime.ts registry
   -> src/components/kain/KainSemanticSurfaceHost.tsx
+  -> src/components/kain/KainSemanticAppletStrip.tsx
   -> src/components/kain/KainUiRenderer.tsx
 ```
 
-The surface declares package id, component id, host models, and action ids as data. React does not know about the module beyond the reusable semantic host.
+The settings module mounts to `settings.kain-ui`; the compact runtime applet mounts to `workbench.topbar.trailing`. Each surface declares package id, component id, mount slot, order, host models, and action ids as data. React does not know about either surface beyond the reusable semantic hosts.
+
+## First Panel Migration
+
+`greeblefs.lattice.panel-registry` is the first shell-system migration. It intentionally does not generate panel JSX yet. The current contract is:
+
+```text
+src-kain/lattice/greeblefs-panel-registry/main.kn
+  -> src/config/panelLatticeRegistry.ts
+  -> src/panels/panelRegistry.tsx
+  -> IDE dock graph / classic panel catalog
+```
+
+Future passes should move panel interaction policy, native-window permissions, drag/drop rules, and renderer component contracts into the same descriptor package before replacing trusted React panel renderers.

@@ -8385,6 +8385,8 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     onToggleTopBarCustomize: handleToggleTopBarCustomize,
     topBarLayoutSnapshot: resolvedTopBarLayoutSnapshot,
     onCommitTopBarLayoutSnapshot: handleCommitTopBarLayoutSnapshot,
+    kainUiScaffold,
+    kainLatticeCatalog,
   };
   const chromeBar = (
     <WorkbenchTopBar {...commonWorkbenchTopBarProps} />

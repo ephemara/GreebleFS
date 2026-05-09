@@ -5,6 +5,10 @@ import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
 import type { KainFfiCatalog } from "@/runtime/kainFfiCatalog";
 import { KainSemanticSurfaceHost } from "@/components/kain/KainSemanticSurfaceHost";
 import {
+  buildKainSemanticUiRegistry,
+  selectKainSemanticUiMounts,
+} from "@/runtime/kainSemanticUiRuntime";
+import {
   SettingsActionButton,
   SettingsActionStrip,
   SettingsCatalogCard,
@@ -76,10 +80,20 @@ export function KainUiSettingsSection({
   const ffiAnalysisCount = ffiCatalog?.analysisPipelines.length ?? 0;
   const pythonFfiLane = ffiCatalog?.lanes.find((lane) => lane.id === "python") ?? null;
   const nextFfiLane = ffiCatalog?.lanes.find((lane) => !lane.implemented) ?? ffiCatalog?.lanes[0] ?? null;
-  const previewSurface = scaffold?.surfaces.find((surface) => surface.id === "settings:kain-lattice-proof")
+  const semanticRegistry = buildKainSemanticUiRegistry(scaffold, latticeCatalog);
+  const settingsModuleMounts = selectKainSemanticUiMounts(semanticRegistry, {
+    kind: "settings-module",
+    mountSlot: "settings.kain-ui",
+  });
+  const topBarAppletMounts = selectKainSemanticUiMounts(semanticRegistry, {
+    kind: "shell-applet",
+    mountSlot: "workbench.topbar.trailing",
+  });
+  const previewSurface = scaffold?.surfaces.find((surface) => surface.id === settingsModuleMounts[0]?.surfaceId)
+    ?? scaffold?.surfaces.find((surface) => surface.id === "settings:kain-lattice-proof")
     ?? scaffold?.surfaces[0]
     ?? null;
-  const semanticSurfaceCount = scaffold?.surfaces.filter((surface) => surface.packageId || surface.mountId).length ?? 0;
+  const semanticSurfaceCount = semanticRegistry.mounts.length;
   const nextPipeline = manifest?.pipelines.find((pipeline) => pipeline.status === "next")
     ?? manifest?.pipelines[0]
     ?? null;
@@ -104,6 +118,8 @@ export function KainUiSettingsSection({
       data-kain-authored-theme-selected={selectedAuthoredTheme?.compatibilityThemeId ?? "none"}
       data-kain-semantic-surface-count={semanticSurfaceCount}
       data-kain-semantic-preview-surface={previewSurface?.id ?? "none"}
+      data-kain-semantic-settings-modules={settingsModuleMounts.length}
+      data-kain-semantic-topbar-applets={topBarAppletMounts.length}
     >
       <SettingsSectionBlock
         title="Kain UI"
@@ -275,6 +291,11 @@ export function KainUiSettingsSection({
             title="Semantic Host"
             description={`${semanticSurfaceCount} Lattice-mounted surfaces can render through KainSemanticSurfaceHost`}
             control={<SettingsStatusPill active={semanticSurfaceCount > 0}>{semanticSurfaceCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Shell Applets"
+            description={`${topBarAppletMounts.length} Kain-authored applets target workbench.topbar.trailing`}
+            control={<SettingsStatusPill active={topBarAppletMounts.length > 0}>{topBarAppletMounts.length}</SettingsStatusPill>}
           />
         </SettingsRowGroup>
       </SettingsSectionBlock>

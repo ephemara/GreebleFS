@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-top-bars",
+  "name": "GreebleFS Core Top Bars",
+  "description": "Canonical shipped shell chrome presets that replace the old code-authored top bar catalog.",
+  "tags": [
+    "canonical",
+    "shipped",
+    "top-bars"
+  ],
+  "topBars": [
+    {
+      "id": "command-center",
+      "name": "Command Center",
+      "description": "The default shell workflow with launcher, tabs, and global utilities all in one chrome pass.",
+      "topBarStyle": "solid",
+      "navigationMode": "auto",
+      "tags": [
+        "default",
+        "balanced"
+      ]
+    },
+    {
+      "id": "floating-deck",
+      "name": "Floating Deck",
+      "description": "The classic shell workflow with a floating command deck silhouette.",
+      "topBarStyle": "floating",
+      "navigationMode": "auto",
+      "tags": [
+        "floating",
+        "shell"
+      ]
+    },
+    {
+      "id": "orbital-glass",
+      "name": "Orbital Glass",
+      "description": "Glass-heavy chrome that keeps the full launcher workflow but leans into a softer capsule tab strip.",
+      "topBarStyle": "glass",
+      "tabStyle": "capsule",
+      "navigationMode": "auto",
+      "tags": [
+        "glass",
+        "capsule"
+      ]
+    },
+    {
+      "id": "focus-strip",
+      "name": "Focus Strip",
+      "description": "A tighter, quieter top bar that keeps the explorer and command palette close without hauling every chrome control forward.",
+      "topBarStyle": "minimal",
+      "leadingControls": [
+        "layout-cycle",
+        "window-mode",
+        "overlay-anchor"
+      ],
+      "navigationShortcuts": [
+        "explorer-shortcut"
+      ],
+      "trailingControls": [
+        "command-palette",
+        "zen-mode",
+        "shortcut-badge",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "auto",
+      "tags": [
+        "minimal",
+        "focus"
+      ]
+    },
+    {
+      "id": "dock-control-strip",
+      "name": "Dock Control Strip",
+      "description": "Dock-optimized chrome with placement switching, compact settings, shell controls, and Explorer access kept close.",
+      "topBarStyle": "minimal",
+      "leadingControls": [
+        "window-mode",
+        "dock-placement",
+        "surface-controls"
+      ],
+      "navigationShortcuts": [
+        "explorer-shortcut",
+        "settings-shortcut"
+      ],
+      "trailingControls": [
+        "layout-cycle",
+        "command-palette",
+        "zen-mode",
+        "shortcut-badge",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "summary",
+      "tags": [
+        "dock",
+        "floating",
+        "settings"
+      ]
+    },
+    {
+      "id": "dock-ox-strip",
+      "name": "Dock Ox Strip",
+      "description": "A dock-only segmented strip that keeps panel switching compact while leaving the explorer as the dominant surface.",
+      "topBarStyle": "minimal",
+      "tabStyle": "segment",
+      "leadingControls": [
+        "window-mode",
+        "dock-placement",
+        "surface-controls"
+      ],
+      "navigationShortcuts": [],
+      "trailingControls": [
+        "command-palette",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "auto",
+      "tags": [
+        "dock",
+        "compact",
+        "explorer-first"
+      ]
+    },
+    {
+      "id": "launcher-rack",
+      "name": "Launcher Rack",
+      "description": "A launcher-first strip that turns the middle lane into a status surface instead of a tab strip.",
+      "topBarStyle": "floating",
+      "leadingControls": [
+        "surface-controls",
+        "command-palette",
+        "layout-cycle"
+      ],
+      "navigationShortcuts": [
+        "settings-shortcut",
+        "explorer-shortcut"
+      ],
+      "trailingControls": [
+        "window-mode",
+        "overlay-anchor",
+        "mobile-share",
+        "zen-mode",
+        "shortcut-badge",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "summary",
+      "tags": [
+        "launcher",
+        "summary"
+      ]
+    }
+  ]
+}

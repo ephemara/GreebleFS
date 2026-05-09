@@ -12,6 +12,6 @@ This folder is intentionally shaped like a tiny monorepo:
 - `tauri-view/` owns webview/Tauron bridge view orchestration.
 - `spirv/` owns shader and GPU artifact lanes.
 
-The first concrete hook is Python: the existing GreebleFS Python sidecar now advertises a `kain.ffi.catalog` action, and Kain advertises that bridge through `greeblefs.ffi.catalog`.
+The first concrete hook is Python: the existing GreebleFS Python sidecar now advertises `kain.ffi.catalog` and `kain.ffi.ui_inventory`, and Kain advertises that bridge through `greeblefs.ffi.catalog`.
 
-Future TS frontend analysis should enter through `python/analysis/` and be called from Kain as a Python FFI pipeline, not as a random one-off script.
+TS frontend analysis now enters through `python/analysis/ui_inventory.py` and has a repo-local Kain bridge example at `python/examples/ui_inventory_bridge/bridge_example.kn`. Future analyzers should follow the same shape: `.kn` orchestration using `std::python::bridge`, Python worker module for dependency-heavy analysis, structured output report.

@@ -1,0 +1,12 @@
+fn main() -> Any:
+    let example = json_object_new()
+    json_object_set(example, "schemaVersion", 1)
+    json_object_set(example, "kind", "greeblefs.kain.python-ffi.example")
+    json_object_set(example, "id", "ui-inventory-bridge")
+    json_object_set(example, "source", "src-kain/ffi/python/examples/ui_inventory_bridge/smoke.kn")
+    json_object_set(example, "bridgeExample", "src-kain/ffi/python/examples/ui_inventory_bridge/bridge_example.kn")
+    json_object_set(example, "worker", "src-kain/ffi/python/analysis/ui_inventory.py")
+    json_object_set(example, "sidecarActionId", "kain.ffi.ui_inventory")
+    json_object_set(example, "status", "sidecar-live-python-bridge-reference")
+    json_object_set(example, "summary", "Runnable catalog smoke for the GreebleFS UI inventory bridge. bridge_example.kn keeps the std::python::bridge pattern for Python-enabled Kain runtimes.")
+    return example

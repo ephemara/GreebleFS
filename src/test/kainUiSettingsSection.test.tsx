@@ -149,6 +149,8 @@ const scaffold: KainUiScaffold = {
       packageId: 'greeblefs.lattice.shell-control',
       componentId: 'ShellControlModule',
       mountId: 'settings:kain-lattice-proof',
+      mountSlot: 'settings.kain-ui',
+      order: 10,
       hostModels: ['host.kainBridge'],
       actions: ['kain.ui.reload'],
       root: {
@@ -190,10 +192,32 @@ const scaffold: KainUiScaffold = {
         ],
       },
     },
+    {
+      id: 'applet:kain-runtime-status',
+      kind: 'shell-applet',
+      title: 'Kain Runtime',
+      summary: 'Compact applet.',
+      source: 'src-kain/lattice/greeblefs-shell-control/main.kn',
+      packageId: 'greeblefs.lattice.shell-control',
+      componentId: 'RuntimeStatusApplet',
+      mountId: 'applet:kain-runtime-status',
+      mountSlot: 'workbench.topbar.trailing',
+      order: 20,
+      hostModels: ['host.kainBridge'],
+      actions: ['kain.ui.reload'],
+      root: {
+        id: 'applet.kain-runtime.root',
+        kind: 'applet',
+        layout: {},
+        props: {},
+        children: [],
+      },
+    },
   ],
   primitives: [
     { kind: 'section', mapsTo: 'SettingsSectionBlock', status: 'wired' },
     { kind: 'row', mapsTo: 'SettingsRow', status: 'wired' },
+    { kind: 'shell-applet', mapsTo: 'KainSemanticAppletStrip', status: 'wired' },
   ],
   tokens: [
     {
@@ -241,14 +265,14 @@ const latticeCatalog: KainLatticeCatalog = {
   packages: [
     {
       id: 'greeblefs.lattice.shell-control',
-      kind: 'settings-module',
+      kind: 'shell-package',
       title: 'Shell Control',
       summary: 'Reference Kain Lattice package.',
       packagePath: 'src-kain/lattice/greeblefs-shell-control',
       entry: 'src-kain/lattice/greeblefs-shell-control/main.kn',
       metadata: 'src-kain/lattice/greeblefs-shell-control/lattice.toml',
       imports: ['gfs.shell'],
-      surfaces: ['settings:kain-lattice-proof'],
+      surfaces: ['settings:kain-lattice-proof', 'applet:kain-runtime-status'],
       hostModels: ['host.kainBridge'],
       actions: ['kain.ui.reload'],
       permissions: ['kain.reload'],
@@ -257,7 +281,8 @@ const latticeCatalog: KainLatticeCatalog = {
   ],
   milestones: [
     { id: 'lattice.catalog', label: 'Catalog', summary: 'Expose the catalog.', status: 'live' },
-    { id: 'lattice.settings-module', label: 'Settings Module', summary: 'Render one KCM-style module.', status: 'next' },
+    { id: 'lattice.settings-module', label: 'Settings Module', summary: 'Render one KCM-style module.', status: 'live' },
+    { id: 'lattice.applet', label: 'Applet', summary: 'Render one shell applet.', status: 'live' },
   ],
   consumers: ['src/runtime/kainLatticeCatalog.ts'],
 };
@@ -325,8 +350,8 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-manifest-kind', 'greeblefs.kain.manifest');
     expect(proof).toHaveAttribute('data-kain-manifest-capabilities', '2');
     expect(proof).toHaveAttribute('data-kain-ui-scaffold-proof', 'live');
-    expect(proof).toHaveAttribute('data-kain-ui-scaffold-surfaces', '1');
-    expect(proof).toHaveAttribute('data-kain-ui-scaffold-primitives', '2');
+    expect(proof).toHaveAttribute('data-kain-ui-scaffold-surfaces', '2');
+    expect(proof).toHaveAttribute('data-kain-ui-scaffold-primitives', '3');
     expect(proof).toHaveAttribute('data-kain-lattice-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-lattice-packages', '1');
     expect(proof).toHaveAttribute('data-kain-lattice-host-objects', '1');
@@ -335,8 +360,10 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-ffi-python', 'sidecar-hooked');
     expect(proof).toHaveAttribute('data-kain-authored-theme-count', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-selected', 'none');
-    expect(proof).toHaveAttribute('data-kain-semantic-surface-count', '1');
+    expect(proof).toHaveAttribute('data-kain-semantic-surface-count', '2');
     expect(proof).toHaveAttribute('data-kain-semantic-preview-surface', 'settings:kain-lattice-proof');
+    expect(proof).toHaveAttribute('data-kain-semantic-settings-modules', '1');
+    expect(proof).toHaveAttribute('data-kain-semantic-topbar-applets', '1');
     expect(container.querySelector('[data-kain-semantic-surface-host]')).toHaveAttribute('data-kain-semantic-package', 'greeblefs.lattice.shell-control');
     expect(screen.getByText('Kain Manifest')).toBeInTheDocument();
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
@@ -348,6 +375,7 @@ describe('KainUiSettingsSection', () => {
     expect(screen.getByText(/Kain-owned cross-language bridge map/)).toBeInTheDocument();
     expect(screen.getAllByText('Lattice Shell Control').length).toBeGreaterThan(0);
     expect(screen.getByText('Semantic Host')).toBeInTheDocument();
+    expect(screen.getByText('Shell Applets')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
     expect(screen.getAllByText(/Node FFI/).length).toBeGreaterThan(0);
 
