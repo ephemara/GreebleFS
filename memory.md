@@ -18,6 +18,24 @@
   - Passed: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`.
   - Repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on existing baseline issues in unrelated App/listener, Explorer, image cutout, vendor TipTap, mobile, and test fixture files; the Kain plugin prop-threading error was fixed.
 
+# 2026-05-10 - Smart Compact Settings Section System
+
+- Continued the Settings debloat pass by moving the remaining heavy tabs onto shared compact section primitives.
+  - `SettingsPrimitives.tsx` now owns a smarter row/page grammar: `SettingsSectionScaffold`, `SettingsMetricStrip`, `SettingsControlRow`, `SettingsInlineNotice`, and `SettingsCompactPath` sit beside the existing compact actions/selects/sections.
+  - `SystemSettingsSection.tsx`, `ProfilesSettingsSection.tsx`, `AppearanceSettingsSection.tsx`, and `IconSettingsSection.tsx` now consume that grammar instead of hand-building large option-card clusters and repeated local button chrome.
+  - The old inline Models tab was extracted from `SettingsPage.tsx` into `src/components/settings/sections/ModelsSettingsSection.tsx`, so model cache/routing/semantic override layout can evolve without expanding the core settings orchestrator.
+  - A dead commented copy of the old System tab was removed from `SettingsPage.tsx`; the page is still large, but this pass cut a large amount of inert settings JSX.
+- Durable design rule:
+  - New or migrated Settings tabs should start from `SettingsSectionScaffold` plus `SettingsCompactSection`/`SettingsControlRow`/`SettingsMetricStrip`. Use selects for mode choice, icon buttons for repeated actions, `InfoBubble` for extra context, and inline notices only for current state/errors.
+  - Do not add another substantial `activeSection === ...` inline body to `SettingsPage.tsx`. Put the body under `src/components/settings/sections/` and pass only the runtime state/actions it needs.
+  - Keep expressive catalog previews, but put mode/routing/config controls in dense rows rather than standalone card grids.
+- Validation:
+  - Passed: `bunx vitest run src/test/profilesSettingsSection.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: focused `src/test/settingsPage.behavior.test.tsx` plugin/profile settings slice.
+  - Passed: `bunx vitest run src/test/settingsPage.shaders.test.tsx src/test/settingsRailOverflow.test.tsx --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript sweep reported no Settings diagnostics; repo-wide `tsc` still exits nonzero on existing baseline errors outside this pass.
+  - Native MCP screenshot was captured, but live DOM proof was limited because the dev bridge attached through the browser fallback after HMR while the real WebView remained native-only.
+
 # 2026-05-10 - Bevy Wasm Workbench Cargo Cache Hardening
 
 - Hardened the Rust/Wasm runtime pipeline for the Bevy 3D model workbench after Windows build errors showed Cargo fighting locked files in `runtimes/bevy-model3d-viewer/target`.

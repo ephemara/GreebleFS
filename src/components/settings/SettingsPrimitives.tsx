@@ -220,6 +220,7 @@ export function InfoBubble({
 }
 
 type SettingsSurfaceTone = 'default' | 'muted' | 'accent';
+type SettingsNoticeTone = 'info' | 'success' | 'warning' | 'danger' | 'muted';
 
 function resolveSettingsSurfaceStyle(
   tone: SettingsSurfaceTone,
@@ -361,6 +362,42 @@ export function SettingsSectionBlock({
         children
       )}
     </div>
+  );
+}
+
+export function SettingsSectionScaffold({
+  sectionKey,
+  icon,
+  title,
+  subtitle,
+  badges,
+  actions,
+  children,
+  className = '',
+}: {
+  sectionKey: string;
+  icon: ReactNode;
+  title: string;
+  subtitle: ReactNode;
+  badges?: string[];
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`min-w-0 space-y-2.5 ${className}`.trim()}
+      data-settings-section={sectionKey}
+    >
+      <SettingsSectionHeader
+        icon={icon}
+        title={title}
+        subtitle={subtitle}
+        badges={badges}
+        actions={actions}
+      />
+      {children}
+    </section>
   );
 }
 
@@ -562,6 +599,69 @@ export function SettingsCompactSection({
   );
 }
 
+function resolveSettingsNoticeStyle(tone: SettingsNoticeTone): CSSProperties {
+  if (tone === 'success') {
+    return {
+      borderColor: 'var(--overlay-success)',
+      background: 'var(--overlay-bg-success)',
+      color: 'var(--overlay-success-text)',
+    };
+  }
+
+  if (tone === 'warning') {
+    return {
+      borderColor: 'var(--overlay-warning)',
+      background: 'var(--overlay-bg-warning)',
+      color: 'var(--overlay-warning-text)',
+    };
+  }
+
+  if (tone === 'danger') {
+    return {
+      borderColor: 'var(--overlay-danger)',
+      background: 'var(--overlay-bg-danger)',
+      color: 'var(--overlay-danger-text)',
+    };
+  }
+
+  if (tone === 'info') {
+    return {
+      borderColor: 'var(--overlay-accent)',
+      background: 'var(--overlay-workbench-chrome-button-active-bg)',
+      color: 'var(--overlay-text-primary)',
+    };
+  }
+
+  return {
+    borderColor: 'var(--overlay-workbench-settings-card-border)',
+    background: 'var(--overlay-workbench-settings-badge-bg)',
+    color: 'var(--overlay-text-primary)',
+  };
+}
+
+export function SettingsInlineNotice({
+  children,
+  tone = 'muted',
+  action,
+  className = '',
+}: {
+  children: ReactNode;
+  tone?: SettingsNoticeTone;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`flex min-h-8 min-w-0 items-center justify-between gap-3 rounded border px-3 py-1.5 text-[11px] ${className}`.trim()}
+      data-settings-inline-notice={tone}
+      style={resolveSettingsNoticeStyle(tone)}
+    >
+      <div className="min-w-0 truncate opacity-80">{children}</div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
 export function SettingsKeyValueRow({
   label,
   value,
@@ -581,6 +681,89 @@ export function SettingsKeyValueRow({
       <div className="min-w-0 truncate opacity-80">{value}</div>
       {action ? <div className="shrink-0">{action}</div> : <div />}
     </div>
+  );
+}
+
+export function SettingsControlRow({
+  label,
+  detail,
+  control,
+  action,
+}: {
+  label: ReactNode;
+  detail?: ReactNode;
+  control: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div
+      className="grid min-h-9 grid-cols-[minmax(120px,0.36fr)_minmax(0,1fr)_auto] items-center gap-3 border-t px-3 py-1.5 text-[11px] first:border-t-0"
+      data-settings-control-row="true"
+      style={{ borderColor: 'var(--overlay-workbench-settings-card-border)' }}
+    >
+      <div className="min-w-0">
+        <div className="truncate font-semibold uppercase opacity-65">{label}</div>
+        {detail ? <div className="truncate text-[10px] opacity-45">{detail}</div> : null}
+      </div>
+      <div className="min-w-0">{control}</div>
+      {action ? <div className="shrink-0">{action}</div> : <div />}
+    </div>
+  );
+}
+
+export function SettingsMetricStrip({
+  items,
+  className = '',
+}: {
+  items: Array<{
+    id: string;
+    label: ReactNode;
+    value: ReactNode;
+    tone?: 'default' | 'accent';
+  }>;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`grid min-w-0 grid-cols-1 overflow-hidden rounded border sm:grid-cols-2 xl:grid-cols-3 ${className}`.trim()}
+      data-settings-metric-strip="true"
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-card-border)',
+        background: 'var(--overlay-workbench-settings-card-bg)',
+      }}
+    >
+      {items.map((item, index) => (
+        <div
+          key={item.id}
+          className={`min-w-0 px-3 py-2 ${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} sm:[&:nth-child(2n+1)]:border-l-0 sm:[&:nth-child(n+3)]:border-t xl:[&:nth-child(n)]:border-l xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(n+4)]:border-t`}
+          style={{
+            borderColor: 'var(--overlay-workbench-settings-card-border)',
+            background: item.tone === 'accent' ? 'var(--overlay-workbench-chrome-button-active-bg)' : undefined,
+          }}
+        >
+          <div className="truncate text-[9px] font-semibold uppercase opacity-50">{item.label}</div>
+          <div className="mt-0.5 truncate text-[11px] font-semibold opacity-85">{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SettingsCompactPath({
+  value,
+  title,
+}: {
+  value: ReactNode;
+  title?: string;
+}) {
+  return (
+    <span
+      className="block min-w-0 truncate"
+      title={title}
+      style={{ fontFamily: 'var(--overlay-font-mono)' }}
+    >
+      {value}
+    </span>
   );
 }
 

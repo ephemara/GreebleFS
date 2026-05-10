@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Download, Loader2, Settings2 } from '@/components/AppIcons';
+import { Download, Loader2, RefreshCw, Settings2, Trash2 } from '@/components/AppIcons';
 import type {
   AccelerationRuntimeStatusSnapshot,
   GpuRuntimeStatusSnapshot,
@@ -17,11 +17,17 @@ import type { GpuRuntimeTierOption } from '../../../config/gpuRuntime';
 import { formatHotkeyLabel } from '../../../config/hotkeys';
 import { getRuntimeToolchainStatus } from '../../../runtime/externalRuntimeBackend';
 import {
-  SettingsActionStrip,
+  SettingsCompactActionButton,
+  SettingsCompactPath,
+  SettingsCompactSection,
+  SettingsControlRow,
+  SettingsIconActionButton,
+  SettingsInlineNotice,
+  SettingsMetricStrip,
   SettingsRow,
   SettingsRowGroup,
-  SettingsSectionBlock,
-  SettingsSectionHeader,
+  SettingsSectionScaffold,
+  SettingsSelect,
   ThemeBadge,
 } from '../SettingsPrimitives';
 
@@ -246,16 +252,115 @@ export function SystemSettingsSection({
     return parts.slice(Math.max(0, parts.length - 4)).join('/');
   };
 
+  const compactSelectStyle: CSSProperties = {
+    ...settingsSelectStyle,
+    borderColor: border,
+    color: text,
+  };
+  const compactFieldStyle: CSSProperties = {
+    ...settingsFieldStyle,
+    borderColor: border,
+    color: text,
+  };
+  const borderTopStyle: CSSProperties = { borderColor: border };
+  const rowGroupFlatStyle: CSSProperties = {
+    borderWidth: 0,
+    background: 'transparent',
+  };
+  const mutedTextStyle: CSSProperties = { color: muted };
+  const trayLabel = platform === 'macos' ? 'Menu Bar' : 'Tray';
+  const taskbarLabel = platform === 'macos' ? 'Dock' : 'Taskbar';
+  const recoveryTargetLabel =
+    systemPresentationState.recoveryPath === 'tray'
+      ? platform === 'macos'
+        ? 'Dock'
+        : 'tray'
+      : platform === 'macos'
+        ? 'Dock'
+        : 'taskbar';
+  const selectedGpuTierOption = gpuRuntimeTierOptions.find(option => option.id === gpuTierMode);
+  const selectedAccelerationRoutingOption = accelerationRoutingModeOptions.find(option => option.id === accelerationRoutingMode);
+  const telemetryConfigEnabled =
+    telemetryStatus?.config.developer_telemetry_enabled
+    || telemetryStatus?.config.consumer_diagnostics_enabled
+    || developerTelemetryEnabled
+    || consumerDiagnosticsEnabled;
+  const startupStatusSummary = startupSyncPending
+    ? 'Syncing OS startup registration'
+    : startupSyncError
+      ? `Startup registration failed: ${startupSyncError}`
+      : `startup ${launchAtStartup ? 'on' : 'off'} · mobile ${startMobileShareOnBoot ? 'on' : 'off'} · ${trayLabel.toLowerCase()} ${systemPresentationState.trayVisible ? 'on' : 'off'} · ${taskbarLabel.toLowerCase()} ${systemPresentationState.taskbarVisible ? 'on' : 'off'} · recovery ${recoveryTargetLabel} · dev ${developerMode ? 'on' : 'off'} · telemetry ${developerTelemetryEnabled ? 'on' : 'off'} · source trace ${sourceTraceModeEnabled ? 'on' : 'off'} · diagnostics ${consumerDiagnosticsEnabled ? 'on' : 'off'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`;
+  const telemetrySessionSummary = telemetryStatusPending
+    ? 'Refreshing'
+    : telemetryStatusError
+      ? `Unavailable: ${telemetryStatusError}`
+      : telemetryStatus == null
+        ? 'No session'
+        : `${telemetryConfigEnabled ? 'enabled' : 'idle'} · ${telemetryStatus.recent_record_count} records · ${telemetryStatus.session_id}`;
+  const gpuRuntimeSummary =
+    `${gpuRuntimeSnapshot.adapterName ?? 'adapter n/a'} · ${gpuRuntimeSnapshot.backendName ?? 'backend n/a'} · ${gpuRuntimeSnapshot.computeAvailable ? 'compute ready' : 'compute unavailable'}`;
+  const accelerationInstallNotice = accelerationInstallRecommended
+    ? 'Blank runtime detected. Queue managed packages from Terminal.'
+    : 'Install follows the selected routing mode.';
+
   return (
-    <section className="space-y-4" data-settings-section="system">
-      <SettingsSectionHeader
-        icon={<Settings2 size={12} />}
-        title="System"
-        subtitle="Machine-level startup behavior and OS integration state."
+    <SettingsSectionScaffold
+      sectionKey="system"
+      className="space-y-2.5"
+      icon={<Settings2 size={12} />}
+      title="System"
+      subtitle="Startup, runtime routing, telemetry."
+      badges={[platform, gpuTierLabel]}
+    >
+      <SettingsMetricStrip
+        items={[
+          {
+            id: 'startup',
+            label: 'Startup',
+            value: launchAtStartup ? 'enabled' : 'disabled',
+            tone: launchAtStartup ? 'accent' : 'default',
+          },
+          {
+            id: 'mobile',
+            label: 'Mobile Share',
+            value: startMobileShareOnBoot ? 'boot' : 'manual',
+            tone: startMobileShareOnBoot ? 'accent' : 'default',
+          },
+          {
+            id: 'presentation',
+            label: `${trayLabel} / ${taskbarLabel}`,
+            value: `${systemPresentationState.trayVisible ? 'tray on' : 'tray off'} · ${systemPresentationState.taskbarVisible ? 'bar on' : 'bar off'}`,
+          },
+          {
+            id: 'gpu',
+            label: 'GPU',
+            value: gpuTierLabel,
+            tone: gpuRuntimeSnapshot.computeAvailable ? 'accent' : 'default',
+          },
+          {
+            id: 'acceleration',
+            label: 'Routing',
+            value: selectedAccelerationRoutingOption?.label ?? accelerationRoutingMode,
+            tone: accelerationRuntimeSnapshot.providers.some(provider => provider.ready) ? 'accent' : 'default',
+          },
+          {
+            id: 'telemetry',
+            label: 'Telemetry',
+            value: telemetryConfigEnabled ? 'active' : 'quiet',
+            tone: telemetryConfigEnabled ? 'accent' : 'default',
+          },
+        ]}
       />
 
-      <div className="space-y-3">
-        <SettingsRowGroup>
+      <SettingsInlineNotice tone={startupSyncError ? 'danger' : startupSyncPending ? 'warning' : 'muted'}>
+        {startupStatusSummary}
+      </SettingsInlineNotice>
+
+      <SettingsCompactSection
+        title="Startup + Shell"
+        subtitle={`${trayLabel} ${systemPresentationState.trayVisible ? 'on' : 'off'} · ${taskbarLabel} ${systemPresentationState.taskbarVisible ? 'on' : 'off'} · recovery ${recoveryTargetLabel}`}
+      >
+        <SettingsRowGroup className="rounded-none" style={rowGroupFlatStyle}>
           <SettingsRow
             title="Launch At Startup"
             description="Registers GreebleFS as a login item so the tray and overlay are available after sign-in."
@@ -302,241 +407,196 @@ export function SystemSettingsSection({
             )}
           />
         </SettingsRowGroup>
+      </SettingsCompactSection>
 
-        <SettingsSectionBlock
-          title="GPU Runtime"
-          subtitle="Controls the native wgpu offload lane used for image thumbnails, image preview rendering, and audio analysis. Safe forces CPU fallback."
-          tone="muted"
-          badges={[gpuTierLabel]}
-        >
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-            {gpuRuntimeTierOptions.map(option => {
-              const selected = option.id === gpuTierMode;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onUpdateSystem({ gpuTierMode: option.id })}
-                  className="rounded px-3 py-3 text-left transition-colors"
-                  style={{
-                    border: `1px solid ${selected ? accent : border}`,
-                    background: selected ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                    color: text,
-                  }}
-                >
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{option.label}</div>
-                  <p className="mt-2 text-[11px] leading-4 opacity-65">{option.description}</p>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
-            {gpuRuntimeDiagnosticsSummary}
-          </div>
-          <div className="mt-2 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}>
-            {gpuRuntimeFeedStatus}
-          </div>
-          {gpuRuntimeSnapshot.workloads.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {gpuRuntimeSnapshot.workloads.map(workload => (
-                <ThemeBadge
-                  key={workload.workloadId}
-                  label={`${workload.label} · ${workload.ready ? 'GPU ready' : 'CPU fallback'} · exec ${workload.executions} · fallback ${workload.fallbackCount}`}
-                />
+      <SettingsCompactSection
+        title="GPU Runtime"
+        subtitle={gpuRuntimeDiagnosticsSummary}
+        actions={<ThemeBadge label={gpuTierLabel} active={gpuRuntimeSnapshot.computeAvailable} />}
+      >
+        <SettingsControlRow
+          label="Mode"
+          detail={selectedGpuTierOption?.description ?? gpuTierLabel}
+          control={(
+            <SettingsSelect
+              aria-label="GPU Runtime Mode"
+              value={gpuTierMode}
+              onChange={event => onUpdateSystem({ gpuTierMode: event.target.value })}
+              className="w-full max-w-xs"
+              style={compactSelectStyle}
+            >
+              {gpuRuntimeTierOptions.map(option => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
               ))}
-            </div>
-          ) : null}
-        </SettingsSectionBlock>
-
-        <SettingsSectionBlock
-          title="Acceleration Pipeline"
-          subtitle="Cross-provider routing for CPU fallback, native wgpu, and the Python-sidecar CUDA / AI lane."
-          tone="muted"
-          actions={(
-            <SettingsActionStrip>
-              <button
-                type="button"
-                onClick={() => void onProbeAccelerationPipeline()}
-                disabled={accelerationProbePending}
-                className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                style={{
-                  borderColor: accelerationProbePending ? border : accent,
-                  background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
-                  color: text,
-                  opacity: accelerationProbePending ? 0.7 : 1,
-                }}
-              >
-                {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void onQueueAccelerationInstall()}
-                disabled={accelerationInstallPending || !accelerationAutoInstallPlanAvailable}
-                className="inline-flex items-center gap-1.5 rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                style={{
-                  borderColor: accelerationInstallPending || !accelerationAutoInstallPlanAvailable ? border : accent,
-                  background: accelerationInstallPending || !accelerationAutoInstallPlanAvailable ? 'rgba(255,255,255,0.03)' : `${accent}14`,
-                  color: text,
-                  opacity: accelerationInstallPending || !accelerationAutoInstallPlanAvailable ? 0.7 : 1,
-                }}
-              >
-                {accelerationInstallPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-                {accelerationInstallPending ? 'Opening Terminal…' : accelerationInstallButtonLabel}
-              </button>
-            </SettingsActionStrip>
+            </SettingsSelect>
           )}
+        />
+        <SettingsInlineNotice
+          tone={gpuRuntimeSnapshot.computeAvailable ? 'success' : 'muted'}
+          className="mx-3 my-2"
         >
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-            {accelerationRoutingModeOptions.map(option => {
-              const active = accelerationRoutingMode === option.id;
+          {gpuRuntimeFeedStatus}
+        </SettingsInlineNotice>
+        {gpuRuntimeSnapshot.workloads.length > 0 ? (
+          <div className="flex min-w-0 flex-wrap gap-1.5 border-t px-3 py-2" style={borderTopStyle}>
+            {gpuRuntimeSnapshot.workloads.map(workload => (
+              <ThemeBadge
+                key={workload.workloadId}
+                label={`${workload.label} · ${workload.ready ? 'GPU ready' : 'CPU fallback'} · exec ${workload.executions} · fallback ${workload.fallbackCount}`}
+                active={workload.ready}
+              />
+            ))}
+          </div>
+        ) : null}
+      </SettingsCompactSection>
+
+      <SettingsCompactSection
+        title="Acceleration"
+        subtitle={accelerationProviderSummary}
+        actions={(
+          <>
+            <SettingsIconActionButton
+              aria-label="Probe CUDA / AI"
+              title="Probe CUDA / AI"
+              onClick={() => void onProbeAccelerationPipeline()}
+              disabled={accelerationProbePending}
+              active={accelerationProbePending}
+              accent={accent}
+            >
+              {accelerationProbePending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            </SettingsIconActionButton>
+            <SettingsCompactActionButton
+              onClick={() => void onQueueAccelerationInstall()}
+              disabled={accelerationInstallPending || !accelerationAutoInstallPlanAvailable}
+              active={accelerationInstallRecommended}
+              accent={accent}
+              title={accelerationInstallButtonLabel}
+            >
+              {accelerationInstallPending ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              <span className="truncate">
+                {accelerationInstallPending ? 'Opening' : accelerationInstallButtonLabel}
+              </span>
+            </SettingsCompactActionButton>
+          </>
+        )}
+      >
+        <SettingsControlRow
+          label="Routing"
+          detail={selectedAccelerationRoutingOption?.description ?? accelerationPipelineStatus}
+          control={(
+            <SettingsSelect
+              aria-label="Acceleration Routing Mode"
+              value={accelerationRoutingMode}
+              onChange={event => onUpdateSystem({ accelerationRoutingMode: event.target.value })}
+              className="w-full max-w-xs"
+              style={compactSelectStyle}
+            >
+              {accelerationRoutingModeOptions.map(option => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </SettingsSelect>
+          )}
+        />
+        <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+          {accelerationPipelineStatus}
+        </SettingsInlineNotice>
+        <SettingsInlineNotice
+          tone={accelerationInstallRecommended ? 'warning' : 'muted'}
+          className="mx-3 my-2"
+        >
+          {accelerationInstallNotice}
+        </SettingsInlineNotice>
+
+        {accelerationRuntimeSnapshot.providers.length > 0 ? (
+          <>
+            <div className="border-t px-3 py-1.5 text-[9px] font-semibold uppercase opacity-50" style={borderTopStyle}>
+              Providers
+            </div>
+            {accelerationRuntimeSnapshot.providers.map(provider => {
+              const status = provider.ready
+                ? 'Ready'
+                : provider.available
+                  ? 'Detected'
+                  : 'Unavailable';
               return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onUpdateSystem({ accelerationRoutingMode: option.id })}
-                  className="rounded px-3 py-3 text-left transition-colors"
-                  style={{
-                    border: `1px solid ${active ? accent : border}`,
-                    background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                    color: text,
-                  }}
-                >
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">{option.label}</div>
-                  <p className="mt-2 text-[11px] leading-4 opacity-65">{option.description}</p>
-                </button>
+                <SettingsControlRow
+                  key={provider.providerKind}
+                  label={provider.label}
+                  detail={provider.detail}
+                  control={<ThemeBadge label={status} active={provider.ready} />}
+                  action={provider.supportedWorkloadIds.length > 0 ? (
+                    <ThemeBadge label={`${provider.supportedWorkloadIds.length} workloads`} />
+                  ) : undefined}
+                />
               );
             })}
-          </div>
+          </>
+        ) : null}
 
-          <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
-            {accelerationProviderSummary}
-          </div>
-          <div className="mt-2 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}>
-            {accelerationPipelineStatus}
-          </div>
-          <div className="mt-2 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
-            {accelerationInstallRecommended
-              ? 'Blank runtime detected. Use Download to queue the recommended managed packages in Terminal.'
-              : 'Download uses the current routing mode. Keep routing on Auto or CPU fallback if you do not want CUDA packages.'}
-          </div>
-
-          {accelerationRuntimeSnapshot.providers.length > 0 ? (
-            <div className="mt-3">
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                Detected Providers
-              </div>
-              <SettingsRowGroup>
-                {accelerationRuntimeSnapshot.providers.map(provider => {
-                  const status = provider.ready
-                    ? 'Ready'
-                    : provider.available
-                      ? 'Detected'
-                      : 'Unavailable';
-                  return (
-                    <SettingsRow
-                      key={provider.providerKind}
-                      title={provider.label}
-                      description={(
-                        <>
-                          {provider.detail}
-                          {provider.supportedWorkloadIds.length > 0 ? (
-                            <span className="block opacity-65">
-                              Workloads: {provider.supportedWorkloadIds.join(' · ')}
-                            </span>
-                          ) : null}
-                        </>
-                      )}
-                      control={(
-                        <span
-                          className="inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                          style={{
-                            borderColor: provider.ready ? `${accent}88` : border,
-                            background: provider.ready ? `${accent}1f` : 'rgba(255,255,255,0.04)',
-                            color: text,
-                            opacity: provider.available ? 1 : 0.55,
-                          }}
-                        >
-                          {status}
-                        </span>
-                      )}
-                    />
-                  );
-                })}
-              </SettingsRowGroup>
+        {accelerationWorkloadRoutes.length > 0 ? (
+          <>
+            <div className="border-t px-3 py-1.5 text-[9px] font-semibold uppercase opacity-50" style={borderTopStyle}>
+              Workloads
             </div>
-          ) : null}
+            {accelerationWorkloadRoutes.map(route => {
+              const status = route.resolution.ready
+                ? 'provider ready'
+                : route.resolution.available
+                  ? 'provider detected'
+                  : 'cpu fallback';
+              return (
+                <SettingsControlRow
+                  key={route.definition.id}
+                  label={route.definition.label}
+                  detail={`${status} · ${route.definition.description}`}
+                  control={<ThemeBadge label={route.resolution.provider?.label ?? route.resolution.providerKind} active={route.resolution.ready} />}
+                />
+              );
+            })}
+          </>
+        ) : null}
 
-          <div className="mt-3">
-            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-              Workload Routing
-            </div>
-            <SettingsRowGroup>
-              {accelerationWorkloadRoutes.map(route => {
-                const status = route.resolution.ready
-                  ? 'provider ready'
-                  : route.resolution.available
-                    ? 'provider detected'
-                    : 'cpu fallback';
-                return (
-                  <SettingsRow
-                    key={route.definition.id}
-                    title={route.definition.label}
-                    description={(
-                      <>
-                        {route.definition.description}
-                        <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] opacity-55">
-                          {status}
-                        </span>
-                      </>
-                    )}
-                    control={(
-                      <span
-                        className="inline-flex items-center rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          borderColor: route.resolution.ready ? `${accent}88` : border,
-                          background: route.resolution.ready ? `${accent}1f` : 'rgba(255,255,255,0.04)',
-                          color: text,
-                        }}
-                      >
-                        {route.resolution.provider?.label ?? route.resolution.providerKind}
-                      </span>
-                    )}
+        {accelerationRuntimeSnapshot.pythonProbe ? (
+          <>
+            <SettingsControlRow
+              label="Python CUDA"
+              detail={`${accelerationRuntimeSnapshot.pythonProbe.platform} · Python ${accelerationRuntimeSnapshot.pythonProbe.pythonVersion}${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices ? ` · CUDA_VISIBLE_DEVICES=${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices}` : ''}`}
+              control={(
+                <ThemeBadge
+                  label={`${accelerationRuntimeSnapshot.pythonProbe.torch.devices.length} torch devices`}
+                  active={accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0}
+                />
+              )}
+            />
+            {accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0 ? (
+              <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+                Torch devices: {accelerationRuntimeSnapshot.pythonProbe.torch.devices.map(device => device.name).join(', ')}
+              </SettingsInlineNotice>
+            ) : null}
+            {accelerationRuntimeSnapshot.pythonProbe.optionalModules.length > 0 ? (
+              <div className="flex min-w-0 flex-wrap gap-1.5 border-t px-3 py-2" style={borderTopStyle}>
+                {accelerationRuntimeSnapshot.pythonProbe.optionalModules.map(module => (
+                  <ThemeBadge
+                    key={module.id}
+                    label={`${module.id} · ${module.imported ? 'ready' : module.installed ? 'installed' : 'missing'}`}
+                    active={module.imported === true}
                   />
-                );
-              })}
-            </SettingsRowGroup>
-          </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </SettingsCompactSection>
 
-          {accelerationRuntimeSnapshot.pythonProbe ? (
-            <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}>
-              <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Python CUDA Probe</div>
-              <p className="mt-2 opacity-70">
-                {accelerationRuntimeSnapshot.pythonProbe.platform} · Python {accelerationRuntimeSnapshot.pythonProbe.pythonVersion}
-                {accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices
-                  ? ` · CUDA_VISIBLE_DEVICES=${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices}`
-                  : ''}
-              </p>
-              {accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0 ? (
-                <p className="mt-2 opacity-65">
-                  Torch devices: {accelerationRuntimeSnapshot.pythonProbe.torch.devices.map(device => device.name).join(', ')}
-                </p>
-              ) : null}
-              {accelerationRuntimeSnapshot.pythonProbe.optionalModules.length > 0 ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {accelerationRuntimeSnapshot.pythonProbe.optionalModules.map(module => (
-                    <ThemeBadge
-                      key={module.id}
-                      label={`${module.id} · ${module.imported ? 'ready' : module.installed ? 'installed' : 'missing'}`}
-                    />
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </SettingsSectionBlock>
-
-        <SettingsRowGroup>
+      <SettingsCompactSection
+        title="Diagnostics"
+        subtitle={`HUD ${formatHotkeyLabel(toggleDeveloperTelemetryHud)} · trace ${sourceTraceModeEnabled ? 'on' : 'off'} · bundles ${consumerDiagnosticsEnabled ? 'on' : 'off'}`}
+      >
+        <SettingsRowGroup className="rounded-none" style={rowGroupFlatStyle}>
           <SettingsRow
             title="Developer Mode"
             description="Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead."
@@ -568,180 +628,68 @@ export function SystemSettingsSection({
           />
         </SettingsRowGroup>
 
-        {developerTestSettingsEnabled ? (
-          <SettingsSectionBlock
-            title="Developer Test Proofs"
-            subtitle="Turns live runtime snapshots and explorer telemetry into explicit backend proof for GPU, CUDA, and semantic-search routing."
-            tone="muted"
-            badges={[
-              gpuRuntimeSnapshot.computeAvailable ? 'GPU compute visible' : 'GPU compute unavailable',
-              semanticSearchProof ? 'Semantic proof captured' : 'Semantic proof pending',
-              kainStatusLabel,
-            ]}
-          >
-            <div className="grid gap-3 md:grid-cols-3">
-              <div
-                className="rounded border px-3 py-3 text-[11px]"
-                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
-              >
-                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">GPU Workload Proof</div>
-                <p className="mt-2 opacity-70">
-                  {gpuRuntimeSnapshot.adapterName ?? 'No adapter detected'} · {gpuRuntimeSnapshot.backendName ?? 'backend n/a'} · {gpuRuntimeSnapshot.computeAvailable ? 'compute ready' : 'compute unavailable'}
-                </p>
-                {gpuRuntimeSnapshot.workloads.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {gpuRuntimeSnapshot.workloads.map(workload => (
-                      <div
-                        key={workload.workloadId}
-                        className="rounded border px-3 py-2"
-                        style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="font-semibold">{workload.label}</div>
-                          <div className="text-[10px] uppercase tracking-[0.12em] opacity-60">
-                            {workload.ready ? 'GPU ready' : 'Fallback active'}
-                          </div>
-                        </div>
-                        <div className="mt-2 opacity-70">
-                          exec {workload.executions} · fallback {workload.fallbackCount} · last {workload.lastExecutionPath ?? 'never'}
-                        </div>
-                        {workload.lastFallbackReason ? (
-                          <div className="mt-1 opacity-60">
-                            Last fallback: {workload.lastFallbackReason}
-                          </div>
-                        ) : null}
-                        {workload.kernelLabels.length > 0 ? (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {workload.kernelLabels.map(label => (
-                              <ThemeBadge key={`${workload.workloadId}-${label}`} label={label} />
-                            ))}
-                          </div>
-                        ) : null}
-                        {workload.lastError ? (
-                          <div className="mt-2" style={{ color: '#fca5a5' }}>
-                            Last error: {workload.lastError}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-3 opacity-60">
-                    No workload executions recorded yet. Use the explorer thumbnail, preview, or audio analysis paths to capture proof on this machine.
-                  </p>
-                )}
-              </div>
-
-              <div
-                className="rounded border px-3 py-3 text-[11px]"
-                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
-              >
-                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Semantic Search Proof</div>
-                {semanticSearchProof ? (
-                  <>
-                    <p className="mt-2 opacity-70">
-                      {semanticBackendLabel || 'backend unknown'} · {semanticSearchProof.queryKind ?? 'query kind unknown'} · {semanticSearchProof.durationMs.toFixed(2)} ms
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <ThemeBadge label={`files ${semanticSearchProof.indexedFileCount ?? 'n/a'}`} />
-                      <ThemeBadge label={`chunks ${semanticSearchProof.indexedChunkCount ?? 'n/a'}`} />
-                      <ThemeBadge label={semanticSearchProof.staleIndex ? 'stale index' : 'fresh index'} />
-                      <ThemeBadge label={semanticSearchProof.forceCpu ? 'forced CPU' : 'accelerator allowed'} />
-                      <ThemeBadge label={`results ${semanticSearchProof.resultCount ?? 'n/a'}`} />
-                    </div>
-                    <p className="mt-3 opacity-60">
-                      Latest proof recorded {semanticRecordedAtLabel}.
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-2 opacity-60">
-                    No semantic-search proof captured yet. Run a semantic explorer search and return here to inspect backend/provider routing evidence.
-                  </p>
-                )}
-              </div>
-
-              <div
-                className="rounded border px-3 py-3 text-[11px]"
-                style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
-              >
-                <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Kain Toolchain</div>
-                <p className="mt-2 opacity-70">
-                  {runtimeToolchainPending ? 'checking' : kainProbe?.installed ? 'ready' : 'missing'} · {kainProbe?.version ?? 'version n/a'}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <ThemeBadge label={kainProbe?.installed ? 'kain-script enabled' : 'kain-script offline'} />
-                  <ThemeBadge label={runtimeToolchainStatus?.kainManifestPath ? 'manifest pinned' : 'manifest n/a'} />
-                </div>
-                <p className="mt-3 break-words opacity-60">
-                  {runtimeToolchainError ?? kainProbe?.error ?? compactPath(kainProbe?.executablePath)}
-                </p>
-              </div>
-            </div>
-          </SettingsSectionBlock>
-        ) : null}
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-            <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Capture Mode</div>
-            <p className="mt-1 opacity-40">Raw keeps the deepest trace. Sampled trims noise. Perf-only records timing without full action detail.</p>
-            <select
+        <SettingsControlRow
+          label="Capture"
+          detail="trace depth"
+          control={(
+            <SettingsSelect
               aria-label="Telemetry Capture Mode"
               value={developerTelemetryCaptureMode}
               onChange={event => onUpdateSystem({ developerTelemetryCaptureMode: event.target.value })}
-              className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-              style={settingsSelectStyle}
+              className="w-full max-w-xs"
+              style={compactSelectStyle}
             >
               <option value="raw">Raw</option>
               <option value="sampled">Sampled</option>
               <option value="perf-only">Perf Only</option>
-            </select>
-          </label>
-          <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-            <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Payload Detail</div>
-            <p className="mt-1 opacity-40">Metadata-only avoids noisy args. Small payload mode preserves compact command details for debugging.</p>
-            <select
+            </SettingsSelect>
+          )}
+        />
+        <SettingsControlRow
+          label="Payload"
+          detail="argument detail"
+          control={(
+            <SettingsSelect
               aria-label="Telemetry Payload Detail"
               value={developerTelemetryPayloadMode}
               onChange={event => onUpdateSystem({ developerTelemetryPayloadMode: event.target.value })}
-              className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-              style={settingsSelectStyle}
+              className="w-full max-w-xs"
+              style={compactSelectStyle}
             >
               <option value="metadata-only">Metadata Only</option>
               <option value="metadata+small-payloads">Metadata + Small Payloads</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
-            <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Max Session File</div>
-            <p className="mt-1 opacity-40">Hard cap before the native writer rolls to the next session file.</p>
+            </SettingsSelect>
+          )}
+        />
+        <SettingsControlRow
+          label="Max Session File"
+          detail="MB per JSONL session"
+          control={(
             <input
+              aria-label="Telemetry Max Session File"
               type="number"
               min={8}
               max={512}
               step={1}
               value={developerTelemetryMaxFileSizeMb}
               onChange={event => onUpdateSystem({ developerTelemetryMaxFileSizeMb: Number(event.target.value) })}
-              className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
-              style={settingsFieldStyle}
+              className="h-7 w-28 rounded border bg-transparent px-2 text-[11px] outline-none"
+              style={compactFieldStyle}
             />
-          </label>
+          )}
+        />
+
+        <SettingsRowGroup className="rounded-none" style={rowGroupFlatStyle}>
           <SettingsRow
             title="Write Trace Files"
             description="Persist session JSONL traces to disk for later inspection and bundle export."
             control={<input type="checkbox" checked={developerTelemetryWriteToFile} onChange={event => onUpdateSystem({ developerTelemetryWriteToFile: event.target.checked })} />}
-            className="h-full"
           />
           <SettingsRow
             title="Show Inspector Surface"
             description="Keeps the live telemetry inspector lane available for future dev HUD and diagnostics UI."
             control={<input type="checkbox" checked={developerTelemetryShowInspector} onChange={event => onUpdateSystem({ developerTelemetryShowInspector: event.target.checked })} />}
-            className="h-full"
           />
-        </div>
-
-        <SettingsRowGroup>
           <SettingsRow
             title="Plugin Runtime Diagnostics"
             description="Include plugin attribution and execution context in consumer bundles."
@@ -758,104 +706,245 @@ export function SystemSettingsSection({
             control={<input type="checkbox" checked={consumerDiagnosticsIncludePerfSamples} onChange={event => onUpdateSystem({ consumerDiagnosticsIncludePerfSamples: event.target.checked })} />}
           />
         </SettingsRowGroup>
+      </SettingsCompactSection>
 
-        {platform === 'linux' ? (
-          <SettingsRowGroup>
-            <SettingsRow
-              title="Linux Display Backend"
-              description="Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available."
-              control={(
-                <select
-                  aria-label="Linux Display Backend"
-                  value={linuxDisplayBackendPreference}
-                  disabled={linuxDisplayBackendSyncPending}
-                  onChange={event => void onSetLinuxDisplayBackendPreference(event.target.value as LinuxDisplayBackendPreference)}
-                  className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
-                  style={settingsSelectStyle}
-                >
-                  <option value="auto">Auto</option>
-                  <option value="x11" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}>
-                    X11
-                  </option>
-                  <option value="wayland" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}>
-                    Wayland
-                  </option>
-                </select>
-              )}
-            />
-            <SettingsRow
-              title="NVIDIA WebKit Workaround"
-              description={(
-                <>
-                  Controls the Linux-only WebKit env vars <code>WEBKIT_DISABLE_DMABUF_RENDERER=1</code> and <code>__NV_DISABLE_EXPLICIT_SYNC=1</code>.
-                  Auto only enables them on detected NVIDIA + X11/Wayland sessions. Force off lets modern stacks (driver 555+, KWin/Plasma 6.x) use the explicit-sync compositor path. Force on overrides the NVIDIA-detection gate.
-                  Pre-set environment variables always win. Restart required to take effect.
-                  {linuxDisplayBackendStatus != null ? (
-                    <span className="mt-1 block opacity-65">
-                      NVIDIA GPU detected: {linuxDisplayBackendStatus.nvidiaGpuDetected ? 'yes' : 'no'}
-                    </span>
-                  ) : null}
-                </>
-              )}
-              control={(
-                <select
-                  aria-label="NVIDIA WebKit Workaround"
-                  value={linuxNvidiaWebkitWorkaroundMode}
-                  disabled={linuxDisplayBackendSyncPending}
-                  onChange={event => void onSetLinuxNvidiaWebkitWorkaroundMode(event.target.value as LinuxNvidiaWebkitWorkaroundMode)}
-                  className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
-                  style={settingsSelectStyle}
-                >
-                  <option value="auto">Auto</option>
-                  <option value="force-on">Force On</option>
-                  <option value="force-off">Force Off</option>
-                </select>
-              )}
-            />
-          </SettingsRowGroup>
-        ) : null}
-
-        <SettingsSectionBlock
-          title="Telemetry Session"
-          subtitle={
-            telemetryStatusPending
-              ? 'Refreshing telemetry session status...'
-              : telemetryStatusError
-                ? `Telemetry unavailable: ${telemetryStatusError}`
-                : telemetryStatus == null
-                  ? 'No telemetry session has been created yet.'
-                  : `Enabled ${telemetryStatus.config.developer_telemetry_enabled || telemetryStatus.config.consumer_diagnostics_enabled ? 'yes' : 'no'} · records ${telemetryStatus.recent_record_count} · session ${telemetryStatus.session_id} · file ${telemetryStatus.current_file_path ?? 'not started'}`
-          }
-          tone="muted"
-          actions={(
-            <SettingsActionStrip>
-              <button type="button" onClick={() => void onRefreshTelemetryStatus()} className="rounded border px-3 py-2 transition-colors" style={{ borderColor: border }}>
-                Refresh
-              </button>
-              <button type="button" onClick={() => void onTelemetryExport()} disabled={telemetryActionPending != null} className="rounded border px-3 py-2 transition-colors disabled:opacity-50" style={{ borderColor: border }}>
-                {telemetryActionPending === 'export' ? 'Exporting...' : 'Export Support Bundle'}
-              </button>
-              <button type="button" onClick={() => void onTelemetryClear()} disabled={telemetryActionPending != null} className="rounded border px-3 py-2 transition-colors disabled:opacity-50" style={{ borderColor: border, color: '#fca5a5' }}>
-                {telemetryActionPending === 'clear' ? 'Clearing...' : 'Clear Sessions'}
-              </button>
-            </SettingsActionStrip>
-          )}
+      {developerTestSettingsEnabled ? (
+        <SettingsCompactSection
+          title="Proofs"
+          subtitle={`${gpuRuntimeSummary} · ${semanticSearchProof ? 'semantic captured' : 'semantic pending'} · ${kainStatusLabel}`}
+          actions={<ThemeBadge label={kainStatusLabel} active={kainProbe?.installed === true} />}
         >
-          {telemetryNotice ? (
-            <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, color: text }}>
-              {telemetryNotice}
-            </div>
-          ) : null}
-        </SettingsSectionBlock>
+          <SettingsMetricStrip
+            items={[
+              {
+                id: 'gpu-proof',
+                label: 'GPU Workload',
+                value: gpuRuntimeSummary,
+                tone: gpuRuntimeSnapshot.computeAvailable ? 'accent' : 'default',
+              },
+              {
+                id: 'semantic-proof',
+                label: 'Semantic',
+                value: semanticSearchProof
+                  ? `${semanticBackendLabel || 'backend unknown'} · ${semanticSearchProof.durationMs.toFixed(2)} ms`
+                  : 'pending',
+                tone: semanticSearchProof ? 'accent' : 'default',
+              },
+              {
+                id: 'kain-proof',
+                label: 'Kain',
+                value: `${runtimeToolchainPending ? 'checking' : kainProbe?.installed ? 'ready' : 'missing'} · ${kainProbe?.version ?? 'version n/a'}`,
+                tone: kainProbe?.installed ? 'accent' : 'default',
+              },
+            ]}
+          />
 
-        <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
-          {startupSyncPending
-            ? 'Updating OS startup registration...'
-            : startupSyncError
-              ? `Startup registration failed: ${startupSyncError}`
-              : `Current status: startup ${launchAtStartup ? 'enabled' : 'disabled'} · mobile share boot ${startMobileShareOnBoot ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${developerMode ? 'enabled' : 'disabled'} · deep telemetry ${developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
+          {gpuRuntimeSnapshot.workloads.length > 0 ? (
+            <>
+              <div className="border-t px-3 py-1.5 text-[9px] font-semibold uppercase opacity-50" style={borderTopStyle}>
+                GPU Workloads
+              </div>
+              {gpuRuntimeSnapshot.workloads.map(workload => (
+                <SettingsControlRow
+                  key={workload.workloadId}
+                  label={workload.label}
+                  detail={`exec ${workload.executions} · fallback ${workload.fallbackCount} · last ${workload.lastExecutionPath ?? 'never'}`}
+                  control={<ThemeBadge label={workload.ready ? 'GPU ready' : 'Fallback active'} active={workload.ready} />}
+                  action={workload.kernelLabels.length > 0 ? (
+                    <ThemeBadge label={workload.kernelLabels.join(' · ')} />
+                  ) : undefined}
+                />
+              ))}
+              {gpuRuntimeSnapshot.workloads.map(workload => (
+                workload.lastFallbackReason || workload.lastError ? (
+                  <SettingsInlineNotice
+                    key={`${workload.workloadId}-notice`}
+                    tone={workload.lastError ? 'danger' : 'muted'}
+                    className="mx-3 my-2"
+                  >
+                    {workload.lastError
+                      ? `${workload.label}: ${workload.lastError}`
+                      : `${workload.label}: ${workload.lastFallbackReason}`}
+                  </SettingsInlineNotice>
+                ) : null
+              ))}
+            </>
+          ) : (
+            <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+              No workload executions recorded.
+            </SettingsInlineNotice>
+          )}
+
+          {semanticSearchProof ? (
+            <>
+              <SettingsControlRow
+                label="Semantic Search"
+                detail={`${semanticSearchProof.queryKind ?? 'query kind unknown'} · ${semanticRecordedAtLabel ?? 'time n/a'}`}
+                control={<ThemeBadge label={semanticBackendLabel || 'backend unknown'} active />}
+              />
+              <div className="flex min-w-0 flex-wrap gap-1.5 border-t px-3 py-2" style={borderTopStyle}>
+                <ThemeBadge label={`files ${semanticSearchProof.indexedFileCount ?? 'n/a'}`} />
+                <ThemeBadge label={`chunks ${semanticSearchProof.indexedChunkCount ?? 'n/a'}`} />
+                <ThemeBadge label={semanticSearchProof.staleIndex ? 'stale index' : 'fresh index'} active={semanticSearchProof.staleIndex === false} />
+                <ThemeBadge label={semanticSearchProof.forceCpu ? 'forced CPU' : 'accelerator allowed'} active={semanticSearchProof.forceCpu === false} />
+                <ThemeBadge label={`results ${semanticSearchProof.resultCount ?? 'n/a'}`} />
+              </div>
+            </>
+          ) : (
+            <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+              Run semantic search to capture proof.
+            </SettingsInlineNotice>
+          )}
+
+          <SettingsControlRow
+            label="Kain Toolchain"
+            detail={runtimeToolchainStatus?.kainManifestPath ? 'manifest pinned' : 'manifest n/a'}
+            control={<ThemeBadge label={kainProbe?.installed ? 'kain-script enabled' : 'kain-script offline'} active={kainProbe?.installed === true} />}
+            action={<ThemeBadge label={runtimeToolchainStatus?.kainManifestPath ? 'manifest pinned' : 'manifest n/a'} />}
+          />
+          <SettingsControlRow
+            label="Kain Path"
+            detail={runtimeToolchainError ?? kainProbe?.error ?? 'resolved executable'}
+            control={(
+              <SettingsCompactPath
+                value={runtimeToolchainError ?? kainProbe?.error ?? compactPath(kainProbe?.executablePath)}
+                title={runtimeToolchainError ?? kainProbe?.error ?? kainProbe?.executablePath ?? undefined}
+              />
+            )}
+          />
+        </SettingsCompactSection>
+      ) : null}
+
+      {platform === 'linux' ? (
+        <SettingsCompactSection
+          title="Linux Host"
+          subtitle={linuxDisplayBackendStatusSummary ?? 'Display backend policy'}
+        >
+          <SettingsControlRow
+            label="Display Backend"
+            detail="startup backend"
+            control={(
+              <SettingsSelect
+                aria-label="Linux Display Backend"
+                value={linuxDisplayBackendPreference}
+                disabled={linuxDisplayBackendSyncPending}
+                onChange={event => void onSetLinuxDisplayBackendPreference(event.target.value as LinuxDisplayBackendPreference)}
+                className="w-full max-w-xs"
+                style={compactSelectStyle}
+              >
+                <option value="auto">Auto</option>
+                <option value="x11" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}>
+                  X11
+                </option>
+                <option value="wayland" disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}>
+                  Wayland
+                </option>
+              </SettingsSelect>
+            )}
+          />
+          <SettingsControlRow
+            label="NVIDIA WebKit"
+            detail={linuxDisplayBackendStatus != null ? `NVIDIA GPU ${linuxDisplayBackendStatus.nvidiaGpuDetected ? 'detected' : 'not detected'}` : 'restart required'}
+            control={(
+              <SettingsSelect
+                aria-label="NVIDIA WebKit Workaround"
+                value={linuxNvidiaWebkitWorkaroundMode}
+                disabled={linuxDisplayBackendSyncPending}
+                onChange={event => void onSetLinuxNvidiaWebkitWorkaroundMode(event.target.value as LinuxNvidiaWebkitWorkaroundMode)}
+                className="w-full max-w-xs"
+                style={compactSelectStyle}
+              >
+                <option value="auto">Auto</option>
+                <option value="force-on">Force On</option>
+                <option value="force-off">Force Off</option>
+              </SettingsSelect>
+            )}
+          />
+          {linuxDisplayBackendStatusSummary ? (
+            <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+              {linuxDisplayBackendStatusSummary}
+            </SettingsInlineNotice>
+          ) : null}
+        </SettingsCompactSection>
+      ) : null}
+
+      <SettingsCompactSection
+        title="Telemetry Session"
+        subtitle={telemetrySessionSummary}
+        actions={(
+          <>
+            <SettingsIconActionButton
+              aria-label="Refresh Telemetry Status"
+              title="Refresh Telemetry Status"
+              onClick={() => void onRefreshTelemetryStatus()}
+              disabled={telemetryStatusPending}
+            >
+              {telemetryStatusPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            </SettingsIconActionButton>
+            <SettingsIconActionButton
+              aria-label="Export Support Bundle"
+              title="Export Support Bundle"
+              onClick={() => void onTelemetryExport()}
+              disabled={telemetryActionPending != null}
+              active={telemetryActionPending === 'export'}
+              accent={accent}
+            >
+              {telemetryActionPending === 'export' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+            </SettingsIconActionButton>
+            <SettingsIconActionButton
+              aria-label="Clear Telemetry Sessions"
+              title="Clear Telemetry Sessions"
+              onClick={() => void onTelemetryClear()}
+              disabled={telemetryActionPending != null}
+              active={telemetryActionPending === 'clear'}
+            >
+              {telemetryActionPending === 'clear' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            </SettingsIconActionButton>
+          </>
+        )}
+      >
+        {telemetryNotice ? (
+          <SettingsInlineNotice tone="success" className="mx-3 my-2">
+            {telemetryNotice}
+          </SettingsInlineNotice>
+        ) : null}
+        {telemetryStatusError ? (
+          <SettingsInlineNotice tone="danger" className="mx-3 my-2">
+            {telemetryStatusError}
+          </SettingsInlineNotice>
+        ) : null}
+        {telemetryStatus ? (
+          <>
+            <SettingsControlRow
+              label="Session"
+              detail={`${telemetryStatus.recent_record_count} records`}
+              control={<SettingsCompactPath value={telemetryStatus.session_id} title={telemetryStatus.session_id} />}
+              action={<ThemeBadge label={telemetryConfigEnabled ? 'enabled' : 'idle'} active={telemetryConfigEnabled} />}
+            />
+            <SettingsControlRow
+              label="File"
+              detail={telemetryStatus.current_file_path ? 'current trace' : 'not started'}
+              control={(
+                <SettingsCompactPath
+                  value={telemetryStatus.current_file_path ?? 'not started'}
+                  title={telemetryStatus.current_file_path ?? undefined}
+                />
+              )}
+            />
+          </>
+        ) : telemetryStatusPending ? (
+          <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+            Refreshing telemetry session.
+          </SettingsInlineNotice>
+        ) : (
+          <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+            No telemetry session has been created.
+          </SettingsInlineNotice>
+        )}
+        <div className="border-t px-3 py-2 text-[10px]" style={{ ...borderTopStyle, ...mutedTextStyle }}>
+          {startupStatusSummary}
         </div>
-      </div>
-    </section>
+      </SettingsCompactSection>
+    </SettingsSectionScaffold>
   );
 }

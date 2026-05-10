@@ -10,15 +10,22 @@ import {
   Trash2,
 } from '@/components/AppIcons';
 import type { UsrProfileSettingsVariantDefinition } from '../../../config/usrProfileSettingsVariants';
-import type { UsrProfileRuntimeSnapshot } from '../../../runtime/usrProfiles';
+import type {
+  UsrProfileRuntimeSnapshot,
+  UsrProfileSummary,
+} from '../../../runtime/usrProfiles';
 import {
-  SettingsActionButton,
-  SettingsActionStrip,
-  SettingsCatalogCard,
-  SettingsCatalogGrid,
-  SettingsInspectorPanel,
-  SettingsSectionBlock,
-  SettingsSectionHeader,
+  SettingsCompactActionButton,
+  SettingsCompactPath,
+  SettingsCompactSection,
+  SettingsControlRow,
+  SettingsIconActionButton,
+  SettingsInlineNotice,
+  SettingsKeyValueRow,
+  SettingsMetricStrip,
+  SettingsOverflowMenu,
+  SettingsSectionScaffold,
+  SettingsSelect,
   SettingsStatusPill,
 } from '../SettingsPrimitives';
 
@@ -46,6 +53,17 @@ function buildManagedContentDirectorySourceBadges(
     badges.push('effective-source');
   }
   return badges;
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function formatProfileTimestamp(updatedAtMs: number): string {
+  if (!Number.isFinite(updatedAtMs) || updatedAtMs <= 0) {
+    return 'never';
+  }
+  return new Date(updatedAtMs).toLocaleString();
 }
 
 export function ProfilesSettingsSection({
@@ -88,9 +106,16 @@ export function ProfilesSettingsSection({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     activeProfile?.id ?? null,
   );
+  const [selectedVariantId, setSelectedVariantId] = useState<string>(
+    usrProfileSettingsVariants[0]?.id ?? '',
+  );
   const [pendingActionLabel, setPendingActionLabel] = useState<string | null>(null);
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedProfileId) ?? activeProfile;
+  const selectedVariant =
+    usrProfileSettingsVariants.find((variant) => variant.id === selectedVariantId) ??
+    usrProfileSettingsVariants[0] ??
+    null;
 
   useEffect(() => {
     if (selectedProfileId && profiles.some((profile) => profile.id === selectedProfileId)) {
@@ -98,6 +123,18 @@ export function ProfilesSettingsSection({
     }
     setSelectedProfileId(activeProfile?.id ?? null);
   }, [activeProfile?.id, profiles, selectedProfileId]);
+
+  useEffect(() => {
+    if (usrProfileSettingsVariants.length === 0) {
+      if (selectedVariantId) {
+        setSelectedVariantId('');
+      }
+      return;
+    }
+    if (!usrProfileSettingsVariants.some((variant) => variant.id === selectedVariantId)) {
+      setSelectedVariantId(usrProfileSettingsVariants[0]?.id ?? '');
+    }
+  }, [selectedVariantId, usrProfileSettingsVariants]);
 
   const activeProfileOverrideSliceSet = useMemo(
     () => new Set(activeProfile?.overrideSlices ?? []),
@@ -147,443 +184,550 @@ export function ProfilesSettingsSection({
     );
   };
 
-  const handleDuplicateProfile = async () => {
-    if (!selectedProfile) {
+  const handleCreateSelectedVariantProfile = async () => {
+    if (!selectedVariant) {
+      return;
+    }
+    await handleCreateProfileFromVariant(selectedVariant);
+  };
+
+  const handleDuplicateProfile = async (
+    profile: UsrProfileSummary | null | undefined = selectedProfile,
+  ) => {
+    if (!profile) {
       return;
     }
     const name = promptForProfileName(
-      `Duplicate ${selectedProfile.name}`,
-      `${selectedProfile.name} Copy`,
+      `Duplicate ${profile.name}`,
+      `${profile.name} Copy`,
     );
     if (!name) {
       return;
     }
     await runProfileAction('Duplicating profile…', () =>
-      onDuplicateUsrProfile(selectedProfile.id, name),
+      onDuplicateUsrProfile(profile.id, name),
     );
   };
 
-  const handleRenameProfile = async () => {
-    if (!selectedProfile) {
+  const handleRenameProfile = async (
+    profile: UsrProfileSummary | null | undefined = selectedProfile,
+  ) => {
+    if (!profile) {
       return;
     }
     const name = promptForProfileName(
-      `Rename ${selectedProfile.name}`,
-      selectedProfile.name,
+      `Rename ${profile.name}`,
+      profile.name,
     );
-    if (!name || name === selectedProfile.name) {
+    if (!name || name === profile.name) {
       return;
     }
     await runProfileAction('Renaming profile…', () =>
-      onRenameUsrProfile(selectedProfile.id, name),
+      onRenameUsrProfile(profile.id, name),
     );
   };
 
-  const handleDeleteProfile = async () => {
-    if (!selectedProfile) {
+  const handleDeleteProfile = async (
+    profile: UsrProfileSummary | null | undefined = selectedProfile,
+  ) => {
+    if (!profile) {
       return;
     }
     const confirmed = window.confirm(
-      `Delete profile "${selectedProfile.name}"? Shared usr content stays intact, but this profile folder will be removed.`,
+      `Delete profile "${profile.name}"? Shared usr content stays intact, but this profile folder will be removed.`,
     );
     if (!confirmed) {
       return;
     }
     await runProfileAction('Deleting profile…', () =>
-      onDeleteUsrProfile(selectedProfile.id),
+      onDeleteUsrProfile(profile.id),
+    );
+  };
+
+  const renderProfileOverflowMenu = (profile: UsrProfileSummary) => (
+    <SettingsOverflowMenu label="...">
+      <div className="grid gap-1">
+        <SettingsCompactActionButton
+          className="w-full justify-start"
+          disabled={pendingActionLabel != null}
+          onClick={() => {
+            setSelectedProfileId(profile.id);
+            void handleDuplicateProfile(profile);
+          }}
+        >
+          <Copy size={11} />
+          <span>Duplicate</span>
+        </SettingsCompactActionButton>
+        <SettingsCompactActionButton
+          className="w-full justify-start"
+          disabled={pendingActionLabel != null}
+          onClick={() => {
+            setSelectedProfileId(profile.id);
+            void handleRenameProfile(profile);
+          }}
+        >
+          <Pencil size={11} />
+          <span>Rename</span>
+        </SettingsCompactActionButton>
+        <SettingsCompactActionButton
+          className="w-full justify-start"
+          disabled={profiles.length <= 1 || pendingActionLabel != null}
+          onClick={() => {
+            setSelectedProfileId(profile.id);
+            void handleDeleteProfile(profile);
+          }}
+        >
+          <Trash2 size={11} />
+          <span>Delete</span>
+        </SettingsCompactActionButton>
+      </div>
+    </SettingsOverflowMenu>
+  );
+
+  const renderProfileActions = (profile: UsrProfileSummary) => {
+    const isActive = profile.isActive;
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <SettingsIconActionButton
+          active={isActive}
+          accent={accent}
+          disabled={isActive || pendingActionLabel != null}
+          aria-label={isActive ? 'Current' : 'Switch'}
+          title={isActive ? 'Current Profile' : `Switch To ${profile.name}`}
+          onClick={() => {
+            setSelectedProfileId(profile.id);
+            void runProfileAction('Switching profile…', () =>
+              onSwitchUsrProfile(profile.id),
+            );
+          }}
+        >
+          <Layers3 size={12} />
+        </SettingsIconActionButton>
+        <SettingsIconActionButton
+          disabled={pendingActionLabel != null}
+          aria-label={`Open ${profile.name} Folder`}
+          title={`Open ${profile.name} Folder`}
+          onClick={() => {
+            setSelectedProfileId(profile.id);
+            void runProfileAction('Opening profile folder…', () =>
+              onOpenUsrProfileFolder(profile.id),
+            );
+          }}
+        >
+          <FolderOpen size={12} />
+        </SettingsIconActionButton>
+        {renderProfileOverflowMenu(profile)}
+      </div>
     );
   };
 
   return (
-    <section className="space-y-4" data-settings-section="profiles">
-      <SettingsSectionHeader
-        icon={<Layers3 size={12} />}
-        title="Profiles"
-        subtitle={detail}
-        badges={
-          activeProfile
-            ? [
-                `${profiles.length} profile${profiles.length === 1 ? '' : 's'}`,
-                `${activeProfile.overrideSlices.length} override slice${
-                  activeProfile.overrideSlices.length === 1 ? '' : 's'
-                }`,
-              ]
-            : undefined
-        }
-        actions={
-          <SettingsActionStrip>
-            <SettingsActionButton
-              accent={accent}
-              onClick={() => void handleCreateProfile()}
-              disabled={pendingActionLabel != null}
-            >
-              <Plus size={11} />
-              <span>Create From Current</span>
-            </SettingsActionButton>
-            <SettingsActionButton
-              onClick={() => void runProfileAction('Opening profiles root…', onOpenUsrProfilesRootFolder)}
-              disabled={pendingActionLabel != null}
-            >
-              <FolderOpen size={11} />
-              <span>Open Profiles Root</span>
-            </SettingsActionButton>
-          </SettingsActionStrip>
-        }
+    <SettingsSectionScaffold
+      sectionKey="profiles"
+      icon={<Layers3 size={12} />}
+      title="Profiles"
+      subtitle={detail}
+      badges={
+        activeProfile
+          ? [
+              pluralize(profiles.length, 'profile'),
+              pluralize(activeProfile.overrideSlices.length, 'override slice'),
+            ]
+          : undefined
+      }
+      actions={(
+        <SettingsIconActionButton
+          onClick={() =>
+            void runProfileAction('Opening profiles root…', onOpenUsrProfilesRootFolder)
+          }
+          disabled={pendingActionLabel != null}
+          aria-label="Open Profiles Root"
+          title="Open Profiles Root"
+        >
+          <FolderOpen size={12} />
+        </SettingsIconActionButton>
+      )}
+    >
+      <SettingsMetricStrip
+        items={[
+          {
+            id: 'profiles',
+            label: 'Profiles',
+            value: profiles.length,
+          },
+          {
+            id: 'active',
+            label: 'Active',
+            value: activeProfile?.name ?? 'none',
+            tone: activeProfile ? 'accent' : 'default',
+          },
+          {
+            id: 'overrides',
+            label: 'Overrides',
+            value: activeProfile?.overrideSlices.length ?? 0,
+          },
+          {
+            id: 'lanes',
+            label: 'Lanes',
+            value: managedContentStacks.length,
+          },
+        ]}
       />
 
       {pendingActionLabel ? (
-        <SettingsSectionBlock tone="accent" accent={accent}>
-          <div className="flex items-center gap-2 text-[11px]">
+        <SettingsInlineNotice tone="info">
+          <span className="inline-flex min-w-0 items-center gap-2">
             <RefreshCw size={11} className="animate-spin" />
-            <span>{pendingActionLabel}</span>
-          </div>
-        </SettingsSectionBlock>
+            <span className="truncate">{pendingActionLabel}</span>
+          </span>
+        </SettingsInlineNotice>
       ) : null}
 
-      {usrProfileSettingsVariants.length > 0 ? (
-        <SettingsSectionBlock
-          title="Canonical Variations"
-          subtitle="Seed new profiles from named baseline variations instead of cloning the current live state."
-          accent={accent}
-        >
-          <SettingsCatalogGrid className="md:grid-cols-2 xl:grid-cols-4">
-            {usrProfileSettingsVariants.map((variant) => (
-              <SettingsCatalogCard
-                key={variant.id}
-                accent={accent}
-                title={variant.name}
-                subtitle={variant.id}
-                description={variant.description}
-                badges={
-                  <div className="flex flex-wrap gap-1">
-                    {variant.tags.map((tag) => (
-                      <SettingsStatusPill key={`${variant.id}:${tag}`}>
-                        {tag}
-                      </SettingsStatusPill>
-                    ))}
-                  </div>
-                }
-                footer={
-                  <SettingsActionButton
-                    accent={accent}
-                    disabled={pendingActionLabel != null}
-                    onClick={() => void handleCreateProfileFromVariant(variant)}
-                  >
-                    <Plus size={11} />
-                    <span>Create Profile</span>
-                  </SettingsActionButton>
-                }
-              />
-            ))}
-          </SettingsCatalogGrid>
-        </SettingsSectionBlock>
-      ) : null}
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <SettingsSectionBlock
-          title="Profile Catalog"
-          subtitle="Each profile can override workbench-facing usr lanes and settings slices while shared lanes remain global."
-          accent={accent}
-        >
-          <SettingsCatalogGrid className="md:grid-cols-2">
-            {profiles.map((profile) => {
-              const isActive = profile.isActive;
-              const isSelected = selectedProfile?.id === profile.id;
-              return (
-                <SettingsCatalogCard
-                  key={profile.id}
-                  active={isSelected}
+      <div className="grid min-w-0 grid-cols-1 gap-2.5 xl:grid-cols-[minmax(0,1.18fr)_minmax(300px,0.82fr)]">
+        <div className="min-w-0 space-y-2.5">
+          <SettingsCompactSection title="Create" subtitle="Current state or variant seed">
+            <SettingsControlRow
+              label="Current"
+              detail={activeProfile?.name ?? 'runtime state'}
+              control={(
+                <span className="block truncate text-[11px] opacity-70">
+                  {activeProfile?.settingsPath ?? 'No active profile'}
+                </span>
+              )}
+              action={(
+                <SettingsCompactActionButton
                   accent={accent}
-                  onClick={() => setSelectedProfileId(profile.id)}
-                  title={profile.name}
-                  subtitle={profile.id}
-                  badges={
-                    <div className="flex flex-wrap gap-1">
-                      {isActive ? (
-                        <SettingsStatusPill active style={{ color: accent }}>
-                          Active
-                        </SettingsStatusPill>
-                      ) : null}
-                      <SettingsStatusPill>
-                        {profile.overrideSlices.length} slice
-                        {profile.overrideSlices.length === 1 ? '' : 's'}
-                      </SettingsStatusPill>
-                    </div>
-                  }
-                  description={profile.settingsPath}
-                  metadata={
-                    <div className="space-y-1 text-[10px] opacity-60">
-                      <div>{new Date(profile.updatedAtMs).toLocaleString()}</div>
-                      <div>{profile.directoryPath}</div>
-                    </div>
-                  }
-                  footer={
-                    <div className="flex flex-wrap gap-2">
-                      <SettingsActionButton
-                        active={isActive}
-                        accent={accent}
-                        disabled={isActive || pendingActionLabel != null}
-                        onClick={() =>
-                          void runProfileAction('Switching profile…', () =>
-                            onSwitchUsrProfile(profile.id),
-                          )
-                        }
-                      >
-                        <Layers3 size={11} />
-                        <span>{isActive ? 'Current' : 'Switch'}</span>
-                      </SettingsActionButton>
-                      <SettingsActionButton
-                        disabled={pendingActionLabel != null}
-                        onClick={() =>
-                          void runProfileAction('Opening profile folder…', () =>
-                            onOpenUsrProfileFolder(profile.id),
-                          )
-                        }
-                      >
-                        <FolderOpen size={11} />
-                        <span>Open Folder</span>
-                      </SettingsActionButton>
-                    </div>
-                  }
+                  disabled={pendingActionLabel != null}
+                  aria-label="Create From Current"
+                  onClick={() => void handleCreateProfile()}
+                >
+                  <Plus size={11} />
+                  <span>Create Profile</span>
+                </SettingsCompactActionButton>
+              )}
+            />
+            {usrProfileSettingsVariants.length > 0 ? (
+              <div data-settings-catalog-card={selectedVariant?.name ?? 'Canonical Variation'}>
+                <SettingsControlRow
+                  label="Variant"
+                  detail={selectedVariant?.tags.join(' · ') || selectedVariant?.id}
+                  control={(
+                    <SettingsSelect
+                      aria-label="Profile Variant"
+                      className="w-full"
+                      value={selectedVariant?.id ?? ''}
+                      onChange={(event) => setSelectedVariantId(event.target.value)}
+                    >
+                      {usrProfileSettingsVariants.map((variant) => (
+                        <option key={variant.id} value={variant.id}>
+                          {variant.name}
+                        </option>
+                      ))}
+                    </SettingsSelect>
+                  )}
+                  action={(
+                    <SettingsCompactActionButton
+                      accent={accent}
+                      disabled={selectedVariant == null || pendingActionLabel != null}
+                      aria-label="Create Profile"
+                      onClick={() => void handleCreateSelectedVariantProfile()}
+                    >
+                      <Plus size={11} />
+                      <span>Create Profile</span>
+                    </SettingsCompactActionButton>
+                  )}
                 />
-              );
-            })}
-          </SettingsCatalogGrid>
-        </SettingsSectionBlock>
+              </div>
+            ) : null}
+          </SettingsCompactSection>
 
-        <div className="space-y-4">
-          <SettingsInspectorPanel
-            title={selectedProfile ? selectedProfile.name : 'No Profile Selected'}
-            subtitle={
-              selectedProfile
-                ? `Profile-owned settings live at ${selectedProfile.settingsPath}`
-                : 'Select a profile to inspect its override slices and folder targets.'
-            }
-            badges={
-              selectedProfile
-                ? [
-                    selectedProfile.isActive ? 'Active' : 'Inactive',
-                    `${selectedProfile.overrideSlices.length} override slice${
-                      selectedProfile.overrideSlices.length === 1 ? '' : 's'
-                    }`,
-                  ]
-                : undefined
-            }
-            tone="accent"
-            accent={accent}
+          <SettingsCompactSection
+            title="Profile Catalog"
+            subtitle={pluralize(profiles.length, 'profile')}
+            className="overflow-visible"
           >
-            {selectedProfile ? (
-              <div className="space-y-4">
-                <SettingsActionStrip>
-                  <SettingsActionButton
-                    active={selectedProfile.isActive}
-                    accent={accent}
-                    disabled={selectedProfile.isActive || pendingActionLabel != null}
-                    onClick={() =>
-                      void runProfileAction('Switching profile…', () =>
-                        onSwitchUsrProfile(selectedProfile.id),
-                      )
-                    }
-                  >
-                    <Layers3 size={11} />
-                    <span>
-                      {selectedProfile.isActive ? 'Active Profile' : 'Switch To Profile'}
-                    </span>
-                  </SettingsActionButton>
-                  <SettingsActionButton
+            {profiles.length === 0 ? (
+              <SettingsInlineNotice tone="muted">
+                No usr profiles are available yet.
+              </SettingsInlineNotice>
+            ) : (
+              profiles.map((profile) => {
+                const isActive = profile.isActive;
+                const isSelected = selectedProfile?.id === profile.id;
+                return (
+                  <div key={profile.id} data-settings-catalog-card={profile.name}>
+                    <SettingsKeyValueRow
+                      label={(
+                        <button
+                          type="button"
+                          className="block min-w-0 text-left normal-case"
+                          style={{ color: isSelected ? accent : undefined }}
+                          onClick={() => setSelectedProfileId(profile.id)}
+                        >
+                          <span className="block truncate text-[11px] font-semibold">
+                            {profile.name}
+                          </span>
+                          <span className="block truncate text-[9px] opacity-50">
+                            {profile.id}
+                          </span>
+                        </button>
+                      )}
+                      value={(
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex min-w-0 items-center gap-1.5 text-[10px]">
+                            {isActive ? (
+                              <SettingsStatusPill active style={{ color: accent }}>
+                                Active
+                              </SettingsStatusPill>
+                            ) : null}
+                            <span className="truncate opacity-65">
+                              {pluralize(profile.overrideSlices.length, 'slice')}
+                            </span>
+                            <span className="truncate opacity-45">
+                              {formatProfileTimestamp(profile.updatedAtMs)}
+                            </span>
+                          </div>
+                          <SettingsCompactPath
+                            value={profile.directoryPath}
+                            title={profile.directoryPath}
+                          />
+                        </div>
+                      )}
+                      action={renderProfileActions(profile)}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </SettingsCompactSection>
+
+          {selectedProfile ? (
+            <SettingsCompactSection
+              title="Selected Profile"
+              subtitle={selectedProfile.name}
+              actions={renderProfileActions(selectedProfile)}
+              className="overflow-visible"
+            >
+              <SettingsKeyValueRow
+                label="Profile:"
+                value={selectedProfile.name}
+              />
+              <SettingsKeyValueRow
+                label="Directory:"
+                value={(
+                  <SettingsCompactPath
+                    value={selectedProfile.directoryPath}
+                    title={selectedProfile.directoryPath}
+                  />
+                )}
+                action={(
+                  <SettingsIconActionButton
                     disabled={pendingActionLabel != null}
+                    aria-label="Open Selected Profile Folder"
+                    title="Open Selected Profile Folder"
                     onClick={() =>
                       void runProfileAction('Opening profile folder…', () =>
                         onOpenUsrProfileFolder(selectedProfile.id),
                       )
                     }
                   >
-                    <FolderOpen size={11} />
-                    <span>Open Profile Folder</span>
-                  </SettingsActionButton>
-                  <SettingsActionButton
-                    disabled={pendingActionLabel != null}
-                    onClick={() => void handleDuplicateProfile()}
-                  >
-                    <Copy size={11} />
-                    <span>Duplicate</span>
-                  </SettingsActionButton>
-                  <SettingsActionButton
-                    disabled={pendingActionLabel != null}
-                    onClick={() => void handleRenameProfile()}
-                  >
-                    <Pencil size={11} />
-                    <span>Rename</span>
-                  </SettingsActionButton>
-                  <SettingsActionButton
-                    disabled={profiles.length <= 1 || pendingActionLabel != null}
-                    onClick={() => void handleDeleteProfile()}
-                  >
-                    <Trash2 size={11} />
-                    <span>Delete</span>
-                  </SettingsActionButton>
-                </SettingsActionStrip>
+                    <FolderOpen size={12} />
+                  </SettingsIconActionButton>
+                )}
+              />
+              <SettingsKeyValueRow
+                label="Settings:"
+                value={(
+                  <SettingsCompactPath
+                    value={selectedProfile.settingsPath}
+                    title={selectedProfile.settingsPath}
+                  />
+                )}
+              />
+              <SettingsKeyValueRow
+                label="Updated:"
+                value={formatProfileTimestamp(selectedProfile.updatedAtMs)}
+              />
+            </SettingsCompactSection>
+          ) : null}
+        </div>
 
-                <div className="space-y-2 text-[11px] opacity-70">
-                  <div>{selectedProfile.directoryPath}</div>
-                  <div>{selectedProfile.settingsPath}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-[11px] opacity-55">
-                No usr profiles are available yet.
-              </div>
-            )}
-          </SettingsInspectorPanel>
-
-          <SettingsInspectorPanel
+        <div className="min-w-0 space-y-2.5">
+          <SettingsCompactSection
             title="Shared Root Slices"
-            subtitle={`These ${usrProfileSharedSettingSliceKeys.length} settings slices stay global across every profile.`}
-            badges={['shared-root']}
+            subtitle={`${usrProfileSettingSliceKeys.length} overlay / ${usrProfileSharedSettingSliceKeys.length} shared`}
           >
-            <div className="flex flex-wrap gap-2">
-              {usrProfileSharedSettingSliceKeys.map((sliceKey) => (
-                <SettingsStatusPill key={sliceKey}>{sliceKey}</SettingsStatusPill>
-              ))}
-            </div>
-          </SettingsInspectorPanel>
-
-          <SettingsInspectorPanel
-            title="Active Profile Ownership"
-            subtitle="Workbench-facing slices can stay inherited or be explicitly overridden by the selected profile."
-            badges={['profile-overlay']}
-          >
-            <div className="flex flex-wrap gap-2">
-              {usrProfileSettingSliceKeys.map((sliceKey) => {
-                const overridden = activeProfileOverrideSliceSet.has(sliceKey);
-                return (
-                  <SettingsStatusPill
-                    key={sliceKey}
-                    active={overridden}
-                    style={overridden ? { color: accent } : undefined}
-                  >
-                    {sliceKey} · {overridden ? 'overridden' : 'inherited'}
-                  </SettingsStatusPill>
-                );
-              })}
-            </div>
-          </SettingsInspectorPanel>
+            <SettingsKeyValueRow
+              label="Shared Root:"
+              value={(
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {usrProfileSharedSettingSliceKeys.map((sliceKey) => (
+                    <SettingsStatusPill key={sliceKey}>{sliceKey}</SettingsStatusPill>
+                  ))}
+                </div>
+              )}
+            />
+            <SettingsKeyValueRow
+              label="Profile Overlay:"
+              value={(
+                <div className="flex min-w-0 flex-wrap gap-1">
+                  {usrProfileSettingSliceKeys.map((sliceKey) => {
+                    const overridden = activeProfileOverrideSliceSet.has(sliceKey);
+                    return (
+                      <SettingsStatusPill
+                        key={sliceKey}
+                        active={overridden}
+                        style={overridden ? { color: accent } : undefined}
+                      >
+                        {sliceKey} · {overridden ? 'overridden' : 'inherited'}
+                      </SettingsStatusPill>
+                    );
+                  })}
+                </div>
+              )}
+            />
+          </SettingsCompactSection>
 
           {usrProfileRuntimeSnapshot ? (
-            <SettingsInspectorPanel
+            <SettingsCompactSection
               title="Runtime Paths"
-              subtitle="Shared settings stay under the shared profile workspace, while profile-overlay lanes write into the active profile and fall back to the canonical baseline."
-              badges={['runtime']}
-              actions={
-                <SettingsActionStrip>
-                  <SettingsActionButton
+              subtitle="Profiles root and active settings files"
+              actions={(
+                <>
+                  <SettingsIconActionButton
                     disabled={pendingActionLabel != null}
+                    aria-label="Open Profiles Root"
+                    title="Open Profiles Root"
                     onClick={() =>
                       void runProfileAction('Opening profiles root…', onOpenUsrProfilesRootFolder)
                     }
                   >
-                    <FolderOpen size={11} />
-                    <span>Profiles Root</span>
-                  </SettingsActionButton>
+                    <FolderOpen size={12} />
+                  </SettingsIconActionButton>
                   {activeProfile ? (
-                    <SettingsActionButton
+                    <SettingsIconActionButton
                       disabled={pendingActionLabel != null}
+                      aria-label="Open Active Profile"
+                      title="Open Active Profile"
                       onClick={() =>
                         void runProfileAction('Opening active profile…', () =>
                           onOpenUsrProfileFolder(activeProfile.id),
                         )
                       }
                     >
-                      <FolderOpen size={11} />
-                      <span>Active Overlay</span>
-                    </SettingsActionButton>
+                      <Layers3 size={12} />
+                    </SettingsIconActionButton>
                   ) : null}
-                </SettingsActionStrip>
-              }
+                </>
+              )}
             >
-              <div className="space-y-2 text-[11px] opacity-65">
-                <div className="min-w-0 break-all">
-                  <span className="font-semibold opacity-80">Profiles root: </span>
-                  {usrProfileRuntimeSnapshot.profilesRoot}
-                </div>
-                <div className="min-w-0 break-all">
-                  <span className="font-semibold opacity-80">Shared settings: </span>
-                  {usrProfileRuntimeSnapshot.sharedSettingsPath}
-                </div>
-                <div className="min-w-0 break-all">
-                  <span className="font-semibold opacity-80">Active overlay: </span>
-                  {usrProfileRuntimeSnapshot.activeProfileSettingsPath}
-                </div>
-              </div>
-            </SettingsInspectorPanel>
+              <SettingsKeyValueRow
+                label="Profiles Root:"
+                value={(
+                  <SettingsCompactPath
+                    value={usrProfileRuntimeSnapshot.profilesRoot}
+                    title={usrProfileRuntimeSnapshot.profilesRoot}
+                  />
+                )}
+              />
+              <SettingsKeyValueRow
+                label="Shared Settings:"
+                value={(
+                  <SettingsCompactPath
+                    value={usrProfileRuntimeSnapshot.sharedSettingsPath}
+                    title={usrProfileRuntimeSnapshot.sharedSettingsPath}
+                  />
+                )}
+              />
+              <SettingsKeyValueRow
+                label="Active Overlay:"
+                value={(
+                  <SettingsCompactPath
+                    value={usrProfileRuntimeSnapshot.activeProfileSettingsPath}
+                    title={usrProfileRuntimeSnapshot.activeProfileSettingsPath}
+                  />
+                )}
+              />
+            </SettingsCompactSection>
           ) : null}
 
           {managedContentStacks.length > 0 ? (
-            <SettingsInspectorPanel
+            <SettingsCompactSection
               title="Effective Lane Stack"
-              subtitle="Lane content resolves from the active profile, then the canonical baseline (`usr/<lane>` for shared lanes or `usr/profiles/default/<lane>` for overlay lanes), then bundled defaults."
-              badges={[`${managedContentStacks.length} lanes`, 'stack order']}
+              subtitle={pluralize(managedContentStacks.length, 'lane')}
             >
-              <div className="space-y-3">
-                {managedContentStacks.map((stack) => (
-                  <div
-                    key={stack.laneId}
-                    className="min-w-0 rounded border p-3 text-[11px]"
-                    style={{
-                      borderColor: 'var(--overlay-workbench-settings-card-border)',
-                      background: 'var(--overlay-workbench-settings-card-bg)',
-                    }}
-                  >
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="font-semibold">{stack.laneId}</span>
-                      <SettingsStatusPill active={stack.profileMode === 'profile-overlay'}>
-                        {stack.profileMode}
-                      </SettingsStatusPill>
-                    </div>
-                    <div className="mt-2 min-w-0 break-all opacity-65">
-                      <span className="font-semibold opacity-80">Baseline: </span>
-                      {stack.baselineDirectory}
-                    </div>
-                    <div className="mt-2 min-w-0 break-all opacity-65">
-                      <span className="font-semibold opacity-80">Writable: </span>
-                      {stack.writableDirectory}
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {stack.directories.map((directory, index) => {
-                        const sourceBadges = buildManagedContentDirectorySourceBadges(
-                          stack,
-                          directory,
-                        );
-                        return (
-                          <div
-                            key={`${stack.laneId}:${directory}:${index}`}
-                            className="grid min-w-0 grid-cols-[24px_minmax(0,1fr)] gap-2"
-                          >
-                            <SettingsStatusPill>{index + 1}</SettingsStatusPill>
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap gap-1">
-                                {sourceBadges.map((sourceBadge) => (
-                                  <SettingsStatusPill
-                                    key={`${stack.laneId}:${directory}:${sourceBadge}`}
-                                    active={sourceBadge === 'baseline' || sourceBadge === 'active-profile'}
-                                  >
-                                    {sourceBadge}
-                                  </SettingsStatusPill>
-                                ))}
-                              </div>
-                              <div className="min-w-0 break-all opacity-70">{directory}</div>
+              {managedContentStacks.map((stack) => (
+                <div
+                  key={stack.laneId}
+                  className="border-t first:border-t-0"
+                  style={{ borderColor: 'var(--overlay-workbench-settings-card-border)' }}
+                >
+                  <SettingsKeyValueRow
+                    label={(
+                      <span className="normal-case">{stack.laneId}</span>
+                    )}
+                    value={(
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <SettingsStatusPill active={stack.profileMode === 'profile-overlay'}>
+                          {stack.profileMode}
+                        </SettingsStatusPill>
+                        <span className="truncate opacity-55">
+                          {pluralize(stack.directories.length, 'source')}
+                        </span>
+                      </div>
+                    )}
+                  />
+                  <SettingsKeyValueRow
+                    label="Baseline:"
+                    value={(
+                      <SettingsCompactPath
+                        value={stack.baselineDirectory}
+                        title={stack.baselineDirectory}
+                      />
+                    )}
+                  />
+                  <SettingsKeyValueRow
+                    label="Writable:"
+                    value={(
+                      <SettingsCompactPath
+                        value={stack.writableDirectory}
+                        title={stack.writableDirectory}
+                      />
+                    )}
+                  />
+                  {stack.directories.map((directory, index) => {
+                    const sourceBadges = buildManagedContentDirectorySourceBadges(
+                      stack,
+                      directory,
+                    );
+                    return (
+                      <SettingsKeyValueRow
+                        key={`${stack.laneId}:${directory}:${index}`}
+                        label={`Source ${index + 1}:`}
+                        value={(
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <div className="flex shrink-0 flex-wrap gap-1">
+                              {sourceBadges.map((sourceBadge) => (
+                                <SettingsStatusPill
+                                  key={`${stack.laneId}:${directory}:${sourceBadge}`}
+                                  active={sourceBadge === 'baseline' || sourceBadge === 'active-profile'}
+                                >
+                                  {sourceBadge}
+                                </SettingsStatusPill>
+                              ))}
                             </div>
+                            <SettingsCompactPath value={directory} title={directory} />
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </SettingsInspectorPanel>
+                        )}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </SettingsCompactSection>
           ) : null}
         </div>
       </div>
-    </section>
+    </SettingsSectionScaffold>
   );
 }

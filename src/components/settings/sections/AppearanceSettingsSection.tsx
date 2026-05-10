@@ -1,4 +1,4 @@
-import { Palette, RefreshCw } from '@/components/AppIcons';
+import { FolderOpen, Palette, RefreshCw } from '@/components/AppIcons';
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
@@ -13,15 +13,20 @@ import {
 import type { LoadedOverlayThemePackage } from '../../../config/themePackages';
 import { clampOverlayVisualControlValue, formatOverlayVisualControlValue, overlayVisualControls } from '../../../config/overlayWindow';
 import type { InteractionMotionBinding } from '../../../animation/interactionMotion';
+import { OverlayToggle } from '../../OverlayToggle';
 import { ThemeCatalogGrid, getActiveThemeCatalogPackage, renderThemeCatalogPackageBadges } from '../ThemeCatalog';
 import {
   RangeField,
-  SettingsActionStrip,
-  SettingsCatalogCard,
+  SettingsCompactActionButton,
+  SettingsCompactSection,
+  SettingsControlRow,
+  SettingsIconActionButton,
+  SettingsInlineNotice,
+  SettingsKeyValueRow,
+  SettingsMetricStrip,
   SettingsInspectorPanel,
-  SettingsRow,
-  SettingsSectionBlock,
-  SettingsSectionHeader,
+  SettingsSectionScaffold,
+  SettingsSelect,
   ThemeBadge,
 } from '../SettingsPrimitives';
 
@@ -132,81 +137,90 @@ export function AppearanceSettingsSection({
     appearance.themes,
     themePackageLookup,
   );
+  const activeThemeSourceLabel = getThemeSourceLabel(editableTheme);
+  const activeFont = overlayFontCatalog.find(font => font.family === uiFontFamily);
+  const fontOptions = activeFont
+    ? overlayFontCatalog
+    : [{ id: 'current-font', name: 'Current Font', family: uiFontFamily }, ...overlayFontCatalog];
   void muted;
+  void border;
+  void text;
 
   return (
-    <section className="min-w-0 space-y-3" data-settings-section="appearance">
-      <SettingsSectionHeader
-        icon={<Palette size={12} />}
-        title="Appearance"
-        subtitle="Theme recipes, UI fonts, and direct palette editing."
-      />
-
+    <SettingsSectionScaffold
+      sectionKey="appearance"
+      className="space-y-2.5"
+      icon={<Palette size={12} />}
+      title="Appearance"
+      subtitle={`${themePackagesCount} bundles · ${appAppearanceName}`}
+    >
       <div
-        className="grid min-w-0 grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1fr)_minmax(17.5rem,21rem)]"
+        className="grid min-w-0 grid-cols-1 gap-2.5 2xl:grid-cols-[minmax(0,1fr)_minmax(17.5rem,21rem)]"
         data-appearance-layout="compact-theme-catalog"
       >
-        <div className="min-w-0 space-y-3">
-          <SettingsSectionBlock
-            title="Theme Bundles"
-            subtitle={(
-              <>
-                Drop native bundles, VS Code color-theme folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>.
-              </>
-            )}
+        <div className="min-w-0 space-y-2.5">
+          <SettingsCompactSection
+            title="Themes"
+            subtitle={themePackagesDirectory}
             actions={(
-              <SettingsActionStrip>
-                <button
-                  type="button"
+              <>
+                <SettingsIconActionButton
                   onClick={() => void onOpenThemesFolder()}
-                  className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                  aria-label="Open themes folder"
+                  title="Open themes folder"
                 >
-                  Open Folder
-                </button>
-                <button
-                  type="button"
+                  <FolderOpen size={12} />
+                </SettingsIconActionButton>
+                <SettingsCompactActionButton
                   onClick={() => void onRefreshThemes()}
-                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                  style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                  accent={accent}
+                  aria-label="Refresh themes"
+                  title="Refresh themes"
                 >
                   <RefreshCw size={10} />
                   Refresh
-                </button>
-              </SettingsActionStrip>
+                </SettingsCompactActionButton>
+              </>
             )}
-            tone="muted"
-            contentClassName="space-y-3"
           >
-            <div className="flex flex-wrap items-center gap-2 text-[10px]">
-              <ThemeBadge label={themePackagesLoading ? 'Scanning Bundles' : `${themePackagesCount} Bundles Loaded`} active />
-              <ThemeBadge label={`Active Source ${getThemeSourceLabel(editableTheme)}`} />
+            <div className="min-w-0 space-y-1.5 p-2">
+              <SettingsMetricStrip
+                items={[
+                  {
+                    id: 'bundles',
+                    label: 'Bundles',
+                    value: themePackagesLoading ? 'Scanning' : themePackagesCount,
+                    tone: themePackagesLoading ? 'accent' : 'default',
+                  },
+                  {
+                    id: 'source',
+                    label: 'Source',
+                    value: activeThemeSourceLabel,
+                  },
+                  {
+                    id: 'active',
+                    label: 'Active',
+                    value: activeTheme?.name ?? editableTheme.name,
+                    tone: 'accent',
+                  },
+                ]}
+              />
+              {themePackagesError ? (
+                <SettingsInlineNotice tone="danger">
+                  Theme scan failed: {themePackagesError}
+                </SettingsInlineNotice>
+              ) : null}
+
+              {themePackagesWarnings.map(warning => (
+                <SettingsInlineNotice key={warning} tone="warning">
+                  {warning}
+                </SettingsInlineNotice>
+              ))}
             </div>
-
-            <p className="text-[11px] leading-4 opacity-40">
-              Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached .vsix extracts never masquerade as authored bundles.
-            </p>
-
-            {themePackagesError ? (
-              <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
-                Theme package scan failed: {themePackagesError}
-              </div>
-            ) : null}
-
-            {themePackagesWarnings.length > 0 ? (
-              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
-                <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
-                <div className="mt-2 space-y-1.5">
-                  {themePackagesWarnings.map(warning => (
-                    <div key={warning}>{warning}</div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </SettingsSectionBlock>
+          </SettingsCompactSection>
 
           <div className="min-w-0 space-y-1.5">
-            <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Theme Suite</label>
+            <label className="text-[10px] font-semibold uppercase opacity-50">Theme Suite</label>
             <ThemeCatalogGrid
               themes={appearance.themes}
               activeThemeId={activeThemeId}
@@ -219,7 +233,7 @@ export function AppearanceSettingsSection({
 
           {dockThemeMode === 'override' ? (
             <div className="min-w-0 space-y-1.5">
-              <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
+              <label className="text-[10px] font-semibold uppercase opacity-50">Dock Suite</label>
               <ThemeCatalogGrid
                 themes={appearance.themes}
                 activeThemeId={activeDockThemeId}
@@ -235,7 +249,7 @@ export function AppearanceSettingsSection({
         <div className="min-w-0 space-y-3">
           <SettingsInspectorPanel
             title="Theme Inspector"
-            subtitle={activeThemePackage?.description ?? activeTheme?.description ?? 'Choose an active theme bundle and adjust how the dock follows it.'}
+            subtitle={activeThemePackage?.description ?? activeTheme?.description ?? 'Theme routing'}
             badges={[
               activeTheme?.name ?? editableTheme.name,
               dockThemeMode === 'override' ? 'Dock override' : 'Dock follows app',
@@ -249,94 +263,69 @@ export function AppearanceSettingsSection({
                 <ThemeBadge label={`Dock ${dockAppearanceName}`} />
               </div>
 
-              <SettingsSectionBlock
-                title="Dock Theme Mode"
-                subtitle="Keep dock mode on the application theme, or pin dock mode to a separate theme while still honoring dock-specific recipe overrides."
-                tone="muted"
-              >
-                <div className="grid min-w-0 grid-cols-1 gap-2">
-                  {[
-                    {
-                      value: 'follow-app',
-                      label: 'Follow Application',
-                      description: 'Dock uses the app theme plus any dock-specific recipes declared by that theme.',
-                    },
-                    {
-                      value: 'override',
-                      label: 'Override Theme',
-                      description: 'Dock uses its own separately selected theme.',
-                    },
-                  ].map(option => (
-                    <SettingsCatalogCard
-                      key={option.value}
-                      title={option.label}
-                      description={option.description}
-                      active={dockThemeMode === option.value}
-                      accent={accent}
-                      onClick={() => onUpdateAppearance({ dockThemeMode: option.value as 'follow-app' | 'override' })}
-                    />
-                  ))}
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                  <ThemeBadge label={`Dock Source ${dockThemeMode === 'override' ? 'Override Theme' : 'Application Theme'}`} active />
-                  <ThemeBadge label={`Current Dock Theme ${dockAppearanceName}`} />
-                </div>
-
+              <SettingsCompactSection title="Routing">
+                <SettingsControlRow
+                  label="Dock Mode"
+                  detail={dockThemeMode === 'override' ? 'Pinned theme' : 'App theme'}
+                  control={(
+                    <SettingsSelect
+                      value={dockThemeMode}
+                      onChange={event => onUpdateAppearance({ dockThemeMode: event.target.value as 'follow-app' | 'override' })}
+                      aria-label="Dock theme mode"
+                    >
+                      <option value="follow-app">Follow App</option>
+                      <option value="override">Override Theme</option>
+                    </SettingsSelect>
+                  )}
+                />
+                <SettingsKeyValueRow label="App Theme" value={appAppearanceName} />
+                <SettingsKeyValueRow label="Dock Theme" value={dockAppearanceName} />
                 {dockThemeMode === 'follow-app' ? (
-                  <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
-                    Dock mode is following <strong>{appAppearanceName}</strong>. Dock-specific recipes declared by that theme resolve automatically.
-                  </div>
+                  <SettingsInlineNotice tone="info">
+                    Dock follows {appAppearanceName}
+                  </SettingsInlineNotice>
                 ) : null}
-              </SettingsSectionBlock>
+              </SettingsCompactSection>
 
-              <SettingsSectionBlock
-                title="Typography"
-                subtitle="Choose the UI font family for shell chrome and settings surfaces."
-                tone="muted"
-              >
-                <div className="grid min-w-0 grid-cols-1 gap-2">
-                  {overlayFontCatalog.map(font => {
-                    const active = uiFontFamily === font.family;
-                    return (
-                      <SettingsCatalogCard
-                        key={font.id}
-                        title={font.name}
-                        subtitle={active ? 'Active UI Font' : 'UI Font'}
-                        description={font.family}
-                        active={active}
-                        accent={accent}
-                        onClick={() => {
-                          void ensureFontFamilyLoaded(font.family);
-                          onUpdateAppearance({ uiFontFamily: font.family });
-                        }}
-                        style={{
-                          fontFamily: font.family,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
-              </SettingsSectionBlock>
+              <SettingsCompactSection title="Typography">
+                <SettingsControlRow
+                  label="UI Font"
+                  detail={activeFont?.name ?? 'Current'}
+                  control={(
+                    <SettingsSelect
+                      value={uiFontFamily}
+                      onChange={event => {
+                        void ensureFontFamilyLoaded(event.target.value);
+                        onUpdateAppearance({ uiFontFamily: event.target.value });
+                      }}
+                      aria-label="UI font"
+                      style={{ fontFamily: uiFontFamily }}
+                    >
+                      {fontOptions.map(font => (
+                        <option key={font.id} value={font.family} style={{ fontFamily: font.family }}>
+                          {font.name}
+                        </option>
+                      ))}
+                    </SettingsSelect>
+                  )}
+                />
+                <SettingsKeyValueRow label="Family" value={uiFontFamily} />
+              </SettingsCompactSection>
 
-              <SettingsSectionBlock
-                title="Palette Tokens"
-                subtitle="Directly tune the editable theme bundle palette."
-                tone="muted"
-              >
-                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 2xl:grid-cols-1">
+              <SettingsCompactSection title="Palette">
+                <div className="grid min-w-0 grid-cols-1 gap-2 p-2 sm:grid-cols-2 2xl:grid-cols-1">
                   <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => onUpdateThemePalette({ accent: value, accentSoft: `${value}22` })} />
                   <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => onUpdateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
                   <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => onUpdateThemePalette({ panelBackground: value, sidebarBackground: value })} />
                   <ColorToken label="Text" value={editableTheme.palette.textPrimary} onChange={value => onUpdateThemePalette({ textPrimary: value })} />
                 </div>
-              </SettingsSectionBlock>
+              </SettingsCompactSection>
             </div>
           </SettingsInspectorPanel>
 
           <SettingsInspectorPanel
             title="Surface Controls"
-            subtitle="Tune shell translucency, glass strength, and scale without leaving the active theme."
+            subtitle="Opacity, blur, zoom"
             accent={accent}
             tone="muted"
           >
@@ -385,21 +374,24 @@ export function AppearanceSettingsSection({
                 onChange={value => onUpdateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
                 density="compact"
               />
-              <SettingsRow
-                title="Native Glass Blur"
-                description="Use compositor-backed window blur when the platform supports it, then tune the glass amount with Blur Strength."
-                control={(
-                  <input
-                    type="checkbox"
-                    checked={appBlur}
-                    onChange={event => onUpdateAppearance({ appBlur: event.target.checked })}
-                  />
-                )}
-              />
+              <SettingsCompactSection title="Native">
+                <SettingsControlRow
+                  label="Native Glass Blur"
+                  control={appBlur ? 'On' : 'Off'}
+                  action={(
+                    <OverlayToggle
+                      size="compact"
+                      aria-label="Native Glass Blur"
+                      checked={appBlur}
+                      onChange={event => onUpdateAppearance({ appBlur: event.target.checked })}
+                    />
+                  )}
+                />
+              </SettingsCompactSection>
             </div>
           </SettingsInspectorPanel>
         </div>
       </div>
-    </section>
+    </SettingsSectionScaffold>
   );
 }
