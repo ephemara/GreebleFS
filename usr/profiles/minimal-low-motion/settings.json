@@ -16,11 +16,11 @@
     "appAnimationDurationMs": 320,
     "appAnimationIntensity": 1,
     "appBlur": false,
-    "appBlurStrength": 18,
+    "appBlurStrength": 20,
     "appCloseAnimation": null,
-    "appOpacity": 1,
+    "appOpacity": 0.37,
     "appOpenAnimation": null,
-    "appZoom": 0.7499999999999998,
+    "appZoom": 0.7,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -483,13 +483,13 @@
         "intensityMultiplier": 1.5
       }
     },
-    "panelTransparency": 0,
+    "panelTransparency": 0.6,
     "shaderControlValues": {},
     "shaderPerformanceMode": "performance",
     "sidebarPosition": "left",
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
-    "uiFontFamily": "system-ui, sans-serif",
+    "uiFontFamily": "\"Fira Code\", \"Cascadia Code\", monospace",
     "useNativeOsIcons": true,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,

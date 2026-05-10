@@ -33,6 +33,13 @@ import {
   recordExplorerNativePoolSuccess,
 } from "./explorerNativePool";
 import {
+  getExplorerPathIndexStatus,
+  searchExplorerPathIndex,
+  startExplorerPathIndex,
+  tryListExplorerPathIndexDirectory,
+  warmExplorerPathIndexForPath,
+} from "./explorerPathIndex";
+import {
   isExplorerNativeRingSearchStreamAvailable,
   searchExplorerEntriesWithDiagnosticsViaNativeStream,
 } from "./explorerNativeStreams";
@@ -668,6 +675,9 @@ export type ExplorerBackendContract = {
   listArchiveDir: typeof listExplorerArchiveDir;
   listLocation: typeof listExplorerLocation;
   listLocationUncached: typeof listExplorerLocationUncached;
+  getPathIndexStatus: typeof getExplorerPathIndexStatus;
+  startPathIndex: typeof startExplorerPathIndex;
+  searchPathIndex: typeof searchExplorerPathIndex;
   bootstrapPolicySession: typeof bootstrapExplorerPolicySession;
   navigatePolicySession: typeof navigateExplorerPolicySession;
   resolveEntryOpenWithPolicy: typeof resolveExplorerEntryOpenWithPolicy;
@@ -842,7 +852,7 @@ export async function listExplorerArchiveDir(
 }
 
 function shouldUseExplorerNativeBufferPool(
-  systemId: "directoryListingSnapshots" | "previewByteReads",
+  systemId: "directoryListingSnapshots" | "pathIndexDirectorySnapshots" | "previewByteReads",
 ): boolean {
   return (
     resolveGreebleNativeLaneSelection(
@@ -904,6 +914,17 @@ async function listLocalExplorerDirWithFallback(
   showHidden: boolean,
   bypassCache: boolean,
 ): Promise<ExplorerFileEntry[]> {
+  if (!bypassCache) {
+    warmExplorerPathIndexForPath(path);
+    const indexedEntries = await tryListExplorerPathIndexDirectory({
+      path,
+      showHidden,
+    });
+    if (indexedEntries) {
+      return indexedEntries;
+    }
+  }
+
   if (shouldUseExplorerNativeBufferPool("directoryListingSnapshots")) {
     recordExplorerNativePoolAttempt("directoryListingSnapshots");
     try {
@@ -2649,6 +2670,9 @@ export const explorerBackendContract: ExplorerBackendContract = {
   listArchiveDir: listExplorerArchiveDir,
   listLocation: listExplorerLocation,
   listLocationUncached: listExplorerLocationUncached,
+  getPathIndexStatus: getExplorerPathIndexStatus,
+  startPathIndex: startExplorerPathIndex,
+  searchPathIndex: searchExplorerPathIndex,
   bootstrapPolicySession: bootstrapExplorerPolicySession,
   navigatePolicySession: navigateExplorerPolicySession,
   resolveEntryOpenWithPolicy: resolveExplorerEntryOpenWithPolicy,

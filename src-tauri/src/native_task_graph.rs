@@ -170,7 +170,7 @@ impl Default for NativeTaskLaneConcurrency {
             thumbnail_decode: 4,
             preview_read: 2,
             archive: 1,
-            indexing: 0,
+            indexing: 1,
             maintenance: 0,
         }
     }

@@ -187,7 +187,7 @@ const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy =
       thumbnailDecode: 4,
       previewRead: 2,
       archive: 1,
-      indexing: 0,
+      indexing: 1,
       maintenance: 0,
     }),
   });

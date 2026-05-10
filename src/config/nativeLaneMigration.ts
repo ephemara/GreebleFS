@@ -9,6 +9,8 @@ export type GreebleNativeLaneSystemId =
   | "thumbnailGeneration"
   | "previewByteReads"
   | "directoryListingSnapshots"
+  | "pathIndexDirectorySnapshots"
+  | "pathIndexControls"
   | "searchResultStreams"
   | "taskOutputStreams"
   | "terminalOutputComparison"
@@ -21,6 +23,8 @@ export interface GreebleNativeLaneFeatureFlags {
   thumbnailGenerationNativeControl: boolean;
   previewByteReadsNativeBufferPool: boolean;
   directoryListingNativeBufferPool: boolean;
+  pathIndexDirectoryNativeBufferPool: boolean;
+  pathIndexNativeControl: boolean;
   searchResultsNativeRing: boolean;
   taskOutputNativeRing: boolean;
   terminalOutputNativeRingComparison: boolean;
@@ -59,6 +63,8 @@ export const DEFAULT_GREEBLE_NATIVE_LANE_FEATURE_FLAGS: GreebleNativeLaneFeature
   thumbnailGenerationNativeControl: true,
   previewByteReadsNativeBufferPool: true,
   directoryListingNativeBufferPool: true,
+  pathIndexDirectoryNativeBufferPool: true,
+  pathIndexNativeControl: true,
   searchResultsNativeRing: true,
   taskOutputNativeRing: true,
   terminalOutputNativeRingComparison: true,
@@ -100,6 +106,24 @@ export const GREEBLE_NATIVE_LANE_SYSTEM_PLANS: readonly GreebleNativeLaneSystemP
     fallbackLane: "invoke",
     featureFlag: "directoryListingNativeBufferPool",
     requiredCapability: "nativeBufferPool",
+    migrationState: "candidate",
+  },
+  {
+    systemId: "pathIndexDirectorySnapshots",
+    currentLane: "invoke",
+    recommendedLane: "native_buffer_pool",
+    fallbackLane: "invoke",
+    featureFlag: "pathIndexDirectoryNativeBufferPool",
+    requiredCapability: "nativeBufferPool",
+    migrationState: "candidate",
+  },
+  {
+    systemId: "pathIndexControls",
+    currentLane: "invoke",
+    recommendedLane: "native_control",
+    fallbackLane: "invoke",
+    featureFlag: "pathIndexNativeControl",
+    requiredCapability: "nativeControl",
     migrationState: "candidate",
   },
   {

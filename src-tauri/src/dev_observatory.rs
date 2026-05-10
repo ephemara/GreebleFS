@@ -4,7 +4,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    gpu_runtime::GpuRuntimeManager, native_task_graph::NativeTaskGraphManager,
+    gpu_runtime::GpuRuntimeManager, indexing::PathIndexManager, native_task_graph::NativeTaskGraphManager,
     preview_streaming::PreviewStreamingManager, runtime_pipeline::HostEventBusState,
     telemetry::TelemetryManager,
 };
@@ -53,6 +53,14 @@ pub fn build_greeblefs_runtime_snapshot(app: &AppHandle) -> Result<Value, String
         })
         .transpose()
         .map_err(|error| format!("Failed to serialize preview streaming policy: {error}"))?;
+    let path_index = app
+        .try_state::<PathIndexManager>()
+        .map(|state| {
+            let status = state.status()?;
+            serde_json::to_value(status)
+                .map_err(|error| format!("Failed to serialize path index status: {error}"))
+        })
+        .transpose()?;
     let host_event_rings = app
         .try_state::<HostEventBusState>()
         .map(|state| serde_json::to_value(state.ring_telemetry_snapshot()))
@@ -85,6 +93,7 @@ pub fn build_greeblefs_runtime_snapshot(app: &AppHandle) -> Result<Value, String
         "telemetryRecords": telemetry_records,
         "nativeTaskGraph": native_task_graph,
         "previewStreaming": preview_streaming,
+        "pathIndex": path_index,
         "messageRings": {
             "hostEvents": host_event_rings,
             "telemetryRecentRecords": telemetry_recent_records_ring

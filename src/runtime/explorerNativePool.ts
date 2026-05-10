@@ -92,6 +92,19 @@ export async function listLocalExplorerDirectorySnapshotViaNativePool(args: {
   });
 }
 
+export async function listIndexedExplorerDirectorySnapshotViaNativePool(args: {
+  path: string;
+  showHidden: boolean;
+}): Promise<FileEntry[]> {
+  return withNativePooledBufferOnce({
+    namespace: "explorer",
+    method: "pathIndexListDirSnapshot",
+    args,
+    timeoutMs: 4000,
+    decode: decodeExplorerDirectorySnapshot,
+  });
+}
+
 export async function readLocalExplorerPreviewBytesViaNativePool(
   path: string,
   maxBytes: number,

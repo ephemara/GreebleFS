@@ -40,6 +40,8 @@ pub mod gpu_runtime;
 pub mod image_commands;
 #[cfg(not(test))]
 pub mod image_cutout_commands;
+#[cfg(not(test))]
+pub mod indexing;
 pub mod ipc_runtime;
 #[cfg(not(test))]
 pub mod lan_share;
@@ -129,6 +131,8 @@ use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
 use explorer_identity::{initialize_explorer_identity_store, ExplorerIdentityManager};
 #[cfg(not(test))]
 use fs_commands::initialize_fs_command_events;
+#[cfg(not(test))]
+use indexing::PathIndexManager;
 #[cfg(not(test))]
 use native_task_graph::NativeTaskGraphManager;
 #[cfg(not(test))]
@@ -274,6 +278,7 @@ pub fn run() {
             tauri::native_buffer_pool::register_native_control_handlers(&app.handle())?;
             fs_commands::register_native_pool_handlers(&app.handle())?;
             initialize_explorer_identity_store(app.handle())?;
+            let path_index_manager = PathIndexManager::from_app(&app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
             gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());
             app.manage(ipc_runtime::IpcRuntimeState::from_app(&app.handle()));
@@ -298,6 +303,8 @@ pub fn run() {
             app.manage(TelemetryManager::from_app(&app.handle()));
             app.manage(NativeTaskGraphManager::from_app(&app.handle()));
             app.manage(PreviewStreamingManager::from_app(&app.handle()));
+            app.manage(path_index_manager);
+            indexing::register_native_handlers(&app.handle())?;
             if let Err(error) = dev_observatory::initialize_greeblefs_dev_observatory(&app.handle())
             {
                 eprintln!("GreebleFS: failed to initialize Tauron dev observatory: {error}");
