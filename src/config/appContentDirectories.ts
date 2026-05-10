@@ -60,6 +60,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 12,
   },
+  kainPlugins: {
+    label: "Kain Plugins",
+    description:
+      "Author Kain-native workbench, preview, action, FFI, WASM, and Cargo-capable plugin packages here.",
+    keywords: [
+      "kain plugin",
+      "kain workbench",
+      "ffi plugin",
+      "wasm plugin",
+      "cargo ffi",
+    ],
+    order: 14,
+  },
   themes: {
     label: "Themes",
     description:

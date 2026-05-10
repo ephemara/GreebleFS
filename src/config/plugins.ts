@@ -9,12 +9,19 @@ export function resolvePluginPackagesDirectory(): string {
   return getManagedContentDirectory('packages');
 }
 
+export function resolveKainPluginsDirectory(): string {
+  return getManagedContentDirectory('kainPlugins');
+}
+
 export const pluginSystemConfig = {
   get pluginsDirectory(): string {
     return resolvePluginsDirectory();
   },
   get packagesDirectory(): string {
     return resolvePluginPackagesDirectory();
+  },
+  get kainPluginsDirectory(): string {
+    return resolveKainPluginsDirectory();
   },
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   backendDirectoryName: 'backend',
@@ -41,6 +48,10 @@ export function getPluginDirectory(pluginId: string): string {
 
 export function getPluginPackageDirectory(packageId: string): string {
   return joinPlatformPath(pluginSystemConfig.packagesDirectory, packageId);
+}
+
+export function getKainPluginDirectory(pluginId: string): string {
+  return joinPlatformPath(pluginSystemConfig.kainPluginsDirectory, pluginId);
 }
 
 export function getPluginBackendDirectory(pluginId: string): string {
@@ -71,6 +82,7 @@ export function isPluginManagedWatchPath(path: string): boolean {
   const managedRoots = [
     pluginSystemConfig.pluginsDirectory,
     pluginSystemConfig.packagesDirectory,
+    pluginSystemConfig.kainPluginsDirectory,
   ].map(root => root.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase());
 
   if (managedRoots.some(root => normalizedPath === root || normalizedPath.startsWith(`${root}/`))) {
@@ -78,7 +90,7 @@ export function isPluginManagedWatchPath(path: string): boolean {
   }
 
   const segments = normalizePluginWatchPathSegments(path);
-  return segments.includes('plugins') || segments.includes('packages');
+  return segments.includes('plugins') || segments.includes('packages') || segments.includes('plugins-kain');
 }
 
 export function shouldRefreshForPluginWatchPaths(paths: string[]): boolean {

@@ -35,6 +35,7 @@ import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import { getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from '../config/platform';
 import type { OverlayRegisteredFontContribution } from '../config/appearance';
 import * as explorerBackend from './explorerBackend';
+import { loadKainPluginCatalog } from './kainPluginCatalog';
 import type { PluginDirectoryWatchEvent } from '../generated/tauri';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
 import { commands, unwrapTauriResult } from './tauriClient';
@@ -334,9 +335,14 @@ export function useFolderPluginRuntime(
         setFolderPluginsError(null);
         try {
           await ensureDir(pluginSystemConfig.pluginsDirectory);
+          await ensureDir(pluginSystemConfig.kainPluginsDirectory);
           const listed = await explorerBackend.listExplorerDir(pluginSystemConfig.pluginsDirectory, false);
+          const listedKain = await explorerBackend
+            .listExplorerDir(pluginSystemConfig.kainPluginsDirectory, false)
+            .catch(() => []);
           const nextSignature = listed
             .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
+            .concat(listedKain.filter(entry => entry.is_dir || entry.name.toLowerCase().endsWith('.kn')))
             .sort((left, right) => left.name.localeCompare(right.name))
             .map(entry => `${entry.path}:${entry.modified}:${entry.is_dir ? 'dir' : 'file'}`)
             .join('|');
@@ -350,8 +356,14 @@ export function useFolderPluginRuntime(
           const discoveryDisabledPluginIds = disabledPluginIdsRef.current;
           const discoveryEnablementSignature =
             createPluginEnablementSignature(discoveryDisabledPluginIds);
+          const kainPluginCatalogResult = await loadKainPluginCatalog({
+            source: 'folder-plugin-runtime',
+            force: nextForce,
+          });
           const discovered = await pluginPackages.discoverOverlayPlugins(createPluginApi, {
             disabledPluginIds: discoveryDisabledPluginIds,
+            kainPluginCatalog: kainPluginCatalogResult.catalog,
+            kainPluginCatalogError: kainPluginCatalogResult.error,
           });
           if (
             discoveryEnablementSignature !==
@@ -510,6 +522,7 @@ export function useFolderPluginRuntime(
       try {
         await ensureDir(pluginSystemConfig.pluginsDirectory);
         await ensureDir(pluginSystemConfig.packagesDirectory);
+        await ensureDir(pluginSystemConfig.kainPluginsDirectory);
         const pluginWatchDirectory = resolvePluginWatchDirectory();
         await ensureDir(pluginWatchDirectory);
         const unlistenPluginWatchPromise = listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {

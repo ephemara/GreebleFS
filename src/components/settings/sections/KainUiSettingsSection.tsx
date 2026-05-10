@@ -3,6 +3,7 @@ import type { KainAppManifest } from "@/runtime/kainManifest";
 import type { KainUiScaffold } from "@/runtime/kainUiScaffold";
 import type { KainLatticeCatalog } from "@/runtime/kainLatticeCatalog";
 import type { KainFfiCatalog } from "@/runtime/kainFfiCatalog";
+import type { KainPluginCatalog } from "@/runtime/kainPluginCatalog";
 import { KainSemanticSurfaceHost } from "@/components/kain/KainSemanticSurfaceHost";
 import {
   buildKainSemanticUiRegistry,
@@ -30,6 +31,8 @@ export function KainUiSettingsSection({
   latticeCatalogError,
   ffiCatalog,
   ffiCatalogError,
+  pluginCatalog,
+  pluginCatalogError,
   activeThemeId,
   onApplyThemeSelection,
 }: {
@@ -43,6 +46,8 @@ export function KainUiSettingsSection({
   latticeCatalogError: string | null;
   ffiCatalog: KainFfiCatalog | null;
   ffiCatalogError: string | null;
+  pluginCatalog: KainPluginCatalog | null;
+  pluginCatalogError: string | null;
   activeThemeId?: string | null;
   onApplyThemeSelection?: (themeId: string) => void;
 }) {
@@ -80,6 +85,14 @@ export function KainUiSettingsSection({
   const ffiAnalysisCount = ffiCatalog?.analysisPipelines.length ?? 0;
   const pythonFfiLane = ffiCatalog?.lanes.find((lane) => lane.id === "python") ?? null;
   const nextFfiLane = ffiCatalog?.lanes.find((lane) => !lane.implemented) ?? ffiCatalog?.lanes[0] ?? null;
+  const pluginStatus = pluginCatalog ? "live" : "offline";
+  const kainPluginCount = pluginCatalog?.plugins.length ?? 0;
+  const kainPluginWorkbenchCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.workbenches.length, 0) ?? 0;
+  const kainPluginPreviewWorkbenchCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.previewWorkbenches.length, 0) ?? 0;
+  const kainPluginFfiCapabilityCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.ffiCapabilities.length, 0) ?? 0;
+  const kainPluginWasmTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.wasmTargets.length, 0) ?? 0;
+  const kainPluginCargoFfiTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.cargoFfiTargets.length, 0) ?? 0;
+  const firstKainPlugin = pluginCatalog?.plugins[0] ?? null;
   const semanticRegistry = buildKainSemanticUiRegistry(scaffold, latticeCatalog);
   const settingsModuleMounts = selectKainSemanticUiMounts(semanticRegistry, {
     kind: "settings-module",
@@ -114,6 +127,12 @@ export function KainUiSettingsSection({
       data-kain-ffi-proof={ffiStatus}
       data-kain-ffi-lanes={ffiCatalogLaneCount}
       data-kain-ffi-python={pythonFfiLane?.status ?? "missing"}
+      data-kain-plugin-catalog-proof={pluginStatus}
+      data-kain-plugin-count={kainPluginCount}
+      data-kain-plugin-preview-workbenches={kainPluginPreviewWorkbenchCount}
+      data-kain-plugin-ffi-capabilities={kainPluginFfiCapabilityCount}
+      data-kain-plugin-wasm-targets={kainPluginWasmTargetCount}
+      data-kain-plugin-cargo-ffi-targets={kainPluginCargoFfiTargetCount}
       data-kain-authored-theme-count={authoredThemeCount}
       data-kain-authored-theme-selected={selectedAuthoredTheme?.compatibilityThemeId ?? "none"}
       data-kain-semantic-surface-count={semanticSurfaceCount}
@@ -325,6 +344,35 @@ export function KainUiSettingsSection({
             title="Next"
             description={nextFfiLane ? `${nextFfiLane.label}: ${nextFfiLane.nextAction}` : "No FFI lane plan reported"}
             control={<SettingsStatusPill active={ffiAnalysisCount > 0}>{ffiAnalysisCount}</SettingsStatusPill>}
+          />
+        </SettingsRowGroup>
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Kain Plugins"
+        subtitle={pluginCatalog?.summary ?? pluginCatalogError ?? "Waiting for greeblefs.plugins.catalog"}
+        badges={[pluginCatalog ? "Plugin V1" : "No Catalog", `${kainPluginCount} plugins`]}
+      >
+        <SettingsRowGroup>
+          <SettingsRow
+            title="Root"
+            description={pluginCatalog ? `${pluginCatalog.root} | ${pluginCatalog.stdlib}` : "usr/plugins-kain pending"}
+            control={<SettingsStatusPill active={Boolean(pluginCatalog)}>{pluginCatalog ? "live" : "pending"}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Surfaces"
+            description={`${kainPluginWorkbenchCount} workbenches | ${kainPluginPreviewWorkbenchCount} preview workbenches`}
+            control={<SettingsStatusPill active={kainPluginPreviewWorkbenchCount > 0}>{kainPluginPreviewWorkbenchCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="FFI"
+            description={`${kainPluginFfiCapabilityCount} capabilities | ${kainPluginWasmTargetCount} WASM targets | ${kainPluginCargoFfiTargetCount} Cargo FFI targets`}
+            control={<SettingsStatusPill active={kainPluginFfiCapabilityCount > 0}>{kainPluginFfiCapabilityCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="First Plugin"
+            description={firstKainPlugin ? `${firstKainPlugin.name}: ${firstKainPlugin.description}` : "No Kain plugin reported"}
+            control={<SettingsStatusPill active={Boolean(firstKainPlugin)}>{firstKainPlugin?.status ?? "pending"}</SettingsStatusPill>}
           />
         </SettingsRowGroup>
       </SettingsSectionBlock>

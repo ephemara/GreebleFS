@@ -5,6 +5,7 @@ import type { KainAppManifest } from '../runtime/kainManifest';
 import type { KainFfiCatalog } from '../runtime/kainFfiCatalog';
 import type { KainLatticeCatalog } from '../runtime/kainLatticeCatalog';
 import type { KainUiGraph } from '../runtime/kainUiGraph';
+import type { KainPluginCatalog } from '../runtime/kainPluginCatalog';
 import type { KainUiScaffold } from '../runtime/kainUiScaffold';
 
 const graph: KainUiGraph = {
@@ -325,6 +326,130 @@ const ffiCatalog: KainFfiCatalog = {
   consumers: ['src/runtime/kainFfiCatalog.ts'],
 };
 
+const pluginCatalog: KainPluginCatalog = {
+  schemaVersion: 1,
+  kind: 'greeblefs.kain.plugin.catalog',
+  source: 'src-kain/plugins/registry.kn',
+  root: 'usr/plugins-kain',
+  stdlib: 'src-kain/plugins/stdlib/greeblefs/plugin.kn',
+  host: 'src/runtime/kainPluginCatalog.ts',
+  summary: 'Parallel Kain-native plugin catalog.',
+  plugins: [
+    {
+      id: 'kain-workbench-smoke',
+      name: 'Kain Workbench Smoke',
+      version: '0.1.0',
+      description: 'First Kain-native plugin package.',
+      category: 'Kain Plugins',
+      source: 'usr/plugins-kain/kain-workbench-smoke/plugin.kn',
+      directory: 'usr/plugins-kain/kain-workbench-smoke',
+      manifestPath: 'usr/plugins-kain/kain-workbench-smoke/plugin.kn',
+      status: 'live',
+      tags: ['kain', 'ffi'],
+      permissions: [],
+      ffiCapabilities: [
+        {
+          id: 'python.pipeline',
+          label: 'Python FFI pipeline',
+          lane: 'python',
+          summary: 'Python analysis.',
+          status: 'declared',
+          required: true,
+        },
+        {
+          id: 'cargo.pipeline',
+          label: 'Cargo FFI pipeline',
+          lane: 'cargo-ffi',
+          summary: 'Cargo analysis.',
+          status: 'declared',
+          required: false,
+        },
+      ],
+      runtimes: [],
+      workbenches: [
+        {
+          id: 'kain-workbench-smoke.main',
+          title: 'Kain Workbench Smoke',
+          summary: 'Workbench proof.',
+          kind: 'workbench',
+          mountSlot: 'workbench.panels',
+          order: 20,
+          rendererKind: 'kain-host',
+          defaultOpen: false,
+          hostModels: ['host.plugins'],
+          actions: ['kain.plugin.inspect'],
+          ffiLanes: ['python', 'cargo-ffi'],
+        },
+      ],
+      previewWorkbenches: [
+        {
+          id: 'kain-workbench-smoke.preview.kn',
+          title: 'Kain Source Preview',
+          summary: 'Preview proof.',
+          order: 980,
+          rendererKind: 'kain-host',
+          match: {
+            appliesTo: 'file',
+            extensions: ['kn'],
+            fileNames: [],
+            previewKinds: ['script'],
+          },
+          capabilities: {
+            editable: false,
+            save: false,
+            export: false,
+            workflowTabs: true,
+            contextMenu: true,
+            prefetch: true,
+            closeGuard: false,
+          },
+          workbenchChrome: {
+            includePreviewTab: true,
+            includeEditTab: false,
+            topBarDensity: 'compact',
+          },
+          actions: ['kain.plugin.inspect'],
+          ffiLanes: ['python', 'cargo-ffi'],
+        },
+      ],
+      actions: [
+        {
+          id: 'kain.plugin.inspect',
+          label: 'Inspect',
+          summary: 'Inspect proof.',
+          command: 'greeblefs.plugins.action',
+          kind: 'bridge-action',
+          status: 'live',
+          requiresTrust: true,
+          ffiLanes: ['python'],
+        },
+      ],
+      wasmTargets: [
+        {
+          id: 'kain-smoke-worker',
+          label: 'Kain Smoke WASM Worker',
+          source: 'plugin.runtime/wasm/smoke_worker.kn',
+          target: 'plugin.runtime/wasm/dist/smoke_worker.wasm',
+          buildTarget: 'wasm32-unknown-unknown',
+          status: 'declared',
+        },
+      ],
+      cargoFfiTargets: [
+        {
+          id: 'kain-smoke-cargo-ffi',
+          label: 'Kain Smoke Cargo FFI',
+          crateName: 'greeblefs-kain-smoke-tools',
+          cratePath: 'plugin.runtime/cargo/greeblefs-kain-smoke-tools',
+          feature: 'analysis',
+          status: 'declared',
+        },
+      ],
+      generatedArtifacts: [],
+    },
+  ],
+  consumers: ['src/runtime/kainPluginCatalog.ts'],
+};
+
 describe('KainUiSettingsSection', () => {
   it('renders live Kain manifest, UI scaffold, Lattice, and FFI proof hooks', () => {
     const onApplyThemeSelection = vi.fn();
@@ -340,6 +465,8 @@ describe('KainUiSettingsSection', () => {
         latticeCatalogError={null}
         ffiCatalog={ffiCatalog}
         ffiCatalogError={null}
+        pluginCatalog={pluginCatalog}
+        pluginCatalogError={null}
         activeThemeId="pilot-dark"
         onApplyThemeSelection={onApplyThemeSelection}
       />,
@@ -358,6 +485,12 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-ffi-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-ffi-lanes', '2');
     expect(proof).toHaveAttribute('data-kain-ffi-python', 'sidecar-hooked');
+    expect(proof).toHaveAttribute('data-kain-plugin-catalog-proof', 'live');
+    expect(proof).toHaveAttribute('data-kain-plugin-count', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-preview-workbenches', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-ffi-capabilities', '2');
+    expect(proof).toHaveAttribute('data-kain-plugin-wasm-targets', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-cargo-ffi-targets', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-count', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-selected', 'none');
     expect(proof).toHaveAttribute('data-kain-semantic-surface-count', '2');
@@ -369,6 +502,7 @@ describe('KainUiSettingsSection', () => {
     expect(screen.getByText('Kain UI Scaffold')).toBeInTheDocument();
     expect(screen.getByText('Kain Lattice')).toBeInTheDocument();
     expect(screen.getByText('Kain FFI')).toBeInTheDocument();
+    expect(screen.getByText('Kain Plugins')).toBeInTheDocument();
     expect(screen.getByText('Kain Authored Themes')).toBeInTheDocument();
     expect(screen.getByText('Ion Lattice')).toBeInTheDocument();
     expect(screen.getByText(/QML-like Kain authoring system/)).toBeInTheDocument();
@@ -378,6 +512,7 @@ describe('KainUiSettingsSection', () => {
     expect(screen.getByText('Shell Applets')).toBeInTheDocument();
     expect(screen.getByText(/Plugin manifest generation/)).toBeInTheDocument();
     expect(screen.getAllByText(/Node FFI/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Kain Workbench Smoke/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select' }));
     expect(onApplyThemeSelection).toHaveBeenCalledWith('kain-ion-lattice');

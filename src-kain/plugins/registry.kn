@@ -1,0 +1,209 @@
+fn string_array_2(a: String, b: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    return items
+
+fn string_array_3(a: String, b: String, c: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    return items
+
+fn string_array_5(a: String, b: String, c: String, d: String, e: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    return items
+
+fn append_item(items, value: Any) -> Int:
+    json_array_push(items, value)
+    return 0
+
+fn capability(id: String, label: String, lane: String, status: String, required: Bool) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "lane", lane)
+    json_object_set(item, "summary", label + " is declared by the first Kain plugin proof.")
+    json_object_set(item, "status", status)
+    json_object_set(item, "required", required)
+    json_object_set(item, "sourcePath", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(item, "hostPath", "GreebleFS trusted host")
+    return item
+
+fn action(id: String, label: String, summary: String, ffi_lanes: Array<String>) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "command", "greeblefs.plugins.action")
+    json_object_set(item, "kind", "bridge-action")
+    json_object_set(item, "status", "live")
+    json_object_set(item, "requiresTrust", true)
+    json_object_set(item, "ffiLanes", ffi_lanes)
+    return item
+
+fn workbench() -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", "kain-workbench-smoke.main")
+    json_object_set(item, "title", "Kain Workbench Smoke")
+    json_object_set(item, "summary", "Kain-authored workbench proof for usr/plugins-kain.")
+    json_object_set(item, "kind", "workbench")
+    json_object_set(item, "mountSlot", "workbench.panels")
+    json_object_set(item, "order", 20)
+    json_object_set(item, "rendererKind", "kain-host")
+    json_object_set(item, "componentId", "KainPluginWorkbenchHost")
+    json_object_set(item, "defaultOpen", false)
+    json_object_set(item, "hostModels", string_array_3("host.plugins", "host.runtimePipeline", "host.kainBridge"))
+    json_object_set(item, "actions", string_array_2("kain.plugin.inspect", "kain.plugin.plan-preview"))
+    json_object_set(item, "ffiLanes", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+    return item
+
+fn preview_workbench() -> Any:
+    let item = json_object_new()
+    let match_rule = json_object_new()
+    let capabilities = json_object_new()
+    let chrome = json_object_new()
+
+    json_object_set(match_rule, "appliesTo", "file")
+    json_object_set(match_rule, "extensions", string_array_2("kn", "ks"))
+    json_object_set(match_rule, "fileNames", json_array_new())
+    json_object_set(match_rule, "previewKinds", string_array_2("script", "text"))
+
+    json_object_set(capabilities, "editable", false)
+    json_object_set(capabilities, "save", false)
+    json_object_set(capabilities, "export", false)
+    json_object_set(capabilities, "workflowTabs", true)
+    json_object_set(capabilities, "contextMenu", true)
+    json_object_set(capabilities, "prefetch", true)
+    json_object_set(capabilities, "closeGuard", false)
+
+    json_object_set(chrome, "includePreviewTab", true)
+    json_object_set(chrome, "includeEditTab", false)
+    json_object_set(chrome, "topBarDensity", "compact")
+
+    json_object_set(item, "id", "kain-workbench-smoke.preview.kn")
+    json_object_set(item, "title", "Kain Source Preview")
+    json_object_set(item, "summary", "Kain-authored preview workbench for .kn and .ks files.")
+    json_object_set(item, "order", 980)
+    json_object_set(item, "rendererKind", "kain-host")
+    json_object_set(item, "runtimeId", "kain-workbench-smoke.runtime")
+    json_object_set(item, "runtimeSurfaceId", "")
+    json_object_set(item, "buildTarget", "")
+    json_object_set(item, "match", match_rule)
+    json_object_set(item, "capabilities", capabilities)
+    json_object_set(item, "workbenchChrome", chrome)
+    json_object_set(item, "actions", string_array_2("kain.plugin.inspect", "kain.plugin.plan-preview"))
+    json_object_set(item, "ffiLanes", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+    return item
+
+fn build_kain_workbench_smoke_plugin() -> Any:
+    let plugin = json_object_new()
+    let permissions = json_array_new()
+    let ffi_capabilities = json_array_new()
+    let runtimes = json_array_new()
+    let workbenches = json_array_new()
+    let preview_workbenches = json_array_new()
+    let actions = json_array_new()
+    let wasm_targets = json_array_new()
+    let cargo_targets = json_array_new()
+    let artifacts = json_array_new()
+    let runtime = json_object_new()
+    let wasm = json_object_new()
+    let cargo = json_object_new()
+    let artifact = json_object_new()
+
+    append_item(permissions, capability("kain.bridge.dispatch", "Kain bridge dispatch", "tauri-view", "live", true))
+    append_item(permissions, capability("runtime.ffi.python", "Python FFI", "python", "declared", true))
+    append_item(ffi_capabilities, capability("python.pipeline", "Python FFI pipeline", "python", "declared", true))
+    append_item(ffi_capabilities, capability("node.pipeline", "Node FFI pipeline", "node", "available-in-kain", false))
+    append_item(ffi_capabilities, capability("c.pipeline", "C runtime pipeline", "c-runtime", "available-in-kain", false))
+    append_item(ffi_capabilities, capability("cargo.pipeline", "Cargo FFI pipeline", "cargo-ffi", "available-in-kain", false))
+    append_item(ffi_capabilities, capability("wasm.pipeline", "WASM compiler pipeline", "wasm", "available-in-kain", false))
+
+    json_object_set(runtime, "id", "kain-workbench-smoke.runtime")
+    json_object_set(runtime, "kind", "resident-kain-plugin")
+    json_object_set(runtime, "language", "kain")
+    json_object_set(runtime, "entry", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(runtime, "transport", "tauron.kain.bridge")
+    json_object_set(runtime, "status", "catalog-live")
+    json_object_set(runtime, "ffiLanes", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+    append_item(runtimes, runtime)
+
+    append_item(workbenches, workbench())
+    append_item(preview_workbenches, preview_workbench())
+    append_item(actions, action("kain.plugin.inspect", "Inspect", "Return a safe proof payload from the resident bridge.", string_array_3("python", "cargo-ffi", "wasm")))
+    append_item(actions, action("kain.plugin.plan-preview", "Plan Preview", "Describe how this plugin would preview the current file before unsafe FFI executes.", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm")))
+
+    json_object_set(wasm, "id", "kain-smoke-worker")
+    json_object_set(wasm, "label", "Kain Smoke WASM Worker")
+    json_object_set(wasm, "source", "usr/plugins-kain/kain-workbench-smoke/plugin.runtime/wasm/smoke_worker.kn")
+    json_object_set(wasm, "target", "plugin.runtime/wasm/dist/smoke_worker.wasm")
+    json_object_set(wasm, "buildTarget", "wasm32-unknown-unknown")
+    json_object_set(wasm, "status", "declared")
+    append_item(wasm_targets, wasm)
+
+    json_object_set(cargo, "id", "kain-smoke-cargo-ffi")
+    json_object_set(cargo, "label", "Kain Smoke Cargo FFI")
+    json_object_set(cargo, "crateName", "greeblefs-kain-smoke-tools")
+    json_object_set(cargo, "cratePath", "usr/plugins-kain/kain-workbench-smoke/plugin.runtime/cargo/greeblefs-kain-smoke-tools")
+    json_object_set(cargo, "feature", "analysis")
+    json_object_set(cargo, "status", "declared")
+    append_item(cargo_targets, cargo)
+
+    json_object_set(artifact, "id", "compat-extension-toml")
+    json_object_set(artifact, "kind", "plugin-compat-manifest")
+    json_object_set(artifact, "source", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(artifact, "target", "generated/kain-workbench-smoke/extension.toml")
+    json_object_set(artifact, "status", "future")
+    append_item(artifacts, artifact)
+
+    json_object_set(plugin, "id", "kain-workbench-smoke")
+    json_object_set(plugin, "name", "Kain Workbench Smoke")
+    json_object_set(plugin, "version", "0.1.0")
+    json_object_set(plugin, "description", "First Kain-native plugin package proving workbench, preview workbench, FFI, WASM, Cargo FFI, and trusted action metadata without replacing TSX plugins.")
+    json_object_set(plugin, "category", "Kain Plugins")
+    json_object_set(plugin, "source", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(plugin, "directory", "usr/plugins-kain/kain-workbench-smoke")
+    json_object_set(plugin, "manifestPath", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(plugin, "status", "live")
+    json_object_set(plugin, "tags", string_array_5("kain", "workbench", "preview", "ffi", "wasm"))
+    json_object_set(plugin, "permissions", permissions)
+    json_object_set(plugin, "ffiCapabilities", ffi_capabilities)
+    json_object_set(plugin, "runtimes", runtimes)
+    json_object_set(plugin, "workbenches", workbenches)
+    json_object_set(plugin, "previewWorkbenches", preview_workbenches)
+    json_object_set(plugin, "actions", actions)
+    json_object_set(plugin, "wasmTargets", wasm_targets)
+    json_object_set(plugin, "cargoFfiTargets", cargo_targets)
+    json_object_set(plugin, "generatedArtifacts", artifacts)
+    return plugin
+
+fn build_kain_plugin_catalog() -> Any:
+    let catalog = json_object_new()
+    let plugins = json_array_new()
+    let consumers = json_array_new()
+    append_item(plugins, build_kain_workbench_smoke_plugin())
+    json_array_push(consumers, "src/runtime/kainPluginCatalog.ts")
+    json_array_push(consumers, "src/config/pluginPackages.ts")
+    json_array_push(consumers, "src/runtime/useFolderPluginRuntime.ts")
+    json_array_push(consumers, "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+
+    json_object_set(catalog, "schemaVersion", 1)
+    json_object_set(catalog, "kind", "greeblefs.kain.plugin.catalog")
+    json_object_set(catalog, "source", "src-kain/plugins/registry.kn")
+    json_object_set(catalog, "root", "usr/plugins-kain")
+    json_object_set(catalog, "stdlib", "src-kain/plugins/stdlib/greeblefs/plugin.kn")
+    json_object_set(catalog, "host", "src/runtime/kainPluginCatalog.ts")
+    json_object_set(catalog, "summary", "Parallel Kain-native plugin catalog for workbenches, preview workbenches, trusted actions, FFI, WASM, and Cargo FFI while existing TSX plugins stay intact.")
+    json_object_set(catalog, "plugins", plugins)
+    json_object_set(catalog, "consumers", consumers)
+    return catalog
+
+fn main() -> Any:
+    return build_kain_plugin_catalog()

@@ -8,8 +8,10 @@ This folder is intentionally shaped like a tiny monorepo:
 - `python/` owns the Python sidecar bridge lane and future Python-backed analysis scripts.
 - `node/` owns Node/native package FFI plans.
 - `c-runtime/` owns C ABI, DLL, SDK, and native library lanes.
+- `cargo-ffi/` owns Cargo crate / Rust library FFI lanes for Kain plugins and runtimes.
 - `rust-reflection/` owns Rust/Tauron reflection handoff plans.
 - `tauri-view/` owns webview/Tauron bridge view orchestration.
+- `wasm/` owns Kain-authored WASM artifact lanes for `wasm-panel` and `wasm-worker` consumers.
 - `spirv/` owns shader and GPU artifact lanes.
 
 The first concrete hook is Python: the existing GreebleFS Python sidecar now advertises `kain.ffi.catalog` and `kain.ffi.ui_inventory`, and Kain advertises that bridge through `greeblefs.ffi.catalog`.

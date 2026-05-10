@@ -1,0 +1,6 @@
+id = "cargo-ffi"
+label = "Cargo FFI"
+kind = "cargo-crate"
+status = "scaffold"
+source = "src-kain/ffi/cargo-ffi/main.kn"
+host = "Cargo crates and Rust library surfaces"

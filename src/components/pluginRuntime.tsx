@@ -471,6 +471,7 @@ export type OverlayPluginSourceKind =
   | 'file-plugin'
   | 'package-plugin'
   | 'library-package'
+  | 'kain-plugin'
   | 'vscode-vsix';
 
 export type OverlayPluginPackageKind = 'plugin' | 'library' | 'runtime';
@@ -511,6 +512,11 @@ export interface OverlayPluginCapabilitySummary {
   previewLanes: number;
   settingsSlots: number;
   vscodeExtensions?: number;
+  kainWorkbenches?: number;
+  kainPreviewWorkbenches?: number;
+  kainFfiCapabilities?: number;
+  kainWasmTargets?: number;
+  kainCargoFfiTargets?: number;
 }
 
 export interface OverlayPluginDiagnostics {

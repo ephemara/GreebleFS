@@ -1,0 +1,47 @@
+fn string_array_5(a: String, b: String, c: String, d: String, e: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    return items
+
+fn build_kain_plugin_stdlib() -> Any:
+    let stdlib = json_object_new()
+    let surface_kinds = json_array_new()
+    let ffi_lanes = json_array_new()
+    let consumers = json_array_new()
+
+    json_array_push(surface_kinds, "workbench")
+    json_array_push(surface_kinds, "preview-workbench")
+    json_array_push(surface_kinds, "action")
+    json_array_push(surface_kinds, "runtime")
+    json_array_push(surface_kinds, "generated-artifact")
+
+    json_array_push(ffi_lanes, "python")
+    json_array_push(ffi_lanes, "node")
+    json_array_push(ffi_lanes, "c-runtime")
+    json_array_push(ffi_lanes, "cargo-ffi")
+    json_array_push(ffi_lanes, "wasm")
+    json_array_push(ffi_lanes, "rust-reflection")
+    json_array_push(ffi_lanes, "tauri-view")
+    json_array_push(ffi_lanes, "spirv")
+
+    json_array_push(consumers, "src-kain/plugins/registry.kn")
+    json_array_push(consumers, "usr/plugins-kain/<plugin>/plugin.kn")
+    json_array_push(consumers, "src/runtime/kainPluginCatalog.ts")
+    json_array_push(consumers, "src/config/pluginPackages.ts")
+
+    json_object_set(stdlib, "schemaVersion", 1)
+    json_object_set(stdlib, "kind", "greeblefs.kain.plugin.stdlib")
+    json_object_set(stdlib, "source", "src-kain/plugins/stdlib/greeblefs/plugin.kn")
+    json_object_set(stdlib, "summary", "Kain plugin authoring vocabulary for GreebleFS workbenches, preview workbenches, actions, FFI lanes, WASM artifacts, Cargo FFI, and compatibility output.")
+    json_object_set(stdlib, "surfaceKinds", surface_kinds)
+    json_object_set(stdlib, "ffiLanes", ffi_lanes)
+    json_object_set(stdlib, "rendererKinds", string_array_5("kain-host", "react-compat", "wasm-panel", "semantic-surface", "generated-compat"))
+    json_object_set(stdlib, "consumers", consumers)
+    return stdlib
+
+fn main() -> Any:
+    return build_kain_plugin_stdlib()

@@ -1,0 +1,10 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.ffi.lane")
+    json_object_set(lane, "id", "cargo-ffi")
+    json_object_set(lane, "label", "Cargo FFI")
+    json_object_set(lane, "status", "scaffold")
+    json_object_set(lane, "summary", "Kain can import or call Cargo crates so Rust ecosystem tools can become plugin/runtime pipelines before hardened host promotion.")
+    json_object_set(lane, "firstConsumer", "usr/plugins-kain/kain-workbench-smoke")
+    return lane

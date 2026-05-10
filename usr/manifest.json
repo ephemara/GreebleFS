@@ -18,6 +18,14 @@
       "profileMode": "shared-root"
     },
     {
+      "id": "kainPlugins",
+      "relativeDirectory": "plugins-kain",
+      "envVarSuffix": "KAIN_PLUGINS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "shared-root"
+    },
+    {
       "id": "themes",
       "relativeDirectory": "themes",
       "envVarSuffix": "THEMES",

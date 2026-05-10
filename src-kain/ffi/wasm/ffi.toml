@@ -1,0 +1,6 @@
+id = "wasm"
+label = "WASM"
+kind = "wasm-compiler"
+status = "scaffold"
+source = "src-kain/ffi/wasm/main.kn"
+host = "GreebleFS wasm-panel and wasm-worker runtime surfaces"

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getPluginBackendDirectory,
+  getKainPluginDirectory,
   getPluginDirectory,
   getPluginPackageDirectory,
   getPluginStorageDirectory,
@@ -37,6 +38,8 @@ describe('plugin watch path helpers', () => {
   it('treats plugin packages as managed plugin watch paths', () => {
     expect(isPluginManagedWatchPath('packages/greeblefs-ui/src/index.tsx')).toBe(true);
     expect(isPluginManagedWatchPath('usr/packages/greeblefs-ui/src/index.tsx')).toBe(true);
+    expect(isPluginManagedWatchPath('plugins-kain/kain-workbench-smoke/plugin.kn')).toBe(true);
+    expect(isPluginManagedWatchPath('usr/plugins-kain/kain-workbench-smoke/plugin.runtime/wasm/smoke_worker.kn')).toBe(true);
     expect(isPluginManagedWatchPath('themes/operator/theme.json')).toBe(false);
   });
 
@@ -59,6 +62,7 @@ describe('plugin watch path helpers', () => {
   it('keeps plugin directory helpers aligned across workspace and storage paths', () => {
     expect(getPluginDirectory('chronorift').replace(/\\/g, '/')).toBe('usr/plugins/chronorift');
     expect(getPluginPackageDirectory('greeblefs-ui').replace(/\\/g, '/')).toBe('usr/packages/greeblefs-ui');
+    expect(getKainPluginDirectory('kain-workbench-smoke').replace(/\\/g, '/')).toBe('usr/plugins-kain/kain-workbench-smoke');
     expect(getPluginBackendDirectory('chronorift').replace(/\\/g, '/')).toBe('usr/plugins/chronorift/backend');
     expect(getPluginStorageDirectory('chronorift').replace(/\\/g, '/')).toBe('overlayterm/plugins/chronorift');
   });

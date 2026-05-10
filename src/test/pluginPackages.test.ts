@@ -1563,4 +1563,180 @@ describe('plugin package discovery', () => {
       'Unsafe Plugin: font Broken Font: invalid relative path',
     ]);
   });
+
+  it('adapts Kain plugin catalog entries into metadata plugins and preview workbench lanes', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (
+        command === 'fs_list_dir' &&
+        (
+          normalizedPath === pluginSystemConfig.pluginsDirectory ||
+          normalizedPath === pluginSystemConfig.packagesDirectory
+        )
+      ) {
+        return [];
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => createMockOverlayPluginApi(), {
+      kainPluginCatalog: {
+        schemaVersion: 1,
+        kind: 'greeblefs.kain.plugin.catalog',
+        source: 'src-kain/plugins/registry.kn',
+        root: 'usr/plugins-kain',
+        stdlib: 'src-kain/plugins/stdlib/greeblefs/plugin.kn',
+        host: 'src/runtime/kainPluginCatalog.ts',
+        summary: 'Kain plugin catalog.',
+        consumers: [],
+        plugins: [
+          {
+            id: 'kain-workbench-smoke',
+            name: 'Kain Workbench Smoke',
+            version: '0.1.0',
+            description: 'Kain plugin proof.',
+            category: 'Kain Plugins',
+            source: 'usr/plugins-kain/kain-workbench-smoke/plugin.kn',
+            directory: 'usr/plugins-kain/kain-workbench-smoke',
+            manifestPath: 'usr/plugins-kain/kain-workbench-smoke/plugin.kn',
+            status: 'live',
+            tags: ['workbench', 'ffi'],
+            permissions: [],
+            ffiCapabilities: [
+              {
+                id: 'cargo.pipeline',
+                label: 'Cargo FFI pipeline',
+                lane: 'cargo-ffi',
+                summary: 'Cargo lane.',
+                status: 'declared',
+                required: false,
+              },
+            ],
+            runtimes: [],
+            workbenches: [
+              {
+                id: 'kain-workbench-smoke.main',
+                title: 'Kain Workbench Smoke',
+                summary: 'Workbench proof.',
+                kind: 'workbench',
+                mountSlot: 'workbench.panels',
+                order: 20,
+                rendererKind: 'kain-host',
+                defaultOpen: false,
+                hostModels: ['host.plugins'],
+                actions: ['kain.plugin.inspect'],
+                ffiLanes: ['cargo-ffi'],
+              },
+            ],
+            previewWorkbenches: [
+              {
+                id: 'kain-workbench-smoke.preview.kn',
+                title: 'Kain Source Preview',
+                summary: 'Preview proof.',
+                order: 980,
+                rendererKind: 'kain-host',
+                match: {
+                  appliesTo: 'file',
+                  extensions: ['kn'],
+                  fileNames: [],
+                  previewKinds: ['script'],
+                },
+                capabilities: {
+                  editable: false,
+                  save: false,
+                  export: false,
+                  workflowTabs: true,
+                  contextMenu: true,
+                  prefetch: true,
+                  closeGuard: false,
+                },
+                workbenchChrome: {
+                  includePreviewTab: true,
+                  includeEditTab: false,
+                  topBarDensity: 'compact',
+                },
+                actions: ['kain.plugin.inspect'],
+                ffiLanes: ['cargo-ffi'],
+              },
+            ],
+            actions: [
+              {
+                id: 'kain.plugin.inspect',
+                label: 'Inspect',
+                summary: 'Inspect proof.',
+                command: 'greeblefs.plugins.action',
+                kind: 'bridge-action',
+                status: 'live',
+                requiresTrust: true,
+                ffiLanes: ['cargo-ffi'],
+              },
+            ],
+            wasmTargets: [
+              {
+                id: 'kain-smoke-worker',
+                label: 'Kain Smoke WASM Worker',
+                source: 'plugin.runtime/wasm/smoke_worker.kn',
+                target: 'plugin.runtime/wasm/dist/smoke_worker.wasm',
+                buildTarget: 'wasm32-unknown-unknown',
+                status: 'declared',
+              },
+            ],
+            cargoFfiTargets: [
+              {
+                id: 'kain-smoke-cargo-ffi',
+                label: 'Kain Smoke Cargo FFI',
+                crateName: 'greeblefs-kain-smoke-tools',
+                cratePath: 'plugin.runtime/cargo/greeblefs-kain-smoke-tools',
+                feature: 'analysis',
+                status: 'declared',
+              },
+            ],
+            generatedArtifacts: [],
+          },
+        ],
+      },
+    });
+
+    expect(result.plugins).toHaveLength(1);
+    expect(result.plugins[0]).toMatchObject({
+      id: 'kain-workbench-smoke',
+      name: 'Kain Workbench Smoke',
+      enabled: true,
+      diagnostics: {
+        sourceKind: 'kain-plugin',
+        packageKind: 'runtime',
+        category: 'Kain Plugins',
+        capabilities: {
+          panel: true,
+          previewLanes: 1,
+          actions: 1,
+          kainWorkbenches: 1,
+          kainPreviewWorkbenches: 1,
+          kainFfiCapabilities: 1,
+          kainWasmTargets: 1,
+          kainCargoFfiTargets: 1,
+        },
+      },
+    });
+    expect(result.plugins[0]?.component).toBeTypeOf('function');
+    expect(result.previewLanes).toHaveLength(1);
+    expect(result.previewLanes[0]).toMatchObject({
+      id: 'kain-workbench-smoke.preview-lane.kain-workbench-smoke.preview.kn',
+      pluginId: 'kain-workbench-smoke',
+      title: 'Kain Source Preview',
+      rendererKind: 'react',
+      match: {
+        extensions: ['kn'],
+        previewKinds: ['script'],
+      },
+      capabilities: {
+        workflowTabs: true,
+        contextMenu: true,
+        prefetch: true,
+      },
+    });
+  });
 });

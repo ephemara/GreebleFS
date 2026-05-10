@@ -1,0 +1,10 @@
+fn main() -> Any:
+    let lane = json_object_new()
+    json_object_set(lane, "schemaVersion", 1)
+    json_object_set(lane, "kind", "greeblefs.ffi.lane")
+    json_object_set(lane, "id", "wasm")
+    json_object_set(lane, "label", "WASM")
+    json_object_set(lane, "status", "scaffold")
+    json_object_set(lane, "summary", "Kain can compile portable WASM artifacts that GreebleFS can mount through wasm-panel or wasm-worker runtime surfaces.")
+    json_object_set(lane, "firstConsumer", "usr/plugins-kain/kain-workbench-smoke")
+    return lane

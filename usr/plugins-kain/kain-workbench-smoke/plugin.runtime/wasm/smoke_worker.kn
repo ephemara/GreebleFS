@@ -1,0 +1,7 @@
+fn main() -> Any:
+    let worker = json_object_new()
+    json_object_set(worker, "kind", "kain.plugin.wasm-worker")
+    json_object_set(worker, "pluginId", "kain-workbench-smoke")
+    json_object_set(worker, "status", "declared")
+    json_object_set(worker, "summary", "Placeholder source for the first Kain plugin WASM target. The runtime pipeline will compile this once the Kain WASM build command is promoted into GreebleFS.")
+    return worker

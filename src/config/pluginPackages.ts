@@ -50,6 +50,7 @@ import {
 } from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
 import { PluginWasmPanelSurface, PluginWasmPreviewSurface } from '../components/PluginWasmRuntimeSurfaces';
+import { KainPluginWorkbenchHost } from '../components/kain/KainPluginWorkbenchHost';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
   type BoundOverlayPluginPreviewLaneComponent,
@@ -105,6 +106,11 @@ import {
 import type { OverlayPluginWorkflowDescriptor } from '../components/explorer/explorerWorkflowContracts';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import type {
+  KainPluginCatalog,
+  KainPluginDefinition,
+  KainPluginPreviewWorkbench,
+} from '../runtime/kainPluginCatalog';
 
 interface FileEntry {
   name: string;
@@ -407,6 +413,8 @@ interface PluginPackageDependencyRuntime {
 
 export interface OverlayPluginDiscoveryOptions {
   disabledPluginIds?: Iterable<string> | Record<string, boolean> | null;
+  kainPluginCatalog?: KainPluginCatalog | null;
+  kainPluginCatalogError?: string | null;
 }
 
 export interface OverlayPluginDiscoveryResult {
@@ -1797,6 +1805,168 @@ function createMetadataOnlyPackagePlugin(
         options.capabilities ?? estimatePackageManifestCapabilities(record),
     },
   };
+}
+
+function estimateKainPluginCapabilities(
+  plugin: KainPluginDefinition,
+): OverlayPluginCapabilitySummary {
+  return {
+    panel: plugin.workbenches.length > 0,
+    themes: 0,
+    shaders: 0,
+    fonts: 0,
+    commands: 0,
+    actions: plugin.actions.length,
+    explorerActions: 0,
+    contextMenuItems: 0,
+    explorerActivityLanes: 0,
+    explorerViews: plugin.workbenches.length,
+    explorerWidgets: 0,
+    previewLanes: plugin.previewWorkbenches.length,
+    settingsSlots: 0,
+    kainWorkbenches: plugin.workbenches.length,
+    kainPreviewWorkbenches: plugin.previewWorkbenches.length,
+    kainFfiCapabilities: plugin.ffiCapabilities.length,
+    kainWasmTargets: plugin.wasmTargets.length,
+    kainCargoFfiTargets: plugin.cargoFfiTargets.length,
+  };
+}
+
+function createKainPluginMetadataPlugin(
+  plugin: KainPluginDefinition,
+  catalog: KainPluginCatalog,
+  disabledPluginIds: ReadonlySet<string>,
+): LoadedOverlayPlugin {
+  const disabled = isPluginDisabled(disabledPluginIds, plugin.id);
+  const primaryWorkbench = plugin.workbenches[0] ?? null;
+  const backendDirectory = joinPlatformPath(plugin.directory, 'plugin.runtime');
+
+  return {
+    id: plugin.id,
+    name: plugin.name,
+    description: plugin.description,
+    filePath: plugin.manifestPath,
+    pluginRoot: catalog.root,
+    pluginDirectory: plugin.directory,
+    backendDirectory,
+    enablementKey: plugin.id,
+    modified: 0,
+    enabled: !disabled,
+    defaultOpen: primaryWorkbench?.defaultOpen ?? false,
+    keepMounted: false,
+    component: !disabled && primaryWorkbench
+      ? () => React.createElement(KainPluginWorkbenchHost, {
+          kainPlugin: plugin,
+          mode: 'workbench',
+          workbench: primaryWorkbench,
+        })
+      : null,
+    error: null,
+    diagnostics: {
+      sourceKind: 'kain-plugin',
+      sourceLabel: plugin.name,
+      manifestPath: plugin.manifestPath,
+      packageKind: 'runtime',
+      sourceVisibility: 'private',
+      category: plugin.category,
+      tags: [...new Set(['kain', ...plugin.tags])],
+      testFiles: [],
+      warnings: [],
+      dependencies: [],
+      moduleExports: [],
+      blockedReason: disabled ? 'Plugin disabled in Settings' : null,
+      capabilities: estimateKainPluginCapabilities(plugin),
+    },
+  };
+}
+
+function createKainPluginPreviewLaneContribution(
+  plugin: KainPluginDefinition,
+  previewWorkbench: KainPluginPreviewWorkbench,
+): OverlayPluginPreviewLaneContribution | null {
+  const stableId = previewWorkbench.id || deriveIdFromName(previewWorkbench.title, 'preview-lane');
+  const rendererKind = previewWorkbench.rendererKind === 'wasm-panel'
+    ? 'wasm-panel'
+    : 'react';
+  let component: BoundOverlayPluginPreviewLaneComponent;
+
+  if (rendererKind === 'wasm-panel') {
+    const runtimeSurfaceId =
+      previewWorkbench.runtimeSurfaceId?.trim()
+      || previewWorkbench.runtimeId?.trim()
+      || '';
+    if (!runtimeSurfaceId) {
+      return null;
+    }
+    component = (props) => React.createElement(PluginWasmPreviewSurface, {
+      ...props,
+      runtimeId: runtimeSurfaceId,
+      buildTarget: previewWorkbench.buildTarget ?? null,
+    });
+  } else {
+    component = (props) => React.createElement(KainPluginWorkbenchHost, {
+      kainPlugin: plugin,
+      mode: 'preview-workbench',
+      previewWorkbench,
+      file: {
+        name: props.file.name,
+        resolvedPath: props.file.resolvedPath,
+        extension: props.file.extension,
+        size: props.file.size,
+        isDirectory: props.file.isDirectory,
+      },
+    });
+  }
+
+  const capabilities = normalizeOverlayPluginPreviewLaneCapabilities(
+    previewWorkbench.capabilities,
+  );
+
+  return {
+    id: `${plugin.id}.preview-lane.${stableId}`,
+    pluginId: plugin.id,
+    pluginName: plugin.name,
+    title: previewWorkbench.title,
+    priority: previewWorkbench.order || DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY,
+    rendererKind,
+    rendererEntry: null,
+    runtimeId: previewWorkbench.runtimeId ?? null,
+    runtimeSurfaceId: previewWorkbench.runtimeSurfaceId ?? previewWorkbench.runtimeId ?? null,
+    buildTarget: previewWorkbench.buildTarget ?? null,
+    match: normalizeOverlayPluginPreviewLaneMatchRule(previewWorkbench.match),
+    capabilities,
+    workbenchChrome: normalizeOverlayPluginPreviewLaneWorkbenchChrome(
+      previewWorkbench.workbenchChrome,
+      {
+        includeEditTab: capabilities.editable,
+      },
+    ),
+    component,
+  };
+}
+
+function mergeKainPluginCatalogIntoDiscoveryResult(
+  target: OverlayPluginDiscoveryResult,
+  catalog: KainPluginCatalog | null | undefined,
+  disabledPluginIds: ReadonlySet<string>,
+): void {
+  if (!catalog) {
+    return;
+  }
+
+  for (const plugin of catalog.plugins) {
+    const disabled = isPluginDisabled(disabledPluginIds, plugin.id);
+    target.plugins.push(createKainPluginMetadataPlugin(plugin, catalog, disabledPluginIds));
+    if (disabled) {
+      continue;
+    }
+
+    target.previewLanes.push(
+      ...plugin.previewWorkbenches
+        .map((previewWorkbench) => createKainPluginPreviewLaneContribution(plugin, previewWorkbench))
+        .filter((previewLane): previewLane is OverlayPluginPreviewLaneContribution => Boolean(previewLane)),
+    );
+  }
 }
 
 function resolvePackageTestFiles(record: PluginPackageRecord): OverlayPluginTestFile[] {
@@ -4462,6 +4632,15 @@ export async function discoverOverlayPlugins(
       aggregate.warnings.push(`${record.directoryName}: ${String(error)}`);
     }
   }
+
+  if (options.kainPluginCatalogError) {
+    aggregate.warnings.push(`Kain plugins: ${options.kainPluginCatalogError}`);
+  }
+  mergeKainPluginCatalogIntoDiscoveryResult(
+    aggregate,
+    options.kainPluginCatalog,
+    disabledPluginIds,
+  );
 
   aggregate.plugins.sort((left, right) => left.name.localeCompare(right.name));
   aggregate.themePackages.sort((left, right) => left.name.localeCompare(right.name));

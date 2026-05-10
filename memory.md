@@ -1,3 +1,23 @@
+# 2026-05-10 - Kain Plugin System V1
+
+- Added the first parallel Kain-native plugin lane while preserving the existing TSX/package plugin system.
+  - `usr/plugins-kain/kain-workbench-smoke/plugin.kn` is the first source-of-truth Kain plugin. It declares a workbench, `.kn`/`.ks` preview workbench, trusted bridge actions, Python/Node/C/Cargo/WASM FFI capability metadata, a WASM target, a Cargo FFI target, and future compatibility output.
+  - `src-kain/plugins/registry.kn` and `src-kain/plugins/stdlib/greeblefs/plugin.kn` are the Kain-side catalog/authoring vocabulary for `greeblefs.plugins.catalog`.
+  - `src/runtime/kainPluginCatalog.ts` normalizes catalog/action responses; `src/config/pluginPackages.ts` merges Kain plugins into the existing Plugins Manager, workbench, and preview-lane graph; `src/components/kain/KainPluginWorkbenchHost.tsx` renders compact trusted Kain plugin workbench/preview surfaces.
+  - `src/config/plugins.ts`, `src/config/appContentDirectories.ts`, and `usr/manifest.json` now register `usr/plugins-kain` as a managed bundled lane, and `useFolderPluginRuntime` watches/refreshes it alongside `usr/plugins` and `usr/packages`.
+- Extended Kain FFI scaffolding with `src-kain/ffi/cargo-ffi/` and `src-kain/ffi/wasm/`; Settings > Kain UI now proves plugin counts, preview workbenches, FFI capabilities, WASM targets, and Cargo FFI targets.
+- Durable rules:
+  - Keep Kain plugins additive. Do not delete or replace `usr/plugins`/`usr/packages`; use `usr/plugins-kain` for Kain-native packages and merge them through `pluginPackages.ts`.
+  - Kain plugin actions must stay trusted/centralized through `greeblefs.plugins.action` until a per-plugin sandbox model exists.
+  - Cargo crates embedded inside Kain plugins should declare an empty `[workspace]` when they live under the repo so Cargo does not try to include user/plugin crates in the root workspace.
+- Validation:
+  - Passed: Kain direct smokes for `src-kain/plugins/stdlib/greeblefs/plugin.kn`, `src-kain/plugins/registry.kn`, `usr/plugins-kain/kain-workbench-smoke/plugin.kn`, `src-kain/ffi/registry.kn`, `src-kain/ffi/cargo-ffi/main.kn`, and `src-kain/ffi/wasm/main.kn`.
+  - Passed: bridge dispatch smokes for `greeblefs.plugins.catalog`, `greeblefs.plugins.action`, and `greeblefs.kain.manifest`.
+  - Passed: `cargo check --manifest-path usr/plugins-kain/kain-workbench-smoke/plugin.runtime/cargo/greeblefs-kain-smoke-tools/Cargo.toml`.
+  - Passed: `bunx vitest run src/test/kainPluginCatalog.test.ts src/test/kainUiSettingsSection.test.tsx src/test/pluginWatchPaths.test.ts src/test/pluginPackages.test.ts src/test/panelRegistry.test.tsx --reporter=dot --testTimeout=30000`.
+  - Passed: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/pluginsManager.test.tsx --reporter=dot --testTimeout=30000`.
+  - Repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on existing baseline issues in unrelated App/listener, Explorer, image cutout, vendor TipTap, mobile, and test fixture files; the Kain plugin prop-threading error was fixed.
+
 # 2026-05-10 - Bevy Wasm Workbench Cargo Cache Hardening
 
 - Hardened the Rust/Wasm runtime pipeline for the Bevy 3D model workbench after Windows build errors showed Cargo fighting locked files in `runtimes/bevy-model3d-viewer/target`.

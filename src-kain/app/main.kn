@@ -14,12 +14,28 @@ fn string_array_2(a: String, b: String) -> Array<String>:
     json_array_push(items, b)
     return items
 
+fn string_array_3(a: String, b: String, c: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    return items
+
 fn string_array_4(a: String, b: String, c: String, d: String) -> Array<String>:
     let items = json_array_new()
     json_array_push(items, a)
     json_array_push(items, b)
     json_array_push(items, c)
     json_array_push(items, d)
+    return items
+
+fn string_array_5(a: String, b: String, c: String, d: String, e: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
     return items
 
 fn string_array_6(a: String, b: String, c: String, d: String, e: String, f: String) -> Array<String>:
@@ -739,7 +755,9 @@ fn build_ffi_catalog(request: Any) -> Any:
     append_ffi_lane(lanes, "node", "Node FFI", "node-ffi", "src-kain/ffi/node", "Node/native npm packages", "Kain Node FFI", "scaffold", false, "Kain can call Node/native packages for codegen, importers, and asset tools.", "Expose one npm-backed analyzer or generator through Kain.")
     append_ffi_lane(lanes, "c-runtime", "C Runtime", "c-abi", "src-kain/ffi/c-runtime", "native DLLs, SDKs, and C libraries", "Kain C runtime", "scaffold", false, "Kain can talk to C libraries and legacy native tools behind explicit trust boundaries.", "Wrap one tiny C ABI probe before product SDK work.")
     append_ffi_lane(lanes, "rust-reflection", "Rust Reflection", "rust-reflection", "src-kain/ffi/rust-reflection", "Tauron/GreebleFS reflected host schema", "Kain Rust reflection", "scaffold", false, "Rust and Tauron can describe host capabilities to Kain for generated wrappers and routed calls.", "Feed runtime host schema into generated Kain wrappers.")
+    append_ffi_lane(lanes, "cargo-ffi", "Cargo FFI", "cargo-crate", "src-kain/ffi/cargo-ffi", "Cargo crates and Rust library surfaces", "Kain Cargo FFI", "scaffold", false, "Kain can call or import Cargo crates as a high-power Rust ecosystem bridge before a feature graduates into hardened host code.", "Expose one crate-backed analyzer through a Kain plugin proof.")
     append_ffi_lane(lanes, "tauri-view", "Tauri View Bridge", "view-bridge", "src-kain/ffi/tauri-view", "@tauri-apps/api/kain + window.__KAIN_TAURI__", "Tauron Kain bridge", "bridge-live", true, "Webviews can call the Kain bridge for UI orchestration, reload, status, manifest, and dispatch.", "Turn Kain scaffold actions into real Tauron bridge calls.")
+    append_ffi_lane(lanes, "wasm", "WASM", "wasm-compiler", "src-kain/ffi/wasm", "GreebleFS wasm-panel and wasm-worker runtime surfaces", "Kain WASM compiler", "scaffold", false, "Kain can compile portable WASM artifacts that GreebleFS can mount through the existing runtime pipeline.", "Compile one Kain-authored WASM panel or worker proof.")
     append_ffi_lane(lanes, "spirv", "SPIR-V", "gpu-artifacts", "src-kain/ffi/spirv", "GreebleFS shader/GPU runtime cache", "Kain SPIR-V compiler", "scaffold", false, "Kain can compile shader and compute artifacts for lookdev, preview, and GPU pipelines.", "Compile one proof shader artifact into a GreebleFS cache entry.")
 
     json_array_push(analysis, "ts-frontend-ui-inventory")
@@ -767,6 +785,272 @@ fn build_ffi_catalog(request: Any) -> Any:
     json_object_set(catalog, "analysisPipelines", analysis)
     json_object_set(catalog, "consumers", consumers)
     return catalog
+
+fn append_kain_plugin_permission(items, id: String, label: String, scope: String, status: String) -> Int:
+    let permission = json_object_new()
+    json_object_set(permission, "id", id)
+    json_object_set(permission, "label", label)
+    json_object_set(permission, "scope", scope)
+    json_object_set(permission, "status", status)
+    json_array_push(items, permission)
+    return 0
+
+fn append_kain_plugin_ffi_capability(items, id: String, label: String, lane: String, summary: String, status: String, required: Bool, source_path: String, host_path: String) -> Int:
+    let capability = json_object_new()
+    json_object_set(capability, "id", id)
+    json_object_set(capability, "label", label)
+    json_object_set(capability, "lane", lane)
+    json_object_set(capability, "summary", summary)
+    json_object_set(capability, "status", status)
+    json_object_set(capability, "required", required)
+    json_object_set(capability, "sourcePath", source_path)
+    json_object_set(capability, "hostPath", host_path)
+    json_array_push(items, capability)
+    return 0
+
+fn append_kain_plugin_runtime(items, id: String, runtime_kind: String, language: String, entry: String, transport: String, status: String, ffi_lanes: Array<String>) -> Int:
+    let runtime = json_object_new()
+    json_object_set(runtime, "id", id)
+    json_object_set(runtime, "kind", runtime_kind)
+    json_object_set(runtime, "language", language)
+    json_object_set(runtime, "entry", entry)
+    json_object_set(runtime, "transport", transport)
+    json_object_set(runtime, "status", status)
+    json_object_set(runtime, "ffiLanes", ffi_lanes)
+    json_array_push(items, runtime)
+    return 0
+
+fn append_kain_plugin_workbench(items, id: String, title: String, summary: String, mount_slot: String, order: Int, renderer_kind: String, component_id: String, default_open: Bool, host_models: Array<String>, actions: Array<String>, ffi_lanes: Array<String>) -> Int:
+    let workbench = json_object_new()
+    json_object_set(workbench, "id", id)
+    json_object_set(workbench, "title", title)
+    json_object_set(workbench, "summary", summary)
+    json_object_set(workbench, "kind", "workbench")
+    json_object_set(workbench, "mountSlot", mount_slot)
+    json_object_set(workbench, "order", order)
+    json_object_set(workbench, "rendererKind", renderer_kind)
+    json_object_set(workbench, "componentId", component_id)
+    json_object_set(workbench, "defaultOpen", default_open)
+    json_object_set(workbench, "hostModels", host_models)
+    json_object_set(workbench, "actions", actions)
+    json_object_set(workbench, "ffiLanes", ffi_lanes)
+    json_array_push(items, workbench)
+    return 0
+
+fn build_kain_plugin_preview_match(applies_to: String, extensions: Array<String>, file_names: Array<String>, preview_kinds: Array<String>) -> Any:
+    let match_rule = json_object_new()
+    json_object_set(match_rule, "appliesTo", applies_to)
+    json_object_set(match_rule, "extensions", extensions)
+    json_object_set(match_rule, "fileNames", file_names)
+    json_object_set(match_rule, "previewKinds", preview_kinds)
+    return match_rule
+
+fn build_kain_plugin_preview_capabilities(editable: Bool, save: Bool, can_export: Bool, workflow_tabs: Bool, context_menu: Bool, prefetch: Bool, close_guard: Bool) -> Any:
+    let capabilities = json_object_new()
+    json_object_set(capabilities, "editable", editable)
+    json_object_set(capabilities, "save", save)
+    json_object_set(capabilities, "export", can_export)
+    json_object_set(capabilities, "workflowTabs", workflow_tabs)
+    json_object_set(capabilities, "contextMenu", context_menu)
+    json_object_set(capabilities, "prefetch", prefetch)
+    json_object_set(capabilities, "closeGuard", close_guard)
+    return capabilities
+
+fn build_kain_plugin_preview_chrome(include_preview_tab: Bool, include_edit_tab: Bool, top_bar_density: String) -> Any:
+    let chrome = json_object_new()
+    json_object_set(chrome, "includePreviewTab", include_preview_tab)
+    json_object_set(chrome, "includeEditTab", include_edit_tab)
+    json_object_set(chrome, "topBarDensity", top_bar_density)
+    return chrome
+
+fn append_kain_plugin_preview_workbench(items, id: String, title: String, summary: String, order: Int, renderer_kind: String, runtime_id: String, runtime_surface_id: String, build_target: String, match_rule: Any, capabilities: Any, workbench_chrome: Any, actions: Array<String>, ffi_lanes: Array<String>) -> Int:
+    let preview = json_object_new()
+    json_object_set(preview, "id", id)
+    json_object_set(preview, "title", title)
+    json_object_set(preview, "summary", summary)
+    json_object_set(preview, "order", order)
+    json_object_set(preview, "rendererKind", renderer_kind)
+    json_object_set(preview, "runtimeId", runtime_id)
+    json_object_set(preview, "runtimeSurfaceId", runtime_surface_id)
+    json_object_set(preview, "buildTarget", build_target)
+    json_object_set(preview, "match", match_rule)
+    json_object_set(preview, "capabilities", capabilities)
+    json_object_set(preview, "workbenchChrome", workbench_chrome)
+    json_object_set(preview, "actions", actions)
+    json_object_set(preview, "ffiLanes", ffi_lanes)
+    json_array_push(items, preview)
+    return 0
+
+fn append_kain_plugin_action(items, id: String, label: String, summary: String, command: String, action_kind: String, status: String, requires_trust: Bool, ffi_lanes: Array<String>) -> Int:
+    let action = json_object_new()
+    json_object_set(action, "id", id)
+    json_object_set(action, "label", label)
+    json_object_set(action, "summary", summary)
+    json_object_set(action, "command", command)
+    json_object_set(action, "kind", action_kind)
+    json_object_set(action, "status", status)
+    json_object_set(action, "requiresTrust", requires_trust)
+    json_object_set(action, "ffiLanes", ffi_lanes)
+    json_array_push(items, action)
+    return 0
+
+fn append_kain_plugin_wasm_target(items, id: String, label: String, source: String, target: String, build_target: String, status: String) -> Int:
+    let wasm = json_object_new()
+    json_object_set(wasm, "id", id)
+    json_object_set(wasm, "label", label)
+    json_object_set(wasm, "source", source)
+    json_object_set(wasm, "target", target)
+    json_object_set(wasm, "buildTarget", build_target)
+    json_object_set(wasm, "status", status)
+    json_array_push(items, wasm)
+    return 0
+
+fn append_kain_plugin_cargo_ffi_target(items, id: String, label: String, crate_name: String, crate_path: String, feature: String, status: String) -> Int:
+    let cargo = json_object_new()
+    json_object_set(cargo, "id", id)
+    json_object_set(cargo, "label", label)
+    json_object_set(cargo, "crateName", crate_name)
+    json_object_set(cargo, "cratePath", crate_path)
+    json_object_set(cargo, "feature", feature)
+    json_object_set(cargo, "status", status)
+    json_array_push(items, cargo)
+    return 0
+
+fn append_kain_plugin_generated_artifact(items, id: String, artifact_kind: String, source: String, target: String, status: String) -> Int:
+    let artifact = json_object_new()
+    json_object_set(artifact, "id", id)
+    json_object_set(artifact, "kind", artifact_kind)
+    json_object_set(artifact, "source", source)
+    json_object_set(artifact, "target", target)
+    json_object_set(artifact, "status", status)
+    json_array_push(items, artifact)
+    return 0
+
+fn build_kain_workbench_smoke_plugin() -> Any:
+    let plugin = json_object_new()
+    let permissions = json_array_new()
+    let ffi_capabilities = json_array_new()
+    let runtimes = json_array_new()
+    let workbenches = json_array_new()
+    let preview_workbenches = json_array_new()
+    let actions = json_array_new()
+    let wasm_targets = json_array_new()
+    let cargo_ffi_targets = json_array_new()
+    let generated_artifacts = json_array_new()
+
+    append_kain_plugin_permission(permissions, "kain.bridge.dispatch", "Kain bridge dispatch", "trusted-kain-runtime", "live")
+    append_kain_plugin_permission(permissions, "runtime.ffi.python", "Python FFI", "trusted-ffi", "declared")
+    append_kain_plugin_permission(permissions, "runtime.ffi.node", "Node FFI", "trusted-ffi", "declared")
+    append_kain_plugin_permission(permissions, "runtime.ffi.c", "C runtime", "trusted-ffi", "declared")
+    append_kain_plugin_permission(permissions, "runtime.ffi.cargo", "Cargo FFI", "trusted-ffi", "declared")
+    append_kain_plugin_permission(permissions, "runtime.wasm.compile", "WASM compile", "trusted-runtime-build", "declared")
+
+    append_kain_plugin_ffi_capability(ffi_capabilities, "python.pipeline", "Python FFI pipeline", "python", "Kain plugin actions can route analysis through the managed Python sidecar or Kain's Python bridge.", "declared", true, "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "src-python/greeblefs_sidecar/actions.py")
+    append_kain_plugin_ffi_capability(ffi_capabilities, "node.pipeline", "Node FFI pipeline", "node", "Kain can call Node/native npm packages for fast plugin authoring and asset/tooling work.", "available-in-kain", false, "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "node/native npm packages")
+    append_kain_plugin_ffi_capability(ffi_capabilities, "c.pipeline", "C runtime pipeline", "c-runtime", "Kain can call native C libraries, DLLs, and SDKs behind explicit plugin trust.", "available-in-kain", false, "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "native DLLs and SDKs")
+    append_kain_plugin_ffi_capability(ffi_capabilities, "cargo.pipeline", "Cargo FFI pipeline", "cargo-ffi", "Kain can import or call Cargo crates so Rust ecosystem tools can become plugin pipelines without bespoke TS glue.", "available-in-kain", false, "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "Cargo crates")
+    append_kain_plugin_ffi_capability(ffi_capabilities, "wasm.pipeline", "WASM compiler pipeline", "wasm", "Kain can compile portable WASM artifacts that GreebleFS can mount through wasm-panel or wasm-worker hosts.", "available-in-kain", false, "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "src/components/WasmPanelHost.tsx")
+
+    append_kain_plugin_runtime(runtimes, "kain-workbench-smoke.runtime", "resident-kain-plugin", "kain", "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "tauron.kain.bridge", "catalog-live", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+
+    append_kain_plugin_action(actions, "kain.plugin.inspect", "Inspect", "Return a safe proof payload from the Kain resident bridge for this plugin.", "greeblefs.plugins.action", "bridge-action", "live", true, string_array_3("python", "cargo-ffi", "wasm"))
+    append_kain_plugin_action(actions, "kain.plugin.plan-preview", "Plan Preview", "Describe how this plugin would preview the current file through Kain before any unsafe FFI executes.", "greeblefs.plugins.action", "bridge-action", "live", true, string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+
+    append_kain_plugin_workbench(workbenches, "kain-workbench-smoke.main", "Kain Workbench Smoke", "A first Kain-authored workbench proving the parallel usr/plugins-kain lane, bridge actions, FFI declarations, WASM targets, and Cargo FFI metadata.", "workbench.panels", 20, "kain-host", "KainPluginWorkbenchHost", false, string_array_4("host.plugins", "host.preview", "host.runtimePipeline", "host.kainBridge"), string_array_2("kain.plugin.inspect", "kain.plugin.plan-preview"), string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+
+    append_kain_plugin_preview_workbench(
+        preview_workbenches,
+        "kain-workbench-smoke.preview.kn",
+        "Kain Source Preview",
+        "A Kain-authored preview workbench for .kn files. React hosts the shell, Kain owns the plugin intent and action routing.",
+        980,
+        "kain-host",
+        "kain-workbench-smoke.runtime",
+        "",
+        "",
+        build_kain_plugin_preview_match("file", string_array_2("kn", "ks"), json_array_new(), string_array_2("script", "text")),
+        build_kain_plugin_preview_capabilities(false, false, false, true, true, true, false),
+        build_kain_plugin_preview_chrome(true, false, "compact"),
+        string_array_2("kain.plugin.inspect", "kain.plugin.plan-preview"),
+        string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm")
+    )
+
+    append_kain_plugin_wasm_target(wasm_targets, "kain-smoke-worker", "Kain Smoke WASM Worker", "usr/plugins-kain/kain-workbench-smoke/plugin.runtime/wasm/smoke_worker.kn", "plugin.runtime/wasm/dist/smoke_worker.wasm", "wasm32-unknown-unknown", "declared")
+    append_kain_plugin_cargo_ffi_target(cargo_ffi_targets, "kain-smoke-cargo-ffi", "Kain Smoke Cargo FFI", "greeblefs-kain-smoke-tools", "usr/plugins-kain/kain-workbench-smoke/plugin.runtime/cargo/greeblefs-kain-smoke-tools", "analysis", "declared")
+    append_kain_plugin_generated_artifact(generated_artifacts, "compat-extension-toml", "plugin-compat-manifest", "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "generated/kain-workbench-smoke/extension.toml", "future")
+
+    json_object_set(plugin, "id", "kain-workbench-smoke")
+    json_object_set(plugin, "name", "Kain Workbench Smoke")
+    json_object_set(plugin, "version", "0.1.0")
+    json_object_set(plugin, "description", "First Kain-native plugin package proving workbench, preview workbench, FFI, WASM, Cargo FFI, and trusted action metadata without replacing TSX plugins.")
+    json_object_set(plugin, "category", "Kain Plugins")
+    json_object_set(plugin, "source", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(plugin, "directory", "usr/plugins-kain/kain-workbench-smoke")
+    json_object_set(plugin, "manifestPath", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(plugin, "status", "live")
+    json_object_set(plugin, "tags", string_array_8("kain", "workbench", "preview", "ffi", "python", "node", "wasm", "cargo"))
+    json_object_set(plugin, "permissions", permissions)
+    json_object_set(plugin, "ffiCapabilities", ffi_capabilities)
+    json_object_set(plugin, "runtimes", runtimes)
+    json_object_set(plugin, "workbenches", workbenches)
+    json_object_set(plugin, "previewWorkbenches", preview_workbenches)
+    json_object_set(plugin, "actions", actions)
+    json_object_set(plugin, "wasmTargets", wasm_targets)
+    json_object_set(plugin, "cargoFfiTargets", cargo_ffi_targets)
+    json_object_set(plugin, "generatedArtifacts", generated_artifacts)
+    return plugin
+
+fn build_kain_plugin_catalog(request: Any) -> Any:
+    let catalog = json_object_new()
+    let plugins = json_array_new()
+    let consumers = json_array_new()
+    json_array_push(plugins, build_kain_workbench_smoke_plugin())
+
+    json_array_push(consumers, "src/runtime/kainPluginCatalog.ts")
+    json_array_push(consumers, "src/config/pluginPackages.ts")
+    json_array_push(consumers, "src/runtime/useFolderPluginRuntime.ts")
+    json_array_push(consumers, "src/components/kain/KainPluginWorkbenchHost.tsx")
+    json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
+    json_array_push(consumers, "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+
+    json_object_set(catalog, "schemaVersion", 1)
+    json_object_set(catalog, "kind", "greeblefs.kain.plugin.catalog")
+    json_object_set(catalog, "source", "src-kain/plugins/registry.kn")
+    json_object_set(catalog, "root", "usr/plugins-kain")
+    json_object_set(catalog, "stdlib", "src-kain/plugins/stdlib/greeblefs/plugin.kn")
+    json_object_set(catalog, "host", "src/runtime/kainPluginCatalog.ts")
+    json_object_set(catalog, "summary", "Parallel Kain-native plugin catalog for workbenches, preview workbenches, trusted actions, FFI, WASM, and Cargo FFI while existing TSX plugins stay intact.")
+    json_object_set(catalog, "namespace", json_string_field(request, "namespace"))
+    json_object_set(catalog, "method", json_string_field(request, "method"))
+    json_object_set(catalog, "plugins", plugins)
+    json_object_set(catalog, "consumers", consumers)
+    return catalog
+
+fn build_kain_plugin_action_result(request: Any) -> Any:
+    let args = json_get(request, "args")
+    let plugin_id = json_string_field(args, "pluginId")
+    let action_id = json_string_field(args, "actionId")
+    let result = json_object_new()
+    let payload = json_object_new()
+
+    json_object_set(payload, "source", "src-kain/app/main.kn")
+    json_object_set(payload, "catalog", "usr/plugins-kain/kain-workbench-smoke/plugin.kn")
+    json_object_set(payload, "safe", true)
+    json_object_set(payload, "next", "Route this action into the plugin-owned Kain runtime once per-plugin action sandboxes land.")
+
+    json_object_set(result, "ok", plugin_id == "kain-workbench-smoke")
+    json_object_set(result, "pluginId", plugin_id)
+    json_object_set(result, "actionId", action_id)
+    if action_id == "kain.plugin.plan-preview":
+        json_object_set(result, "label", "Plan Preview")
+        json_object_set(result, "summary", "Kain preview plan returned through the resident bridge without executing unsafe FFI.")
+        json_object_set(result, "ffiLanes", string_array_5("python", "node", "c-runtime", "cargo-ffi", "wasm"))
+    else:
+        json_object_set(result, "label", "Inspect")
+        json_object_set(result, "summary", "Kain plugin inspect proof returned through the resident bridge.")
+        json_object_set(result, "ffiLanes", string_array_3("python", "cargo-ffi", "wasm"))
+    json_object_set(result, "result", payload)
+    return result
 
 fn append_manifest_capability(items, id: String, lane: String, label: String, summary: String, status: String, implemented: Bool) -> Int:
     let capability = json_object_new()
@@ -850,12 +1134,14 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_capability(capabilities, "kain.lattice.panelRegistry", "ui", "Panel registry Lattice descriptors", "Kain Lattice now owns the built-in panel metadata contract while React keeps trusted panel renderers.", "live", true)
     append_manifest_capability(capabilities, "kain.ffi.uiInventory", "ffi", "UI inventory analyzer", "Kain can call the Python FFI UI inventory worker to emit hardcoded-surface maps for future Lattice migrations.", "live", true)
     append_manifest_capability(capabilities, "kain.settings.navigation", "settings", "Settings navigation ownership", "Kain can author Settings groups and hide compatibility lanes while GreebleFS keeps fallbacks.", "consumed", true)
-    append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can emit GreebleFS-compatible plugin and action artifacts from typed intent.", "planned", false)
+    append_manifest_capability(capabilities, "kain.plugin.authoring", "plugins", "Plugin/action authoring", "Kain can author parallel Kain-native plugins with workbenches, preview workbenches, trusted actions, FFI declarations, and compatibility artifacts.", "live", true)
     append_manifest_capability(capabilities, "kain.host.reflection", "rust", "Rust host reflection", "Rust/Tauron can describe host capabilities for Kain to route or generate wrappers.", "planned", false)
     append_manifest_capability(capabilities, "kain.shader.spirv", "gpu", "SPIR-V shader artifacts", "Kain can compile GPU/shader artifacts for lookdev, preview, and compute pipelines.", "available-in-kain", false)
+    append_manifest_capability(capabilities, "kain.wasm.compiler", "wasm", "Kain WASM compiler", "Kain can compile portable WASM artifacts for GreebleFS wasm-panel and wasm-worker runtime surfaces.", "available-in-kain", false)
     append_manifest_capability(capabilities, "kain.python.ffi", "ffi", "Python FFI bridge", "Kain can route Python-heavy analysis and package workflows through the existing managed Python sidecar.", "sidecar-hooked", true)
     append_manifest_capability(capabilities, "kain.node.ffi", "ffi", "Node FFI bridge", "Kain can call Node/native packages when that is the fastest authoring path.", "available-in-kain", false)
     append_manifest_capability(capabilities, "kain.c.runtime", "ffi", "C runtime bridge", "Kain can talk to C libraries, DLLs, compiled tools, SDKs, and legacy code.", "available-in-kain", false)
+    append_manifest_capability(capabilities, "kain.cargo.ffi", "ffi", "Cargo FFI bridge", "Kain can import or call Cargo crates so Rust ecosystem tools can become plugin/runtime pipelines before hardened host promotion.", "available-in-kain", false)
 
     append_manifest_dispatch(dispatch, "greeblefs.ui", "graph", "Return the Kain-authored UI graph consumed by Settings and app defaults.", "src/runtime/kainUiGraph.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ui", "scaffold", "Return Kain-authored semantic UI surfaces and primitive vocabulary for React rendering.", "src/runtime/kainUiScaffold.ts")
@@ -863,6 +1149,8 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_dispatch(dispatch, "greeblefs.lattice", "catalog", "Return the Kain Lattice QML-like package/component catalog.", "src/runtime/kainLatticeCatalog.ts")
     append_manifest_dispatch(dispatch, "greeblefs.ffi", "catalog", "Return the Kain FFI monorepo lane catalog.", "src/runtime/kainFfiCatalog.ts")
     append_manifest_dispatch(dispatch, "greeblefs.kain", "manifest", "Return the Kain app manifest that declares first-class GreebleFS contributions.", "src/runtime/kainManifest.ts")
+    append_manifest_dispatch(dispatch, "greeblefs.plugins", "catalog", "Return the parallel Kain-native plugin catalog under usr/plugins-kain.", "src/runtime/kainPluginCatalog.ts")
+    append_manifest_dispatch(dispatch, "greeblefs.plugins", "action", "Run a trusted Kain plugin action through the resident bridge.", "src/components/kain/KainPluginWorkbenchHost.tsx")
 
     append_manifest_artifact(generated_artifacts, "kain.plugin.proof", "plugin-manifest", "src-kain/runtimes/greeblefs-kain-control-plane/src/plugin_authoring.kn", "generated/plugin-proof.json", "proof")
     append_manifest_artifact(generated_artifacts, "kain.settings.proof", "settings-schema", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated/settings-proof.json", "proof")
@@ -872,6 +1160,8 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_artifact(generated_artifacts, "kain.lattice.panelRegistry", "panel-descriptor-registry", "src-kain/lattice/greeblefs-panel-registry/main.kn", "src/config/panelLatticeRegistry.ts", "live")
     append_manifest_artifact(generated_artifacts, "kain.ffi.uiInventory", "hardcoded-surface-map", "src-kain/ffi/python/analysis/ui_inventory.py", "tmp/ui-hardcoded-surface-map.json", "live")
     append_manifest_artifact(generated_artifacts, "kain.ffi.catalog", "ffi-lane-catalog", "src-kain/ffi/registry.kn", "src/runtime/kainFfiCatalog.ts", "live")
+    append_manifest_artifact(generated_artifacts, "kain.plugin.catalog", "kain-plugin-catalog", "src-kain/plugins/registry.kn", "src/runtime/kainPluginCatalog.ts", "live")
+    append_manifest_artifact(generated_artifacts, "kain.plugin.smoke.compat", "plugin-compat-manifest", "usr/plugins-kain/kain-workbench-smoke/plugin.kn", "generated/kain-workbench-smoke/extension.toml", "future")
 
     append_manifest_schema(settings_schemas, "greeblefs.kain.ui", "Kain UI Settings", "src-kain/app/main.kn", "Settings > Kain UI", "live")
     append_manifest_schema(settings_schemas, "greeblefs.kain.controlPlane", "Kain Control Plane Settings", "src-kain/runtimes/greeblefs-kain-control-plane/src/settings_authoring.kn", "generated proof", "proof")
@@ -882,21 +1172,25 @@ fn build_kain_manifest(request: Any) -> Any:
     append_manifest_pipeline(pipelines, "kain.lattice.panel-registry", "Panel registry migration", "Built-in panel metadata now resolves from Lattice descriptors before the renderers migrate into authored package components.", "active")
     append_manifest_pipeline(pipelines, "kain.ffi.ui-inventory", "UI hardcoded-surface inventory", "Kain Python FFI emits the hardcoded visual, interaction, and panel migration map for the next Lattice conversion passes.", "active")
     append_manifest_pipeline(pipelines, "kain.ffi.monorepo", "Kain FFI monorepo", "Kain owns a lane catalog for Python, Node, C, Rust reflection, Tauron view, and SPIR-V bridge work.", "active")
-    append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Plugin manifest generation", "Kain emits plugin/action manifests that GreebleFS can load as compatibility artifacts.", "next")
+    append_manifest_pipeline(pipelines, "kain.plugin.first-class", "Kain plugin catalog", "Kain owns a parallel usr/plugins-kain lane for plugin workbenches, preview workbenches, trusted actions, FFI declarations, WASM targets, Cargo FFI targets, and future compatibility artifacts.", "active")
     append_manifest_pipeline(pipelines, "kain.reflection.codegen", "Rust reflection codegen", "Kain consumes Rust/Tauron host shape and emits wrapper glue instead of hand-maintained mappings.", "planned")
     append_manifest_pipeline(pipelines, "kain.gpu.artifacts", "GPU artifact lane", "Kain compiles SPIR-V/shader artifacts for preview/lookdev pipelines.", "planned")
 
     append_manifest_ffi_lane(ffi_lanes, "python", "Python FFI", "Use the managed GreebleFS Python sidecar for dependency-heavy analysis, AST inventory, ML, data tooling, and reusable reports.", "sidecar-hooked")
     append_manifest_ffi_lane(ffi_lanes, "node", "Node FFI", "Use Node/native npm packages for authoring, codegen, and asset tooling.", "available-in-kain")
     append_manifest_ffi_lane(ffi_lanes, "c-runtime", "C runtime", "Use native C libraries, DLLs, SDKs, and compiled tools behind explicit host lanes.", "available-in-kain")
+    append_manifest_ffi_lane(ffi_lanes, "cargo-ffi", "Cargo FFI", "Use Cargo crates and Rust libraries from Kain plugin/runtime pipelines before promoting stable seams into Rust host code.", "available-in-kain")
     append_manifest_ffi_lane(ffi_lanes, "rust-reflection", "Rust reflection", "Let Rust describe trusted host capabilities and let Kain generate or route calls.", "planned")
+    append_manifest_ffi_lane(ffi_lanes, "wasm", "WASM", "Compile Kain-authored WASM artifacts for wasm-panel and wasm-worker runtime surfaces.", "available-in-kain")
     append_manifest_ffi_lane(ffi_lanes, "spirv", "SPIR-V", "Compile shader/compute artifacts that GreebleFS can cache and consume.", "available-in-kain")
 
     json_array_push(consumers, "src/runtime/kainManifest.ts")
     json_array_push(consumers, "src/runtime/kainUiScaffold.ts")
     json_array_push(consumers, "src/runtime/kainLatticeCatalog.ts")
     json_array_push(consumers, "src/runtime/kainFfiCatalog.ts")
+    json_array_push(consumers, "src/runtime/kainPluginCatalog.ts")
     json_array_push(consumers, "src/components/kain/KainUiRenderer.tsx")
+    json_array_push(consumers, "src/components/kain/KainPluginWorkbenchHost.tsx")
     json_array_push(consumers, "src/components/settings/sections/KainUiSettingsSection.tsx")
     json_array_push(consumers, "MCP greeblefs-dev-mcp smoke")
 
@@ -963,5 +1257,11 @@ fn kain_bridge_dispatch(request_json: String) -> Any:
 
     if request_namespace == "greeblefs.kain" and request_method == "manifest":
         return build_kain_manifest(request)
+
+    if request_namespace == "greeblefs.plugins" and request_method == "catalog":
+        return build_kain_plugin_catalog(request)
+
+    if request_namespace == "greeblefs.plugins" and request_method == "action":
+        return build_kain_plugin_action_result(request)
 
     return build_error("Unknown GreebleFS Kain UI request: " + request_namespace + "." + request_method)

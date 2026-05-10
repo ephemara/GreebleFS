@@ -46,6 +46,10 @@ This means Kain can become a source-of-truth/orchestration layer while Tauron st
   Returns the Kain FFI monorepo lane catalog consumed by `src/runtime/kainFfiCatalog.ts`.
 - `greeblefs.kain.manifest`
   Returns the first-class Kain contribution manifest consumed by `src/runtime/kainManifest.ts` and surfaced in Settings > Kain UI.
+- `greeblefs.plugins.catalog`
+  Returns the parallel Kain-native plugin catalog consumed by `src/runtime/kainPluginCatalog.ts` and merged into the existing plugin discovery lane.
+- `greeblefs.plugins.action`
+  Runs trusted Kain plugin actions through the resident bridge. In v1 this returns safe proof payloads; deeper per-plugin FFI execution should stay behind explicit trust/permission gates.
 
 The manifest shape is intentionally small and additive:
 
@@ -77,6 +81,12 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-ffi-proof`
 - `data-kain-ffi-lanes`
 - `data-kain-ffi-python`
+- `data-kain-plugin-catalog-proof`
+- `data-kain-plugin-count`
+- `data-kain-plugin-preview-workbenches`
+- `data-kain-plugin-ffi-capabilities`
+- `data-kain-plugin-wasm-targets`
+- `data-kain-plugin-cargo-ffi-targets`
 
 The workbench top bar also exposes the compact applet strip through:
 
@@ -174,6 +184,37 @@ The first live Lattice mounts are `settings:kain-lattice-proof` in `settings.kai
 
 The first production panel migration is `greeblefs.lattice.panel-registry`: `src/config/panelLatticeRegistry.ts` owns built-in panel labels, catalog descriptions, dock placement, IDE roles, icon slots, and Lattice component ids. `src/panels/panelRegistry.tsx` still owns trusted React renderers, but its built-in catalog now derives from the descriptor registry instead of hand-built catalog rows.
 
+## Kain Plugin System
+
+Kain plugins are additive to the existing TSX plugin system. Keep `usr/plugins` and `usr/packages` for React/package plugins; use `usr/plugins-kain` for Kain-native plugin packages.
+
+Current first pass:
+
+- `usr/plugins-kain/kain-workbench-smoke/plugin.kn`
+  First Kain-native plugin source. It declares a workbench, a `.kn`/`.ks` preview workbench, trusted bridge actions, FFI capabilities, a WASM target, and a Cargo FFI target.
+- `src-kain/plugins/registry.kn`
+  Kain-side catalog proof for `greeblefs.plugins.catalog`.
+- `src-kain/plugins/stdlib/greeblefs/plugin.kn`
+  Authoring vocabulary for Kain plugins.
+- `src/runtime/kainPluginCatalog.ts`
+  TypeScript normalization boundary for Kain plugin catalog/action responses.
+- `src/components/kain/KainPluginWorkbenchHost.tsx`
+  Compact trusted host for Kain workbench and preview-workbench surfaces.
+- `src/config/pluginPackages.ts`
+  Merges normalized Kain catalog entries into the existing plugin catalog as metadata plugins and preview-lane contributions.
+
+Model:
+
+```text
+usr/plugins-kain/<plugin>/plugin.kn
+  -> greeblefs.plugins.catalog
+  -> src/runtime/kainPluginCatalog.ts
+  -> src/config/pluginPackages.ts
+  -> existing workbench, preview, Plugins Manager, Settings, and enablement lanes
+```
+
+Kain owns plugin intent and heavy runtime orchestration. GreebleFS owns install/discovery, permissions, renderer safety, preview/workbench lifecycle, and host actions. Kain FFI lanes such as Python, Node, C runtime, Cargo FFI, WASM, Rust reflection, Tauron view, and SPIR-V are privileged plugin capabilities, not browser-level React APIs.
+
 ## What Is Possible Now
 
 These are capability lanes Kain can grow into inside GreebleFS. Some are active now, some are next-step architecture targets unlocked by the bridge.
@@ -190,8 +231,12 @@ These are capability lanes Kain can grow into inside GreebleFS. Some are active 
   Scaffold for C ABI, DLL, SDK, and legacy native-library integration.
 - `rust-reflection/`
   Scaffold for Rust/Tauron host reflection and generated wrappers.
+- `cargo-ffi/`
+  Scaffold for Kain importing or calling Cargo crates from plugin/runtime pipelines.
 - `tauri-view/`
   Live Tauron Kain bridge view lane.
+- `wasm/`
+  Scaffold for Kain compiling WASM artifacts consumed by GreebleFS `wasm-panel` and `wasm-worker` hosts.
 - `spirv/`
   Scaffold for shader and compute artifact generation.
 
