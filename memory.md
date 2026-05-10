@@ -1,3 +1,17 @@
+# 2026-05-10 - Bevy Wasm Workbench Cargo Cache Hardening
+
+- Hardened the Rust/Wasm runtime pipeline for the Bevy 3D model workbench after Windows build errors showed Cargo fighting locked files in `runtimes/bevy-model3d-viewer/target`.
+  - `src-tauri/src/runtime_pipeline/driver.rs` now resolves Cargo target directories into the prepared runtime cache instead of the runtime source tree. The path includes runtime id, compiler, target, mode, and cache key under `runtime-cache/.cargo-targets/...`, so different Bevy source signatures do not share the same active target directory.
+  - The existing `runtime_prepare_package` per-cache-key build lock remains important: identical panel prepares wait on one build, then recheck the generated artifact instead of starting duplicate `cargo`/`wasm-bindgen` jobs.
+- Durable design rule:
+  - Do not send `cargo-wasm-bindgen` or `cargo-native` runtime builds back into `runtimes/<id>/target` on Windows. Treat source-local Cargo target directories as a reliability bug for long-running dev app sessions because stale rustc/cargo handles can surface as `.rlib` removal or `.pdb` write failures.
+  - If a Bevy Wasm preview fails, first inspect `WasmPanelHost` console output for `runtime_prepare_package` stderr. Errors mentioning locked Cargo artifacts point at build-cache/race behavior, not Tauron WebView2 Wasm execution.
+- Validation:
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `cargo check --manifest-path runtimes/bevy-model3d-viewer/Cargo.toml --lib --target wasm32-unknown-unknown --target-dir %TEMP%/greeblefs-bevy-model3d-viewer-wasm-check-target`
+  - Focused Rust unit test for the target-dir helper compiled the library but hit the existing Windows lib-test launch failure: `STATUS_ENTRYPOINT_NOT_FOUND`.
+
 # 2026-05-10 - Compact Settings Surface Pass
 
 - Debloated the main Settings shell and overview surface so Settings reads like a compact control plane instead of a verbose landing page.

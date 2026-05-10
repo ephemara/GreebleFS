@@ -666,12 +666,17 @@ fn resolve_cargo_target_directory(
 ) -> PathBuf {
     if let Some(cache_entry_dir) = artifact_path.parent() {
         if let Some(cache_root) = cache_entry_dir.parent() {
+            let cache_key_fragment = cache_entry_dir
+                .file_name()
+                .and_then(|file_name| file_name.to_str())
+                .unwrap_or("uncached");
             let target_dir_name = sanitize_cargo_target_directory_name(&format!(
-                "{}-{}-{}-{}",
+                "{}-{}-{}-{}-{}",
                 manifest.id,
                 manifest.compiler.as_str(),
                 target,
                 mode,
+                cache_key_fragment,
             ));
             return cache_root.join(".cargo-targets").join(target_dir_name);
         }
@@ -1077,7 +1082,7 @@ crate-type = ["cdylib", "rlib"]
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap()
-            .contains("bevy-model3d-viewer-cargo-wasm-bindgen-wasm-bindgen-web-release"));
+            .contains("bevy-model3d-viewer-cargo-wasm-bindgen-wasm-bindgen-web-release-cache-key"));
     }
 
     #[test]
