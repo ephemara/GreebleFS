@@ -3,11 +3,11 @@
     "accentColor": "#f5f5f5",
     "activeAppearancePackId": null,
     "activeDockThemeId": null,
-    "activeIconThemeId": "zen",
+    "activeIconThemeId": "toon_icons",
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "kain-ion-lattice",
+    "activeThemeId": "catppuccin",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -489,7 +489,7 @@
     "sidebarPosition": "left",
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
-    "uiFontFamily": "\"JetBrains Mono\", \"Cascadia Code\", monospace",
+    "uiFontFamily": "system-ui, sans-serif",
     "useNativeOsIcons": true,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,
@@ -1197,6 +1197,64 @@
         "default": {
           "entries": [
             {
+              "controlId": "statusItemCount",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusModeProfile",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusViewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusPreviewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "center"
+            },
+            {
+              "controlId": "terminalDrawerToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            },
+            {
+              "controlId": "statusViewSize",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "widthPx": 220,
+              "zone": "end"
+            },
+            {
+              "controlId": "statusViewToggles",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "widthPx": 292,
+              "zone": "end"
+            },
+            {
               "anchorX": 0,
               "anchorY": 0,
               "bandId": "primary",
@@ -1263,23 +1321,26 @@
               "zone": "primaryCenter"
             },
             {
-              "anchorX": 840,
-              "anchorY": 0,
-              "bandId": "primary",
-              "controlId": "focusAddressBar",
+              "controlId": "toggleSearchContent",
+              "hidden": false,
+              "offsetPx": 96,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryCenter"
+            },
+            {
+              "controlId": "semanticIndexBuild",
               "hidden": false,
               "offsetPx": 0,
-              "order": 10,
-              "showIcon": true,
-              "showLabel": false,
+              "order": 30,
               "surfaceId": "explorerToolbar",
-              "zone": "primaryEnd"
+              "zone": "primaryCenter"
             },
             {
               "controlId": "togglePreview",
               "hidden": false,
               "offsetPx": 0,
-              "order": 20,
+              "order": 10,
               "surfaceId": "explorerToolbar",
               "zone": "primaryEnd"
             },
@@ -1287,7 +1348,7 @@
               "controlId": "selectionModeToggle",
               "hidden": false,
               "offsetPx": 0,
-              "order": 30,
+              "order": 20,
               "surfaceId": "explorerToolbar",
               "zone": "primaryEnd"
             },
@@ -1295,7 +1356,7 @@
               "controlId": "toggleHiddenFiles",
               "hidden": false,
               "offsetPx": 0,
-              "order": 40,
+              "order": 30,
               "surfaceId": "explorerToolbar",
               "zone": "primaryEnd"
             },
@@ -1303,7 +1364,7 @@
               "controlId": "refresh",
               "hidden": false,
               "offsetPx": 0,
-              "order": 50,
+              "order": 40,
               "surfaceId": "explorerToolbar",
               "zone": "primaryEnd"
             },
@@ -1340,13 +1401,13 @@
             {
               "controlId": "actionsPaneToggle",
               "hidden": false,
-              "offsetPx": 188,
+              "offsetPx": 53,
               "order": 40,
               "surfaceId": "explorerToolbar",
               "zone": "secondaryStart"
             },
             {
-              "controlId": "customizeHome",
+              "controlId": "saveSearch",
               "hidden": false,
               "offsetPx": 0,
               "order": 10,
@@ -1354,7 +1415,7 @@
               "zone": "secondaryEnd"
             },
             {
-              "controlId": "refreshHome",
+              "controlId": "batchRename",
               "hidden": false,
               "offsetPx": 0,
               "order": 20,
@@ -1362,7 +1423,7 @@
               "zone": "secondaryEnd"
             },
             {
-              "controlId": "openUserHome",
+              "controlId": "tagSelection",
               "hidden": false,
               "offsetPx": 0,
               "order": 30,
@@ -1370,7 +1431,7 @@
               "zone": "secondaryEnd"
             },
             {
-              "controlId": "toggleSearchContent",
+              "controlId": "duplicateScan",
               "hidden": false,
               "offsetPx": 0,
               "order": 40,
@@ -1378,86 +1439,28 @@
               "zone": "secondaryEnd"
             },
             {
-              "controlId": "railIdentity",
+              "controlId": "undoTrash",
               "hidden": false,
               "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "start"
+              "order": 50,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
             },
             {
-              "controlId": "railBookmarkSummary",
+              "controlId": "newFolder",
               "hidden": false,
               "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "center"
+              "order": 60,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
             },
             {
-              "controlId": "railClose",
+              "controlId": "newFile",
               "hidden": false,
               "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "railManageToggle",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "railHeader",
-              "zone": "end"
-            },
-            {
-              "controlId": "statusItemCount",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "explorerStatusBar",
-              "zone": "start"
-            },
-            {
-              "controlId": "statusModeProfile",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "explorerStatusBar",
-              "zone": "start"
-            },
-            {
-              "controlId": "statusViewSummary",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 30,
-              "surfaceId": "explorerStatusBar",
-              "zone": "start"
-            },
-            {
-              "controlId": "statusPreviewSummary",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 10,
-              "surfaceId": "explorerStatusBar",
-              "zone": "center"
-            },
-            {
-              "controlId": "statusViewSize",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 20,
-              "surfaceId": "explorerStatusBar",
-              "widthPx": 220,
-              "zone": "end"
-            },
-            {
-              "controlId": "statusViewToggles",
-              "hidden": false,
-              "offsetPx": 0,
-              "order": 30,
-              "surfaceId": "explorerStatusBar",
-              "widthPx": 292,
-              "zone": "end"
+              "order": 70,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
             },
             {
               "controlId": "statusTaskBadge",
@@ -1466,6 +1469,25 @@
               "order": 10,
               "surfaceId": "explorerStatusBar",
               "zone": "end"
+            },
+            {
+              "controlId": "pinLocation",
+              "hidden": true,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "focusAddressBar",
+              "hidden": false,
+              "offsetPx": 30,
+              "order": 40,
+              "showIcon": true,
+              "showLabel": false,
+              "sizeVariant": "wide",
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryCenter"
             }
           ]
         }
@@ -2083,7 +2105,7 @@
         }
       }
     },
-    "collectionPreviewMode": "overview",
+    "collectionPreviewMode": "list",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
     "contextMenuLayoutOverridesByContext": {
@@ -2299,7 +2321,7 @@
     "experimentalDensity": 0.4,
     "experimentalViewMode": "off",
     "explorerViewDensityById": {
-      "adaptive-semantic-grid": 0,
+      "adaptive-semantic-grid": 0.4,
       "constellation": 0.4,
       "standard": 0.4,
       "timeline-surface": 0
@@ -2501,7 +2523,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.04,
+    "gridZoom": 0.28,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2516,7 +2538,7 @@
     "modeProfileOverridesByThemeId": {},
     "preferredWorkbenchByExtension": {},
     "showHiddenFiles": false,
-    "sortBy": "name",
+    "sortBy": "type",
     "sortOrder": "asc",
     "thumbnails": {
       "enableVideoHoverScrub": true,
@@ -2529,7 +2551,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "list"
+    "viewMode": "details"
   },
   "home": {
     "activePackId": null,
@@ -2652,7 +2674,7 @@
         ]
       },
       "overlay-classic": {
-        "activePanelId": "explorer",
+        "activePanelId": "git",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",

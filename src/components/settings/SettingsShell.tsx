@@ -37,7 +37,7 @@ export function SettingsShell({
   const floatingShell = settingsStyle === 'floating' || settingsStyle === 'glass';
   const contentGrid = (
     <div
-      className={`grid w-full min-w-0 gap-3 px-4 pt-3 ${disableContentScroll ? 'h-full min-h-0 pb-3' : 'pb-5'} ${inspector ? 'xl:grid-cols-[minmax(0,1fr)_320px]' : ''}`.trim()}
+      className={`grid w-full min-w-0 gap-2 px-2 pt-2 ${disableContentScroll ? 'h-full min-h-0 pb-2' : 'pb-3'} ${inspector ? 'xl:grid-cols-[minmax(0,1fr)_304px]' : ''}`.trim()}
       data-settings-shell-content="true"
       data-settings-active-section={activeSectionKey}
       data-settings-active-archetype={activeArchetype}
@@ -65,14 +65,14 @@ export function SettingsShell({
         minHeight: 0,
         minWidth: 0,
         background: 'var(--overlay-workbench-settings-bg)',
-        gap: 'var(--overlay-workbench-panel-gap)',
-        padding: 'var(--overlay-workbench-page-padding)',
+        gap: 'calc(var(--overlay-workbench-panel-gap) * 0.5)',
+        padding: 'calc(var(--overlay-workbench-page-padding) * 0.5)',
       }}
     >
       <ResizablePane
         size={railWidth}
-        minSize={190}
-        maxSize={320}
+        minSize={168}
+        maxSize={280}
         onSizeChange={onRailWidthChange}
         borderColor={`${accent}55`}
         style={{

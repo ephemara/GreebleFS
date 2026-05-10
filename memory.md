@@ -1,3 +1,22 @@
+# 2026-05-10 - Compact Settings Surface Pass
+
+- Debloated the main Settings shell and overview surface so Settings reads like a compact control plane instead of a verbose landing page.
+  - `SettingsShell.tsx` now uses tighter page padding/gaps, a narrower inspector column, and a smaller resizable rail range.
+  - `SettingsPrimitives.tsx` owns the new compact grammar: compact action buttons, icon action buttons, selects, compact sections, key/value rows, overflow menus, and a dense directory table.
+  - `SettingsPage.tsx` reuses those shared primitives for the overview/header/rail instead of local duplicate helpers, trims the visible summary header to one row, moves description verbosity behind an icon toggle, and renders workspace roots as a filterable table with icon-only open actions.
+  - `settingsNavigation.ts` summaries were shortened so the rail and header stop carrying paragraph-like copy.
+- Durable design rule:
+  - Settings rail buttons should show label plus one clamped summary line. Keep long subtitles in `title`/ARIA or inspector/detail lanes, not visible rail text.
+  - Overview should stay row/table based: `SettingsCompactSection`, `SettingsKeyValueRow`, and `SettingsDirectoryTable` before card grids or large repeated buttons.
+  - Normal Settings actions should prefer shared compact/icon primitives and tokenized Settings surfaces; do not reintroduce local one-off button chrome in `SettingsPage.tsx`.
+- Validation:
+  - Passed: focused overview/rail behavior slice in `src/test/settingsPage.behavior.test.tsx`.
+  - Passed: plugin settings/shared-shell slice in `src/test/settingsPage.behavior.test.tsx`.
+  - Passed: context-menu composer slice in `src/test/settingsPage.behavior.test.tsx`.
+  - Passed: `bunx vitest run src/test/settingsPage.shaders.test.tsx src/test/settingsRailOverflow.test.tsx --reporter=dot --testTimeout=30000`.
+  - Full `bunx tsc --noEmit --pretty false -p tsconfig.json` still exits nonzero on the existing repo baseline; narrowed touched-file TypeScript sweep reported no diagnostics for SettingsPage, SettingsPrimitives, SettingsShell, settingsNavigation, or the updated settings tests.
+  - MCP/dev app was restarted during proof. The native session reached bridge-ready, but current CDP fallback attached to a blank browser page and the native window rendered transparent over the desktop, so visual proof was limited rather than treated as reliable.
+
 # 2026-05-10 - Icon-Only Explorer Action Toolbar
 
 - Debloated the Explorer topbar/toolbar action command strip so command controls read as one unified row instead of separate bordered buttons.

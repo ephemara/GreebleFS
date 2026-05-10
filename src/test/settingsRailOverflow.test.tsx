@@ -24,20 +24,16 @@ describe('Settings rail overflow', () => {
       name: /very long settings section/i,
     });
     const summary = screen.getByText(/dense words/i);
-    const subtitle = screen.getByText(/absurdly/i);
+    const subtitle = screen.queryByText(/absurdly/i);
 
     expect(railButton).toHaveClass('overflow-hidden');
+    expect(railButton).toHaveAttribute('title', expect.stringContaining('absurdly'));
     expect(summary).toHaveStyle({
       overflow: 'hidden',
       overflowWrap: 'anywhere',
       whiteSpace: 'normal',
-      WebkitLineClamp: '2',
+      WebkitLineClamp: '1',
     });
-    expect(subtitle).toHaveStyle({
-      overflow: 'hidden',
-      overflowWrap: 'anywhere',
-      whiteSpace: 'normal',
-      WebkitLineClamp: '2',
-    });
+    expect(subtitle).not.toBeInTheDocument();
   });
 });

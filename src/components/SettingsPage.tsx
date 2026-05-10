@@ -259,7 +259,16 @@ import { OverlayActionButton } from "./OverlayActionButton";
 import { SettingsShell } from "./settings/SettingsShell";
 import {
   InfoBubble,
+  OverviewCard,
+  RangeField,
+  SectionTitle,
   SettingsActionButton,
+  SettingsCompactActionButton,
+  SettingsCompactSection,
+  SettingsDirectoryTable,
+  SettingsIconActionButton,
+  SettingsKeyValueRow,
+  SettingsRailButton,
   SettingsRow,
   SettingsRowDescriptionProvider,
   SettingsRowGroup,
@@ -2181,28 +2190,6 @@ function ColorToken({
   );
 }
 
-function SectionTitle({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: ReactNode;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-60">
-          {icon}
-          <span>{title}</span>
-        </div>
-        <p className="mt-0.5 text-[10px] leading-4 opacity-40">{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
 type RgbColor = { r: number; g: number; b: number };
 
 function parseCssColorToRgb(color: string | undefined): RgbColor | null {
@@ -2282,59 +2269,6 @@ function resolveSettingsFormColorScheme(
   }
 
   return "dark";
-}
-
-function RangeField({
-  label,
-  description,
-  min,
-  max,
-  step,
-  value,
-  valueLabel,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  valueLabel: string;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <label
-      className="rounded border p-3"
-      style={{
-        borderColor: "var(--overlay-workbench-settings-card-border)",
-        background: "var(--overlay-workbench-settings-card-bg)",
-      }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-            {label}
-          </div>
-          <p className="mt-1 text-[11px] opacity-40">{description}</p>
-        </div>
-        <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
-          {valueLabel}
-        </span>
-      </div>
-      <div className="mt-3">
-        <PremiumSlider
-          ariaLabel={label}
-          ariaValueText={valueLabel}
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={onChange}
-        />
-      </div>
-    </label>
-  );
 }
 
 function formatShaderControlValue(
@@ -2552,90 +2486,6 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
   sourceType: "built-in",
   sourceError: null,
 };
-
-function SettingsRailButton({
-  active,
-  icon,
-  label,
-  subtitle,
-  summary,
-  accent,
-  border,
-  text,
-  muted,
-  onClick,
-  motionBinding,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  subtitle: string;
-  summary: string;
-  accent: string;
-  border: string;
-  text: string;
-  muted: string;
-  onClick: () => void;
-  motionBinding?: InteractionMotionBinding;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={subtitle}
-      className="group w-full overflow-hidden rounded px-2 py-1.5 text-left transition-colors"
-      {...motionBinding?.motionDataAttributes}
-      onPointerEnter={motionBinding?.onPointerEnter}
-      onPointerLeave={motionBinding?.onPointerLeave}
-      onPointerDown={motionBinding?.onPointerDown}
-      onPointerUp={motionBinding?.onPointerUp}
-      onPointerCancel={motionBinding?.onPointerCancel}
-      style={{
-        border: `1px solid ${active ? `${accent}88` : border}`,
-        background: active
-          ? "var(--overlay-workbench-chrome-button-active-bg)"
-          : "var(--overlay-workbench-settings-rail-bg)",
-        color: text,
-        boxShadow: active ? `inset 2px 0 0 ${accent}, inset 0 0 0 1px ${accent}22` : "none",
-        ...motionBinding?.motionStyle,
-      }}
-    >
-      <div className="grid grid-cols-[20px_minmax(0,1fr)] items-center gap-2 overflow-hidden">
-        <div
-          className="flex h-5 w-5 shrink-0 items-center justify-center rounded"
-          style={{
-            background: active
-              ? "var(--overlay-workbench-chrome-button-active-bg)"
-              : "var(--overlay-workbench-settings-badge-bg)",
-            color: active ? accent : muted,
-            border: `1px solid ${active ? `${accent}55` : "var(--overlay-workbench-settings-badge-border)"}`,
-          }}
-        >
-          {icon}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.08em]">
-            {label}
-          </div>
-          <div
-            className="text-[9px] leading-3"
-            style={{
-              color: active ? accent : muted,
-              display: "-webkit-box",
-              overflow: "hidden",
-              overflowWrap: "anywhere",
-              whiteSpace: "normal",
-              WebkitBoxOrient: "vertical",
-              WebkitLineClamp: 2,
-            }}
-          >
-            {summary}
-          </div>
-        </div>
-      </div>
-    </button>
-  );
-}
 
 function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
   switch (sectionKey) {
@@ -2983,63 +2833,6 @@ function formatNativeNotificationPermissionLabel(
     case "unavailable":
       return "Unavailable";
   }
-}
-
-function OverviewCard({
-  title,
-  subtitle,
-  badges,
-  children,
-  motionBinding,
-}: {
-  title: string;
-  subtitle: string;
-  badges?: string[];
-  children: ReactNode;
-  motionBinding?: InteractionMotionBinding;
-}) {
-  return (
-    <div
-      className="rounded border p-3"
-      {...motionBinding?.motionDataAttributes}
-      onPointerEnter={motionBinding?.onPointerEnter}
-      onPointerLeave={motionBinding?.onPointerLeave}
-      onPointerDown={motionBinding?.onPointerDown}
-      onPointerUp={motionBinding?.onPointerUp}
-      onPointerCancel={motionBinding?.onPointerCancel}
-      style={{
-        borderColor: "var(--overlay-workbench-settings-card-border)",
-        background: "var(--overlay-workbench-settings-card-bg)",
-        ...motionBinding?.motionStyle,
-      }}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">
-            {title}
-          </div>
-          <p className="mt-1 text-[11px] leading-4 opacity-45">{subtitle}</p>
-        </div>
-        {badges && badges.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-1">
-            {badges.map((badge) => (
-              <span
-                key={badge}
-                className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{
-                  borderColor: "var(--overlay-workbench-settings-badge-border)",
-                  background: "var(--overlay-workbench-settings-badge-bg)",
-                }}
-              >
-                {badge}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="mt-3">{children}</div>
-    </div>
-  );
 }
 
 const EMPTY_CLOUD_ACCOUNTS_SNAPSHOT: ExplorerCloudAccountsSnapshot = {
@@ -3586,6 +3379,7 @@ export function SettingsPage({
     activeRailPath === 'settings'
       ? (showAllDescriptionsBySection[activeSection] ?? false)
       : false;
+  const [workspaceRootFilter, setWorkspaceRootFilter] = useState("");
   const refreshNativeNotificationPermission = useCallback(async () => {
     setNativeNotificationPermissionLoading(true);
     try {
@@ -3765,9 +3559,9 @@ export function SettingsPage({
     useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize(
     "overlayterm-settings-rail-width",
-    236,
-    190,
-    320,
+    208,
+    168,
+    280,
   );
   const [collapsedSettingsCategoryKeys, setCollapsedSettingsCategoryKeys] =
     useState<ReadonlySet<string>>(() => new Set());
@@ -7539,18 +7333,18 @@ export function SettingsPage({
         label: "Startup",
         value: settings.system.launchAtStartup
           ? settings.system.startMobileShareOnBoot
-            ? "Ready at sign-in + mobile live"
-            : "Ready at sign-in"
+            ? "Sign-in + mobile"
+            : "Sign-in"
           : "Manual launch",
       },
       {
         id: "source",
         label: "Source",
-        value: "Explorer import + file actions live",
+        value: "Explorer + file actions",
       },
       {
         id: "frames",
-        label: "Frame Telemetry",
+        label: "Frame",
         value: overlayFrameValue,
       },
     ],
@@ -7568,8 +7362,7 @@ export function SettingsPage({
         id: "explorer-to-source",
         icon: <GitBranch size={13} />,
         title: "Explorer -> Source",
-        description:
-          "Navigate to a repo in Explorer, confirm it for Source, then stage, diff, commit, or quick ship without leaving the overlay.",
+        description: "Explorer selection into Source.",
         actionLabel: "Explorer Settings",
         action: () => setActiveSection("explorer"),
       },
@@ -7577,8 +7370,7 @@ export function SettingsPage({
         id: "terminal-and-layout",
         icon: <TerminalSquare size={13} />,
         title: "Terminal + Layouts",
-        description:
-          "Tune the shell, choose how external handoff behaves, and swap layout profiles so the overlay matches the machine you are driving.",
+        description: "Shell defaults and profile shape.",
         actionLabel: "Terminal Settings",
         action: () => setActiveSection("terminal"),
       },
@@ -7586,8 +7378,7 @@ export function SettingsPage({
         id: "plugins-and-assets",
         icon: <Puzzle size={13} />,
         title: "Plugins + Assets",
-        description:
-          "Drop plugins, themes, wallpapers, shaders, and animations into their workspace folders so GreebleFS can discover them as live runtime modules.",
+        description: "Authored packages and visual assets.",
         actionLabel: "Appearance Settings",
         action: () => setActiveSection("appearance"),
       },
@@ -7604,6 +7395,18 @@ export function SettingsPage({
       })),
     [],
   );
+  const filteredWorkspaceRoots = useMemo(() => {
+    const query = workspaceRootFilter.trim().toLowerCase();
+    if (!query) {
+      return workspaceRoots;
+    }
+
+    return workspaceRoots.filter((root) =>
+      root.label.toLowerCase().includes(query)
+      || root.path.toLowerCase().includes(query)
+      || root.description.toLowerCase().includes(query),
+    );
+  }, [workspaceRootFilter, workspaceRoots]);
   const settingsJumpCards = useMemo(
     () =>
       settingsSectionCatalog
@@ -8301,9 +8104,6 @@ export function SettingsPage({
     (activePluginSettingsSlotId
       ? pluginSettingsSlotsById.get(activePluginSettingsSlotId) ?? null
       : null) ?? pluginSettingsSlots[0] ?? null;
-  const activePluginSettingsGroup = pluginSettingsSlotGroups.find((group) =>
-    group.slots.some((entry) => entry.slot.id === activePluginSettingsSlot?.id),
-  );
   const activeRailPathDescriptor =
     settingsRailPathCatalog.find((path) => path.key === activeRailPath) ??
     settingsRailPathCatalog[0];
@@ -8315,13 +8115,6 @@ export function SettingsPage({
         `${activePluginSettingsSlot.fields.length} field${activePluginSettingsSlot.fields.length === 1 ? '' : 's'}`,
       ].join(' · ')
     : pluginPathSummary;
-  const activePluginDetail =
-    activePluginSettingsSlot?.description
-    ?? (
-      activePluginSettingsSlot
-        ? `Adjust durable settings contributed by ${activePluginSettingsSlot.pluginName}.`
-        : 'Discovered plugin settings slots live here so extension tweaks stop polluting the core settings rail.'
-    );
   const activePluginKeywords =
     activePluginSettingsSlot?.keywords.slice(0, 3) ?? [];
   const isPluginRailActive = activeRailPath === 'plugins';
@@ -9514,30 +9307,33 @@ export function SettingsPage({
         }
         rail={
           <>
-            <div className="border-b px-3 py-2.5" style={{ borderColor: border }}>
-              <div
-                className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em]"
-                style={{ color: muted }}
-              >
-                <SlidersHorizontal size={12} />
-                <span>Workbench Settings</span>
+            <div className="border-b px-2 py-2" style={{ borderColor: border }}>
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <SlidersHorizontal size={12} style={{ color: muted }} />
+                  <h1
+                    className="truncate text-[12px] font-semibold uppercase"
+                    style={{ color: text }}
+                  >
+                    Settings
+                  </h1>
+                </div>
+                <span className="shrink-0 text-[9px] font-semibold uppercase opacity-45">
+                  {isPluginRailActive ? pluginPathSummary : settingsPathSummary}
+                </span>
               </div>
-              <h1
-                className="mt-1 text-[14px] font-semibold leading-none"
-                style={{ color: text }}
+              <div
+                className="mt-2 grid grid-cols-2 overflow-hidden rounded border p-0.5"
+                style={{
+                  borderColor: "var(--overlay-workbench-settings-badge-border)",
+                  background: "var(--overlay-workbench-settings-badge-bg)",
+                }}
               >
-                Settings
-              </h1>
-              <div className="mt-3 grid grid-cols-2 gap-2">
                 {settingsRailPathCatalog
                   .slice()
                   .sort((left, right) => left.order - right.order)
                   .map((path) => {
                     const pathIsActive = activeRailPath === path.key;
-                    const pathSummary =
-                      path.key === 'plugins'
-                        ? pluginPathSummary
-                        : settingsPathSummary;
                     return (
                       <button
                         key={path.key}
@@ -9554,25 +9350,20 @@ export function SettingsPage({
                             );
                           }
                         }}
-                        className="rounded border px-2 py-2 text-left transition-colors"
+                        className="h-6 rounded px-2 text-center text-[10px] font-semibold uppercase transition-colors"
                         data-settings-rail-path={path.label}
                         style={{
-                          borderColor: pathIsActive ? `${accent}88` : border,
+                          border: "1px solid transparent",
                           background: pathIsActive
                             ? "var(--overlay-workbench-chrome-button-active-bg)"
-                            : "rgba(255,255,255,0.03)",
+                            : "transparent",
                           color: text,
                           boxShadow: pathIsActive
                             ? `inset 0 0 0 1px ${accent}22`
                             : "none",
                         }}
                       >
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
-                          {path.label}
-                        </div>
-                        <div className="mt-1 text-[10px] leading-4 opacity-60">
-                          {pathSummary}
-                        </div>
+                        {path.label}
                       </button>
                     );
                   })}
@@ -9581,9 +9372,9 @@ export function SettingsPage({
 
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
-              viewportStyle={{ padding: "7px 8px 10px 8px" }}
+              viewportStyle={{ padding: "5px 6px 8px 6px" }}
             >
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {isPluginRailActive
                   ? pluginSettingsSlotGroups.map((category) => (
                     <div key={category.key} data-settings-rail-category={category.label}>
@@ -9597,7 +9388,7 @@ export function SettingsPage({
                         }
                         variant="rail"
                         mutedColor={muted}
-                        buttonStyle={{ marginBottom: 6 }}
+                        buttonStyle={{ marginBottom: 3 }}
                       >
                         <div title={category.description} className="space-y-1">
                           {category.slots.map((slotEntry) => (
@@ -9637,7 +9428,7 @@ export function SettingsPage({
                         }
                         variant="rail"
                         mutedColor={muted}
-                        buttonStyle={{ marginBottom: 6 }}
+                        buttonStyle={{ marginBottom: 3 }}
                       >
                         <div title={category.description} className="space-y-1">
                           {category.sections.map((section) => (
@@ -9684,7 +9475,7 @@ export function SettingsPage({
         }
         header={
           <div
-            className="border-b px-4 py-3"
+            className="border-b px-3 py-2"
             data-settings-summary-header="true"
             style={{
               borderColor: "var(--overlay-workbench-settings-card-border)",
@@ -9696,60 +9487,46 @@ export function SettingsPage({
               background: "var(--overlay-workbench-settings-card-bg)",
             }}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <p
-                  className="min-w-[240px] flex-1 text-[11px] leading-4"
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span
+                  className="shrink-0 text-[10px] font-semibold uppercase opacity-45"
                   style={{ color: muted }}
                 >
-                  {isPluginRailActive ? activePluginDetail : activeSectionMeta.detail}
-                </p>
+                  {activeRailPathDescriptor.label}
+                </span>
+                <span className="min-w-0 truncate text-[12px] font-semibold" style={{ color: text }}>
+                  {isPluginRailActive
+                    ? (activePluginSettingsSlot?.title ?? "Plugins")
+                    : activeSectionMeta.label}
+                </span>
+                <span className="min-w-0 truncate text-[10px] opacity-55" style={{ color: muted }}>
+                  {isPluginRailActive ? activePluginSummary : activeSectionMeta.summary}
+                </span>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                <SettingsStatusPill style={{ color: muted }}>
-                  Path · {activeRailPathDescriptor.label}
-                </SettingsStatusPill>
+              <div className="flex shrink-0 items-center justify-end gap-1">
                 {isPluginRailActive ? (
-                  <>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Plugin · {activePluginSettingsGroup?.label ?? "Extensions"}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Slot · {activePluginSummary}
-                    </SettingsStatusPill>
-                    {activePluginKeywords.map((keyword) => (
-                      <SettingsStatusPill key={keyword} style={{ color: muted }}>
-                        {keyword}
-                      </SettingsStatusPill>
-                    ))}
-                  </>
+                  activePluginKeywords.slice(0, 2).map((keyword) => (
+                    <span key={keyword} className="hidden text-[9px] font-semibold uppercase opacity-45 lg:inline">
+                      {keyword}
+                    </span>
+                  ))
                 ) : (
                   <>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Group · {activeSectionCategory?.label ?? "General"}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Theme · {effectiveTheme.name}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Layout · {activeLayoutProfile.label}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Startup ·{" "}
-                      {settings.system.launchAtStartup ? "Enabled" : "Disabled"}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill style={{ color: muted }}>
-                      Archetype · {activeSectionMeta.archetype}
-                    </SettingsStatusPill>
-                    <SettingsStatusPill className="hidden xl:inline-flex" style={{ color: muted }}>
-                      {activeSectionMeta.summary}
-                    </SettingsStatusPill>
-                    <SettingsActionButton
+                    <span className="hidden text-[9px] font-semibold uppercase opacity-45 xl:inline">
+                      {activeSectionCategory?.label ?? "General"}
+                    </span>
+                    <SettingsIconActionButton
                       onClick={() =>
                         setShowAllDescriptions(
                           activeSection,
                           !showAllDescriptionsForActiveSection,
                         )
+                      }
+                      aria-label={
+                        showAllDescriptionsForActiveSection
+                          ? "Hide Descriptions"
+                          : "Show Descriptions"
                       }
                       aria-pressed={showAllDescriptionsForActiveSection}
                       title={
@@ -9761,18 +9538,16 @@ export function SettingsPage({
                       accent={accent}
                     >
                       <SlidersHorizontal size={12} />
-                      {showAllDescriptionsForActiveSection
-                        ? "Hide Descriptions"
-                        : "Show Descriptions"}
-                    </SettingsActionButton>
+                    </SettingsIconActionButton>
                   </>
                 )}
-                <SettingsActionButton
+                <SettingsIconActionButton
                   onClick={() => resetToDefaults()}
+                  aria-label="Reset Defaults"
+                  title="Reset Defaults"
                 >
                   <RotateCcw size={12} />
-                  Reset Defaults
-                </SettingsActionButton>
+                </SettingsIconActionButton>
               </div>
             </div>
           </div>
@@ -9784,237 +9559,109 @@ export function SettingsPage({
         {activeRailPath === "settings" ? (
           <>
         {activeSection === "overview" && (
-          <section
-            className="rounded border p-4"
-            style={{
-              borderColor: "var(--overlay-workbench-settings-card-border)",
-              background: "var(--overlay-workbench-settings-card-bg)",
-            }}
-          >
+          <section className="space-y-2" data-settings-section="overview">
             <SectionTitle
               icon={<Sparkles size={12} />}
               title="Overview"
-              subtitle="First-run orientation, workspace roots, and the settings slices that matter most for a credible ship candidate."
+              subtitle="Status, roots, and fast jumps."
             />
 
-            <div className="mt-4 space-y-4">
-              <div
-                className="rounded border p-4"
-                style={{
-                  borderColor: `${accent}44`,
-                  background: `${accent}0d`,
-                }}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="max-w-[640px]">
-                    <div
-                      className="text-[10px] font-semibold uppercase tracking-[0.18em]"
-                      style={{ color: muted }}
-                    >
-                      GreebleFS Control Surface
-                    </div>
-                    <h2
-                      className="mt-2 text-[18px] font-semibold"
-                      style={{ color: text }}
-                    >
-                      Ship the shell, not a template.
-                    </h2>
-                    <p
-                      className="mt-2 text-[12px] leading-5"
-                      style={{ color: muted }}
-                    >
-                      GreebleFS is a desktop workbench with a live terminal,
-                      file explorer, source-control rail, plugin host, theme and
-                      motion authoring in one surface.
-                    </p>
-                  </div>
-                  <div className="grid min-w-[220px] flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
-                    {overviewStats.map((stat) => (
-                      <div
-                        key={stat.id}
-                        className="rounded border px-3 py-2"
-                        style={{
-                          borderColor: "rgba(255,255,255,0.08)",
-                          background: "rgba(255,255,255,0.04)",
-                        }}
-                      >
-                        <div
-                          className="text-[9px] font-semibold uppercase tracking-[0.12em]"
-                          style={{ color: muted }}
-                        >
-                          {stat.label}
-                        </div>
-                        <div
-                          className="mt-1 text-[12px] font-semibold"
-                          style={{ color: text }}
-                        >
-                          {stat.value}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            <SettingsCompactSection title="Workbench" subtitle={activeSectionMeta.summary}>
+              {overviewStats.map((stat) => (
+                <SettingsKeyValueRow
+                  key={stat.id}
+                  label={stat.label}
+                  value={stat.value}
+                />
+              ))}
+              {overviewWorkflows.map((workflow) => (
+                <SettingsKeyValueRow
+                  key={workflow.id}
+                  label={(
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      {workflow.icon}
+                      <span className="truncate">{workflow.title}</span>
+                    </span>
+                  )}
+                  value={workflow.description}
+                  action={(
+                    <SettingsCompactActionButton onClick={workflow.action}>
+                      {workflow.actionLabel}
+                    </SettingsCompactActionButton>
+                  )}
+                />
+              ))}
+            </SettingsCompactSection>
 
-              <OverviewCard
-                title="Core Workflows"
-                subtitle="These are the panel handoffs operators need to understand on first contact."
-                badges={["Explorer", "Source", "Plugins"]}
-              >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {overviewWorkflows.map((workflow) => (
-                    <div
-                      key={workflow.id}
-                      className="rounded border p-3"
-                      style={{
-                        borderColor: "rgba(255,255,255,0.08)",
-                        background: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <div
-                        className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                        style={{ color: muted }}
-                      >
-                        {workflow.icon}
-                        <span>{workflow.title}</span>
-                      </div>
-                      <p
-                        className="mt-2 text-[11px] leading-5"
-                        style={{ color: muted }}
-                      >
-                        {workflow.description}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={workflow.action}
-                        className="mt-3 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                        style={{
-                          border: `1px solid ${border}`,
-                          background: "rgba(255,255,255,0.04)",
-                          color: text,
-                        }}
-                      >
-                        {workflow.actionLabel}
-                      </button>
-                    </div>
-                  ))}
+            <SettingsCompactSection
+              title="Workspace Roots"
+              subtitle={`${filteredWorkspaceRoots.length}/${workspaceRoots.length} roots`}
+              actions={(
+                <input
+                  aria-label="Filter workspace roots"
+                  value={workspaceRootFilter}
+                  onChange={(event) => setWorkspaceRootFilter(event.target.value)}
+                  placeholder="Filter"
+                  className="h-6 w-32 rounded border bg-transparent px-2 text-[10px] outline-none"
+                  style={{
+                    borderColor: "var(--overlay-workbench-settings-badge-border)",
+                    background: "var(--overlay-workbench-settings-badge-bg)",
+                    color: text,
+                  }}
+                />
+              )}
+            >
+              <SettingsDirectoryTable
+                entries={filteredWorkspaceRoots}
+                onOpen={(root) => void openWorkspaceDirectory(root.label, root.path)}
+                emptyLabel="No matching workspace roots"
+              />
+              {overviewNotice ? (
+                <div
+                  className="border-t px-3 py-2 text-[11px]"
+                  style={{
+                    borderColor: `${accent}44`,
+                    background: `${accent}12`,
+                    color: text,
+                  }}
+                >
+                  {overviewNotice}
                 </div>
-              </OverviewCard>
+              ) : null}
+              {overviewError ? (
+                <div
+                  className="border-t px-3 py-2 text-[11px]"
+                  style={{
+                    borderColor: "var(--overlay-danger)",
+                    background: "var(--overlay-bg-danger)",
+                    color: "var(--overlay-danger-text)",
+                  }}
+                >
+                  {overviewError}
+                </div>
+              ) : null}
+            </SettingsCompactSection>
 
-              <OverviewCard
-                title="Workspace Roots"
-                subtitle="Open or create the directories that feed GreebleFS runtime discovery."
-                badges={[`${workspaceRoots.length} roots`, "Create on demand"]}
-              >
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {workspaceRoots.map((root) => (
-                    <div
-                      key={root.id}
-                      className="rounded border p-3"
-                      style={{
-                        borderColor: "rgba(255,255,255,0.08)",
-                        background: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div
-                            className="text-[11px] font-semibold"
-                            style={{ color: text }}
-                          >
-                            {root.label}
-                          </div>
-                          <p
-                            className="mt-1 text-[11px] leading-4"
-                            style={{ color: muted }}
-                          >
-                            {root.description}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void openWorkspaceDirectory(root.label, root.path)
-                          }
-                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                          style={{
-                            border: `1px solid ${accent}55`,
-                            background: `${accent}16`,
-                            color: text,
-                          }}
-                        >
-                          Open {root.label} Folder
-                        </button>
-                      </div>
-                      <div
-                        className="mt-3 rounded border px-3 py-2 text-[10px]"
-                        style={{
-                          borderColor: "rgba(255,255,255,0.08)",
-                          background: "rgba(0,0,0,0.12)",
-                          color: muted,
-                          fontFamily: appearance.fonts.mono,
-                        }}
-                      >
-                        {root.path}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {overviewNotice ? (
-                  <div
-                    className="mt-3 rounded border px-3 py-2 text-[11px]"
+            <SettingsCompactSection title="Settings Shortcuts" subtitle={`${settingsJumpCards.length} jumps`}>
+              <div className="grid grid-cols-1 md:grid-cols-2">
+                {settingsJumpCards.map((card) => (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={card.action}
+                    title={card.summary}
+                    className="min-h-8 border-t px-3 py-1.5 text-left text-[11px] first:border-t-0 md:[&:nth-child(-n+2)]:border-t-0"
                     style={{
-                      borderColor: `${accent}44`,
-                      background: `${accent}12`,
+                      borderColor: "var(--overlay-workbench-settings-card-border)",
                       color: text,
                     }}
                   >
-                    {overviewNotice}
-                  </div>
-                ) : null}
-                {overviewError ? (
-                  <div
-                    className="mt-3 rounded border px-3 py-2 text-[11px]"
-                    style={{
-                      borderColor: "#7f1d1d",
-                      background: "rgba(127,29,29,0.18)",
-                      color: "#fecaca",
-                    }}
-                  >
-                    {overviewError}
-                  </div>
-                ) : null}
-              </OverviewCard>
-
-              <OverviewCard
-                title="Settings Shortcuts"
-                subtitle="Jump straight to the settings surfaces most likely to unblock a real release session."
-                badges={["System", "Terminal", "Explorer", "Layouts"]}
-              >
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  {settingsJumpCards.map((card) => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onClick={card.action}
-                      className="rounded px-3 py-3 text-left transition-colors"
-                      style={{
-                        border: `1px solid ${border}`,
-                        background: "rgba(255,255,255,0.03)",
-                        color: text,
-                      }}
-                    >
-                      <div className="text-[11px] font-semibold">
-                        {card.title}
-                      </div>
-                      <div className="mt-1 text-[11px] opacity-45">
-                        {card.summary}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </OverviewCard>
-            </div>
+                    <div className="truncate font-semibold">{card.title}</div>
+                    <div className="truncate text-[10px] opacity-45">{card.summary}</div>
+                  </button>
+                ))}
+              </div>
+            </SettingsCompactSection>
           </section>
         )}
 

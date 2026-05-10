@@ -13,9 +13,10 @@ import {
   type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
+  type SelectHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Info } from '../AppIcons';
+import { FolderOpen, Info } from '../AppIcons';
 import { PremiumSlider } from '../PremiumSlider';
 import { OverlayToggle } from '../OverlayToggle';
 import type { InteractionMotionBinding } from '../../animation/interactionMotion';
@@ -281,7 +282,7 @@ export function SettingsSectionHeader({
           {icon}
           <span>{title}</span>
         </div>
-        <div className="mt-0.5 text-[10px] leading-4 opacity-40">{subtitle}</div>
+        <div className="mt-0.5 truncate text-[10px] leading-3 opacity-40">{subtitle}</div>
         {badges && badges.length > 0 ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {badges.map(badge => (
@@ -338,7 +339,7 @@ export function SettingsSectionBlock({
 }) {
   return (
     <div
-      className={`rounded border p-3 ${className}`.trim()}
+      className={`rounded border p-2.5 ${className}`.trim()}
       data-settings-section-block={title ?? 'block'}
       style={{
         ...resolveSettingsSurfaceStyle(tone, accent),
@@ -433,6 +434,238 @@ export function SettingsActionButton({
     >
       {children}
     </button>
+  );
+}
+
+export function SettingsCompactActionButton({
+  children,
+  active = false,
+  accent,
+  className = '',
+  style,
+  ...buttonProps
+}: {
+  children: ReactNode;
+  active?: boolean;
+  accent?: string;
+  className?: string;
+  style?: CSSProperties;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'style' | 'children'>) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-6 min-w-0 items-center gap-1.5 rounded px-2 text-[10px] font-semibold uppercase transition-colors disabled:opacity-50 ${className}`.trim()}
+      style={{
+        border: `1px solid ${active && accent ? `${accent}88` : 'var(--overlay-workbench-settings-badge-border)'}`,
+        background: active && accent ? `${accent}1f` : 'var(--overlay-workbench-settings-badge-bg)',
+        color: 'var(--overlay-text-primary)',
+        ...style,
+      }}
+      {...buttonProps}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SettingsIconActionButton({
+  children,
+  active = false,
+  accent,
+  className = '',
+  style,
+  ...buttonProps
+}: {
+  children: ReactNode;
+  active?: boolean;
+  accent?: string;
+  className?: string;
+  style?: CSSProperties;
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'style' | 'children'>) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors disabled:opacity-50 ${className}`.trim()}
+      style={{
+        border: `1px solid ${active && accent ? `${accent}88` : 'var(--overlay-workbench-settings-badge-border)'}`,
+        background: active && accent ? `${accent}1f` : 'var(--overlay-workbench-settings-badge-bg)',
+        color: 'var(--overlay-text-primary)',
+        ...style,
+      }}
+      {...buttonProps}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function SettingsSelect({
+  className = '',
+  style,
+  children,
+  ...selectProps
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, 'className' | 'style' | 'children'>) {
+  return (
+    <select
+      className={`h-7 min-w-0 rounded border bg-transparent px-2 text-[11px] outline-none ${className}`.trim()}
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-badge-border)',
+        background: 'var(--overlay-workbench-settings-badge-bg)',
+        color: 'var(--overlay-text-primary)',
+        ...style,
+      }}
+      {...selectProps}
+    >
+      {children}
+    </select>
+  );
+}
+
+export function SettingsCompactSection({
+  title,
+  subtitle,
+  actions,
+  children,
+  className = '',
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`min-w-0 overflow-hidden rounded border ${className}`.trim()}
+      data-settings-compact-section={title}
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-card-border)',
+        background: 'var(--overlay-workbench-settings-card-bg)',
+      }}
+    >
+      <div
+        className="flex min-w-0 items-center justify-between gap-2 border-b px-3 py-2"
+        style={{ borderColor: 'var(--overlay-workbench-settings-card-border)' }}
+      >
+        <div className="min-w-0">
+          <div className="truncate text-[10px] font-semibold uppercase opacity-70">{title}</div>
+          {subtitle ? <div className="truncate text-[10px] opacity-45">{subtitle}</div> : null}
+        </div>
+        {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </section>
+  );
+}
+
+export function SettingsKeyValueRow({
+  label,
+  value,
+  action,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div
+      className="grid min-h-8 grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)_auto] items-center gap-3 border-t px-3 py-1.5 text-[11px] first:border-t-0"
+      data-settings-key-value-row="true"
+      style={{ borderColor: 'var(--overlay-workbench-settings-card-border)' }}
+    >
+      <div className="min-w-0 truncate font-semibold uppercase opacity-65">{label}</div>
+      <div className="min-w-0 truncate opacity-80">{value}</div>
+      {action ? <div className="shrink-0">{action}</div> : <div />}
+    </div>
+  );
+}
+
+export function SettingsOverflowMenu({
+  label = 'More',
+  children,
+  className = '',
+}: {
+  label?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <details className={`relative ${className}`.trim()} data-settings-overflow-menu="true">
+      <summary
+        className="flex h-6 cursor-pointer list-none items-center rounded border px-2 text-[10px] font-semibold uppercase"
+        style={{
+          borderColor: 'var(--overlay-workbench-settings-badge-border)',
+          background: 'var(--overlay-workbench-settings-badge-bg)',
+          color: 'var(--overlay-text-primary)',
+        }}
+      >
+        {label}
+      </summary>
+      <div
+        className="absolute right-0 top-7 z-20 min-w-40 rounded border p-1"
+        style={{
+          borderColor: 'var(--overlay-workbench-settings-card-border)',
+          background: 'var(--overlay-workbench-settings-card-bg)',
+          boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        }}
+      >
+        {children}
+      </div>
+    </details>
+  );
+}
+
+export function SettingsDirectoryTable({
+  entries,
+  onOpen,
+  emptyLabel = 'No directories',
+}: {
+  entries: Array<{
+    id: string;
+    label: string;
+    path: string;
+    description?: string;
+  }>;
+  onOpen: (entry: { id: string; label: string; path: string }) => void;
+  emptyLabel?: string;
+}) {
+  return (
+    <div
+      className="min-w-0 overflow-hidden rounded border"
+      data-settings-directory-table="true"
+      style={{
+        borderColor: 'var(--overlay-workbench-settings-card-border)',
+        background: 'var(--overlay-workbench-settings-card-bg)',
+      }}
+    >
+      {entries.length === 0 ? (
+        <div className="px-3 py-4 text-[11px] opacity-50">{emptyLabel}</div>
+      ) : (
+        entries.map((entry, index) => (
+          <div
+            key={entry.id}
+            className={`grid min-h-8 grid-cols-[minmax(120px,0.28fr)_minmax(0,1fr)_auto] items-center gap-3 px-3 py-1.5 text-[11px] ${index > 0 ? 'border-t' : ''}`.trim()}
+            style={{ borderColor: 'var(--overlay-workbench-settings-card-border)' }}
+          >
+            <div className="min-w-0 truncate font-semibold">{entry.label}</div>
+            <div className="min-w-0 truncate opacity-60" title={entry.description ?? entry.path}>
+              <span style={{ fontFamily: 'var(--overlay-font-mono)' }}>{entry.path}</span>
+            </div>
+            <SettingsIconActionButton
+              aria-label={`Open ${entry.label} Folder`}
+              title={`Open ${entry.label} Folder`}
+              onClick={() => onOpen(entry)}
+            >
+              <FolderOpen size={13} />
+            </SettingsIconActionButton>
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 
@@ -638,7 +871,19 @@ export function SettingsCatalogCard({
         </div>
         {badges ? <div className="shrink-0">{badges}</div> : null}
       </div>
-      {description ? <div className="mt-2 break-words text-[11px] leading-4 opacity-45">{description}</div> : null}
+      {description ? (
+        <div
+          className="mt-1 break-words text-[10px] leading-3 opacity-45"
+          style={{
+            display: '-webkit-box',
+            overflow: 'hidden',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
+          }}
+        >
+          {description}
+        </div>
+      ) : null}
       {metadata ? <div className="mt-2">{metadata}</div> : null}
       {footer ? <div className="mt-3">{footer}</div> : null}
     </Component>
@@ -689,7 +934,7 @@ export function SettingsRailButton({
   subtitle,
   summary,
   accent,
-  border,
+  border: _border,
   text,
   muted,
   onClick,
@@ -711,8 +956,9 @@ export function SettingsRailButton({
     <button
       type="button"
       onClick={onClick}
-      title={subtitle}
-      className="w-full overflow-hidden rounded px-2 py-2 text-left transition-colors"
+      title={`${subtitle}${summary ? ` | ${summary}` : ''}`}
+      aria-label={label}
+      className="w-full overflow-hidden rounded px-2 py-1.5 text-left transition-colors"
       data-settings-rail-button={label}
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
@@ -721,32 +967,24 @@ export function SettingsRailButton({
       onPointerUp={motionBinding?.onPointerUp}
       onPointerCancel={motionBinding?.onPointerCancel}
       style={{
-        border: `1px solid ${active ? `${accent}88` : border}`,
-        background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-rail-bg)',
+        border: `1px solid ${active ? `${accent}66` : 'transparent'}`,
+        background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'transparent',
         color: text,
-        boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
+        boxShadow: active ? `inset 2px 0 0 ${accent}` : 'none',
         ...motionBinding?.motionStyle,
       }}
     >
-      <div className="grid grid-cols-[20px_minmax(0,1fr)] items-start gap-3 overflow-hidden">
-        <div className="pt-0.5">{icon}</div>
+      <div className="grid grid-cols-[18px_minmax(0,1fr)] items-center gap-2 overflow-hidden">
+        <div
+          className="flex h-[18px] w-[18px] items-center justify-center rounded"
+          style={{ color: active ? accent : muted }}
+        >
+          {icon}
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.12em]">{label}</div>
+          <div className="truncate text-[10px] font-semibold uppercase">{label}</div>
           <div
-            className="mt-1 text-[11px] leading-4 opacity-60"
-            style={{
-              display: '-webkit-box',
-              overflow: 'hidden',
-              overflowWrap: 'anywhere',
-              whiteSpace: 'normal',
-              WebkitBoxOrient: 'vertical',
-              WebkitLineClamp: 2,
-            }}
-          >
-            {summary}
-          </div>
-          <div
-            className="mt-1 text-[10px] leading-4"
+            className="text-[9px] leading-3"
             style={{
               color: active ? accent : muted,
               display: '-webkit-box',
@@ -754,10 +992,10 @@ export function SettingsRailButton({
               overflowWrap: 'anywhere',
               whiteSpace: 'normal',
               WebkitBoxOrient: 'vertical',
-              WebkitLineClamp: 2,
+              WebkitLineClamp: 1,
             }}
           >
-            {subtitle}
+            {summary}
           </div>
         </div>
       </div>
@@ -778,9 +1016,10 @@ export function OverviewCard({
   children: ReactNode;
   motionBinding?: InteractionMotionBinding;
 }) {
+  const showInlineDescriptions = useSettingsRowDescriptionsVisible();
   return (
     <div
-      className="rounded border p-3"
+      className="rounded border p-2.5"
       data-settings-overview-card={title}
       {...motionBinding?.motionDataAttributes}
       onPointerEnter={motionBinding?.onPointerEnter}
@@ -797,7 +1036,16 @@ export function OverviewCard({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{title}</div>
-          <p className="mt-1 text-[11px] leading-4 opacity-45">{subtitle}</p>
+          <div className="mt-1 flex items-center gap-1.5 text-[10px] leading-3 opacity-45">
+            {showInlineDescriptions ? (
+              <span>{subtitle}</span>
+            ) : (
+              <>
+                <span className="truncate">{subtitle}</span>
+                <InfoBubble description={subtitle} label={`About ${title}`} />
+              </>
+            )}
+          </div>
         </div>
         {badges && badges.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1">
@@ -839,12 +1087,20 @@ export function RangeField({
   onChange: (value: number) => void;
   density?: 'comfortable' | 'compact';
 }) {
+  const showInlineDescriptions = useSettingsRowDescriptionsVisible();
   return (
-    <label className="block min-w-0 overflow-hidden rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
+    <label className="block min-w-0 overflow-hidden rounded border p-2.5" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{label}</div>
-          <p className="mt-1 break-words text-[11px] leading-4 opacity-40">{description}</p>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="truncate text-[10px] font-semibold uppercase opacity-60">{label}</div>
+            {showInlineDescriptions ? null : (
+              <InfoBubble description={description} label={`About ${label}`} />
+            )}
+          </div>
+          {showInlineDescriptions ? (
+            <div className="mt-1 break-words text-[10px] leading-3 opacity-40">{description}</div>
+          ) : null}
         </div>
         <span className="shrink-0 rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
           {valueLabel}

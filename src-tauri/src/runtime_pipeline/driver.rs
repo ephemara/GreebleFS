@@ -475,7 +475,8 @@ fn invoke_cargo_build(
     if mode == "release" {
         command.arg("--release");
     }
-    let cargo_target_directory = module_dir.join("target");
+    let cargo_target_directory =
+        resolve_cargo_target_directory(manifest, &module_dir, artifact_path, target, mode);
     command.arg("--target-dir").arg(&cargo_target_directory);
     if !target.trim().is_empty() && target != "cargo-host" {
         command.arg("--target").arg(target);
@@ -530,7 +531,8 @@ fn invoke_cargo_wasm_bindgen_build(
     let module_dir = PathBuf::from(&manifest.module_dir);
     let cargo_manifest_path = resolve_cargo_manifest_path(&module_dir)?;
     let crate_stem = resolve_cargo_library_stem(&cargo_manifest_path, manifest)?;
-    let cargo_target_directory = module_dir.join("target");
+    let cargo_target_directory =
+        resolve_cargo_target_directory(manifest, &module_dir, artifact_path, target, mode);
     let cargo_target = resolve_cargo_wasm_bindgen_cargo_target(target)?;
     let bindgen_target = resolve_cargo_wasm_bindgen_bindgen_target(target)?;
 
@@ -653,6 +655,45 @@ fn resolve_cargo_manifest_path(module_dir: &Path) -> Result<PathBuf, String> {
         "Cargo runtime module {} does not contain Cargo.toml.",
         module_dir.display()
     ))
+}
+
+fn resolve_cargo_target_directory(
+    manifest: &RuntimeManifest,
+    module_dir: &Path,
+    artifact_path: &Path,
+    target: &str,
+    mode: &str,
+) -> PathBuf {
+    if let Some(cache_entry_dir) = artifact_path.parent() {
+        if let Some(cache_root) = cache_entry_dir.parent() {
+            let target_dir_name = sanitize_cargo_target_directory_name(&format!(
+                "{}-{}-{}-{}",
+                manifest.id,
+                manifest.compiler.as_str(),
+                target,
+                mode,
+            ));
+            return cache_root.join(".cargo-targets").join(target_dir_name);
+        }
+    }
+    module_dir.join("target")
+}
+
+fn sanitize_cargo_target_directory_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric()
+                || character == '-'
+                || character == '_'
+                || character == '.'
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn resolve_cargo_binary_name(
@@ -993,6 +1034,50 @@ crate-type = ["cdylib", "rlib"]
             resolve_cargo_binary_name(&cargo_manifest_path, &runtime_manifest).unwrap(),
             "bevy-model3d-viewer"
         );
+    }
+
+    #[test]
+    fn cargo_target_directory_uses_runtime_cache_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let module_dir = temp.path().join("runtime");
+        let cache_root = temp.path().join("runtime-cache");
+        let artifact_path = cache_root.join("cache-key").join("bevy-model3d-viewer.js");
+        let runtime_manifest = RuntimeManifest {
+            id: "bevy-model3d-viewer".to_string(),
+            display_name: "bevy-model3d-viewer".to_string(),
+            language: "rust".to_string(),
+            kind: crate::runtime_pipeline::manifest::RuntimeKind::WasmPanel,
+            compiler: RuntimeCompiler::CargoWasmBindgen,
+            manifest_dir: module_dir.to_string_lossy().to_string(),
+            module_dir: module_dir.to_string_lossy().to_string(),
+            entry: None,
+            watch_globs: Vec::new(),
+            env: Default::default(),
+            args: Vec::new(),
+            working_directory: None,
+            permissions: Default::default(),
+            panel: None,
+            command: None,
+            sidecar: None,
+            tui: None,
+            source_signature: "unsigned".to_string(),
+        };
+
+        let target_directory = resolve_cargo_target_directory(
+            &runtime_manifest,
+            &module_dir,
+            &artifact_path,
+            "wasm-bindgen-web",
+            "release",
+        );
+
+        assert!(target_directory.starts_with(cache_root.join(".cargo-targets")));
+        assert_ne!(target_directory, module_dir.join("target"));
+        assert!(target_directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap()
+            .contains("bevy-model3d-viewer-cargo-wasm-bindgen-wasm-bindgen-web-release"));
     }
 
     #[test]

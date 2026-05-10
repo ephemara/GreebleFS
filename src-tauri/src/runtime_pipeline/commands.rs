@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command as ProcessCommand, Stdio};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -88,6 +88,8 @@ const BUILTIN_KAIN_RUNTIMES_RESOURCE_RELATIVE: &str = "runtimes/kain";
 const EXPLORER_ARCHIVE_VIRTUAL_SCHEME: &str = "greeblefs://archive";
 const REMOTE_PROTOCOL_PREFIX: &str = "remote://sftp/";
 const RUNTIME_ARTIFACT_BYTES_MAX_BYTES: u64 = 256 * 1024 * 1024;
+static RUNTIME_PREPARE_BUILD_LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -404,6 +406,17 @@ impl RuntimeFileWatchManager {
     fn remove(&self, watch_id: &str) -> Option<RuntimeFileWatchRecord> {
         self.watches_guard().remove(watch_id)
     }
+}
+
+fn runtime_prepare_build_lock(cache_key: &str) -> Arc<Mutex<()>> {
+    let locks = RUNTIME_PREPARE_BUILD_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = locks
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    guard
+        .entry(cache_key.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -2251,6 +2264,11 @@ pub async fn runtime_prepare_package(
 
     let artifact_name = artifact_name_for_compiler(manifest.compiler, &manifest.id);
     let artifact_path = entry.artifact_path(&artifact_name);
+
+    let build_lock = runtime_prepare_build_lock(&cache_key);
+    let _build_guard = build_lock
+        .lock()
+        .map_err(|_| format!("runtime build lock for {} was poisoned", manifest.id))?;
 
     let cache_hit = !request.force_rebuild && artifact_path.exists();
     let mut stdout = String::new();

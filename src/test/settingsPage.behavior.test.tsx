@@ -773,11 +773,12 @@ describe('SettingsPage behavior', () => {
 
     renderSettingsPage();
 
-    expect(screen.getByText('GreebleFS Control Surface')).toBeInTheDocument();
-    expect(screen.getByText('Core Workflows')).toBeInTheDocument();
+    expect(screen.getByText('Workbench')).toBeInTheDocument();
+    expect(screen.getByText('Workspace Roots')).toBeInTheDocument();
+    expect(document.querySelector('[data-settings-directory-table="true"]')).not.toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Terminal Settings' }));
-    expect(screen.getByText('Application mode, dock mode, integrated shell defaults, and external terminal handoff.')).toBeInTheDocument();
+    expect(document.querySelector('[data-settings-active-section="terminal"]')).not.toBeNull();
 
     await user.click(findSectionButton('Overview'));
     await user.click(screen.getByRole('button', { name: 'Open Plugins Folder' }));
@@ -1148,12 +1149,10 @@ describe('SettingsPage behavior', () => {
 
     const orderedCategories = [
       'Start',
-      'Core Features',
+      'Interface',
       'Pipelines',
-      'Connectivity',
-      'Appearance',
-      'Motion & Rendering',
-      'Authoring',
+      'Visuals',
+      'Advanced',
     ];
     const allCategoryNodes = Array.from(document.querySelectorAll('[data-settings-rail-category]')) as HTMLElement[];
     const orderedCategoryNodes = orderedCategories.map(label => (
@@ -1173,22 +1172,33 @@ describe('SettingsPage behavior', () => {
       ).toBeTruthy();
     }
 
-    const appearanceCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Appearance') ?? null;
-    expect(appearanceCategory).not.toBeNull();
-    expect(appearanceCategory).toContainElement(findSectionButton('Appearance'));
-    expect(appearanceCategory).toContainElement(findSectionButton('Top Bars'));
-    expect(appearanceCategory).toContainElement(findSectionButton('Icons'));
+    const interfaceCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Interface') ?? null;
+    expect(interfaceCategory).not.toBeNull();
+    expect(interfaceCategory).toContainElement(findSectionButton('Appearance'));
+    expect(interfaceCategory).toContainElement(findSectionButton('Explorer'));
+    expect(interfaceCategory).toContainElement(findSectionButton('Terminal'));
 
     const pipelineCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Pipelines') ?? null;
     expect(pipelineCategory).not.toBeNull();
     expect(pipelineCategory).toContainElement(findSectionButton('Models'));
     expect(pipelineCategory).toContainElement(findSectionButton('Audio'));
 
+    const visualsCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Visuals') ?? null;
+    expect(visualsCategory).not.toBeNull();
+    expect(visualsCategory).toContainElement(findSectionButton('Icons'));
+    expect(visualsCategory).toContainElement(findSectionButton('Shaders'));
+
+    const advancedCategory = allCategoryNodes.find(node => node.getAttribute('data-settings-rail-category') === 'Advanced') ?? null;
+    expect(advancedCategory).not.toBeNull();
+    expect(advancedCategory).toContainElement(findSectionButton('Top Bars'));
+    expect(advancedCategory).toContainElement(findSectionButton('Theme JSON'));
+
     const orderedButtons = [
       findSectionButton('System'),
-      findSectionButton('Terminal'),
-      findSectionButton('Explorer'),
       findSectionButton('Appearance'),
+      findSectionButton('Explorer'),
+      findSectionButton('Terminal'),
+      findSectionButton('Models'),
       findSectionButton('Shaders'),
       findSectionButton('Theme JSON'),
     ];
