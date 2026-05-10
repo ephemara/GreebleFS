@@ -8,8 +8,10 @@ import {
   commands,
   unwrapTauriResult,
 } from "./tauriClient";
+import { searchExplorerPathIndex } from "./explorerPathIndex";
 import type {
   DriveInfo,
+  FileEntry,
   GlobalSearchIndexQueryRequest,
   GlobalSearchQueryOptions,
   GlobalSearchResultEntry,
@@ -76,6 +78,70 @@ function mergeGlobalSearchResults(args: {
   return mergedResults.slice(0, args.limit);
 }
 
+function scorePathIndexResult(query: string, name: string): number {
+  const queryLower = query.trim().toLowerCase();
+  const nameLower = name.trim().toLowerCase();
+  if (!queryLower || !nameLower) {
+    return 0;
+  }
+  if (nameLower === queryLower) {
+    return 1;
+  }
+  if (nameLower.startsWith(queryLower)) {
+    return 0.95 + Math.min(queryLower.length / nameLower.length, 1) * 0.05;
+  }
+  if (nameLower.includes(queryLower)) {
+    return 0.8 + Math.min(queryLower.length / nameLower.length, 1) * 0.15;
+  }
+  return 0.5;
+}
+
+function pathIndexEntryToGlobalSearchResult(
+  entry: FileEntry,
+  query: string,
+): GlobalSearchResultEntry {
+  return {
+    name: entry.name,
+    extension: entry.extension || null,
+    path: entry.path,
+    size: entry.size,
+    modifiedTime: entry.modified,
+    accessedTime: 0,
+    createdTime: 0,
+    isFile: !entry.is_dir,
+    isDir: entry.is_dir,
+    isSymlink: entry.is_symlink,
+    isHidden: entry.is_hidden,
+    score: scorePathIndexResult(query, entry.name),
+  };
+}
+
+async function queryPathIndexAsGlobalSearchResults(args: {
+  query: string;
+  rootPath?: string | null;
+  limit: number;
+  options: GlobalSearchQueryOptionsValue;
+}): Promise<GlobalSearchResultEntry[]> {
+  try {
+    const entries = await searchExplorerPathIndex({
+      rootPath: args.rootPath ?? null,
+      query: args.query,
+      limit: args.limit,
+      includeHidden: false,
+    });
+    return entries
+      .filter((entry) => {
+        if (entry.is_dir) {
+          return args.options.includeDirectories;
+        }
+        return args.options.includeFiles;
+      })
+      .map((entry) => pathIndexEntryToGlobalSearchResult(entry, args.query));
+  } catch {
+    return [];
+  }
+}
+
 export async function initGlobalSearch(): Promise<GlobalSearchStatusValue> {
   return unwrapTauriResult(await commands.globalSearchInit());
 }
@@ -128,7 +194,7 @@ export async function queryGlobalSearch(args: {
     args.priorityPaths ?? [],
   );
 
-  const [indexedResults, priorityResults] = await Promise.all([
+  const [indexedResults, priorityResults, pathIndexResults] = await Promise.all([
     commands.globalSearchQuery(args.query, queryOptions).then(unwrapTauriResult),
     priorityPaths.length > 0
       ? commands.globalSearchQueryPaths(
@@ -143,10 +209,15 @@ export async function queryGlobalSearch(args: {
         },
       ).then(unwrapTauriResult)
       : Promise.resolve([]),
+    queryPathIndexAsGlobalSearchResults({
+      query: args.query,
+      limit,
+      options: queryOptions,
+    }),
   ]);
 
   return mergeGlobalSearchResults({
-    indexedResults,
+    indexedResults: [...indexedResults, ...pathIndexResults],
     priorityResults,
     limit,
   });
@@ -212,11 +283,23 @@ export async function queryGlobalSearchUnderPath(args: {
     limit,
   };
 
-  return unwrapTauriResult(
-    await commands.globalSearchQueryUnderPath(
+  const [indexedResults, pathIndexResults] = await Promise.all([
+    commands.globalSearchQueryUnderPath(
       args.rootPath,
       args.query,
       queryOptions,
-    ),
-  );
+    ).then(unwrapTauriResult),
+    queryPathIndexAsGlobalSearchResults({
+      query: args.query,
+      rootPath: args.rootPath,
+      limit,
+      options: queryOptions,
+    }),
+  ]);
+
+  return mergeGlobalSearchResults({
+    indexedResults: [...indexedResults, ...pathIndexResults],
+    priorityResults: [],
+    limit,
+  });
 }

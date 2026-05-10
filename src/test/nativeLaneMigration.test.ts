@@ -14,6 +14,8 @@ describe("native lane migration planning", () => {
       thumbnailGenerationNativeControl: true,
       previewByteReadsNativeBufferPool: true,
       directoryListingNativeBufferPool: true,
+      pathIndexDirectoryNativeBufferPool: true,
+      pathIndexNativeControl: true,
       searchResultsNativeRing: true,
       taskOutputNativeRing: true,
       terminalOutputNativeRingComparison: true,
@@ -86,6 +88,21 @@ describe("native lane migration planning", () => {
     });
   });
 
+  it("tracks path-index controls and directory snapshots as native-first candidates", () => {
+    expect(getGreebleNativeLaneSystemPlan("pathIndexControls")).toMatchObject({
+      recommendedLane: "native_control",
+      fallbackLane: "invoke",
+      requiredCapability: "nativeControl",
+      migrationState: "candidate",
+    });
+    expect(getGreebleNativeLaneSystemPlan("pathIndexDirectorySnapshots")).toMatchObject({
+      recommendedLane: "native_buffer_pool",
+      fallbackLane: "invoke",
+      requiredCapability: "nativeBufferPool",
+      migrationState: "candidate",
+    });
+  });
+
   it("keeps terminal output marked as comparison-only", () => {
     expect(getGreebleNativeLaneSystemPlan("terminalOutputComparison")).toMatchObject({
       recommendedLane: "native_ring",
@@ -138,6 +155,8 @@ describe("native lane migration planning", () => {
     ["thumbnailGeneration", "thumbnailGenerationNativeControl"],
     ["previewByteReads", "previewByteReadsNativeBufferPool"],
     ["directoryListingSnapshots", "directoryListingNativeBufferPool"],
+    ["pathIndexDirectorySnapshots", "pathIndexDirectoryNativeBufferPool"],
+    ["pathIndexControls", "pathIndexNativeControl"],
     ["searchResultStreams", "searchResultsNativeRing"],
     ["taskOutputStreams", "taskOutputNativeRing"],
     ["terminalOutputComparison", "terminalOutputNativeRingComparison"],

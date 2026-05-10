@@ -93,6 +93,7 @@ import {
   commands,
   unwrapTauriResult,
 } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 import {
   compileThemeEngineManifest,
   normalizeThemeManifestDraft,
@@ -649,7 +650,7 @@ async function readBundleManifest(directoryPath: string): Promise<{ manifestPath
 
 async function loadChildDirectoryEntries(directoryPath: string): Promise<FileEntry[]> {
   try {
-    return await commands.fsListDir(directoryPath, false).then(unwrapTauriResult);
+    return await listLocalDirectoryEntriesFast(directoryPath);
   } catch {
     return [];
   }
@@ -1668,7 +1669,7 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
 
   try {
     const [rootEntries, dependencyCatalogs] = await Promise.all([
-      commands.fsListDir(directory, false).then(unwrapTauriResult),
+      listLocalDirectoryEntriesFast(directory),
       loadGlobalThemeBundleCatalogs(),
     ]);
 

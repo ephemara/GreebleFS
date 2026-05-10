@@ -106,6 +106,7 @@ import {
 import type { OverlayPluginWorkflowDescriptor } from '../components/explorer/explorerWorkflowContracts';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 import type {
   KainPluginCatalog,
   KainPluginDefinition,
@@ -2429,7 +2430,7 @@ async function readPluginManifest(directoryPath: string): Promise<{ manifestPath
 }
 
 async function listDirectory(path: string): Promise<FileEntry[]> {
-  return commands.fsListDir(path, false).then(unwrapTauriResult);
+  return listLocalDirectoryEntriesFast(path);
 }
 
 async function listDirectoryOptional(path: string): Promise<FileEntry[]> {

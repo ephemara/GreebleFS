@@ -5,6 +5,7 @@ import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 
 interface FileEntry {
   name: string;
@@ -797,7 +798,7 @@ export async function loadSoundPacks(): Promise<SoundPackLoadResult> {
   }
 
   try {
-    const rootEntries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
+    const rootEntries = await listLocalDirectoryEntriesFast(directory);
     return loadSoundPacksFromDirectoryEntries(rootEntries, directory);
   } catch (error) {
     return {

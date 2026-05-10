@@ -5,6 +5,7 @@ import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 
 interface FileEntry {
   name: string;
@@ -506,7 +507,7 @@ async function loadActionsForPack(
 
   let actionEntries: FileEntry[] = [];
   try {
-    actionEntries = await commands.fsListDir(actionsDirectory, false).then(unwrapTauriResult);
+    actionEntries = await listLocalDirectoryEntriesFast(actionsDirectory);
   } catch {
     warnings.push(`${packName}: pack does not define an actions directory.`);
     return { actions: [], warnings };
@@ -649,9 +650,7 @@ export async function discoverExplorerActionPacks(): Promise<ExplorerActionPackL
   }
 
   try {
-    const entries = await commands
-      .fsListDir(actionPackSystemConfig.actionsDirectory, false)
-      .then(unwrapTauriResult);
+    const entries = await listLocalDirectoryEntriesFast(actionPackSystemConfig.actionsDirectory);
     return loadExplorerActionPacksFromDirectoryEntries(
       entries,
       actionPackSystemConfig.actionsDirectory,

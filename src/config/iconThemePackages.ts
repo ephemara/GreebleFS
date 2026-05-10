@@ -25,6 +25,7 @@ import {
   commands,
   unwrapTauriResult,
 } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 
 interface FileEntry {
   name: string;
@@ -295,8 +296,8 @@ export async function loadIconThemePackagesFromDirectoryEntries(
             directoryPath: packageInfo.directoryPath,
             manifestPath: packageInfo.manifestPath,
             sourceKind: packageInfo.sourceInfo.source === 'vsix'
-              ? 'vscode-icon-theme-vsix'
-              : 'vscode-icon-theme-directory',
+              ? 'vscode-icon-theme-vsix' as const
+              : 'vscode-icon-theme-directory' as const,
             sourceInfo: packageInfo.sourceInfo,
             warnings: packageInfo.warnings,
             iconTheme: packageInfo.iconTheme,
@@ -353,7 +354,7 @@ export async function loadIconThemePackages(): Promise<IconThemePackageLoadResul
   }
 
   try {
-    const rootEntries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
+    const rootEntries = await listLocalDirectoryEntriesFast(directory);
     return loadIconThemePackagesFromDirectoryEntries(rootEntries, directory);
   } catch (error) {
     return {

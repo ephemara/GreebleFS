@@ -26,6 +26,7 @@ import {
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 import type { OverlayInteractionMotionThemeRecipe } from './interactionMotion';
 import type { OverlayExplorerThemeRecipe } from './explorerTheme';
 import type { OverlayWorkbenchThemeRecipe } from './workbenchTheme';
@@ -1088,7 +1089,7 @@ async function loadDirectoryEntries(directory: string): Promise<FileEntry[]> {
   }
 
   try {
-    return await commands.fsListDir(directory, false).then(unwrapTauriResult);
+    return await listLocalDirectoryEntriesFast(directory);
   } catch {
     return [];
   }

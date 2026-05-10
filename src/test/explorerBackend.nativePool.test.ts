@@ -13,6 +13,7 @@ import {
 const nativePoolRuntimeMock = vi.hoisted(() => ({
   available: true,
   isExplorerNativePoolAvailable: vi.fn(() => nativePoolRuntimeMock.available),
+  listIndexedExplorerDirectorySnapshotViaNativePool: vi.fn(),
   listLocalExplorerDirectorySnapshotViaNativePool: vi.fn(),
   readArchiveEntryExplorerPreviewBytesViaNativePool: vi.fn(),
   readLocalExplorerPreviewBytesViaNativePool: vi.fn(),
@@ -42,6 +43,10 @@ function fileEntry(path: string): ExplorerFileEntry {
 describe("explorer backend native pool routing", () => {
   beforeEach(() => {
     nativePoolRuntimeMock.available = true;
+    nativePoolRuntimeMock.listIndexedExplorerDirectorySnapshotViaNativePool.mockReset();
+    nativePoolRuntimeMock.listIndexedExplorerDirectorySnapshotViaNativePool.mockRejectedValue(
+      new Error("indexed snapshot not ready"),
+    );
     nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool.mockReset();
     nativePoolRuntimeMock.readArchiveEntryExplorerPreviewBytesViaNativePool.mockReset();
     nativePoolRuntimeMock.readLocalExplorerPreviewBytesViaNativePool.mockReset();
@@ -73,6 +78,31 @@ describe("explorer backend native pool routing", () => {
     expect(
       nativePoolRuntimeMock.recordExplorerNativePoolSuccess,
     ).toHaveBeenCalledWith("directoryListingSnapshots");
+  });
+
+  it("prefers indexed native pooled snapshots before live directory snapshots", async () => {
+    const indexedEntry = fileEntry("D:/indexed/from-index.txt");
+    const fsListSpy = vi.spyOn(commands, "fsListDir");
+    nativePoolRuntimeMock.listIndexedExplorerDirectorySnapshotViaNativePool.mockResolvedValue(
+      [indexedEntry],
+    );
+
+    const listing = await listExplorerLocation("D:/indexed", false);
+
+    expect(listing.entries).toEqual([indexedEntry]);
+    expect(
+      nativePoolRuntimeMock.listIndexedExplorerDirectorySnapshotViaNativePool,
+    ).toHaveBeenCalledWith({
+      path: "D:/indexed",
+      showHidden: false,
+    });
+    expect(
+      nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool,
+    ).not.toHaveBeenCalled();
+    expect(fsListSpy).not.toHaveBeenCalled();
+    expect(
+      nativePoolRuntimeMock.recordExplorerNativePoolSuccess,
+    ).toHaveBeenCalledWith("pathIndexDirectorySnapshots");
   });
 
   it("reuses warmed local directory listings when policy navigation opens the same folder", async () => {

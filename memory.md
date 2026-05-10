@@ -9176,3 +9176,16 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed source scan: `rg -n "<select|</select>" src usr --glob '!src/vendor/**' --glob '!**/package-lock.json' --glob '!**/node_modules/**' --glob '!dist/**'` returned no app/plugin matches.
   - Live MCP native WebView attached after HMR with `attachMode=native-cdp` and screenshot evidence at `MCP/.state/screenshots/app-select-after-tightening.png`; a separate visual open-menu proof still depends on navigating to a select-bearing panel in the live shell.
   - Repo-wide `bunx tsc --noEmit --pretty false` remains baseline-red, but a touched-file diagnostic filter produced no diagnostics for the dropdown migration files.
+
+# 2026-05-10 - Frontend Path Index Routing Pass
+
+- Local frontend directory discovery now shares the Explorer native listing lane instead of calling generated `fsListDir` directly.
+  - `src/runtime/localDirectoryListing.ts` is the shared entrypoint: warm durable path index, try `pathIndexListDirSnapshot` through `native_buffer_pool`, try live `listDirSnapshot` through `native_buffer_pool`, then use generated `fsListDir` / `fsListDirUncached` only as compatibility fallback.
+  - Explorer folder opens, folder previews, side-rail expansion, theme/plugin/action/sound/icon pack discovery, managed-content stack scans, and Git file-size hints now route through this helper.
+  - `src/runtime/globalSearchBackend.ts` now queries the path index through native-control and merges those fresh path results with the existing global search index, so command-palette file search can benefit from the durable path index without waiting on the separate global-search scan.
+- Windows rule:
+  - On Windows local paths, the frontend warm call reaches `pathIndexStart`; the Rust indexer attempts the NTFS USN/MFT path first and records `source: "windowsUsn"` when it succeeds. If the app is not elevated and Windows returns `Win32 error 5`, the configured recursive fallback remains the non-USN recovery path for folder-scoped indexing.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerBackend.nativePool.test.ts src/test/nativeLaneMigration.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/themePackages.test.ts src/test/pluginIndexApi.test.ts --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript filter returned no diagnostics for the path-index frontend routing files. Full repo `tsc` remains baseline-red.

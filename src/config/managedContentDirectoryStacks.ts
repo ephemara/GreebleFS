@@ -9,6 +9,7 @@ import {
 } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 
 export interface ManagedContentStackFileEntry {
   name: string;
@@ -60,9 +61,7 @@ export async function loadManagedContentPackagesFromDirectoryStack<TPackage>(opt
 
   for (const directory of searchDirectories) {
     try {
-      const directoryEntries = await commands
-        .fsListDir(directory, false)
-        .then(unwrapTauriResult) as ManagedContentStackFileEntry[];
+      const directoryEntries = (await listLocalDirectoryEntriesFast(directory)) as ManagedContentStackFileEntry[];
       const result = await options.loadFromDirectoryEntries(directoryEntries, directory);
       warnings.push(...result.warnings);
       if (result.sourceError) {
@@ -190,9 +189,7 @@ export async function loadManagedContentManifestsFromDirectoryStack<
 
   for (const directory of searchDirectories) {
     try {
-      const directoryEntries = (await commands
-        .fsListDir(directory, false)
-        .then(unwrapTauriResult)) as ManagedContentStackFileEntry[];
+      const directoryEntries = (await listLocalDirectoryEntriesFast(directory)) as ManagedContentStackFileEntry[];
 
       for (const directoryEntry of directoryEntries) {
         try {
@@ -241,9 +238,7 @@ export async function buildManagedContentDirectoryStackSignature(
   const signatureParts: string[] = [];
   for (const directory of getManagedContentDirectorySearchDirectories(directoryId)) {
     try {
-      const directoryEntries = await commands
-        .fsListDir(directory, false)
-        .then(unwrapTauriResult) as ManagedContentStackFileEntry[];
+      const directoryEntries = (await listLocalDirectoryEntriesFast(directory)) as ManagedContentStackFileEntry[];
       const directorySignature = directoryEntries
         .map(
           (entry) =>

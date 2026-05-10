@@ -25,7 +25,6 @@ import { commands, events, unwrapTauriResult } from "./tauriClient";
 import { readIpcBinaryBytes } from "./ipc";
 import {
   isExplorerNativePoolAvailable,
-  listLocalExplorerDirectorySnapshotViaNativePool,
   readArchiveEntryExplorerPreviewBytesViaNativePool,
   readLocalExplorerPreviewBytesViaNativePool,
   recordExplorerNativePoolAttempt,
@@ -36,9 +35,8 @@ import {
   getExplorerPathIndexStatus,
   searchExplorerPathIndex,
   startExplorerPathIndex,
-  tryListExplorerPathIndexDirectory,
-  warmExplorerPathIndexForPath,
 } from "./explorerPathIndex";
+import { listLocalDirectoryEntriesFast } from "./localDirectoryListing";
 import {
   isExplorerNativeRingSearchStreamAvailable,
   searchExplorerEntriesWithDiagnosticsViaNativeStream,
@@ -914,37 +912,7 @@ async function listLocalExplorerDirWithFallback(
   showHidden: boolean,
   bypassCache: boolean,
 ): Promise<ExplorerFileEntry[]> {
-  if (!bypassCache) {
-    warmExplorerPathIndexForPath(path);
-    const indexedEntries = await tryListExplorerPathIndexDirectory({
-      path,
-      showHidden,
-    });
-    if (indexedEntries) {
-      return indexedEntries;
-    }
-  }
-
-  if (shouldUseExplorerNativeBufferPool("directoryListingSnapshots")) {
-    recordExplorerNativePoolAttempt("directoryListingSnapshots");
-    try {
-      const entries = await listLocalExplorerDirectorySnapshotViaNativePool({
-        path,
-        showHidden,
-        bypassCache,
-      });
-      recordExplorerNativePoolSuccess("directoryListingSnapshots");
-      return entries;
-    } catch (error) {
-      recordExplorerNativePoolFallback("directoryListingSnapshots", error);
-    }
-  }
-
-  return unwrapTauriResult(
-    bypassCache
-      ? await commands.fsListDirUncached(path, showHidden)
-      : await commands.fsListDir(path, showHidden),
-  );
+  return listLocalDirectoryEntriesFast(path, { showHidden, bypassCache });
 }
 
 interface ExplorerDirectoryResultCacheEntry {

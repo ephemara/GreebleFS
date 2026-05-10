@@ -18,6 +18,7 @@ import { GitHistoryPanel } from './GitHistoryPanel';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import { listLocalDirectoryEntriesFast } from '../runtime/localDirectoryListing';
 import {
   type GitFileStatus,
   parseGitStatus,
@@ -1652,7 +1653,7 @@ async function getFileSizeHint(
   }
 
   try {
-    const entries = await Promise.resolve(commands.fsListDir(parentPath, true)).then(unwrapGitManagerCommandResult);
+    const entries = await listLocalDirectoryEntriesFast(parentPath, { showHidden: true });
     const matchingEntry = entries.find(entry => entry.name === baseName && !entry.is_dir);
     const sizeHint = typeof matchingEntry?.size === 'number' ? matchingEntry.size : null;
     cache?.set(path, sizeHint);
