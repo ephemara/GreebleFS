@@ -1,5 +1,6 @@
 import React, {
   Suspense,
+  useEffect,
   useMemo,
   useState,
   type ComponentProps,
@@ -145,6 +146,7 @@ export function SettingsPage(props: SettingsPageProps) {
     [props.appearance],
   );
   const [railWidth, setRailWidth] = useState(208);
+  const [legacyLoadAllowed, setLegacyLoadAllowed] = useState(false);
 
   const sectionByKey = useMemo(
     () =>
@@ -172,8 +174,30 @@ export function SettingsPage(props: SettingsPageProps) {
     [sectionByKey],
   );
 
+  useEffect(() => {
+    if (legacyLoadAllowed) {
+      return;
+    }
+
+    if (activeRailPath !== "settings") {
+      setActiveRailPath("settings");
+      setActivePluginSettingsSlotId(null);
+    }
+    if (activeSection !== "overview") {
+      setActiveSection("overview");
+    }
+  }, [
+    activeRailPath,
+    activeSection,
+    legacyLoadAllowed,
+    setActivePluginSettingsSlotId,
+    setActiveRailPath,
+    setActiveSection,
+  ]);
+
+  const visibleSection = legacyLoadAllowed ? activeSection : "overview";
   const activeSectionMeta =
-    sectionByKey.get(activeSection) ?? sectionByKey.get("overview")!;
+    sectionByKey.get(visibleSection) ?? sectionByKey.get("overview")!;
   const activeRailPathDescriptor =
     settingsRailPathCatalog.find((path) => path.key === activeRailPath)
     ?? settingsRailPathCatalog[0];
@@ -181,7 +205,10 @@ export function SettingsPage(props: SettingsPageProps) {
     (slot) => slot.id === activePluginSettingsSlotId,
   );
 
-  if (activeRailPath !== "settings" || activeSection !== "overview") {
+  if (
+    legacyLoadAllowed
+    && (activeRailPath !== "settings" || activeSection !== "overview")
+  ) {
     return (
       <Suspense fallback={<SettingsDeepSectionLoading />}>
         <LazySettingsPageLegacy {...props} />
@@ -260,9 +287,13 @@ export function SettingsPage(props: SettingsPageProps) {
                         onClick={() => {
                           setActiveRailPath(path.key as SettingsRailPathKey);
                           if (path.key === "plugins") {
+                            setLegacyLoadAllowed(true);
                             setActivePluginSettingsSlotId(
                               props.pluginSettingsSlots?.[0]?.id ?? null,
                             );
+                          } else {
+                            setLegacyLoadAllowed(false);
+                            setActiveSection("overview");
                           }
                         }}
                         className="h-6 rounded px-2 text-center text-[10px] font-semibold uppercase transition-colors"
@@ -296,7 +327,7 @@ export function SettingsPage(props: SettingsPageProps) {
                       {category.sections.map((section) => (
                         <SettingsRailButton
                           key={section.key}
-                          active={activeSection === section.key}
+                          active={visibleSection === section.key}
                           icon={
                             SETTINGS_SECTION_ICONS[section.key as SettingsSectionKey]
                             ?? <Settings2 size={12} />
@@ -310,7 +341,9 @@ export function SettingsPage(props: SettingsPageProps) {
                           muted={appearance.muted}
                           onClick={() => {
                             setActiveRailPath("settings");
-                            setActiveSection(section.key as SettingsSectionKey);
+                            const sectionKey = section.key as SettingsSectionKey;
+                            setLegacyLoadAllowed(sectionKey !== "overview");
+                            setActiveSection(sectionKey);
                           }}
                         />
                       ))}
@@ -430,7 +463,10 @@ export function SettingsPage(props: SettingsPageProps) {
                     <SettingsActionButton
                       key={key}
                       type="button"
-                      onClick={() => setActiveSection(key)}
+                      onClick={() => {
+                        setLegacyLoadAllowed(true);
+                        setActiveSection(key);
+                      }}
                       className="justify-start"
                     >
                       {SETTINGS_SECTION_ICONS[key] ?? <Settings2 size={12} />}
