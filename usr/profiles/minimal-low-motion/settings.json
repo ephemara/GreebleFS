@@ -16,11 +16,11 @@
     "appAnimationDurationMs": 320,
     "appAnimationIntensity": 1,
     "appBlur": false,
-    "appBlurStrength": 20,
+    "appBlurStrength": 18,
     "appCloseAnimation": null,
-    "appOpacity": 0.37,
+    "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.7,
+    "appZoom": 1,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -483,13 +483,13 @@
         "intensityMultiplier": 1.5
       }
     },
-    "panelTransparency": 0.6,
+    "panelTransparency": 0,
     "shaderControlValues": {},
     "shaderPerformanceMode": "performance",
     "sidebarPosition": "left",
     "theme": "dark",
     "topBarLayoutSnapshotsById": {},
-    "uiFontFamily": "\"Fira Code\", \"Cascadia Code\", monospace",
+    "uiFontFamily": "system-ui, sans-serif",
     "useNativeOsIcons": true,
     "wallpaperFitMode": "cover",
     "wallpaperMuted": true,
@@ -2824,7 +2824,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.5,
+    "gridZoom": 0.8370000019449053,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2975,7 +2975,7 @@
         ]
       },
       "overlay-classic": {
-        "activePanelId": "explorer",
+        "activePanelId": "settings",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",

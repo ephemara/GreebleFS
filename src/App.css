@@ -1,4 +1,6 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./";
+@source "../usr/packages/greeblefs-ui/src";
 
 html, body, #root {
   margin: 0;

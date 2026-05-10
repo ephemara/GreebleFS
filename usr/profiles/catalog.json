@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "activeProfileId": "minimal-low-motion",
+  "activeProfileId": "default",
   "profileOrder": [
     "default",
     "minimal-low-motion"

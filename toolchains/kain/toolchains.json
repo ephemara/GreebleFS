@@ -6,8 +6,10 @@
       "displayName": "Kain",
       "compiler": "kain-script",
       "defaultSourceRoot": "D:/Kain-Lang",
-      "payloadRoot": "toolchains/kain/payload",
+      "payloadRoot": "toolchains/kain/payload-runtime",
       "payloadResourcePath": "toolchains/kain/",
+      "defaultPayloadProfile": "runtime-bundled",
+      "fullPayloadProfile": "full-local",
       "requiredExecutables": [
         "bin/kain.exe"
       ],
@@ -16,10 +18,39 @@
       ],
       "payloadDirectories": [
         "stdlib",
-        "runtime",
-        "toolchain",
-        "docs"
+        "runtime"
       ],
+      "payloadDirectoryExcludes": [
+        "runtime/3rdparty",
+        "runtime/changelogs",
+        "runtime/conformance",
+        "runtime/fixtures",
+        "runtime/parallel"
+      ],
+      "payloadProfiles": {
+        "runtime-bundled": {
+          "payloadDirectories": [
+            "stdlib",
+            "runtime"
+          ],
+          "payloadDirectoryExcludes": [
+            "runtime/3rdparty",
+            "runtime/changelogs",
+            "runtime/conformance",
+            "runtime/fixtures",
+            "runtime/parallel"
+          ]
+        },
+        "full-local": {
+          "payloadDirectories": [
+            "stdlib",
+            "runtime",
+            "toolchain",
+            "docs"
+          ],
+          "payloadDirectoryExcludes": []
+        }
+      },
       "runtimeEnvironment": {
         "KAIN_STDLIB_PATH": "stdlib",
         "KAIN_RUNTIME_MANIFEST_PATH": "runtime/native_runtime.toml",

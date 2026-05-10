@@ -102,6 +102,23 @@ fn locate_pinned_kain_toolchain_manifest() -> Option<String> {
     }
 }
 
+fn resolve_repo_kain_payload_root_from_manifest(manifest_dir: &str) -> Option<PathBuf> {
+    let manifest_path = Path::new(manifest_dir).join("../toolchains/kain/toolchains.json");
+    let manifest_text = std::fs::read_to_string(&manifest_path).ok()?;
+    let manifest_json: serde_json::Value = serde_json::from_str(&manifest_text).ok()?;
+    let payload_root = manifest_json
+        .pointer("/toolchains/kain/payloadRoot")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let workspace_root = Path::new(manifest_dir).join("..");
+    let candidate = workspace_root.join(payload_root);
+    if candidate.exists() {
+        return Some(candidate);
+    }
+    None
+}
+
 pub fn resolve_kain_payload_root(context: &RuntimeToolchainContext) -> Option<PathBuf> {
     if let Ok(override_root) = std::env::var("GREEBLEFS_KAIN_PAYLOAD_ROOT") {
         if !override_root.trim().is_empty() {
@@ -113,9 +130,18 @@ pub fn resolve_kain_payload_root(context: &RuntimeToolchainContext) -> Option<Pa
     }
 
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
-        let candidate = Path::new(&manifest_dir).join("../toolchains/kain/payload");
-        if candidate.exists() {
+        if let Some(candidate) = resolve_repo_kain_payload_root_from_manifest(&manifest_dir) {
             return Some(candidate);
+        }
+
+        for relative_payload_root in [
+            "../toolchains/kain/payload-runtime",
+            "../toolchains/kain/payload",
+        ] {
+            let candidate = Path::new(&manifest_dir).join(relative_payload_root);
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
     }
 

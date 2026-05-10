@@ -13,7 +13,9 @@ import {
     reportGlobalError,
 } from "./runtime/globalErrorPanel";
 import { initializeManagedContentDirectories } from "./config/appContentDirectories";
-import { initializeUsrProfilesBootstrap } from "./runtime/usrProfiles";
+import {
+    initializeUsrProfilesBootstrap,
+} from "./runtime/usrProfiles";
 import { FILE_OPERATIONS_WINDOW_LABEL } from "./runtime/fileOperationsWindow";
 import { EXPLORER_PICKER_WINDOW_LABEL } from "./runtime/explorerPicker";
 import {
@@ -24,9 +26,48 @@ import {
     installGreeblefsDevMcpBridge,
     markGreeblefsDevMcpBridgeRenderComplete,
 } from "./runtime/devMcpBridge";
+import type {
+    BootstrapRootComponent,
+    BootstrapRootId,
+} from "./runtime/bootstrapRootModules";
+
+type BootstrapRootModule = {
+    default: BootstrapRootComponent;
+};
+
+const DEV_BOOTSTRAP_ROOT_MODULE_PATHS = {
+    app: "/src/App.tsx",
+    fileOperations: "/src/windows/FileOperationsWindowApp.tsx",
+    explorerPicker: "/src/windows/PickerWindowApp.tsx",
+} satisfies Record<BootstrapRootId, string>;
+
+const importUnanalyzedModule = new Function("modulePath", "return import(modulePath)") as <Module>(
+    modulePath: string,
+) => Promise<Module>;
+
+async function loadDevBootstrapRoot(rootId: BootstrapRootId) {
+    const modulePath = DEV_BOOTSTRAP_ROOT_MODULE_PATHS[rootId];
+    const module = await importUnanalyzedModule<BootstrapRootModule>(modulePath);
+    return module.default;
+}
+
+async function loadBootstrapRoot(rootId: BootstrapRootId) {
+    if (import.meta.env.DEV) {
+        return loadDevBootstrapRoot(rootId);
+    }
+
+    const { loadProductionBootstrapRoot } = await import("./runtime/bootstrapRootModules");
+    return loadProductionBootstrapRoot(rootId);
+}
 
 if (import.meta.env.VITE_GREEBLEFS_REACT_SCAN_ENABLED === "1") {
     void import("./runtime/devReactScan").then(({ installDevReactScan }) => installDevReactScan());
+}
+
+function markBootstrapPhase(phase: string) {
+    const elapsedMs = Math.round(performance.now());
+    performance.mark(`greeblefs-bootstrap:${phase}`);
+    console.info(`[GreebleFS bootstrap] ${phase} at ${elapsedMs}ms`);
 }
 
 window.addEventListener("error", (event) => {
@@ -81,19 +122,19 @@ async function resolveBootstrapTarget() {
             if (secondaryWindowDescriptor) {
                 if (secondaryWindowDescriptor.surfaceKind === 'file-operations') {
                     return {
-                        RootComponent: (await import("./windows/FileOperationsWindowApp")).default,
+                        RootComponent: await loadBootstrapRoot("fileOperations"),
                         rootProps: {},
                     };
                 }
                 if (secondaryWindowDescriptor.surfaceKind === 'explorer-picker') {
                     return {
-                        RootComponent: (await import("./windows/PickerWindowApp")).default,
+                        RootComponent: await loadBootstrapRoot("explorerPicker"),
                         rootProps: {},
                     };
                 }
 
                 return {
-                    RootComponent: (await import("./App")).default,
+                    RootComponent: await loadBootstrapRoot("app"),
                     rootProps: { secondaryWindowDescriptor },
                 };
             }
@@ -101,13 +142,13 @@ async function resolveBootstrapTarget() {
             const windowLabel = getCurrentWebviewWindow().label;
             if (windowLabel === FILE_OPERATIONS_WINDOW_LABEL) {
                 return {
-                    RootComponent: (await import("./windows/FileOperationsWindowApp")).default,
+                    RootComponent: await loadBootstrapRoot("fileOperations"),
                     rootProps: {},
                 };
             }
             if (windowLabel === EXPLORER_PICKER_WINDOW_LABEL) {
                 return {
-                    RootComponent: (await import("./windows/PickerWindowApp")).default,
+                    RootComponent: await loadBootstrapRoot("explorerPicker"),
                     rootProps: {},
                 };
             }
@@ -117,17 +158,22 @@ async function resolveBootstrapTarget() {
     }
 
     return {
-        RootComponent: (await import("./App")).default,
+        RootComponent: await loadBootstrapRoot("app"),
         rootProps: {} as { secondaryWindowDescriptor?: SecondaryWindowDescriptor | null },
     };
 }
 
 async function bootstrapApp() {
     try {
+        markBootstrapPhase('bridge-install-start');
         await installGreeblefsDevMcpBridge();
+        markBootstrapPhase('managed-content-start');
         await initializeManagedContentDirectories();
+        markBootstrapPhase('usr-profiles-start');
         await initializeUsrProfilesBootstrap();
+        markBootstrapPhase('root-target-start');
         const { RootComponent, rootProps } = await resolveBootstrapTarget();
+        markBootstrapPhase('root-target-ready');
         document.documentElement.classList.add('overlay-scrollbar-scope');
         document.body.classList.add('overlay-scrollbar-scope');
         document.getElementById('root')?.classList.add('overlay-scrollbar-scope');
@@ -140,6 +186,7 @@ async function bootstrapApp() {
           </React.StrictMode>
         );
         markGreeblefsDevMcpBridgeRenderComplete();
+        markBootstrapPhase('root-render-submitted');
     } catch (error) {
         reportGlobalError("GreebleFS render bootstrap failed", formatGlobalErrorDetail(error));
     }

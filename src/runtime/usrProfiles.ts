@@ -75,6 +75,7 @@ export interface UsrProfileDeleteRequest {
 
 const SETTINGS_STORAGE_KEY = 'ultacode-settings';
 const USR_PROFILE_CHANGED_EVENT_NAME = 'usr-profile-changed-event';
+const DEFAULT_STATIC_CONFIG_REFRESH_DELAY_MS = 0;
 const PROFILE_SETTINGS_SLICE_KEYS = [
   'editor',
   'presentation',
@@ -99,6 +100,7 @@ const SHARED_SETTINGS_SLICE_KEYS = [
 
 type JsonRecord = Record<string, unknown>;
 type UsrProfileListener = (snapshot: UsrProfileRuntimeSnapshot | null) => void;
+type UsrProfileStaticConfigRefreshMode = 'await' | 'schedule' | 'skip';
 
 let activeUsrProfileSnapshot: UsrProfileRuntimeSnapshot | null = null;
 let activeUsrProfileSnapshotFingerprint = '';
@@ -106,6 +108,9 @@ let usrProfileRuntimeRevision = 0;
 let usrProfileRuntimeListeners = new Set<UsrProfileListener>();
 let usrProfileBootstrapPromise: Promise<UsrProfileRuntimeSnapshot | null> | null = null;
 let usrProfileChangedUnlistenPromise: Promise<(() => void) | null> | null = null;
+let usrProfileStaticConfigRefreshPromise: Promise<void> | null = null;
+let usrProfileStaticConfigRefreshTimer: number | null = null;
+let usrProfileStaticConfigRefreshShouldNotify = false;
 let usrProfilePersistenceInstalled = false;
 let usrProfilePersistenceTimer: number | null = null;
 let lastPersistedEffectiveSettingsJson = '';
@@ -196,20 +201,71 @@ function notifyUsrProfileRuntimeListeners(): void {
 
 async function rehydrateSettingsStore(): Promise<void> {
   try {
-    const settingsStoreModule = await import('../store/settingsStore');
-    const persistApi = (settingsStoreModule.useSettingsStore as typeof settingsStoreModule.useSettingsStore & {
-      persist?: { rehydrate?: () => Promise<void> | void };
-    }).persist;
-    await persistApi?.rehydrate?.();
+    const settingsStoreLoader = await import('./usrProfileSettingsStoreLoader');
+    await settingsStoreLoader.rehydrateSettingsStoreThroughLoader();
   } catch (error) {
     console.warn('GreebleFS: failed to rehydrate settings store after usr profile change', error);
   }
 }
 
+async function refreshUsrProfileStaticConfigRuntimeNow(): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  if (!usrProfileStaticConfigRefreshPromise) {
+    usrProfileStaticConfigRefreshPromise = import('./usrProfileStaticConfigRuntimeLoader')
+      .then((staticConfigRuntimeLoader) => staticConfigRuntimeLoader.refreshUsrProfileStaticConfigRuntimeThroughLoader())
+      .finally(() => {
+        usrProfileStaticConfigRefreshPromise = null;
+      });
+  }
+
+  return usrProfileStaticConfigRefreshPromise;
+}
+
+export function scheduleUsrProfileStaticConfigRuntimeRefresh(
+  options: { notifyListeners?: boolean; delayMs?: number } = {},
+): void {
+  if (!isTauri() || typeof window === 'undefined') {
+    return;
+  }
+
+  usrProfileStaticConfigRefreshShouldNotify =
+    usrProfileStaticConfigRefreshShouldNotify || options.notifyListeners !== false;
+
+  if (usrProfileStaticConfigRefreshTimer !== null) {
+    return;
+  }
+
+  usrProfileStaticConfigRefreshTimer = window.setTimeout(() => {
+    usrProfileStaticConfigRefreshTimer = null;
+    const shouldNotify = usrProfileStaticConfigRefreshShouldNotify;
+    usrProfileStaticConfigRefreshShouldNotify = false;
+
+    void refreshUsrProfileStaticConfigRuntimeNow()
+      .then(() => {
+        if (shouldNotify) {
+          usrProfileRuntimeRevision += 1;
+          notifyUsrProfileRuntimeListeners();
+        }
+      })
+      .catch((error) => {
+        console.warn('GreebleFS: failed to refresh usr profile static config runtime', error);
+      });
+  }, Math.max(0, options.delayMs ?? DEFAULT_STATIC_CONFIG_REFRESH_DELAY_MS));
+}
+
 async function applyUsrProfileSnapshot(
   snapshot: UsrProfileRuntimeSnapshot | null,
-  options: { rehydrateStore?: boolean; notifyListeners?: boolean } = {},
+  options: {
+    rehydrateStore?: boolean;
+    notifyListeners?: boolean;
+    staticConfigRefreshMode?: UsrProfileStaticConfigRefreshMode;
+    notifyAfterStaticConfigRefresh?: boolean;
+  } = {},
 ): Promise<UsrProfileRuntimeSnapshot | null> {
+  const staticConfigRefreshMode = options.staticConfigRefreshMode ?? 'await';
   const nextFingerprint = buildSnapshotFingerprint(snapshot);
   if (snapshot && nextFingerprint === activeUsrProfileSnapshotFingerprint) {
     return activeUsrProfileSnapshot;
@@ -237,14 +293,20 @@ async function applyUsrProfileSnapshot(
   isApplyingHostSnapshot = true;
   try {
     applyManagedContentDirectoryStackOverrides(stackOverrides);
-    const staticConfigRuntime = await import('./usrProfileStaticConfigRuntime');
-    await staticConfigRuntime.refreshUsrProfileStaticConfigRuntime();
     writeEffectiveSettingsIntoLocalStorage(effectiveSettings);
     activeUsrProfileSnapshot = snapshot;
     activeUsrProfileSnapshotFingerprint = nextFingerprint;
     lastPersistedEffectiveSettingsJson = snapshot.effectiveSettingsJson;
   } finally {
     isApplyingHostSnapshot = false;
+  }
+
+  if (staticConfigRefreshMode === 'await') {
+    await refreshUsrProfileStaticConfigRuntimeNow();
+  } else if (staticConfigRefreshMode === 'schedule') {
+    scheduleUsrProfileStaticConfigRuntimeRefresh({
+      notifyListeners: options.notifyAfterStaticConfigRefresh,
+    });
   }
 
   if (options.rehydrateStore) {
@@ -347,6 +409,7 @@ export async function initializeUsrProfilesBootstrap(): Promise<UsrProfileRuntim
     await applyUsrProfileSnapshot(snapshot, {
       rehydrateStore: false,
       notifyListeners: false,
+      staticConfigRefreshMode: 'skip',
     });
     await ensureUsrProfileChangedListener();
     return snapshot;
@@ -383,7 +446,8 @@ export async function installUsrProfileSettingsPersistence(): Promise<void> {
     return;
   }
 
-  const settingsStoreModule = await import('../store/settingsStore');
+  const settingsStoreLoader = await import('./usrProfileSettingsStoreLoader');
+  const settingsStoreModule = await settingsStoreLoader.loadSettingsStoreForUsrProfilePersistence();
   const { useSettingsStore } = settingsStoreModule;
 
   const schedulePersist = (settings: unknown) => {

@@ -113,7 +113,7 @@ import {
   useExplorerDragInteractionSelector,
 } from "./explorerDragAndDrop";
 
-interface ExplorerWorkspaceProps {
+export interface ExplorerWorkspaceProps {
   theme: {
     accent: string;
     bg: string;

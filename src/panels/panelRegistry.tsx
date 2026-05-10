@@ -13,8 +13,7 @@ import type {
   OverlayPluginSettingsSlotContribution,
   OverlayPluginWorkflowContribution,
 } from '../config/pluginContributions';
-import TerminalOverlay from '../components/TerminalOverlay';
-import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
+import type { ExplorerWorkspaceProps } from '../components/explorer/ExplorerWorkspace';
 import type { ExplorerDockPreviewPolicy } from '../components/FileExplorer';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
@@ -70,6 +69,11 @@ import type {
   OverlayPluginContext,
 } from '../components/pluginRuntime';
 
+const LazyExplorerWorkspace = React.lazy(async () => {
+  const module = await import('../components/explorer/ExplorerWorkspace');
+  return { default: module.ExplorerWorkspace as React.ComponentType<ExplorerWorkspaceProps> };
+});
+
 const LazyGitManager = React.lazy(async () => {
   const module = await import('../components/GitManager');
   return { default: module.GitManager };
@@ -93,6 +97,11 @@ const LazyStoragePanel = React.lazy(async () => {
 const LazyGoRuntimeSmokePanel = React.lazy(async () => {
   const module = await import('../components/GoRuntimeSmokePanel');
   return { default: module.GoRuntimeSmokePanel };
+});
+
+const LazyTerminalOverlay = React.lazy(async () => {
+  const module = await import('../components/TerminalOverlay');
+  return { default: module.default };
 });
 
 function DeferredPanel({
@@ -122,10 +131,15 @@ function DeferredPanel({
   );
 }
 
-// Prevent keep-mounted heavy panels from rerendering on unrelated App state updates.
-const MemoTerminalOverlay = React.memo(TerminalOverlay);
-MemoTerminalOverlay.displayName = 'MemoTerminalOverlay';
-const MemoExplorerWorkspace = React.memo(ExplorerWorkspace);
+const MemoExplorerWorkspace = React.memo(function MemoExplorerWorkspace(
+  props: ExplorerWorkspaceProps,
+) {
+  return (
+    <DeferredPanel>
+      <LazyExplorerWorkspace {...props} />
+    </DeferredPanel>
+  );
+});
 MemoExplorerWorkspace.displayName = 'MemoExplorerWorkspace';
 
 export interface PanelCatalogEntry {
@@ -759,13 +773,15 @@ export function createBuiltInPanelDefinitions({
         ideNavigationTier: 'primary',
       },
       render: () => (
-        <MemoTerminalOverlay
-          isOpen={isOpen}
-          onClose={hideOverlay}
-          embedded
-          appearance={appearance}
-          pluginCommands={pluginCommands}
-        />
+        <DeferredPanel>
+          <LazyTerminalOverlay
+            isOpen={isOpen}
+            onClose={hideOverlay}
+            embedded
+            appearance={appearance}
+            pluginCommands={pluginCommands}
+          />
+        </DeferredPanel>
       ),
     },
     {

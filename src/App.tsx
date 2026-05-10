@@ -441,6 +441,10 @@ const FRAME_PROBE_OUTPUT_PATH = (() => {
 
 const APP_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-theme-bundle-overrides';
 const DOCK_THEME_BUNDLE_OVERRIDE_ID = 'settings:active-dock-theme-bundle-overrides';
+const STARTUP_KAIN_CATALOG_INITIAL_DELAY_MS = 1800;
+const STARTUP_CONTENT_CATALOG_INITIAL_DELAY_MS = 650;
+const STARTUP_CONTENT_CATALOG_GAP_MS = 160;
+const STARTUP_IDLE_TASK_TIMEOUT_MS = 1200;
 const ANNOUNCED_EXPLORER_TASK_KINDS = new Set<ExplorerTaskSnapshot['kind']>([
   'copy',
   'move',
@@ -450,6 +454,102 @@ const ANNOUNCED_EXPLORER_TASK_KINDS = new Set<ExplorerTaskSnapshot['kind']>([
   'audioTransform',
   'audioBatchProcess',
 ]);
+
+type StartupIdleTask = {
+  label: string;
+  run: () => Promise<void> | void;
+};
+
+function scheduleRendererIdleCallback(
+  callback: () => void,
+  timeoutMs: number,
+): () => void {
+  if (typeof window === 'undefined') {
+    callback();
+    return () => {};
+  }
+
+  const idleWindow = window as typeof window & {
+    requestIdleCallback?: (
+      callback: IdleRequestCallback,
+      options?: IdleRequestOptions,
+    ) => number;
+    cancelIdleCallback?: (handle: number) => void;
+  };
+
+  if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
+    const handle = idleWindow.requestIdleCallback(() => callback(), {
+      timeout: timeoutMs,
+    });
+    return () => idleWindow.cancelIdleCallback?.(handle);
+  }
+
+  const handle = window.setTimeout(callback, Math.min(timeoutMs, 250));
+  return () => window.clearTimeout(handle);
+}
+
+function runStartupIdleTaskQueue(
+  tasks: readonly StartupIdleTask[],
+  options: {
+    initialDelayMs: number;
+    gapMs?: number;
+    idleTimeoutMs?: number;
+  },
+): () => void {
+  if (typeof window === 'undefined' || tasks.length === 0) {
+    return () => {};
+  }
+
+  let cancelled = false;
+  let delayTimer: number | null = null;
+  let cancelIdle: (() => void) | null = null;
+  const gapMs = options.gapMs ?? 0;
+  const idleTimeoutMs = options.idleTimeoutMs ?? STARTUP_IDLE_TASK_TIMEOUT_MS;
+
+  const clearPending = () => {
+    if (delayTimer !== null) {
+      window.clearTimeout(delayTimer);
+      delayTimer = null;
+    }
+    cancelIdle?.();
+    cancelIdle = null;
+  };
+
+  const scheduleTask = (index: number) => {
+    if (cancelled || index >= tasks.length) {
+      return;
+    }
+
+    const delayMs = index === 0 ? options.initialDelayMs : gapMs;
+    delayTimer = window.setTimeout(() => {
+      delayTimer = null;
+      if (cancelled) {
+        return;
+      }
+
+      cancelIdle = scheduleRendererIdleCallback(() => {
+        cancelIdle = null;
+        const task = tasks[index];
+        void Promise.resolve()
+          .then(task.run)
+          .catch((error) => {
+            console.warn(`GreebleFS startup background task failed: ${task.label}`, error);
+          })
+          .finally(() => {
+            if (!cancelled) {
+              scheduleTask(index + 1);
+            }
+          });
+      }, idleTimeoutMs);
+    }, delayMs);
+  };
+
+  scheduleTask(0);
+  return () => {
+    cancelled = true;
+    clearPending();
+  };
+}
 
 function shouldAnnounceExplorerTask(task: ExplorerTaskSnapshot): boolean {
   return ANNOUNCED_EXPLORER_TASK_KINDS.has(task.kind);
@@ -1087,69 +1187,82 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }
 
     let cancelled = false;
-    void loadKainUiGraph({
+    const loadContext = {
       profileId: usrProfileRuntimeActiveProfileId,
       revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainUiGraph(result.graph);
-      setKainUiGraphError(result.error);
-    });
-    void loadKainManifest({
-      profileId: usrProfileRuntimeActiveProfileId,
-      revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainManifest(result.manifest);
-      setKainManifestError(result.error);
-    });
-    void loadKainUiScaffold({
-      profileId: usrProfileRuntimeActiveProfileId,
-      revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainUiScaffold(result.scaffold);
-      setKainUiScaffoldError(result.error);
-    });
-    void loadKainLatticeCatalog({
-      profileId: usrProfileRuntimeActiveProfileId,
-      revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainLatticeCatalog(result.catalog);
-      setKainLatticeCatalogError(result.error);
-    });
-    void loadKainFfiCatalog({
-      profileId: usrProfileRuntimeActiveProfileId,
-      revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainFfiCatalog(result.catalog);
-      setKainFfiCatalogError(result.error);
-    });
-    void loadKainPluginCatalog({
-      profileId: usrProfileRuntimeActiveProfileId,
-      revision: usrProfileRuntimeRevision,
-    }).then((result) => {
-      if (cancelled) {
-        return;
-      }
-      setKainPluginCatalog(result.catalog);
-      setKainPluginCatalogError(result.error);
-    });
+    };
+    const cancelQueue = runStartupIdleTaskQueue(
+      [
+        {
+          label: 'kain-ui-graph',
+          run: async () => {
+            const result = await loadKainUiGraph(loadContext);
+            if (!cancelled) {
+              setKainUiGraph(result.graph);
+              setKainUiGraphError(result.error);
+            }
+          },
+        },
+        {
+          label: 'kain-manifest',
+          run: async () => {
+            const result = await loadKainManifest(loadContext);
+            if (!cancelled) {
+              setKainManifest(result.manifest);
+              setKainManifestError(result.error);
+            }
+          },
+        },
+        {
+          label: 'kain-ui-scaffold',
+          run: async () => {
+            const result = await loadKainUiScaffold(loadContext);
+            if (!cancelled) {
+              setKainUiScaffold(result.scaffold);
+              setKainUiScaffoldError(result.error);
+            }
+          },
+        },
+        {
+          label: 'kain-lattice-catalog',
+          run: async () => {
+            const result = await loadKainLatticeCatalog(loadContext);
+            if (!cancelled) {
+              setKainLatticeCatalog(result.catalog);
+              setKainLatticeCatalogError(result.error);
+            }
+          },
+        },
+        {
+          label: 'kain-ffi-catalog',
+          run: async () => {
+            const result = await loadKainFfiCatalog(loadContext);
+            if (!cancelled) {
+              setKainFfiCatalog(result.catalog);
+              setKainFfiCatalogError(result.error);
+            }
+          },
+        },
+        {
+          label: 'kain-plugin-catalog',
+          run: async () => {
+            const result = await loadKainPluginCatalog(loadContext);
+            if (!cancelled) {
+              setKainPluginCatalog(result.catalog);
+              setKainPluginCatalogError(result.error);
+            }
+          },
+        },
+      ],
+      {
+        initialDelayMs: STARTUP_KAIN_CATALOG_INITIAL_DELAY_MS,
+        gapMs: STARTUP_CONTENT_CATALOG_GAP_MS,
+      },
+    );
 
     return () => {
       cancelled = true;
+      cancelQueue();
     };
   }, [
     settingsHydrated,
@@ -5182,13 +5295,39 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredWallpapers]);
 
-  useEffect(() => {
-    void refreshIconThemePackages(true);
-  }, [refreshIconThemePackages]);
-
-  useEffect(() => {
-    void refreshSoundPacks(true);
-  }, [refreshSoundPacks]);
+  useEffect(() => runStartupIdleTaskQueue(
+    [
+      { label: 'icon-theme-packages', run: () => refreshIconThemePackages(true) },
+      { label: 'theme-packages', run: () => refreshThemePackages(true) },
+      { label: 'top-bar-packages', run: () => refreshTopBarPackages(true) },
+      { label: 'explorer-layout-packages', run: () => refreshExplorerLayoutPackages(true) },
+      { label: 'explorer-views', run: () => refreshExplorerViews(true) },
+      { label: 'explorer-widgets', run: () => refreshExplorerWidgets(true) },
+      { label: 'menu-packs', run: () => refreshMenuPacks(true) },
+      { label: 'action-packs', run: () => refreshActionPacks(true) },
+      { label: 'home-packs', run: () => refreshHomePacks(true) },
+      { label: 'dock-presentation-packages', run: () => refreshDockPresentationPackages(true) },
+      { label: 'lookdev-presets', run: () => refreshLookdevPresets(true) },
+      { label: 'sound-packs', run: () => refreshSoundPacks(true) },
+    ],
+    {
+      initialDelayMs: STARTUP_CONTENT_CATALOG_INITIAL_DELAY_MS,
+      gapMs: STARTUP_CONTENT_CATALOG_GAP_MS,
+    },
+  ), [
+    refreshActionPacks,
+    refreshDockPresentationPackages,
+    refreshExplorerLayoutPackages,
+    refreshExplorerViews,
+    refreshExplorerWidgets,
+    refreshHomePacks,
+    refreshIconThemePackages,
+    refreshLookdevPresets,
+    refreshMenuPacks,
+    refreshSoundPacks,
+    refreshThemePackages,
+    refreshTopBarPackages,
+  ]);
 
   useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !iconThemeSystemConfig.runtimeAssetPollingEnabled) {
@@ -5214,10 +5353,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshSoundPacks]);
 
   useEffect(() => {
-    void refreshHomePacks(true);
-  }, [refreshHomePacks]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !homePackSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5228,10 +5363,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshHomePacks]);
-
-  useEffect(() => {
-    void refreshMenuPacks(true);
-  }, [refreshMenuPacks]);
 
   useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !menuPackSystemConfig.runtimeAssetPollingEnabled) {
@@ -5246,10 +5377,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshMenuPacks]);
 
   useEffect(() => {
-    void refreshActionPacks(true);
-  }, [refreshActionPacks]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !actionPackSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5262,10 +5389,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshActionPacks]);
 
   useEffect(() => {
-    void refreshThemePackages(true);
-  }, [refreshThemePackages]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !themeSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5275,10 +5398,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshThemePackages]);
-
-  useEffect(() => {
-    void refreshTopBarPackages(true);
-  }, [refreshTopBarPackages]);
 
   useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !topBarSystemConfig.runtimeAssetPollingEnabled) {
@@ -5293,10 +5412,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshTopBarPackages]);
 
   useEffect(() => {
-    void refreshDockPresentationPackages(true);
-  }, [refreshDockPresentationPackages]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !dockPresentationSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5307,10 +5422,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshDockPresentationPackages]);
-
-  useEffect(() => {
-    void refreshExplorerLayoutPackages(true);
-  }, [refreshExplorerLayoutPackages]);
 
   useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !explorerLayoutSystemConfig.runtimeAssetPollingEnabled) {
@@ -5325,10 +5436,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerLayoutPackages]);
 
   useEffect(() => {
-    void refreshExplorerViews(true);
-  }, [refreshExplorerViews]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !explorerViewSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5341,10 +5448,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerViews]);
 
   useEffect(() => {
-    void refreshExplorerWidgets(true);
-  }, [refreshExplorerWidgets]);
-
-  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !explorerWidgetSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -5355,10 +5458,6 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshExplorerWidgets]);
-
-  useEffect(() => {
-    void refreshLookdevPresets(true);
-  }, [refreshLookdevPresets]);
 
   useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !lookdevPresetSystemConfig.runtimeAssetPollingEnabled) {
@@ -6210,6 +6309,23 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     }),
     [activeLayoutProfile.behavior.defaultActivePanelId, savedPanelState.activePanelId, tabbedOpenPanelIds],
   );
+  const [activatedKeepMountedPanelIds, setActivatedKeepMountedPanelIds] = useState<string[]>([]);
+  useEffect(() => {
+    if (!activePanelId) {
+      return;
+    }
+
+    const activePanel = panelLookup.get(activePanelId);
+    if (!activePanel?.keepMounted) {
+      return;
+    }
+
+    setActivatedKeepMountedPanelIds((currentIds) => (
+      currentIds.includes(activePanelId)
+        ? currentIds
+        : [...currentIds, activePanelId]
+    ));
+  }, [activePanelId, panelLookup]);
   const openPanels = useMemo(
     () => tabbedOpenPanelIds
       .map(id => panelLookup.get(id))
@@ -8018,8 +8134,16 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     const isPanelOpen = openPanelIds.includes(panel.id);
     const isActive = panel.id === activePanelId;
     const isPinned = pinnedPanelIds.includes(panel.id);
+    const wasKeepMountedPanelActivated = activatedKeepMountedPanelIds.includes(panel.id);
     const shouldMount = options?.forceMount
-      ?? (!isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive));
+      ?? (
+        !isPinned
+        && isPanelOpen
+        && (
+          isActive
+          || (panel.keepMounted === true && wasKeepMountedPanelActivated)
+        )
+      );
 
     if (!shouldMount) {
       return null;
@@ -8048,6 +8172,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     );
   }, [
     activePanelId,
+    activatedKeepMountedPanelIds,
     openPanelIds,
     panelLookup,
     pinnedPanelIds,

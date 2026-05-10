@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "sourceRoot": "D:/Kain-Lang",
+  "payloadRoot": "D:/GreebleFS/toolchains/kain/payload-runtime",
+  "stagedAt": "2026-05-10T23:11:28.191Z",
+  "fingerprint": {
+    "digest": "e40adf3530910dfdd7235f39e35cf47ec9917054106529503de82eae7c684e49",
+    "entries": [
+      {
+        "label": "bin/kain",
+        "path": "D:/Kain-Lang/target/codex-cli-bridge-check/debug/kain.exe",
+        "size": 75007488,
+        "modifiedMs": 1778225759790,
+        "directory": false
+      },
+      {
+        "label": "payload-stage-config",
+        "path": "D:/GreebleFS/toolchains/kain/toolchains.json",
+        "size": 269,
+        "modifiedMs": 0,
+        "directory": false
+      },
+      {
+        "label": "bin/kn",
+        "path": "D:/Kain-Lang/target/release/kn.exe",
+        "size": 57182208,
+        "modifiedMs": 1778185543330,
+        "directory": false
+      },
+      {
+        "label": "stdlib",
+        "path": "D:/Kain-Lang/stdlib",
+        "size": 0,
+        "modifiedMs": 1778402296601,
+        "directory": true
+      },
+      {
+        "label": "runtime",
+        "path": "D:/Kain-Lang/runtime",
+        "size": 0,
+        "modifiedMs": 1778026680657,
+        "directory": true
+      }
+    ]
+  },
+  "executables": {
+    "kain": "D:/Kain-Lang/target/codex-cli-bridge-check/debug/kain.exe",
+    "kn": "D:/Kain-Lang/target/release/kn.exe"
+  },
+  "payloadProfile": "runtime-bundled",
+  "copiedDirectories": [
+    "stdlib",
+    "runtime"
+  ],
+  "excludedPayloadPaths": [
+    "runtime/3rdparty",
+    "runtime/changelogs",
+    "runtime/conformance",
+    "runtime/fixtures",
+    "runtime/parallel"
+  ],
+  "fullProfileRequested": false,
+  "payloadSanitizerVersion": 2,
+  "symlinkSanitization": [],
+  "version": "kain 0.1.0"
+}

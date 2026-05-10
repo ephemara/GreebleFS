@@ -8,15 +8,25 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..", "..");
-const payloadRoot = path.join(projectRoot, "toolchains", "kain", "payload");
-const payloadManifestPath = path.join(payloadRoot, "kain-payload-manifest.json");
+const toolchainConfigPath = path.join(projectRoot, "toolchains", "kain", "toolchains.json");
+const defaultPayloadRoot = path.join(projectRoot, "toolchains", "kain", "payload-runtime");
+let payloadRoot = defaultPayloadRoot;
+let payloadManifestPath = path.join(payloadRoot, "kain-payload-manifest.json");
 const defaultSourceRoot = process.platform === "win32"
   ? "D:\\Kain-Lang"
   : path.resolve(projectRoot, "..", "Kain-Lang");
 const executableName = process.platform === "win32" ? "kain.exe" : "kain";
 const optionalLauncherName = process.platform === "win32" ? "kn.exe" : "kn";
-const payloadDirectories = ["stdlib", "runtime", "toolchain", "docs"];
-const payloadSanitizerVersion = 1;
+const fallbackPayloadDirectories = ["stdlib", "runtime"];
+const fallbackKnownPayloadDirectories = ["stdlib", "runtime", "toolchain", "docs"];
+const fallbackPayloadDirectoryExcludes = [
+  "runtime/3rdparty",
+  "runtime/fixtures",
+  "runtime/conformance",
+  "runtime/parallel",
+  "runtime/changelogs",
+];
+const payloadSanitizerVersion = 2;
 
 const args = new Set(process.argv.slice(2));
 const force = args.has("--force");
@@ -31,6 +41,132 @@ function parseBooleanEnv(name) {
 
 function normalizeForLogs(value) {
   return value.replaceAll("\\", "/");
+}
+
+function normalizeRelativePayloadPath(value) {
+  return normalizeForLogs(value)
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+}
+
+function requireSafeRelativePayloadPath(value, label) {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty relative path.`);
+  }
+
+  const normalized = normalizeRelativePayloadPath(value.trim());
+  if (
+    path.isAbsolute(normalized)
+    || normalized === "."
+    || normalized === ".."
+    || normalized.startsWith("../")
+    || normalized.includes("/../")
+  ) {
+    throw new Error(`${label} must stay inside the Kain payload: ${value}`);
+  }
+
+  return normalized;
+}
+
+function uniqueSafeRelativePayloadPaths(values, label) {
+  const normalizedValues = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalized = requireSafeRelativePayloadPath(value, label);
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      normalizedValues.push(normalized);
+    }
+  }
+  return normalizedValues;
+}
+
+function resolveConfiguredPayloadRoot(toolchainConfig) {
+  const configuredPayloadRoot = typeof toolchainConfig.payloadRoot === "string"
+    ? toolchainConfig.payloadRoot.trim()
+    : "";
+  if (!configuredPayloadRoot) {
+    return defaultPayloadRoot;
+  }
+
+  const candidate = path.resolve(projectRoot, configuredPayloadRoot);
+  const relative = path.relative(projectRoot, candidate);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Kain payloadRoot must stay inside the GreebleFS workspace: ${configuredPayloadRoot}`);
+  }
+  return candidate;
+}
+
+async function readKainToolchainConfig() {
+  if (!(await pathExists(toolchainConfigPath))) {
+    return {};
+  }
+
+  const rawConfig = await fs.readFile(toolchainConfigPath, "utf8");
+  const parsedConfig = JSON.parse(rawConfig);
+  return parsedConfig?.toolchains?.kain && typeof parsedConfig.toolchains.kain === "object"
+    ? parsedConfig.toolchains.kain
+    : {};
+}
+
+function resolvePayloadStageConfig(toolchainConfig) {
+  const profileNameFromEnv = (
+    process.env.GREEBLEFS_KAIN_PAYLOAD_PROFILE
+    || process.env.KAIN_PAYLOAD_PROFILE
+    || ""
+  ).trim();
+  const fullProfileRequested =
+    parseBooleanEnv("GREEBLEFS_KAIN_STAGE_FULL")
+    || parseBooleanEnv("KAIN_STAGE_FULL");
+  const payloadProfiles = toolchainConfig.payloadProfiles && typeof toolchainConfig.payloadProfiles === "object"
+    ? toolchainConfig.payloadProfiles
+    : {};
+  const defaultProfileName = typeof toolchainConfig.defaultPayloadProfile === "string"
+    ? toolchainConfig.defaultPayloadProfile.trim()
+    : "";
+  const fullProfileName = typeof toolchainConfig.fullPayloadProfile === "string"
+    ? toolchainConfig.fullPayloadProfile.trim()
+    : "";
+  const selectedProfileName = fullProfileRequested
+    ? (fullProfileName || "full-local")
+    : (profileNameFromEnv || defaultProfileName || "runtime-bundled");
+  const selectedProfile = payloadProfiles[selectedProfileName] && typeof payloadProfiles[selectedProfileName] === "object"
+    ? payloadProfiles[selectedProfileName]
+    : {};
+
+  const configuredDirectories =
+    selectedProfile.payloadDirectories
+    ?? selectedProfile.directories
+    ?? toolchainConfig.payloadDirectories
+    ?? fallbackPayloadDirectories;
+  const configuredExcludes =
+    selectedProfile.payloadDirectoryExcludes
+    ?? selectedProfile.excludes
+    ?? toolchainConfig.payloadDirectoryExcludes
+    ?? fallbackPayloadDirectoryExcludes;
+  const configuredKnownDirectories = new Set([
+    ...fallbackKnownPayloadDirectories,
+    ...uniqueSafeRelativePayloadPaths(toolchainConfig.payloadDirectories, "payloadDirectories"),
+  ]);
+  for (const profile of Object.values(payloadProfiles)) {
+    if (!profile || typeof profile !== "object") {
+      continue;
+    }
+    for (const directory of uniqueSafeRelativePayloadPaths(
+      profile.payloadDirectories ?? profile.directories,
+      "payloadProfiles.payloadDirectories",
+    )) {
+      configuredKnownDirectories.add(directory);
+    }
+  }
+
+  return {
+    profileName: selectedProfileName,
+    directories: uniqueSafeRelativePayloadPaths(configuredDirectories, "payloadDirectories"),
+    excludes: uniqueSafeRelativePayloadPaths(configuredExcludes, "payloadDirectoryExcludes"),
+    knownDirectories: [...configuredKnownDirectories].sort((left, right) => left.localeCompare(right)),
+    fullProfileRequested,
+  };
 }
 
 async function pathExists(targetPath) {
@@ -129,14 +265,21 @@ async function statFingerprintEntry(targetPath, label) {
   };
 }
 
-async function buildFingerprint(sourceRoot, kainExecutable, optionalLauncher) {
+async function buildFingerprint(sourceRoot, kainExecutable, optionalLauncher, payloadStageConfig) {
   const entries = [
     await statFingerprintEntry(kainExecutable, "bin/kain"),
+    {
+      label: "payload-stage-config",
+      path: normalizeForLogs(toolchainConfigPath),
+      size: Buffer.byteLength(JSON.stringify(payloadStageConfig)),
+      modifiedMs: 0,
+      directory: false,
+    },
   ];
   if (optionalLauncher) {
     entries.push(await statFingerprintEntry(optionalLauncher, "bin/kn"));
   }
-  for (const directoryName of payloadDirectories) {
+  for (const directoryName of payloadStageConfig.directories) {
     const directoryPath = path.join(sourceRoot, directoryName);
     if (await pathExists(directoryPath)) {
       entries.push(await statFingerprintEntry(directoryPath, directoryName));
@@ -161,22 +304,63 @@ async function readExistingManifest() {
   }
 }
 
-async function payloadLooksComplete() {
+function isExcludedPayloadPath(relativePath, excludedPaths) {
+  const normalized = normalizeRelativePayloadPath(relativePath);
+  return excludedPaths.some((excludedPath) =>
+    normalized === excludedPath || normalized.startsWith(`${excludedPath}/`)
+  );
+}
+
+async function payloadLooksComplete(payloadStageConfig) {
   if (!(await pathExists(path.join(payloadRoot, "bin", executableName)))) {
     return false;
   }
-  if (!(await pathExists(path.join(payloadRoot, "stdlib")))) {
-    return false;
+  for (const directoryName of payloadStageConfig.directories) {
+    if (!(await pathExists(path.join(payloadRoot, directoryName)))) {
+      return false;
+    }
+  }
+  for (const excludedPath of payloadStageConfig.excludes) {
+    if (await pathExists(path.join(payloadRoot, excludedPath))) {
+      return false;
+    }
   }
   return true;
 }
 
-async function removePath(targetPath) {
-  await fs.rm(targetPath, { recursive: true, force: true });
+async function makePathWritable(targetPath) {
+  let stats;
+  try {
+    stats = await fs.lstat(targetPath);
+  } catch {
+    return;
+  }
+
+  if (stats.isDirectory() && !stats.isSymbolicLink()) {
+    const entries = await fs.readdir(targetPath);
+    await Promise.all(entries.map((entry) => makePathWritable(path.join(targetPath, entry))));
+    await fs.chmod(targetPath, 0o777).catch(() => {});
+    return;
+  }
+
+  await fs.chmod(targetPath, 0o666).catch(() => {});
 }
 
-async function removePayloadChild(childName) {
-  const target = path.resolve(payloadRoot, childName);
+async function removePath(targetPath) {
+  try {
+    await fs.rm(targetPath, { recursive: true, force: true });
+  } catch (error) {
+    if (error?.code !== "EPERM" && error?.code !== "EACCES") {
+      throw error;
+    }
+    await makePathWritable(targetPath);
+    await fs.rm(targetPath, { recursive: true, force: true });
+  }
+}
+
+async function removePayloadRelativePath(relativePath) {
+  const safeRelativePath = requireSafeRelativePayloadPath(relativePath, "payload cleanup path");
+  const target = path.resolve(payloadRoot, safeRelativePath);
   const relative = path.relative(payloadRoot, target);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error(`Refusing to remove path outside Kain payload: ${target}`);
@@ -184,7 +368,19 @@ async function removePayloadChild(childName) {
   await removePath(target);
 }
 
-async function copyDirectory(sourceRoot, directoryName) {
+async function removeStalePayloadContent(payloadStageConfig) {
+  const selectedDirectories = new Set(payloadStageConfig.directories);
+  for (const directoryName of payloadStageConfig.knownDirectories) {
+    if (!selectedDirectories.has(directoryName)) {
+      await removePayloadRelativePath(directoryName);
+    }
+  }
+  for (const excludedPath of payloadStageConfig.excludes) {
+    await removePayloadRelativePath(excludedPath);
+  }
+}
+
+async function copyDirectory(sourceRoot, directoryName, payloadStageConfig) {
   const sourcePath = path.join(sourceRoot, directoryName);
   if (!(await pathExists(sourcePath))) {
     return false;
@@ -195,6 +391,10 @@ async function copyDirectory(sourceRoot, directoryName) {
       recursive: true,
       force: true,
       errorOnExist: false,
+      filter: async (sourceEntryPath) => {
+        const relativeSourcePath = path.relative(sourceRoot, sourceEntryPath);
+        return !isExcludedPayloadPath(relativeSourcePath, payloadStageConfig.excludes);
+      },
     });
   } catch (error) {
     if (await pathExists(targetPath)) {
@@ -293,6 +493,10 @@ async function main() {
     return;
   }
 
+  const toolchainConfig = await readKainToolchainConfig();
+  payloadRoot = resolveConfiguredPayloadRoot(toolchainConfig);
+  payloadManifestPath = path.join(payloadRoot, "kain-payload-manifest.json");
+  const payloadStageConfig = resolvePayloadStageConfig(toolchainConfig);
   let sourceRoot;
   let kainExecutable;
   let optionalLauncher;
@@ -311,15 +515,15 @@ async function main() {
     throw error;
   }
 
-  const fingerprint = await buildFingerprint(sourceRoot, kainExecutable, optionalLauncher);
+  const fingerprint = await buildFingerprint(sourceRoot, kainExecutable, optionalLauncher, payloadStageConfig);
   const existingManifest = await readExistingManifest();
   if (
     !force
     && existingManifest?.fingerprint?.digest === fingerprint.digest
     && existingManifest?.payloadSanitizerVersion === payloadSanitizerVersion
-    && await payloadLooksComplete()
+    && await payloadLooksComplete(payloadStageConfig)
   ) {
-    console.log("Kain toolchain payload up to date, skipping.");
+    console.log(`Kain toolchain payload '${payloadStageConfig.profileName}' up to date, skipping.`);
     return;
   }
 
@@ -329,6 +533,7 @@ async function main() {
   }
 
   await fs.mkdir(payloadRoot, { recursive: true });
+  await removeStalePayloadContent(payloadStageConfig);
   await stageExecutable(kainExecutable, executableName);
   try {
     await stageExecutable(optionalLauncher, optionalLauncherName);
@@ -337,8 +542,8 @@ async function main() {
   }
 
   const copiedDirectories = [];
-  for (const directoryName of payloadDirectories) {
-    if (await copyDirectory(sourceRoot, directoryName)) {
+  for (const directoryName of payloadStageConfig.directories) {
+    if (await copyDirectory(sourceRoot, directoryName, payloadStageConfig)) {
       copiedDirectories.push(directoryName);
     }
   }
@@ -364,13 +569,18 @@ async function main() {
       kain: normalizeForLogs(kainExecutable),
       kn: optionalLauncher ? normalizeForLogs(optionalLauncher) : null,
     },
+    payloadProfile: payloadStageConfig.profileName,
     copiedDirectories,
+    excludedPayloadPaths: payloadStageConfig.excludes,
+    fullProfileRequested: payloadStageConfig.fullProfileRequested,
     payloadSanitizerVersion,
     symlinkSanitization,
     version: doctor.status === 0 ? doctor.stdout.trim() : null,
   };
   await fs.writeFile(payloadManifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-  console.log(`Staged Kain toolchain payload at ${normalizeForLogs(path.relative(projectRoot, payloadRoot))}.`);
+  console.log(
+    `Staged Kain toolchain payload '${payloadStageConfig.profileName}' at ${normalizeForLogs(path.relative(projectRoot, payloadRoot))}.`,
+  );
 }
 
 main().catch((error) => {

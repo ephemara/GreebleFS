@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -62,7 +63,8 @@ const goRuntimeAssetsCachePath = path.join(spectaBindingsCacheDirectory, "go-run
 const goRuntimeAssetsCacheVersion = 1;
 const mobileShareBundleCachePath = path.join(spectaBindingsCacheDirectory, "mobile-share-bundle-state.json");
 const mobileShareBundleCacheVersion = 1;
-const kainToolchainPayloadRoot = path.join(projectRoot, "toolchains", "kain", "payload");
+const kainToolchainConfigPath = path.join(projectRoot, "toolchains", "kain", "toolchains.json");
+const kainToolchainPayloadRoot = resolveKainToolchainPayloadRoot();
 const kainRuntimeSourceRoot = path.join(projectRoot, "src-kain", "runtimes");
 const kainAppSourceRoot = path.join(projectRoot, "src-kain", "app");
 const nodeRuntimeSourceRoot = path.join(projectRoot, "src-node", "builtin-runtimes");
@@ -122,6 +124,24 @@ const defaultMcpWebviewDebugPort = (
 
 function hasExplicitEnvValue(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function resolveKainToolchainPayloadRoot() {
+  try {
+    const rawConfig = fsSync.readFileSync(kainToolchainConfigPath, "utf8");
+    const parsedConfig = JSON.parse(rawConfig);
+    const configuredPayloadRoot = parsedConfig?.toolchains?.kain?.payloadRoot;
+    if (typeof configuredPayloadRoot === "string" && configuredPayloadRoot.trim().length > 0) {
+      const candidate = path.resolve(projectRoot, configuredPayloadRoot);
+      const relative = path.relative(projectRoot, candidate);
+      if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
+        return candidate;
+      }
+    }
+  } catch {
+    // Fall through to the default runtime-bundled payload path.
+  }
+  return path.join(projectRoot, "toolchains", "kain", "payload-runtime");
 }
 
 function normalizePathForLogs(value) {

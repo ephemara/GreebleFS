@@ -5,6 +5,8 @@ import path from "node:path";
 import { projectPath, tauronApiDistPath, tauronApiViteAliases } from "./vite.shared.ts";
 
 const repoSkillsMirrorPath = projectPath("skills");
+const reactHmrEnabled = process.env.GREEBLEFS_VITE_HMR === "1"
+  || process.env.VITE_GREEBLEFS_REACT_HMR_ENABLED === "1";
 
 const ignoredWatchGlobs = [
   "**/.git/**",
@@ -36,11 +38,30 @@ const tiptapVendorAliases = [
 ] as const;
 
 // https://vitejs.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => {
+  const devOnlyViteAliases = command === "serve"
+    ? [
+      {
+        find: "./runtime/bootstrapRootModules",
+        replacement: projectPath("src/runtime/bootstrapRootModules.dev.ts"),
+      },
+      {
+        find: "./usrProfileStaticConfigRuntimeLoader",
+        replacement: projectPath("src/runtime/usrProfileStaticConfigRuntimeLoader.dev.ts"),
+      },
+      {
+        find: "./usrProfileSettingsStoreLoader",
+        replacement: projectPath("src/runtime/usrProfileSettingsStoreLoader.dev.ts"),
+      },
+    ]
+    : [];
+
+  return {
   plugins: [react(), tailwindcss()],
   base: "./",
   resolve: {
     alias: [
+      ...devOnlyViteAliases,
       { find: "@", replacement: "/src" },
       { find: "@greeblefs/ui", replacement: projectPath("usr/packages/greeblefs-ui/src/index.tsx") },
       { find: "overlayterm-plugin", replacement: projectPath("src/components/pluginRuntime.tsx") },
@@ -70,6 +91,7 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: true, // listen on all addresses
+    hmr: reactHmrEnabled ? undefined : false,
     fs: {
       allow: [searchForWorkspaceRoot(process.cwd()), tauronApiDistPath],
     },
@@ -78,4 +100,5 @@ export default defineConfig(async () => ({
       ignored: ignoredWatchGlobs,
     },
   },
-}));
+  };
+});
