@@ -1,0 +1,35 @@
+use std::interop::bridge
+
+struct ImageConverterFabricOutputs:
+    image: Any
+    report: String
+
+fn build_pixels(width: Int, height: Int, accent: Int) -> Array<Int>:
+    let bytes = []
+    let y = 0
+    while y < height:
+        let x = 0
+        while x < width:
+            let base = (x * 9 + y * 13 + accent) % 255
+            bytes.push(base)
+            bytes.push((base + accent) % 255)
+            bytes.push(255 - base)
+            bytes.push(255)
+            x = x + 1
+        y = y + 1
+    return bytes
+
+fn main() -> ImageConverterFabricOutputs:
+    let settings = fabric_inputs.python_source.settings
+    let pixels = build_pixels(settings.width, settings.height, settings.accent)
+    let image = interop_shared_image_from_bytes(
+        pixels,
+        settings.width,
+        settings.height,
+        settings.channels,
+        "HWC",
+        settings.format,
+        "image/x-kain-raster",
+    )
+    let report = settings.title + ":" + str(settings.width) + "x" + str(settings.height)
+    return ImageConverterFabricOutputs { image: image, report: report }

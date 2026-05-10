@@ -367,6 +367,31 @@ const pluginCatalog: KainPluginCatalog = {
       ],
       runtimes: [],
       tools: [],
+      hostUiKit: {
+        id: 'greeblefs.workbench-kit',
+        label: 'GreebleFS Workbench Kit',
+        version: '0.1.0',
+        status: 'live',
+        summary: 'Trusted host UI controls for Kain plugins.',
+        primitives: ['path-input', 'action-strip'],
+        tokens: ['density.compact'],
+        components: [
+          {
+            id: 'smoke-shell',
+            kind: 'tool-shell',
+            label: 'Smoke Shell',
+            role: 'workbench',
+            surface: 'workbench',
+            density: 'compact',
+            status: 'live',
+            summary: 'Workbench shell.',
+            primitives: ['action-strip'],
+            actions: ['kain.plugin.inspect'],
+            bindings: ['host.plugins'],
+          },
+        ],
+      },
+      hostUiComponents: [],
       workbenches: [
         {
           id: 'kain-workbench-smoke.main',
@@ -446,6 +471,38 @@ const pluginCatalog: KainPluginCatalog = {
         },
       ],
       generatedArtifacts: [],
+      authoring: null,
+      contracts: [],
+      pipelineStages: [],
+      fabricPipelines: [
+        {
+          id: 'smoke-fabric',
+          label: 'Smoke Fabric',
+          manifestPath: 'usr/plugins-kain/kain-workbench-smoke/KAIN.fabric.toml',
+          workspaceRoot: '.',
+          reportDirectory: '.kain/fabric/reports',
+          status: 'declared',
+          summary: 'Multi-FFI smoke pipeline.',
+          eventStream: true,
+          runtimes: ['kain', 'python'],
+          ffiLanes: ['python', 'cargo-ffi'],
+          requiredCapabilities: ['runtime.kain', 'runtime.python'],
+          outputContracts: ['value'],
+          steps: [
+            {
+              id: 'kain-probe',
+              label: 'Kain Probe',
+              runtime: 'kain',
+              entry: 'plugin.kn',
+              status: 'declared',
+              summary: 'Catalog probe.',
+              dependsOn: [],
+              requires: ['runtime.kain'],
+              outputs: [{ name: 'catalog', kind: 'value' }],
+            },
+          ],
+        },
+      ],
     },
   ],
   consumers: ['src/runtime/kainPluginCatalog.ts'],
@@ -493,6 +550,9 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-plugin-ffi-capabilities', '2');
     expect(proof).toHaveAttribute('data-kain-plugin-wasm-targets', '1');
     expect(proof).toHaveAttribute('data-kain-plugin-cargo-ffi-targets', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-host-ui-components', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-fabric-pipelines', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-fabric-steps', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-count', '1');
     expect(proof).toHaveAttribute('data-kain-authored-theme-selected', 'none');
     expect(proof).toHaveAttribute('data-kain-semantic-surface-count', '2');

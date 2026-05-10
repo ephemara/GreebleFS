@@ -1,3 +1,8 @@
+fn string_array_1(a: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    return items
+
 fn string_array_2(a: String, b: String) -> Array<String>:
     let items = json_array_new()
     json_array_push(items, a)
@@ -331,6 +336,98 @@ fn image_converter_pipeline_stage(id: String, label: String, runtime: String, en
     json_object_set(item, "outputs", outputs)
     return item
 
+fn image_converter_host_ui_component(id: String, component_kind: String, label: String, role: String, surface: String, summary: String, primitives: Array<String>, actions: Array<String>, bindings: Array<String>) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "kind", component_kind)
+    json_object_set(item, "label", label)
+    json_object_set(item, "role", role)
+    json_object_set(item, "surface", surface)
+    json_object_set(item, "density", "compact")
+    json_object_set(item, "status", "live")
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "primitives", primitives)
+    json_object_set(item, "actions", actions)
+    json_object_set(item, "bindings", bindings)
+    return item
+
+fn build_image_converter_host_ui_kit() -> Any:
+    let kit = json_object_new()
+    let components = json_array_new()
+    append_item(components, image_converter_host_ui_component("image-converter.shell", "tool-shell", "Image Converter Shell", "workbench", "workbench", "Shared host-rendered shell for path, format, resize, quality, action strip, and compact result telemetry.", string_array_5("path-input", "format-select", "dimension-input", "action-strip", "result-panel"), string_array_3("kain.image.inspect", "kain.image.plan-conversion", "kain.image.convert"), string_array_5("host.files", "host.preview", "host.pythonSidecar", "host.kainBridge", "host.runtimePipeline")))
+    append_item(components, image_converter_host_ui_component("image-converter.preview-strip", "preview-toolbar", "Image Preview Strip", "preview-workbench", "preview-workbench", "Preview-pane compact controls for selected image conversion without TSX plugin code.", string_array_4("path-input", "format-select", "icon-button", "mini-meter"), string_array_3("kain.image.inspect", "kain.image.plan-conversion", "kain.image.convert"), string_array_4("host.preview", "host.files", "host.kainBridge", "host.plugins")))
+    json_object_set(kit, "id", "greeblefs.image-workbench-kit")
+    json_object_set(kit, "label", "GreebleFS Image Workbench Kit")
+    json_object_set(kit, "version", "0.1.0")
+    json_object_set(kit, "status", "live")
+    json_object_set(kit, "summary", "Shared Kain-authored vocabulary for trusted compact GreebleFS workbench and preview controls.")
+    json_object_set(kit, "primitives", string_array_6("path-input", "format-select", "dimension-input", "action-strip", "mini-meter", "result-panel"))
+    json_object_set(kit, "tokens", string_array_4("density.compact", "radius.5", "surface.muted", "accent.safe"))
+    json_object_set(kit, "components", components)
+    return kit
+
+fn build_image_converter_host_ui_components() -> Array<Any>:
+    let items = json_array_new()
+    append_item(items, image_converter_host_ui_component("image-converter.fabric-status", "fabric-status-strip", "Fabric Status Strip", "diagnostics", "workbench", "Compact proof row for Fabric manifest, runtimes, report directory, and step count.", string_array_4("status-pill", "key-value", "mini-meter", "ffi-lane-strip"), string_array_2("kain.image.plan-conversion", "kain.image.convert"), string_array_4("host.runtimePipeline", "host.kainBridge", "host.pythonSidecar", "host.plugins")))
+    return items
+
+fn image_converter_fabric_output(name: String, output_kind: String) -> Any:
+    let output = json_object_new()
+    json_object_set(output, "name", name)
+    json_object_set(output, "kind", output_kind)
+    return output
+
+fn image_converter_fabric_step(id: String, label: String, runtime: String, entry: String, status: String, summary: String, depends_on: Array<String>, requires: Array<String>, outputs: Array<Any>) -> Any:
+    let step = json_object_new()
+    json_object_set(step, "id", id)
+    json_object_set(step, "label", label)
+    json_object_set(step, "runtime", runtime)
+    json_object_set(step, "entry", entry)
+    json_object_set(step, "status", status)
+    json_object_set(step, "summary", summary)
+    json_object_set(step, "dependsOn", depends_on)
+    json_object_set(step, "requires", requires)
+    json_object_set(step, "outputs", outputs)
+    return step
+
+fn build_image_converter_fabric_pipelines() -> Array<Any>:
+    let pipelines = json_array_new()
+    let pipeline = json_object_new()
+    let steps = json_array_new()
+    let outputs = json_array_new()
+    append_item(outputs, image_converter_fabric_output("settings", "value"))
+    append_item(steps, image_converter_fabric_step("python_source", "Python Source", "python", "plugin.runtime/fabric/scripts/python_step.py", "declared", "Python/Numpy/Pillow lane can gather source metadata and prepare image settings.", json_array_new(), string_array_2("runtime.python", "contract.value"), outputs))
+    let kain_outputs = json_array_new()
+    append_item(kain_outputs, image_converter_fabric_output("image", "shared-image"))
+    append_item(kain_outputs, image_converter_fabric_output("report", "value"))
+    append_item(steps, image_converter_fabric_step("kain_orchestrator", "Kain Orchestrator", "kain", "plugin.runtime/fabric/src/main.kn", "declared", "Kain owns the typed conversion intent and neutral shared image contract.", string_array_1("python_source"), string_array_2("runtime.kain", "contract.shared-image"), kain_outputs))
+    let c_outputs = json_array_new()
+    append_item(c_outputs, image_converter_fabric_output("filtered_image", "shared-image"))
+    append_item(c_outputs, image_converter_fabric_output("snapshot", "shared-buffer"))
+    append_item(steps, image_converter_fabric_step("native_filter", "C ABI Filter", "c_abi", "plugin.runtime/fabric/src/native_step.kn", "declared", "C/DLL lane can mutate shared image bytes through Kain C runtime bridges.", string_array_1("kain_orchestrator"), string_array_2("runtime.c-abi", "contract.shared-buffer"), c_outputs))
+    let cargo_outputs = json_array_new()
+    append_item(cargo_outputs, image_converter_fabric_output("analysis", "value"))
+    append_item(steps, image_converter_fabric_step("rust_analyzer", "Cargo Analyzer", "rust_crate", "plugin.runtime/fabric/src/rust_step.kn", "compiled-helper", "Plugin-owned Cargo helper can score outputs and expose crate FFI utilities.", string_array_2("native_filter", "kain_orchestrator"), string_array_2("runtime.rust-crate", "contract.value"), cargo_outputs))
+    let node_outputs = json_array_new()
+    append_item(node_outputs, image_converter_fabric_output("summary", "value"))
+    append_item(node_outputs, image_converter_fabric_output("input_keys", "value"))
+    append_item(steps, image_converter_fabric_step("node_packager", "Node Packager", "node", "plugin.runtime/fabric/scripts/node_step.mjs", "declared", "Node FFI lane can package previews, HTML reports, and npm-native optimizations.", string_array_2("kain_orchestrator", "rust_analyzer"), string_array_2("runtime.node", "contract.value"), node_outputs))
+    json_object_set(pipeline, "id", "kain-image-converter.fabric")
+    json_object_set(pipeline, "label", "Image Converter Fabric")
+    json_object_set(pipeline, "manifestPath", "usr/plugins-kain/kain-image-converter/plugin.runtime/fabric/KAIN.fabric.toml")
+    json_object_set(pipeline, "workspaceRoot", "usr/plugins-kain/kain-image-converter/plugin.runtime/fabric")
+    json_object_set(pipeline, "reportDirectory", "plugin.runtime/fabric/.kain/fabric/reports")
+    json_object_set(pipeline, "status", "declared")
+    json_object_set(pipeline, "summary", "Fabric-ready multi-FFI session: Python prepares data, Kain authors shared contracts, C mutates bytes, Cargo analyzes, Node packages reports, and GreebleFS hosts the workbench safely.")
+    json_object_set(pipeline, "eventStream", true)
+    json_object_set(pipeline, "runtimes", string_array_5("python", "kain", "c_abi", "rust_crate", "node"))
+    json_object_set(pipeline, "ffiLanes", string_array_5("python", "c-runtime", "cargo-ffi", "node", "wasm"))
+    json_object_set(pipeline, "requiredCapabilities", string_array_6("runtime.python", "runtime.kain", "runtime.c-abi", "runtime.rust-crate", "runtime.node", "contract.shared-image"))
+    json_object_set(pipeline, "outputContracts", string_array_4("value", "shared-image", "shared-buffer", "artifact"))
+    json_object_set(pipeline, "steps", steps)
+    append_item(pipelines, pipeline)
+    return pipelines
+
 fn build_image_converter_authoring_reference() -> Any:
     let reference = json_object_new()
     let features = json_array_new()
@@ -563,6 +660,8 @@ fn build_kain_image_converter_plugin() -> Any:
     json_object_set(plugin, "ffiCapabilities", ffi_capabilities)
     json_object_set(plugin, "runtimes", runtimes)
     json_object_set(plugin, "tools", tools)
+    json_object_set(plugin, "hostUiKit", build_image_converter_host_ui_kit())
+    json_object_set(plugin, "hostUiComponents", build_image_converter_host_ui_components())
     json_object_set(plugin, "workbenches", workbenches)
     json_object_set(plugin, "previewWorkbenches", preview_workbenches)
     json_object_set(plugin, "actions", actions)
@@ -572,6 +671,7 @@ fn build_kain_image_converter_plugin() -> Any:
     json_object_set(plugin, "authoring", build_image_converter_authoring_reference())
     json_object_set(plugin, "contracts", build_image_converter_contracts())
     json_object_set(plugin, "pipelineStages", build_image_converter_pipeline_stages())
+    json_object_set(plugin, "fabricPipelines", build_image_converter_fabric_pipelines())
     return plugin
 
 fn build_kain_plugin_catalog() -> Any:

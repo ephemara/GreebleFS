@@ -85,6 +85,45 @@ const imagePlugin: KainPluginDefinition = {
       ui: {},
     },
   ],
+  hostUiKit: {
+    id: 'greeblefs.image-toolkit',
+    label: 'Image Toolkit',
+    version: '0.1.0',
+    status: 'live',
+    summary: 'Trusted compact controls for Kain image tools.',
+    primitives: ['path-input', 'format-select', 'action-strip', 'mini-meter'],
+    tokens: ['density.compact'],
+    components: [
+      {
+        id: 'image-converter-shell',
+        kind: 'tool-shell',
+        label: 'Image Converter Shell',
+        role: 'workbench',
+        surface: 'workbench',
+        density: 'compact',
+        status: 'live',
+        summary: 'Host-rendered converter controls.',
+        primitives: ['path-input', 'format-select'],
+        actions: ['kain.image.convert'],
+        bindings: ['host.files'],
+      },
+    ],
+  },
+  hostUiComponents: [
+    {
+      id: 'image-preview-strip',
+      kind: 'preview-toolbar',
+      label: 'Image Preview Strip',
+      role: 'preview-workbench',
+      surface: 'preview-workbench',
+      density: 'compact',
+      status: 'live',
+      summary: 'Preview-pane converter controls.',
+      primitives: ['icon-button', 'action-strip'],
+      actions: ['kain.image.inspect'],
+      bindings: ['host.preview'],
+    },
+  ],
   workbenches: [
     {
       id: 'kain-image-converter.main',
@@ -193,6 +232,35 @@ const imagePlugin: KainPluginDefinition = {
       outputs: ['output-file'],
     },
   ],
+  fabricPipelines: [
+    {
+      id: 'image-converter.fabric',
+      label: 'Image Converter Fabric',
+      manifestPath: 'usr/plugins-kain/kain-image-converter/KAIN.fabric.toml',
+      workspaceRoot: '.',
+      reportDirectory: '.kain/fabric/reports',
+      status: 'declared',
+      summary: 'Python, Kain, C, Cargo, Node, and GPU-capable image pipeline.',
+      eventStream: true,
+      runtimes: ['python', 'kain', 'c_abi', 'rust_crate', 'node'],
+      ffiLanes: ['python', 'c-runtime', 'cargo-ffi', 'node'],
+      requiredCapabilities: ['runtime.python', 'runtime.node'],
+      outputContracts: ['value', 'shared-image'],
+      steps: [
+        {
+          id: 'python-source',
+          label: 'Python Source',
+          runtime: 'python',
+          entry: 'scripts/python_step.py',
+          status: 'declared',
+          summary: 'Source image bytes.',
+          dependsOn: [],
+          requires: ['runtime.python'],
+          outputs: [{ name: 'settings', kind: 'value' }],
+        },
+      ],
+    },
+  ],
 };
 
 describe('KainPluginWorkbenchHost', () => {
@@ -257,6 +325,13 @@ describe('KainPluginWorkbenchHost', () => {
       '1',
     );
     expect(container.querySelector('[data-kain-plugin-reference-strip]')).toBeTruthy();
+    expect(container.querySelector('[data-kain-plugin-capability-strip]')).toBeTruthy();
+    expect(container.querySelector('[data-kain-plugin-host-ui-strip]')).toBeTruthy();
+    expect(container.querySelector('[data-kain-plugin-fabric-strip]')).toBeTruthy();
+    expect(container.querySelector('[data-kain-plugin-workbench-host]')).toHaveAttribute(
+      'data-kain-plugin-fabric-pipelines',
+      '1',
+    );
     expect(screen.getByDisplayValue('D:/art/source.png')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Convert' }));

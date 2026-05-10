@@ -69,6 +69,41 @@ describe('kainPluginCatalog', () => {
               ],
             },
           ],
+          hostUiKit: {
+            id: 'greeblefs.workbench-kit',
+            label: 'GreebleFS Workbench Kit',
+            version: '0.1.0',
+            status: 'live',
+            primitives: ['path-input', 'action-strip', 'ffi-meter'],
+            tokens: ['density.compact'],
+            components: [
+              {
+                id: 'converter-shell',
+                kind: 'tool-shell',
+                label: 'Converter Shell',
+                role: 'workbench',
+                surface: 'workbench',
+                status: 'live',
+                primitives: ['path-input', 'format-select'],
+                actions: ['inspect'],
+                bindings: ['host.files'],
+              },
+            ],
+          },
+          hostUiComponents: [
+            {
+              id: 'preview-strip',
+              kind: 'preview-toolbar',
+              label: 'Preview Strip',
+              role: 'preview-workbench',
+              surface: 'preview-workbench',
+              density: 'compact',
+              status: 'live',
+              primitives: ['icon-button'],
+              actions: ['inspect'],
+              bindings: ['host.preview'],
+            },
+          ],
           workbenches: [
             {
               id: 'main',
@@ -174,6 +209,38 @@ describe('kainPluginCatalog', () => {
               outputs: ['output-file'],
             },
           ],
+          fabricPipelines: [
+            {
+              id: 'image-fabric',
+              label: 'Image Fabric',
+              manifestPath: 'usr/plugins-kain/image-tool/KAIN.fabric.toml',
+              workspaceRoot: '.',
+              reportDirectory: '.kain/fabric/reports',
+              status: 'declared',
+              eventStream: true,
+              runtimes: ['python', 'kain', 'node'],
+              ffiLanes: ['python', 'node'],
+              requiredCapabilities: ['runtime.python'],
+              outputContracts: ['value', 'shared-image'],
+              steps: [
+                {
+                  id: 'python-source',
+                  label: 'Python Source',
+                  runtime: 'python',
+                  entry: 'scripts/source.py',
+                  status: 'declared',
+                  dependsOn: [],
+                  requires: ['runtime.python'],
+                  outputs: [
+                    {
+                      name: 'settings',
+                      kind: 'value',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
         },
       ],
       consumers: ['src/runtime/kainPluginCatalog.ts'],
@@ -231,6 +298,24 @@ describe('kainPluginCatalog', () => {
     expect(catalog?.plugins[0]?.pipelineStages[0]).toMatchObject({
       id: 'python-bytes',
       runtime: 'python',
+    });
+    expect(catalog?.plugins[0]?.hostUiKit?.components[0]).toMatchObject({
+      id: 'converter-shell',
+      primitives: ['path-input', 'format-select'],
+    });
+    expect(catalog?.plugins[0]?.hostUiComponents[0]).toMatchObject({
+      id: 'preview-strip',
+      density: 'compact',
+    });
+    expect(catalog?.plugins[0]?.fabricPipelines[0]).toMatchObject({
+      id: 'image-fabric',
+      eventStream: true,
+      steps: [
+        expect.objectContaining({
+          id: 'python-source',
+          outputs: [expect.objectContaining({ kind: 'value' })],
+        }),
+      ],
     });
     expect(selectKainPluginPreviewWorkbenches(catalog)).toHaveLength(1);
   });

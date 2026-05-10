@@ -1,0 +1,104 @@
+version = 1
+
+[workspace]
+root = "."
+search_roots = ["src", "scripts", "native", "../cargo", "../node", "../wasm"]
+
+[[requires]]
+key = "session.local"
+version = 1
+optional = false
+
+[[requires]]
+key = "runtime.python"
+version = 1
+optional = false
+
+[[requires]]
+key = "runtime.kain"
+version = 1
+optional = false
+
+[[requires]]
+key = "runtime.node"
+version = 1
+optional = true
+
+[[requires]]
+key = "runtime.rust-crate"
+version = 1
+optional = true
+
+[[requires]]
+key = "runtime.c-abi"
+version = 1
+optional = true
+
+[[steps]]
+id = "python_source"
+runtime = "python"
+entry = "scripts/python_step.py"
+
+[[steps.outputs]]
+name = "settings"
+kind = "value"
+
+[[steps]]
+id = "kain_orchestrator"
+runtime = "kain"
+entry = "src/main.kn"
+depends_on = ["python_source"]
+
+[[steps.outputs]]
+name = "image"
+kind = "shared_image"
+
+[[steps.outputs]]
+name = "report"
+kind = "value"
+
+[[steps]]
+id = "native_filter"
+runtime = "c_abi"
+entry = "src/native_step.kn"
+module = "image_fx"
+library = "native/${kain_dynlib:image_fx}"
+depends_on = ["kain_orchestrator"]
+
+[[steps.outputs]]
+name = "filtered_image"
+kind = "shared_image"
+
+[[steps.outputs]]
+name = "snapshot"
+kind = "shared_buffer"
+
+[[steps]]
+id = "rust_analyzer"
+runtime = "rust_crate"
+entry = "src/rust_step.kn"
+crate_name = "greeblefs_kain_image_tools"
+manifest_path = "../cargo/greeblefs-kain-image-tools/Cargo.toml"
+depends_on = ["native_filter", "kain_orchestrator"]
+
+[[steps.outputs]]
+name = "analysis"
+kind = "value"
+
+[[steps]]
+id = "node_packager"
+runtime = "node"
+entry = "scripts/node_step.mjs"
+depends_on = ["kain_orchestrator", "rust_analyzer"]
+
+[[steps.outputs]]
+name = "summary"
+kind = "value"
+
+[[steps.outputs]]
+name = "input_keys"
+kind = "value"
+
+[reports]
+directory = ".kain/fabric/reports"
+emit_jsonl_events = true

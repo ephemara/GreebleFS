@@ -93,6 +93,15 @@ export function KainUiSettingsSection({
   const kainPluginFfiCapabilityCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.ffiCapabilities.length, 0) ?? 0;
   const kainPluginWasmTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.wasmTargets.length, 0) ?? 0;
   const kainPluginCargoFfiTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.cargoFfiTargets.length, 0) ?? 0;
+  const kainPluginHostUiComponentCount = pluginCatalog?.plugins.reduce(
+    (count, plugin) => count + plugin.hostUiComponents.length + (plugin.hostUiKit?.components.length ?? 0),
+    0,
+  ) ?? 0;
+  const kainPluginFabricPipelineCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.fabricPipelines.length, 0) ?? 0;
+  const kainPluginFabricStepCount = pluginCatalog?.plugins.reduce(
+    (count, plugin) => count + plugin.fabricPipelines.reduce((stepCount, pipeline) => stepCount + pipeline.steps.length, 0),
+    0,
+  ) ?? 0;
   const firstKainPlugin = pluginCatalog?.plugins[0] ?? null;
   const semanticRegistry = buildKainSemanticUiRegistry(scaffold, latticeCatalog);
   const settingsModuleMounts = selectKainSemanticUiMounts(semanticRegistry, {
@@ -135,6 +144,9 @@ export function KainUiSettingsSection({
       data-kain-plugin-ffi-capabilities={kainPluginFfiCapabilityCount}
       data-kain-plugin-wasm-targets={kainPluginWasmTargetCount}
       data-kain-plugin-cargo-ffi-targets={kainPluginCargoFfiTargetCount}
+      data-kain-plugin-host-ui-components={kainPluginHostUiComponentCount}
+      data-kain-plugin-fabric-pipelines={kainPluginFabricPipelineCount}
+      data-kain-plugin-fabric-steps={kainPluginFabricStepCount}
       data-kain-authored-theme-count={authoredThemeCount}
       data-kain-authored-theme-selected={selectedAuthoredTheme?.compatibilityThemeId ?? "none"}
       data-kain-semantic-surface-count={semanticSurfaceCount}
@@ -370,6 +382,11 @@ export function KainUiSettingsSection({
             title="FFI"
             description={`${kainPluginFfiCapabilityCount} capabilities | ${kainPluginWasmTargetCount} WASM targets | ${kainPluginCargoFfiTargetCount} Cargo FFI targets`}
             control={<SettingsStatusPill active={kainPluginFfiCapabilityCount > 0}>{kainPluginFfiCapabilityCount}</SettingsStatusPill>}
+          />
+          <SettingsRow
+            title="Workbench Kit"
+            description={`${kainPluginHostUiComponentCount} host UI components | ${kainPluginFabricPipelineCount} Fabric sessions | ${kainPluginFabricStepCount} steps`}
+            control={<SettingsStatusPill active={kainPluginHostUiComponentCount + kainPluginFabricPipelineCount > 0}>{kainPluginFabricPipelineCount}</SettingsStatusPill>}
           />
           <SettingsRow
             title="First Plugin"

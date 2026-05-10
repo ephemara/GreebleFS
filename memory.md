@@ -1,3 +1,18 @@
+# 2026-05-10 - Kain Plugin Host UI And Fabric Pipeline Contract
+
+- Extended the Kain-native plugin lane so plugins can describe more than panels and actions.
+  - `src/runtime/kainPluginCatalog.ts` now normalizes `hostUiKit`, `hostUiComponents`, and `fabricPipelines` with explicit Fabric steps, dependencies, runtimes, required capabilities, and output contracts.
+  - `KainPluginWorkbenchHost` surfaces compact proof attributes and UI strips for shared host UI components plus Fabric pipeline step counts/runtimes.
+  - `pluginPackages.ts`, Plugins Manager capability labels, and Settings > Kain UI now count Kain host UI components and Fabric pipelines.
+  - `usr/plugins-kain/kain-image-converter/plugin.kn`, `src-kain/plugins/registry.kn`, and `src-kain/app/main.kn` now advertise the image converter workbench kit plus a Fabric-ready Python/Kain/C ABI/Rust crate/Node pipeline.
+  - `usr/plugins-kain/kain-image-converter/plugin.runtime/fabric/KAIN.fabric.toml` plus local `KAIN.toml` and `native/image_fx.{h,c}` is the first clean plugin-owned Fabric manifest for `kain fabric validate/run` compatibility.
+- Durable rules:
+  - Kain plugin UI should be described as semantic host UI components, not generated JSX. GreebleFS owns rendering and permissions; Kain owns intent, bindings, and action ids.
+  - Use `fabricPipelines` when a plugin needs multi-FFI orchestration, report artifacts, or dependency-ordered runtime sessions. Keep the manifest under `plugin.runtime/fabric/`.
+  - Full Fabric run proof on Windows currently needs the plugin C DLL built with LLVM clang and `RUSTC_WRAPPER` cleared when sccache fails in the generated Rust crate FFI bridge.
+  - The current Node Fabric example is a terminal packaging stage; Fabric enforces dependency order, but the JS bridge currently projects an empty object for upstream Fabric inputs in this lane. Patch Kain's Node bridge before relying on Node to directly inspect upstream shared-image/shared-buffer values.
+  - Keep production plugin runtime files clean; broader tutorials belong in root-level `usr/plugins-kain/kain-plugin-*` example folders.
+
 # 2026-05-10 - Settings Fast-Entry CPU Guard
 
 - Fixed the Settings launch spike caused by restoring directly into deep Settings tabs after the monolith split.

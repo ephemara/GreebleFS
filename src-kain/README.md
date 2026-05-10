@@ -229,8 +229,19 @@ When a plugin wants to advertise reference metadata, it may expose:
 - `authoring`: language features, runnable examples, design rules, and smoke commands.
 - `contracts`: stable symbols/surfaces the host or future agents can reason about.
 - `pipelineStages`: Kain/host/FFI execution lanes with explicit runtime, entrypoint, status, and outputs.
+- `hostUiKit` / `hostUiComponents`: shared trusted GreebleFS UI vocabulary such as path inputs, format selects, action strips, mini meters, result panels, and preview toolbars. Kain describes intent; `KainPluginWorkbenchHost` renders the safe controls.
+- `fabricPipelines`: Fabric session metadata for multi-FFI plugin orchestration. Use this when a plugin has a `KAIN.fabric.toml` and wants GreebleFS to understand Python, Kain, C ABI, Rust crate/Cargo FFI, Node, GPU, or WASM steps as one pipeline.
 
 This metadata is still Kain-authored. TypeScript only normalizes it and exposes compact proof attributes in the trusted host. Keep teaching/example projects as root-level siblings under `usr/plugins-kain/`, not nested inside production plugin folders.
+
+The image converter now carries a clean plugin-owned Fabric contract at:
+
+- `usr/plugins-kain/kain-image-converter/plugin.runtime/fabric/KAIN.fabric.toml`
+- `usr/plugins-kain/kain-image-converter/plugin.runtime/fabric/KAIN.toml`
+
+That manifest is the compatibility point for Kain's `fabric validate/run` flow. The local `KAIN.toml` and `native/image_fx.{h,c}` make the C ABI step real; the generated DLL is ignored and can be rebuilt locally with LLVM `clang`. The production plugin remains `plugin.kn` plus `plugin.runtime/**`; bigger teaching examples stay in the root-level example folders.
+
+Current caveat: the Node step is a terminal packaging proof. Fabric dependency order is real, but the JS bridge currently projects an empty object for upstream Fabric inputs in this lane, so do not depend on Node directly reading shared-image/shared-buffer values until the Kain Node bridge is tightened.
 
 The image converter validation lane is:
 
@@ -238,6 +249,12 @@ The image converter validation lane is:
 D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.kn
 D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\kain\image_converter_pipeline.kn
 D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\c-runtime\image_converter_c_runtime_bridge.kn
+D:\GreebleFS\toolchains\kain\payload\bin\kain.exe fabric validate --manifest D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\fabric\KAIN.fabric.toml
+Set-Location D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\fabric
+C:\LLVM-21\bin\clang.exe -shared -O2 -o native\image_fx.dll native\image_fx.c
+$env:CC='C:\LLVM-21\bin\clang-cl.exe'; $env:CXX='C:\LLVM-21\bin\clang-cl.exe'; $env:RUSTC_WRAPPER=''
+D:\GreebleFS\toolchains\kain\payload\bin\kain.exe fabric run --manifest D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\fabric\KAIN.fabric.toml
+Set-Location D:\GreebleFS
 D:\GreebleFS\toolchains\kain\payload\bin\kain.exe build D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.kn -t ts -o D:\GreebleFS\target\kain-image-converter-plugin-build\plugin.ts
 cargo check --manifest-path usr/plugins-kain/kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools/Cargo.toml
 python -m py_compile src-python\greeblefs_sidecar\actions.py src-python\greeblefs_sidecar\image_converter_runtime.py

@@ -1830,6 +1830,13 @@ function estimateKainPluginCapabilities(
     kainFfiCapabilities: plugin.ffiCapabilities.length,
     kainWasmTargets: plugin.wasmTargets.length,
     kainCargoFfiTargets: plugin.cargoFfiTargets.length,
+    kainHostUiComponents:
+      plugin.hostUiComponents.length + (plugin.hostUiKit?.components.length ?? 0),
+    kainFabricPipelines: plugin.fabricPipelines.length,
+    kainFabricSteps: plugin.fabricPipelines.reduce(
+      (count, pipeline) => count + pipeline.steps.length,
+      0,
+    ),
   };
 }
 

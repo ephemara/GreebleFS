@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
+import { AppSelect } from "../AppSelect";
 
 import {
   runKainPluginAction,
@@ -64,6 +65,23 @@ export function KainPluginWorkbenchHost({
   const authoringExampleCount = kainPlugin.authoring?.examples.length ?? 0;
   const contractCount = kainPlugin.contracts.length;
   const pipelineStageCount = kainPlugin.pipelineStages.length;
+  const hostUiComponents = [
+    ...kainPlugin.hostUiComponents,
+    ...(kainPlugin.hostUiKit?.components ?? []),
+  ];
+  const hostUiComponentCount = hostUiComponents.length;
+  const hostUiPrimitiveCount = new Set([
+    ...(kainPlugin.hostUiKit?.primitives ?? []),
+    ...hostUiComponents.flatMap((component) => component.primitives),
+  ]).size;
+  const fabricPipelineCount = kainPlugin.fabricPipelines.length;
+  const fabricStepCount = kainPlugin.fabricPipelines.reduce(
+    (count, pipeline) => count + pipeline.steps.length,
+    0,
+  );
+  const fabricRuntimeSummary = [
+    ...new Set(kainPlugin.fabricPipelines.flatMap((pipeline) => pipeline.runtimes)),
+  ].join("|");
 
   const runAction = async (
     action: KainPluginAction,
@@ -115,6 +133,11 @@ export function KainPluginWorkbenchHost({
       data-kain-plugin-authoring-examples={authoringExampleCount}
       data-kain-plugin-contracts={contractCount}
       data-kain-plugin-pipeline-stages={pipelineStageCount}
+      data-kain-plugin-host-ui-components={hostUiComponentCount}
+      data-kain-plugin-host-ui-primitives={hostUiPrimitiveCount}
+      data-kain-plugin-fabric-pipelines={fabricPipelineCount}
+      data-kain-plugin-fabric-steps={fabricStepCount}
+      data-kain-plugin-fabric-runtimes={fabricRuntimeSummary}
       style={{
         width: "100%",
         height: "100%",
@@ -161,6 +184,18 @@ export function KainPluginWorkbenchHost({
         </div>
       ) : null}
 
+      {hostUiComponentCount || fabricPipelineCount ? (
+        <div
+          data-kain-plugin-capability-strip="true"
+          style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}
+        >
+          <Metric label="host ui" value={String(hostUiComponentCount)} />
+          <Metric label="prims" value={String(hostUiPrimitiveCount)} />
+          <Metric label="fabric" value={String(fabricPipelineCount)} />
+          <Metric label="steps" value={String(fabricStepCount)} />
+        </div>
+      ) : null}
+
       {file ? (
         <div
           data-kain-plugin-preview-file={file.resolvedPath}
@@ -188,6 +223,57 @@ export function KainPluginWorkbenchHost({
           <span key={lane} style={pillStyle(false)}>{lane}</span>
         ))}
       </div>
+
+      {hostUiComponents.length > 0 ? (
+        <div
+          data-kain-plugin-host-ui-strip="true"
+          style={{ display: "flex", flexWrap: "wrap", gap: 5 }}
+        >
+          {hostUiComponents.slice(0, 8).map((component) => (
+            <span
+              key={component.id}
+              data-kain-plugin-host-ui-component={component.id}
+              style={pillStyle(component.status === "live")}
+              title={component.summary || component.role}
+            >
+              {component.kind}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {kainPlugin.fabricPipelines.length > 0 ? (
+        <div
+          data-kain-plugin-fabric-strip="true"
+          style={{ display: "grid", gap: 5 }}
+        >
+          {kainPlugin.fabricPipelines.slice(0, 2).map((pipeline) => (
+            <div
+              key={pipeline.id}
+              data-kain-plugin-fabric-pipeline={pipeline.id}
+              data-kain-plugin-fabric-manifest={pipeline.manifestPath}
+              data-kain-plugin-fabric-step-count={pipeline.steps.length}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) auto",
+                gap: 8,
+                alignItems: "center",
+                minHeight: 24,
+                padding: "5px 7px",
+                borderRadius: 5,
+                background: "var(--overlay-muted-bg, rgba(255,255,255,0.05))",
+              }}
+            >
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10, fontWeight: 750 }}>
+                {pipeline.label}
+              </span>
+              <span style={{ fontSize: 10, opacity: 0.58 }}>
+                {pipeline.steps.length} steps
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {surfaceTool?.kind === "image-converter" ? (
         <KainImageConverterWorkbench
@@ -358,7 +444,7 @@ function KainImageConverterWorkbench({
           />
         </Field>
         <Field label="format">
-          <select
+          <AppSelect
             value={outputFormat}
             onChange={(event) => setOutputFormat(event.currentTarget.value)}
             style={inputStyle()}
@@ -368,7 +454,7 @@ function KainImageConverterWorkbench({
                 {format.label}
               </option>
             ))}
-          </select>
+          </AppSelect>
         </Field>
       </div>
 
@@ -380,9 +466,9 @@ function KainImageConverterWorkbench({
           <input value={height} onChange={(event) => setHeight(event.currentTarget.value)} inputMode="numeric" style={inputStyle()} />
         </Field>
         <Field label="fit">
-          <select value={fitMode} onChange={(event) => setFitMode(event.currentTarget.value)} style={inputStyle()}>
+          <AppSelect value={fitMode} onChange={(event) => setFitMode(event.currentTarget.value)} style={inputStyle()}>
             {tool.resizeModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
-          </select>
+          </AppSelect>
         </Field>
         <Field label="q">
           <input value={quality} onChange={(event) => setQuality(event.currentTarget.value)} inputMode="numeric" style={inputStyle()} />

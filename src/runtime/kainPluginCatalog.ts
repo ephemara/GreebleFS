@@ -75,6 +75,31 @@ export interface KainPluginTool {
   ui: Record<string, unknown>;
 }
 
+export interface KainPluginHostUiComponent {
+  id: string;
+  kind: string;
+  label: string;
+  role: string;
+  surface: string;
+  density: string;
+  status: string;
+  summary: string;
+  primitives: string[];
+  actions: string[];
+  bindings: string[];
+}
+
+export interface KainPluginHostUiKit {
+  id: string;
+  label: string;
+  version: string;
+  status: string;
+  summary: string;
+  primitives: string[];
+  tokens: string[];
+  components: KainPluginHostUiComponent[];
+}
+
 export interface KainPluginWorkbench {
   id: string;
   title: string;
@@ -218,6 +243,45 @@ export interface KainPluginPipelineStage {
   outputs: string[];
 }
 
+export interface KainPluginFabricOutput {
+  name: string;
+  kind: string;
+}
+
+export interface KainPluginFabricStep {
+  id: string;
+  label: string;
+  runtime: string;
+  entry: string;
+  module?: string;
+  crateName?: string;
+  manifestPath?: string;
+  library?: string;
+  shaderSource?: string;
+  computeKey?: string;
+  status: string;
+  summary: string;
+  dependsOn: string[];
+  requires: string[];
+  outputs: KainPluginFabricOutput[];
+}
+
+export interface KainPluginFabricPipeline {
+  id: string;
+  label: string;
+  manifestPath: string;
+  workspaceRoot: string;
+  reportDirectory: string;
+  status: string;
+  summary: string;
+  eventStream: boolean;
+  runtimes: string[];
+  ffiLanes: string[];
+  requiredCapabilities: string[];
+  outputContracts: string[];
+  steps: KainPluginFabricStep[];
+}
+
 export interface KainPluginDefinition {
   id: string;
   name: string;
@@ -233,6 +297,8 @@ export interface KainPluginDefinition {
   ffiCapabilities: KainPluginFfiCapability[];
   runtimes: KainPluginRuntime[];
   tools: KainPluginTool[];
+  hostUiKit: KainPluginHostUiKit | null;
+  hostUiComponents: KainPluginHostUiComponent[];
   workbenches: KainPluginWorkbench[];
   previewWorkbenches: KainPluginPreviewWorkbench[];
   actions: KainPluginAction[];
@@ -242,6 +308,7 @@ export interface KainPluginDefinition {
   authoring: KainPluginAuthoringReference | null;
   contracts: KainPluginContract[];
   pipelineStages: KainPluginPipelineStage[];
+  fabricPipelines: KainPluginFabricPipeline[];
 }
 
 export interface KainPluginCatalog {
@@ -394,6 +461,110 @@ function normalizeAuthoringReference(value: unknown): KainPluginAuthoringReferen
     }),
     designRules: stringList(source.designRules),
     smokeCommands: stringList(source.smokeCommands),
+  };
+}
+
+function normalizeHostUiComponent(value: unknown): KainPluginHostUiComponent | null {
+  const source = asObject(value);
+  const id = stringValue(source?.id);
+  if (!source || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    kind: stringValue(source.kind) ?? "component",
+    label: stringValue(source.label) ?? id,
+    role: stringValue(source.role) ?? "display",
+    surface: stringValue(source.surface) ?? "workbench",
+    density: stringValue(source.density) ?? "compact",
+    status: stringValue(source.status) ?? "declared",
+    summary: stringValue(source.summary) ?? "",
+    primitives: stringList(source.primitives),
+    actions: stringList(source.actions),
+    bindings: stringList(source.bindings),
+  };
+}
+
+function normalizeHostUiKit(value: unknown): KainPluginHostUiKit | null {
+  const source = asObject(value);
+  const id = stringValue(source?.id);
+  if (!source || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    label: stringValue(source.label) ?? id,
+    version: stringValue(source.version) ?? "0.1.0",
+    status: stringValue(source.status) ?? "declared",
+    summary: stringValue(source.summary) ?? "",
+    primitives: stringList(source.primitives),
+    tokens: stringList(source.tokens),
+    components: normalizeList(source.components, normalizeHostUiComponent),
+  };
+}
+
+function normalizeFabricOutput(value: unknown): KainPluginFabricOutput | null {
+  const source = asObject(value);
+  const name = stringValue(source?.name);
+  if (!source || !name) {
+    return null;
+  }
+
+  return {
+    name,
+    kind: stringValue(source.kind) ?? "value",
+  };
+}
+
+function normalizeFabricStep(value: unknown): KainPluginFabricStep | null {
+  const source = asObject(value);
+  const id = stringValue(source?.id);
+  if (!source || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    label: stringValue(source.label) ?? id,
+    runtime: stringValue(source.runtime) ?? "kain",
+    entry: stringValue(source.entry) ?? "",
+    module: stringValue(source.module),
+    crateName: stringValue(source.crateName),
+    manifestPath: stringValue(source.manifestPath),
+    library: stringValue(source.library),
+    shaderSource: stringValue(source.shaderSource),
+    computeKey: stringValue(source.computeKey),
+    status: stringValue(source.status) ?? "declared",
+    summary: stringValue(source.summary) ?? "",
+    dependsOn: stringList(source.dependsOn),
+    requires: stringList(source.requires),
+    outputs: normalizeList(source.outputs, normalizeFabricOutput),
+  };
+}
+
+function normalizeFabricPipeline(value: unknown): KainPluginFabricPipeline | null {
+  const source = asObject(value);
+  const id = stringValue(source?.id);
+  if (!source || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    label: stringValue(source.label) ?? id,
+    manifestPath: stringValue(source.manifestPath) ?? "",
+    workspaceRoot: stringValue(source.workspaceRoot) ?? ".",
+    reportDirectory: stringValue(source.reportDirectory) ?? ".kain/fabric/reports",
+    status: stringValue(source.status) ?? "declared",
+    summary: stringValue(source.summary) ?? "",
+    eventStream: booleanValue(source.eventStream),
+    runtimes: stringList(source.runtimes),
+    ffiLanes: stringList(source.ffiLanes),
+    requiredCapabilities: stringList(source.requiredCapabilities),
+    outputContracts: stringList(source.outputContracts),
+    steps: normalizeList(source.steps, normalizeFabricStep),
   };
 }
 
@@ -554,6 +725,8 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             ui: asObject(toolSource.ui) ?? {},
           };
         }),
+        hostUiKit: normalizeHostUiKit(pluginSource.hostUiKit),
+        hostUiComponents: normalizeList(pluginSource.hostUiComponents, normalizeHostUiComponent),
         runtimes: normalizeList(pluginSource.runtimes, (runtimeSource) => {
           const runtimeId = stringValue(runtimeSource.id);
           if (!runtimeId) {
@@ -686,6 +859,7 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             outputs: stringList(stageSource.outputs),
           };
         }),
+        fabricPipelines: normalizeList(pluginSource.fabricPipelines, normalizeFabricPipeline),
       };
     }),
     consumers: stringList(source.consumers),

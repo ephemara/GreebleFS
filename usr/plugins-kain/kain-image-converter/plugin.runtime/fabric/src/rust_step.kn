@@ -1,0 +1,11 @@
+use rust::greeblefs_kain_image_tools
+
+struct RustAnalyzerOutputs:
+    analysis: String
+
+fn main() -> RustAnalyzerOutputs:
+    let image = fabric_inputs.native_filter.filtered_image
+    let info = interop_shared_image_info(image)
+    let checksum = image_checksum(interop_shared_image_bytes(image))
+    let signature = image_signature("fabric", info.width, info.height, checksum, checksum)
+    return RustAnalyzerOutputs { analysis: signature }

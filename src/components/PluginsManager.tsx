@@ -1602,6 +1602,12 @@ function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
   if (plugin.diagnostics.capabilities.settingsSlots > 0) {
     labels.push(`Settings ${plugin.diagnostics.capabilities.settingsSlots}`);
   }
+  if ((plugin.diagnostics.capabilities.kainHostUiComponents ?? 0) > 0) {
+    labels.push(`Kain UI ${plugin.diagnostics.capabilities.kainHostUiComponents}`);
+  }
+  if ((plugin.diagnostics.capabilities.kainFabricPipelines ?? 0) > 0) {
+    labels.push(`Fabric ${plugin.diagnostics.capabilities.kainFabricPipelines}`);
+  }
   return labels;
 }
 

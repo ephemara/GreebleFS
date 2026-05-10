@@ -1,0 +1,20 @@
+use c::image_fx
+use std::interop::bridge
+
+struct NativeFilterOutputs:
+    filtered_image: Any
+    snapshot: Any
+
+fn main() -> NativeFilterOutputs:
+    let image = fabric_inputs.kain_orchestrator.image
+    let info = interop_shared_image_info(image)
+    imagefx_halo_rgba(image, info.byte_length, 41)
+    let bytes = interop_shared_image_bytes(image)
+    let snapshot = interop_shared_buffer_from_bytes(
+        bytes,
+        "u8",
+        [len(bytes)],
+        "u8",
+        "application/octet-stream",
+    )
+    return NativeFilterOutputs { filtered_image: image, snapshot: snapshot }

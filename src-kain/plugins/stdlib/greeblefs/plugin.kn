@@ -22,6 +22,9 @@ fn build_kain_plugin_stdlib() -> Any:
     json_array_push(surface_kinds, "authoring-reference")
     json_array_push(surface_kinds, "contract")
     json_array_push(surface_kinds, "pipeline-stage")
+    json_array_push(surface_kinds, "host-ui-kit")
+    json_array_push(surface_kinds, "host-ui-component")
+    json_array_push(surface_kinds, "fabric-pipeline")
 
     json_array_push(ffi_lanes, "python")
     json_array_push(ffi_lanes, "node")
@@ -40,11 +43,14 @@ fn build_kain_plugin_stdlib() -> Any:
     json_object_set(stdlib, "schemaVersion", 1)
     json_object_set(stdlib, "kind", "greeblefs.kain.plugin.stdlib")
     json_object_set(stdlib, "source", "src-kain/plugins/stdlib/greeblefs/plugin.kn")
-    json_object_set(stdlib, "summary", "Kain plugin authoring vocabulary for GreebleFS workbenches, preview workbenches, tools, actions, authoring references, contracts, pipeline stages, FFI lanes, WASM artifacts, Cargo FFI, and compatibility output.")
+    json_object_set(stdlib, "summary", "Kain plugin authoring vocabulary for GreebleFS workbenches, preview workbenches, shared host UI components, tools, actions, authoring references, contracts, pipeline stages, Fabric multi-FFI sessions, FFI lanes, WASM artifacts, Cargo FFI, and compatibility output.")
     json_object_set(stdlib, "surfaceKinds", surface_kinds)
     json_object_set(stdlib, "ffiLanes", ffi_lanes)
     json_object_set(stdlib, "rendererKinds", string_array_5("kain-host", "react-compat", "wasm-panel", "semantic-surface", "generated-compat"))
     json_object_set(stdlib, "toolKinds", string_array_5("image-converter", "asset-pipeline", "analysis-workbench", "dcc-tool", "custom"))
+    json_object_set(stdlib, "hostUiPrimitives", string_array_5("path-input", "format-select", "action-strip", "mini-meter", "ffi-lane-strip"))
+    json_object_set(stdlib, "fabricRuntimes", string_array_5("kain", "python", "node", "c_abi", "rust_crate"))
+    json_object_set(stdlib, "fabricOutputContracts", string_array_5("value", "shared-image", "shared-buffer", "compute-plan", "artifact"))
     json_object_set(stdlib, "consumers", consumers)
     return stdlib
 

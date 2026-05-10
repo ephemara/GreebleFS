@@ -518,6 +518,9 @@ export interface OverlayPluginCapabilitySummary {
   kainFfiCapabilities?: number;
   kainWasmTargets?: number;
   kainCargoFfiTargets?: number;
+  kainHostUiComponents?: number;
+  kainFabricPipelines?: number;
+  kainFabricSteps?: number;
 }
 
 export interface OverlayPluginDiagnostics {
