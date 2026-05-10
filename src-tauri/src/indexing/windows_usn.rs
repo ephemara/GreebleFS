@@ -1,11 +1,8 @@
-use super::{
-    indexed_record_from_metadata, volume_key_for_path, IndexedPathBuildOutput, IndexedPathRecord,
-};
+use super::{volume_key_for_path, IndexedPathBuildOutput, IndexedPathRecord};
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::native_task_graph::NativeTaskCancellationToken;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fs;
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -17,10 +14,10 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     OPEN_EXISTING,
 };
-use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
     FSCTL_ENUM_USN_DATA, FSCTL_QUERY_USN_JOURNAL, MFT_ENUM_DATA_V0, USN_JOURNAL_DATA_V0,
 };
+use windows_sys::Win32::System::IO::DeviceIoControl;
 
 const USN_ENUM_BUFFER_BYTES: usize = 1024 * 1024;
 const WINDOWS_TICK_MS_DIVISOR: i64 = 10_000;
@@ -297,29 +294,21 @@ fn resolve_record_path(
         return cached.clone();
     }
     let record = records.get(file_ref)?;
-    let resolved = if record.name == "." || record.name.is_empty() || record.parent_file_ref == *file_ref {
-        Some(volume_root.to_path_buf())
-    } else if let Some(parent_path) =
-        resolve_record_path(&record.parent_file_ref, volume_root, records, memo)
-    {
-        Some(parent_path.join(&record.name))
-    } else {
-        None
-    };
+    let resolved =
+        if record.name == "." || record.name.is_empty() || record.parent_file_ref == *file_ref {
+            Some(volume_root.to_path_buf())
+        } else if let Some(parent_path) =
+            resolve_record_path(&record.parent_file_ref, volume_root, records, memo)
+        {
+            Some(parent_path.join(&record.name))
+        } else {
+            None
+        };
     memo.insert(file_ref.to_string(), resolved.clone());
     resolved
 }
 
 fn usn_record_to_indexed_record(path: &Path, record: &UsnRecord) -> IndexedPathRecord {
-    if let Ok(metadata) = fs::symlink_metadata(path) {
-        return indexed_record_from_metadata(
-            path,
-            &metadata,
-            Some(record.file_ref.clone()),
-            Some(record.parent_file_ref.clone()),
-        );
-    }
-
     let parent_path = path.parent().unwrap_or(path).to_path_buf();
     let is_dir = record.file_attributes & FILE_ATTRIBUTE_DIRECTORY != 0;
     let is_symlink = record.file_attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
@@ -354,7 +343,10 @@ fn usn_record_to_indexed_record(path: &Path, record: &UsnRecord) -> IndexedPathR
 }
 
 fn wide_null(value: &str) -> Vec<u16> {
-    OsStr::new(value).encode_wide().chain(std::iter::once(0)).collect()
+    OsStr::new(value)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 fn read_utf16_name(bytes: &[u8], offset: usize, byte_len: usize) -> Result<String, String> {

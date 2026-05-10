@@ -123,7 +123,6 @@ struct NativePoolPostedPayloadResponse {
 struct PathIndexBuildInput {
     requested_root_path: PathBuf,
     requested_root_key: String,
-    force_rebuild: bool,
     recursive_fallback: bool,
 }
 
@@ -236,7 +235,8 @@ impl PathIndexManager {
         let recursive_fallback = request.recursive_fallback.unwrap_or(true);
 
         if !force_rebuild {
-            if let Some(root) = load_root_status_for_key(&self.inner.db_path, &requested_root_key)? {
+            if let Some(root) = load_root_status_for_key(&self.inner.db_path, &requested_root_key)?
+            {
                 if root.state == "ready" && root.entry_count > 0 {
                     self.register_watcher(requested_root_path.clone(), requested_root_key.clone())?;
                     return Ok(PathIndexStartResponse {
@@ -282,7 +282,6 @@ impl PathIndexManager {
         let task_input = PathIndexBuildInput {
             requested_root_path: requested_root_path.clone(),
             requested_root_key: requested_root_key.clone(),
-            force_rebuild,
             recursive_fallback,
         };
 
@@ -290,7 +289,10 @@ impl PathIndexManager {
             NativeTaskRequest::new(
                 NativeTaskLane::Indexing,
                 NativeTaskPriority::Prefetch,
-                format!("Index filesystem hierarchy: {}", requested_root_path.display()),
+                format!(
+                    "Index filesystem hierarchy: {}",
+                    requested_root_path.display()
+                ),
             )
             .with_task_id(task_id.clone())
             .with_work_key(NativeTaskWorkKey::new(format!(
@@ -379,7 +381,10 @@ impl PathIndexManager {
             limit,
             include_hidden,
         )?;
-        Ok(records.into_iter().map(indexed_record_to_file_entry).collect())
+        Ok(records
+            .into_iter()
+            .map(indexed_record_to_file_entry)
+            .collect())
     }
 
     fn build_index_blocking(
@@ -517,7 +522,9 @@ pub fn register_native_handlers(app: &AppHandle) -> Result<(), String> {
         let args: PathIndexStartRequest = parse_native_args(request)?;
         let manager = app_for_start.state::<PathIndexManager>();
         let native_task_graph = app_for_start.state::<NativeTaskGraphManager>();
-        serialize_native_control_response(manager.start_index(native_task_graph.inner().clone(), args)?)
+        serialize_native_control_response(
+            manager.start_index(native_task_graph.inner().clone(), args)?,
+        )
     })?;
 
     let app_for_search = app.clone();
@@ -596,8 +603,12 @@ fn collect_walk_records(
     token: &NativeTaskCancellationToken,
 ) -> Result<(), String> {
     token.throw_if_cancelled()?;
-    let read_dir = fs::read_dir(directory)
-        .map_err(|error| format!("Failed to walk indexed directory {}: {error}", directory.display()))?;
+    let read_dir = fs::read_dir(directory).map_err(|error| {
+        format!(
+            "Failed to walk indexed directory {}: {error}",
+            directory.display()
+        )
+    })?;
     for entry in read_dir {
         token.throw_if_cancelled()?;
         let entry = match entry {
@@ -642,7 +653,11 @@ fn indexed_record_from_metadata(
         parent_key: ExplorerPathKey::from_path(&parent_path).into_string(),
         name: name.clone(),
         name_lower: name.to_ascii_lowercase(),
-        extension: if is_dir { String::new() } else { normalized_extension(path) },
+        extension: if is_dir {
+            String::new()
+        } else {
+            normalized_extension(path)
+        },
         size: if is_dir { 0 } else { metadata.len() },
         modified_ms: metadata_modified_ms(metadata),
         is_dir,
@@ -712,7 +727,10 @@ fn hydrate_record_metadata(record: &mut IndexedPathRecord) {
     }
 }
 
-fn spawn_path_index_event_worker(db_path: PathBuf, event_receiver: mpsc::Receiver<PathIndexFsEvent>) {
+fn spawn_path_index_event_worker(
+    db_path: PathBuf,
+    event_receiver: mpsc::Receiver<PathIndexFsEvent>,
+) {
     thread::Builder::new()
         .name("greeblefs-path-index-events".to_string())
         .spawn(move || {
@@ -734,19 +752,31 @@ fn apply_filesystem_event_path(db_path: &Path, root_key: &str, path: &Path) -> R
         delete_entry_subtree(db_path, root.root_id, &path_key)?;
         return Ok(());
     }
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("Failed to inspect changed indexed path {}: {error}", path.display()))?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "Failed to inspect changed indexed path {}: {error}",
+            path.display()
+        )
+    })?;
     let record = indexed_record_from_metadata(path, &metadata, None, None);
     upsert_index_entry(db_path, root.root_id, &record)
 }
 
 fn ensure_schema(db_path: &Path) -> Result<(), String> {
     if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Failed to create path index directory {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create path index directory {}: {error}",
+                parent.display()
+            )
+        })?;
     }
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database {}: {error}", db_path.display()))?;
+    let connection = Connection::open(db_path).map_err(|error| {
+        format!(
+            "Failed to open path index database {}: {error}",
+            db_path.display()
+        )
+    })?;
     connection
         .pragma_update(None, "journal_mode", "WAL")
         .map_err(|error| format!("Failed to enable WAL for path index database: {error}"))?;
@@ -990,7 +1020,11 @@ fn insert_index_record(
     Ok(())
 }
 
-fn upsert_index_entry(db_path: &Path, root_id: i64, record: &IndexedPathRecord) -> Result<(), String> {
+fn upsert_index_entry(
+    db_path: &Path,
+    root_id: i64,
+    record: &IndexedPathRecord,
+) -> Result<(), String> {
     let connection = Connection::open(db_path)
         .map_err(|error| format!("Failed to open path index database: {error}"))?;
     connection
@@ -1026,7 +1060,11 @@ fn upsert_index_entry(db_path: &Path, root_id: i64, record: &IndexedPathRecord) 
 fn delete_entry_subtree(db_path: &Path, root_id: i64, path_key: &str) -> Result<(), String> {
     let connection = Connection::open(db_path)
         .map_err(|error| format!("Failed to open path index database: {error}"))?;
-    let prefix = format!("{}{}", path_key.trim_end_matches('\\').trim_end_matches('/'), path_separator());
+    let prefix = format!(
+        "{}{}",
+        path_key.trim_end_matches('\\').trim_end_matches('/'),
+        path_separator()
+    );
     connection
         .execute(
             "DELETE FROM path_index_entries WHERE root_id = ?1 AND (path_key = ?2 OR path_key LIKE ?3)",
@@ -1051,9 +1089,7 @@ fn mark_root_error(db_path: &Path, root_key: &str, error: &str) -> Result<(), St
 #[derive(Debug)]
 struct PathIndexRootRecord {
     root_id: i64,
-    root_path: String,
     root_key: String,
-    state: String,
 }
 
 fn load_root_statuses(db_path: &Path) -> Result<Vec<PathIndexRootStatus>, String> {
@@ -1110,9 +1146,7 @@ fn load_root_record_for_key(
             |row| {
                 Ok(PathIndexRootRecord {
                     root_id: row.get(0)?,
-                    root_path: row.get(1)?,
                     root_key: row.get(2)?,
-                    state: row.get(3)?,
                 })
             },
         )
@@ -1135,9 +1169,7 @@ fn find_best_ready_root(
         .query_map([], |row| {
             Ok(PathIndexRootRecord {
                 root_id: row.get(0)?,
-                root_path: row.get(1)?,
                 root_key: row.get(2)?,
-                state: row.get(3)?,
             })
         })
         .map_err(|error| format!("Failed to query path index roots: {error}"))?;
@@ -1239,8 +1271,12 @@ fn search_entries(
 }
 
 fn row_to_root_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<PathIndexRootStatus> {
-    let indexed_at_ms = row.get::<_, Option<i64>>(8)?.map(|value| value.max(0) as u64);
-    let journal_id = row.get::<_, Option<i64>>(10)?.map(|value| value.max(0) as u64);
+    let indexed_at_ms = row
+        .get::<_, Option<i64>>(8)?
+        .map(|value| value.max(0) as u64);
+    let journal_id = row
+        .get::<_, Option<i64>>(10)?
+        .map(|value| value.max(0) as u64);
     Ok(PathIndexRootStatus {
         root_path: row.get(0)?,
         root_key: row.get(1)?,
@@ -1388,11 +1424,12 @@ fn normalize_requested_root_path(raw: &str) -> Result<PathBuf, String> {
     if trimmed.is_empty() {
         return Err("Path index root path cannot be empty".to_string());
     }
-    let normalized = if cfg!(target_os = "windows") && trimmed.len() == 2 && trimmed.as_bytes()[1] == b':' {
-        format!("{trimmed}\\")
-    } else {
-        trimmed.to_string()
-    };
+    let normalized =
+        if cfg!(target_os = "windows") && trimmed.len() == 2 && trimmed.as_bytes()[1] == b':' {
+            format!("{trimmed}\\")
+        } else {
+            trimmed.to_string()
+        };
     Ok(PathBuf::from(normalized))
 }
 
