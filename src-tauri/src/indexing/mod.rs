@@ -9,6 +9,7 @@ use crate::native_task_graph::{
     NativeTaskCancellationToken, NativeTaskGraphManager, NativeTaskLane, NativeTaskPriority,
     NativeTaskRequest, NativeTaskWorkKey,
 };
+use ignore::WalkState;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -26,6 +27,8 @@ mod windows_usn;
 
 const PATH_INDEX_DB_ENV: &str = "GREEBLEFS_PATH_INDEX_DB_PATH";
 const PATH_INDEX_SCHEMA_VERSION: i64 = 1;
+const PATH_INDEX_INSERT_CHUNK_SIZE: usize = 50_000;
+const PATH_INDEX_WALK_CHANNEL_BOUND: usize = 100_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -151,6 +154,24 @@ struct IndexedPathBuildOutput {
     journal_id: Option<u64>,
     last_usn: Option<i64>,
     records: Vec<IndexedPathRecord>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct PathIndexWriteStats {
+    entry_count: i64,
+    directory_count: i64,
+    file_count: i64,
+}
+
+impl PathIndexWriteStats {
+    fn observe(&mut self, record: &IndexedPathRecord) {
+        self.entry_count += 1;
+        if record.is_dir {
+            self.directory_count += 1;
+        } else {
+            self.file_count += 1;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -393,14 +414,7 @@ impl PathIndexManager {
         token: NativeTaskCancellationToken,
     ) -> Result<PathIndexRootStatus, String> {
         token.throw_if_cancelled()?;
-        let output = build_index_records(&input, &token)?;
-        token.throw_if_cancelled()?;
-        let status = replace_index_root(
-            &self.inner.db_path,
-            &input.requested_root_path,
-            &input.requested_root_key,
-            output,
-        )?;
+        let status = build_index_root_into_database(&self.inner.db_path, &input, &token)?;
         self.register_watcher(input.requested_root_path, input.requested_root_key)?;
         Ok(status)
     }
@@ -561,14 +575,24 @@ pub fn register_native_handlers(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn build_index_records(
+fn build_index_root_into_database(
+    db_path: &Path,
     input: &PathIndexBuildInput,
     token: &NativeTaskCancellationToken,
-) -> Result<IndexedPathBuildOutput, String> {
+) -> Result<PathIndexRootStatus, String> {
     #[cfg(target_os = "windows")]
     {
         match windows_usn::build_records_from_usn(&input.requested_root_path, token) {
-            Ok(output) => return Ok(output),
+            Ok(output) => {
+                token.throw_if_cancelled()?;
+                return replace_index_root(
+                    db_path,
+                    &input.requested_root_path,
+                    &input.requested_root_key,
+                    output,
+                    token,
+                );
+            }
             Err(error) if input.recursive_fallback => {
                 eprintln!("GreebleFS path index: Windows USN index fallback: {error}");
             }
@@ -576,59 +600,152 @@ fn build_index_records(
         }
     }
 
-    build_records_by_recursive_walk(&input.requested_root_path, token)
+    replace_index_root_from_recursive_walk(
+        db_path,
+        &input.requested_root_path,
+        &input.requested_root_key,
+        token,
+    )
 }
 
-fn build_records_by_recursive_walk(
+fn replace_index_root_from_recursive_walk(
+    db_path: &Path,
+    root_path: &Path,
+    root_key: &str,
+    token: &NativeTaskCancellationToken,
+) -> Result<PathIndexRootStatus, String> {
+    let mut connection = Connection::open(db_path)
+        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let root_id = prepare_replace_index_root(
+        &mut connection,
+        root_path,
+        root_key,
+        "recursiveWalk",
+        &volume_key_for_path(root_path),
+        None,
+        None,
+    )?;
+    let stats = insert_parallel_walk_records_chunked(&mut connection, root_id, root_path, token)?;
+    finalize_index_root(&mut connection, root_id, stats)?;
+    load_root_status_for_key(db_path, root_key)?
+        .ok_or_else(|| "Path index root disappeared after recursive walk commit".to_string())
+}
+
+fn insert_parallel_walk_records_chunked(
+    connection: &mut Connection,
+    root_id: i64,
     root_path: &Path,
     token: &NativeTaskCancellationToken,
-) -> Result<IndexedPathBuildOutput, String> {
-    let mut records = Vec::new();
-    collect_walk_records(root_path, &mut records, token)?;
-    Ok(IndexedPathBuildOutput {
-        source: "recursiveWalk".to_string(),
-        volume_key: volume_key_for_path(root_path),
-        journal_id: None,
-        last_usn: None,
-        records: records
-            .into_iter()
-            .filter(|record| record.path_key != ExplorerPathKey::from_path(root_path).as_str())
-            .collect(),
-    })
-}
+) -> Result<PathIndexWriteStats, String> {
+    let (sender, receiver) =
+        mpsc::sync_channel::<Result<IndexedPathRecord, String>>(PATH_INDEX_WALK_CHANNEL_BOUND);
+    let root_path_for_walk = root_path.to_path_buf();
+    let token_for_walk = token.clone();
+    let walker_thread = thread::Builder::new()
+        .name("greeblefs-path-index-walk".to_string())
+        .spawn(move || collect_walk_records_parallel(root_path_for_walk, token_for_walk, sender))
+        .map_err(|error| format!("Failed to spawn path index walker: {error}"))?;
 
-fn collect_walk_records(
-    directory: &Path,
-    records: &mut Vec<IndexedPathRecord>,
-    token: &NativeTaskCancellationToken,
-) -> Result<(), String> {
-    token.throw_if_cancelled()?;
-    let read_dir = fs::read_dir(directory).map_err(|error| {
-        format!(
-            "Failed to walk indexed directory {}: {error}",
-            directory.display()
-        )
-    })?;
-    for entry in read_dir {
+    let mut stats = PathIndexWriteStats::default();
+    let mut chunk = Vec::with_capacity(PATH_INDEX_INSERT_CHUNK_SIZE);
+    let mut first_error = None;
+
+    for message in receiver {
         token.throw_if_cancelled()?;
-        let entry = match entry {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let record = indexed_record_from_metadata(&path, &metadata, None, None);
-        let is_dir = record.is_dir;
-        let is_symlink = record.is_symlink;
-        records.push(record);
-        if is_dir && !is_symlink {
-            let _ = collect_walk_records(&path, records, token);
+        match message {
+            Ok(record) => {
+                chunk.push(record);
+                if chunk.len() >= PATH_INDEX_INSERT_CHUNK_SIZE {
+                    flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
+                }
+            }
+            Err(error) => {
+                first_error = Some(error);
+                break;
+            }
         }
     }
-    Ok(())
+
+    let walker_result = walker_thread
+        .join()
+        .map_err(|_| "Path index walker thread panicked".to_string())?;
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    walker_result?;
+    flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
+    Ok(stats)
+}
+
+fn collect_walk_records_parallel(
+    root_path: PathBuf,
+    token: NativeTaskCancellationToken,
+    sender: mpsc::SyncSender<Result<IndexedPathRecord, String>>,
+) -> Result<(), String> {
+    let root_key = ExplorerPathKey::from_path(&root_path).into_string();
+    let first_error = Arc::new(Mutex::new(None::<String>));
+    let worker_count = thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(4)
+        .clamp(2, 16);
+    let mut builder = ignore::WalkBuilder::new(&root_path);
+    builder
+        .hidden(false)
+        .ignore(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .parents(false)
+        .follow_links(false)
+        .threads(worker_count);
+    let walker = builder.build_parallel();
+    walker.run(|| {
+        let sender = sender.clone();
+        let token = token.clone();
+        let root_key = root_key.clone();
+        let first_error = Arc::clone(&first_error);
+        Box::new(move |result| {
+            if token.is_cancelled() {
+                record_walk_error(&first_error, "Path index walk cancelled".to_string());
+                return WalkState::Quit;
+            }
+            let entry = match result {
+                Ok(value) => value,
+                Err(_) => return WalkState::Continue,
+            };
+            let path = entry.path();
+            if ExplorerPathKey::from_path(path).as_str() == root_key {
+                return WalkState::Continue;
+            }
+            let metadata = match fs::symlink_metadata(path) {
+                Ok(value) => value,
+                Err(_) => return WalkState::Continue,
+            };
+            let record = indexed_record_from_metadata(path, &metadata, None, None);
+            if sender.send(Ok(record)).is_err() {
+                record_walk_error(
+                    &first_error,
+                    "Path index writer stopped before walk completed".to_string(),
+                );
+                return WalkState::Quit;
+            }
+            WalkState::Continue
+        })
+    });
+    drop(sender);
+    let walk_error = match first_error.lock() {
+        Ok(error) => error.clone().map_or(Ok(()), Err),
+        Err(_) => Err("Path index walk error state is poisoned".to_string()),
+    };
+    walk_error
+}
+
+fn record_walk_error(error_slot: &Arc<Mutex<Option<String>>>, error: String) {
+    if let Ok(mut slot) = error_slot.lock() {
+        if slot.is_none() {
+            *slot = Some(error);
+        }
+    }
 }
 
 fn indexed_record_from_metadata(
@@ -750,8 +867,10 @@ fn apply_filesystem_event_path(db_path: &Path, root_key: &str, path: &Path) -> R
     let path_key = ExplorerPathKey::from_path(path).into_string();
     if !path.exists() {
         delete_entry_subtree(db_path, root.root_id, &path_key)?;
+        refresh_root_counts(db_path, root.root_id)?;
         return Ok(());
     }
+    let was_known = path_index_entry_exists(db_path, root.root_id, &path_key)?;
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         format!(
             "Failed to inspect changed indexed path {}: {error}",
@@ -759,7 +878,12 @@ fn apply_filesystem_event_path(db_path: &Path, root_key: &str, path: &Path) -> R
         )
     })?;
     let record = indexed_record_from_metadata(path, &metadata, None, None);
-    upsert_index_entry(db_path, root.root_id, &record)
+    let should_repair_subtree = record.is_dir && !record.is_symlink && !was_known;
+    upsert_index_entry(db_path, root.root_id, &record)?;
+    if should_repair_subtree {
+        upsert_directory_subtree(db_path, root.root_id, path)?;
+    }
+    refresh_root_counts(db_path, root.root_id)
 }
 
 fn ensure_schema(db_path: &Path) -> Result<(), String> {
@@ -906,9 +1030,38 @@ fn replace_index_root(
     root_path: &Path,
     root_key: &str,
     output: IndexedPathBuildOutput,
+    token: &NativeTaskCancellationToken,
 ) -> Result<PathIndexRootStatus, String> {
     let mut connection = Connection::open(db_path)
         .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let root_id = prepare_replace_index_root(
+        &mut connection,
+        root_path,
+        root_key,
+        &output.source,
+        &output.volume_key,
+        output.journal_id,
+        output.last_usn,
+    )?;
+    let records = output
+        .records
+        .into_iter()
+        .filter(|record| record.path_key != ExplorerPathKey::from_path(root_path).as_str());
+    let stats = insert_index_records_chunked(&mut connection, root_id, records, token)?;
+    finalize_index_root(&mut connection, root_id, stats)?;
+    load_root_status_for_key(db_path, root_key)?
+        .ok_or_else(|| "Path index root disappeared after commit".to_string())
+}
+
+fn prepare_replace_index_root(
+    connection: &mut Connection,
+    root_path: &Path,
+    root_key: &str,
+    source: &str,
+    volume_key: &str,
+    journal_id: Option<u64>,
+    last_usn: Option<i64>,
+) -> Result<i64, String> {
     let tx = connection
         .transaction()
         .map_err(|error| format!("Failed to start path index transaction: {error}"))?;
@@ -930,10 +1083,10 @@ fn replace_index_root(
         params![
             root_path.to_string_lossy().to_string(),
             root_key,
-            output.volume_key,
-            output.source,
-            output.journal_id.map(|value| value as i64),
-            output.last_usn,
+            volume_key,
+            source,
+            journal_id.map(|value| value as i64),
+            last_usn,
             now_ms() as i64
         ],
     )
@@ -950,6 +1103,45 @@ fn replace_index_root(
         params![root_id],
     )
     .map_err(|error| format!("Failed to clear old path index entries: {error}"))?;
+    tx.commit()
+        .map_err(|error| format!("Failed to commit path index root preparation: {error}"))?;
+    Ok(root_id)
+}
+
+fn insert_index_records_chunked<I>(
+    connection: &mut Connection,
+    root_id: i64,
+    records: I,
+    token: &NativeTaskCancellationToken,
+) -> Result<PathIndexWriteStats, String>
+where
+    I: IntoIterator<Item = IndexedPathRecord>,
+{
+    let mut stats = PathIndexWriteStats::default();
+    let mut chunk = Vec::with_capacity(PATH_INDEX_INSERT_CHUNK_SIZE);
+    for record in records {
+        token.throw_if_cancelled()?;
+        chunk.push(record);
+        if chunk.len() >= PATH_INDEX_INSERT_CHUNK_SIZE {
+            flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
+        }
+    }
+    flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
+    Ok(stats)
+}
+
+fn flush_index_record_chunk(
+    connection: &mut Connection,
+    root_id: i64,
+    chunk: &mut Vec<IndexedPathRecord>,
+    stats: &mut PathIndexWriteStats,
+) -> Result<(), String> {
+    if chunk.is_empty() {
+        return Ok(());
+    }
+    let tx = connection
+        .transaction()
+        .map_err(|error| format!("Failed to start path index insert chunk: {error}"))?;
     {
         let mut insert = tx
             .prepare(
@@ -961,14 +1153,25 @@ fn replace_index_root(
                 "#,
             )
             .map_err(|error| format!("Failed to prepare path index insert: {error}"))?;
-        for record in &output.records {
+        for record in chunk.iter() {
             insert_index_record(root_id, record, &mut insert)?;
+            stats.observe(record);
         }
     }
-    let directory_count = output.records.iter().filter(|entry| entry.is_dir).count() as i64;
-    let file_count = output.records.len() as i64 - directory_count;
-    tx.execute(
-        r#"
+    tx.commit()
+        .map_err(|error| format!("Failed to commit path index insert chunk: {error}"))?;
+    chunk.clear();
+    Ok(())
+}
+
+fn finalize_index_root(
+    connection: &mut Connection,
+    root_id: i64,
+    stats: PathIndexWriteStats,
+) -> Result<(), String> {
+    connection
+        .execute(
+            r#"
         UPDATE path_index_roots
         SET state = 'ready',
             entry_count = ?2,
@@ -978,19 +1181,16 @@ fn replace_index_root(
             last_error = NULL
         WHERE root_id = ?1
         "#,
-        params![
-            root_id,
-            output.records.len() as i64,
-            directory_count,
-            file_count,
-            now_ms() as i64
-        ],
-    )
-    .map_err(|error| format!("Failed to finalize path index root: {error}"))?;
-    tx.commit()
-        .map_err(|error| format!("Failed to commit path index transaction: {error}"))?;
-    load_root_status_for_key(db_path, root_key)?
-        .ok_or_else(|| "Path index root disappeared after commit".to_string())
+            params![
+                root_id,
+                stats.entry_count,
+                stats.directory_count,
+                stats.file_count,
+                now_ms() as i64
+            ],
+        )
+        .map_err(|error| format!("Failed to finalize path index root: {error}"))?;
+    Ok(())
 }
 
 fn insert_index_record(
@@ -1054,6 +1254,53 @@ fn upsert_index_entry(
             ],
         )
         .map_err(|error| format!("Failed to upsert path index entry: {error}"))?;
+    Ok(())
+}
+
+fn upsert_directory_subtree(db_path: &Path, root_id: i64, directory: &Path) -> Result<(), String> {
+    let mut connection = Connection::open(db_path)
+        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let token = NativeTaskCancellationToken::new();
+    let _ = insert_parallel_walk_records_chunked(&mut connection, root_id, directory, &token)?;
+    Ok(())
+}
+
+fn path_index_entry_exists(db_path: &Path, root_id: i64, path_key: &str) -> Result<bool, String> {
+    let connection = Connection::open(db_path)
+        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM path_index_entries WHERE root_id = ?1 AND path_key = ?2)",
+            params![root_id, path_key],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|error| format!("Failed to check path index entry existence: {error}"))?;
+    Ok(exists != 0)
+}
+
+fn refresh_root_counts(db_path: &Path, root_id: i64) -> Result<(), String> {
+    let connection = Connection::open(db_path)
+        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    connection
+        .execute(
+            r#"
+            UPDATE path_index_roots
+            SET entry_count = (
+                    SELECT COUNT(*) FROM path_index_entries WHERE root_id = ?1
+                ),
+                directory_count = (
+                    SELECT COUNT(*) FROM path_index_entries WHERE root_id = ?1 AND is_dir = 1
+                ),
+                file_count = (
+                    SELECT COUNT(*) FROM path_index_entries WHERE root_id = ?1 AND is_dir = 0
+                ),
+                indexed_at_ms = ?2,
+                last_error = NULL
+            WHERE root_id = ?1
+            "#,
+            params![root_id, now_ms() as i64],
+        )
+        .map_err(|error| format!("Failed to refresh path index root counts: {error}"))?;
     Ok(())
 }
 

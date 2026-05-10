@@ -9145,6 +9145,19 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: MCP `smoke_screenshot` and `smoke` against the native WebView.
   - Known unrelated red: MCP `runtime_stack_quick` still fails from existing Settings/default drift, not from this cache/native directory lane.
 
+# 2026-05-10 - Durable Explorer Path Index And USN Hot Path
+
+- GreebleFS now has the persistent path/hierarchy index that was missing after the warm-folder cache pass.
+  - `src-tauri/src/indexing/**` owns the SQLite path-index store, root status, watcher invalidation, search/list queries, native-control status/start/search handlers, and `pathIndexListDirSnapshot` native-buffer-pool delivery.
+  - `src/runtime/explorerPathIndex.ts` is the frontend boundary. Local folder opens warm the index in the background and try the indexed native-buffer directory snapshot before falling back to the normal live directory snapshot.
+  - `src/generated/tauri.ts` includes the Specta command bindings for `pathIndexGetStatus`, `pathIndexStart`, `pathIndexListDir`, and `pathIndexSearch`.
+- Critical performance rule:
+  - The Windows USN/MFT enumeration path in `src-tauri/src/indexing/windows_usn.rs` must stay pure USN data. Do not add per-record `fs::metadata`, `fs::symlink_metadata`, canonicalization, or other path-resolving syscalls inside the MFT loop or record conversion. Hydrate file size/fresh metadata only when serving the current directory's visible children.
+- Validation:
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - Passed: `bun run bindings:generate`
+  - Baseline-red: repo-wide `bunx tsc --noEmit` still fails on unrelated existing TS/vendor/settings issues; targeted checks also pull unrelated app imports and do not isolate this lane cleanly.
+
 # 2026-05-10 - Global Themed Select Primitive
 
 - Replaced visible browser-native dropdowns across the app, Settings legacy/deep sections, Kain surfaces, Explorer workbenches, and first-party plugin/package code so native option hover colors cannot escape the GreebleFS theme again.

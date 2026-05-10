@@ -552,7 +552,8 @@ impl NativeTaskGraphManager {
                 }
 
                 let token_for_work = token.clone();
-                let joined = tokio::task::spawn_blocking(move || work(token_for_work)).await;
+                let joined =
+                    tauri::async_runtime::spawn_blocking(move || work(token_for_work)).await;
                 let mut result = joined.unwrap_or_else(|join_error| {
                     Err(format!("Native blocking task failed to join: {join_error}"))
                 });
@@ -1097,7 +1098,7 @@ struct NativeTaskLaneTelemetryAccumulator {
 }
 
 fn spawn_native_task(inner: Arc<NativeTaskGraphInner>, task: NativeQueuedTask) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let queued_at = task.queued_at;
         let task_id = task.id.clone();
         let lane = task.lane;
