@@ -1,5 +1,6 @@
 import type { ExplorerViewportSchedulerPolicy } from "../config/explorerPerformance";
 import {
+  createBoundedWorkLanePlan,
   runBoundedWorkLane,
   type BoundedWorkLaneCandidate,
 } from "./boundedWorkLane";
@@ -48,6 +49,11 @@ export interface ExplorerViewportSchedulerCandidateResult<TEntry, TValue> {
 export interface ExplorerViewportSchedulerRunResult<TEntry, TValue> {
   scheduledCandidates: ExplorerViewportWorkCandidate<TEntry>[];
   results: ExplorerViewportSchedulerCandidateResult<TEntry, TValue>[];
+  telemetry: ExplorerViewportSchedulerTelemetry;
+}
+
+export interface ExplorerViewportSchedulerSelectionResult<TEntry> {
+  scheduledCandidates: ExplorerViewportWorkCandidate<TEntry>[];
   telemetry: ExplorerViewportSchedulerTelemetry;
 }
 
@@ -199,6 +205,40 @@ export async function runExplorerViewportThumbnailScheduler<TEntry, TValue>(
       maxCandidateQueueDepth: laneResult.telemetry.maxCandidateQueueDepth,
       queueOverflowStrategy: laneResult.telemetry.queueOverflowStrategy,
       priorityCounts: createPriorityCounts(laneResult.scheduledCandidates),
+    },
+  };
+}
+
+export function selectExplorerViewportThumbnailScheduledCandidates<TEntry>(
+  candidates: readonly ExplorerViewportWorkCandidate<TEntry>[],
+  policy: ExplorerViewportSchedulerPolicy,
+): ExplorerViewportSchedulerSelectionResult<TEntry> {
+  const lanePlan = createBoundedWorkLanePlan<
+    ExplorerViewportWorkCandidate<TEntry>,
+    ExplorerViewportWorkPriority
+  >(candidates, {
+    batchSize: policy.batchSize,
+    maxConcurrentWork: policy.maxConcurrentThumbnailReads,
+    maxCandidateQueueDepth: policy.maxCandidateQueueDepth,
+    queueOverflowStrategy: policy.queueOverflowStrategy,
+    cancelStaleBatches: policy.cancelStaleBatches,
+  });
+
+  return {
+    scheduledCandidates: lanePlan.scheduledCandidates,
+    telemetry: {
+      candidateCount: candidates.length,
+      queuedCount: lanePlan.queuedCandidates.length,
+      scheduledCount: lanePlan.scheduledCandidates.length,
+      completedCount: 0,
+      failedCount: 0,
+      droppedCount: lanePlan.droppedCandidates.length,
+      coalescedCount: lanePlan.coalescedCount,
+      cancelled: false,
+      maxConcurrentThumbnailReads: lanePlan.maxConcurrentWork,
+      maxCandidateQueueDepth: policy.maxCandidateQueueDepth,
+      queueOverflowStrategy: policy.queueOverflowStrategy,
+      priorityCounts: createPriorityCounts(lanePlan.scheduledCandidates),
     },
   };
 }

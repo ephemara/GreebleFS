@@ -4,6 +4,10 @@ use crate::explorer_identity::{
     PersistedThumbnailArtifactRecordInput,
 };
 use crate::ipc_runtime::artifacts::RegisterArtifactPathRequest;
+use crate::native_task_graph::{
+    NativeTaskGeneration, NativeTaskGraphManager, NativeTaskLane, NativeTaskPriority,
+    NativeTaskRequest, NativeTaskSubmission, NativeTaskWorkKey,
+};
 use ab_glyph::{FontArc, PxScale};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use fontdb::{Database, Family, Query, Source};
@@ -20,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::time::UNIX_EPOCH;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 
 const THUMBNAIL_MAX_DIMENSION: u32 = 1_024;
 const THUMBNAIL_IMAGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
@@ -107,6 +111,30 @@ pub struct ExplorerThumbnailArtifact {
     pub hover_frame_delay_ms: Option<u32>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerEntryThumbnailArtifactsBatchRequest {
+    pub requests: Vec<ExplorerEntryThumbnailRequest>,
+    pub generation: Option<NativeTaskGeneration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerEntryThumbnailArtifactBatchResult {
+    pub index: u32,
+    pub path: String,
+    pub artifact: Option<ExplorerThumbnailArtifact>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerEntryThumbnailArtifactsBatchResponse {
+    pub results: Vec<ExplorerEntryThumbnailArtifactBatchResult>,
+    pub completed_count: u32,
+    pub failed_count: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThumbnailRenderKind {
     Image,
@@ -178,14 +206,162 @@ pub async fn fs_read_entry_thumbnail(
 #[specta::specta]
 pub async fn fs_read_entry_thumbnail_artifact(
     app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     request: ExplorerEntryThumbnailRequest,
 ) -> Result<ExplorerThumbnailArtifact, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    read_entry_thumbnail_artifact_with_task_graph(
+        app,
+        native_task_graph.inner().clone(),
+        request,
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_read_entry_thumbnail_artifacts_batch(
+    app: AppHandle,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
+    request: ExplorerEntryThumbnailArtifactsBatchRequest,
+) -> Result<ExplorerEntryThumbnailArtifactsBatchResponse, String> {
+    read_entry_thumbnail_artifacts_batch_with_task_graph(
+        app,
+        native_task_graph.inner().clone(),
+        request,
+    )
+    .await
+}
+
+pub(crate) async fn read_entry_thumbnail_artifact_with_task_graph(
+    app: AppHandle,
+    native_task_graph: NativeTaskGraphManager,
+    request: ExplorerEntryThumbnailRequest,
+    generation: Option<NativeTaskGeneration>,
+) -> Result<ExplorerThumbnailArtifact, String> {
+    submit_thumbnail_artifact_task(app, &native_task_graph, request, generation)?
+        .wait()
+        .await
+}
+
+pub(crate) async fn read_entry_thumbnail_artifacts_batch_with_task_graph(
+    app: AppHandle,
+    native_task_graph: NativeTaskGraphManager,
+    request: ExplorerEntryThumbnailArtifactsBatchRequest,
+) -> Result<ExplorerEntryThumbnailArtifactsBatchResponse, String> {
+    let max_batch_len = native_task_graph.policy().max_queued_tasks;
+    if request.requests.len() > max_batch_len {
+        return Err(format!(
+            "Thumbnail batch has {} requests; native task graph accepts at most {} queued tasks.",
+            request.requests.len(),
+            max_batch_len
+        ));
+    }
+
+    let generation = request.generation;
+    let mut pending = Vec::with_capacity(request.requests.len());
+    let mut results = Vec::new();
+
+    for (index, thumbnail_request) in request.requests.into_iter().enumerate() {
+        let path = thumbnail_request.path.clone();
+        match submit_thumbnail_artifact_task(
+            app.clone(),
+            &native_task_graph,
+            thumbnail_request,
+            generation,
+        ) {
+            Ok(submission) => pending.push((index as u32, path, submission)),
+            Err(error) => results.push(ExplorerEntryThumbnailArtifactBatchResult {
+                index: index as u32,
+                path,
+                artifact: None,
+                error: Some(error),
+            }),
+        }
+    }
+
+    for (index, path, submission) in pending {
+        match submission.wait().await {
+            Ok(artifact) => results.push(ExplorerEntryThumbnailArtifactBatchResult {
+                index,
+                path,
+                artifact: Some(artifact),
+                error: None,
+            }),
+            Err(error) => results.push(ExplorerEntryThumbnailArtifactBatchResult {
+                index,
+                path,
+                artifact: None,
+                error: Some(error),
+            }),
+        }
+    }
+
+    results.sort_by_key(|result| result.index);
+    let completed_count = results
+        .iter()
+        .filter(|result| result.artifact.is_some())
+        .count() as u32;
+    let failed_count = results.len() as u32 - completed_count;
+
+    Ok(ExplorerEntryThumbnailArtifactsBatchResponse {
+        results,
+        completed_count,
+        failed_count,
+    })
+}
+
+fn submit_thumbnail_artifact_task(
+    app: AppHandle,
+    native_task_graph: &NativeTaskGraphManager,
+    request: ExplorerEntryThumbnailRequest,
+    generation: Option<NativeTaskGeneration>,
+) -> Result<NativeTaskSubmission<ExplorerThumbnailArtifact>, String> {
+    let mut task_request = NativeTaskRequest::new(
+        NativeTaskLane::ThumbnailDecode,
+        NativeTaskPriority::Visible,
+        format!("thumbnail artifact {}", thumbnail_task_label(&request.path)),
+    )
+    .with_work_key(NativeTaskWorkKey::new(build_thumbnail_task_work_key(
+        &request,
+    )));
+
+    if let Some(generation) = generation {
+        task_request = task_request.with_generation(generation).cancel_stale(true);
+    }
+
+    native_task_graph.submit_blocking(task_request, move |token| {
+        token.throw_if_cancelled()?;
         let normalized = normalize_thumbnail_request(request)?;
+        token.throw_if_cancelled()?;
         build_entry_thumbnail_artifact(&app, crate::gpu_runtime::global_gpu_runtime(), &normalized)
     })
-    .await
-    .map_err(|error| format!("Thumbnail artifact generation task failed to join: {error}"))?
+}
+
+fn build_thumbnail_task_work_key(request: &ExplorerEntryThumbnailRequest) -> String {
+    [
+        "thumbnail-artifact".to_string(),
+        request.path.trim().to_string(),
+        request.max_width.to_string(),
+        request.max_height.to_string(),
+        request
+            .include_video_hover_scrub
+            .unwrap_or(false)
+            .to_string(),
+        request.video_hover_frame_count.unwrap_or(0).to_string(),
+        request.entity_id.clone().unwrap_or_default(),
+        request.content_revision.clone().unwrap_or_default(),
+    ]
+    .join("::")
+}
+
+fn thumbnail_task_label(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -592,6 +768,10 @@ fn classify_thumbnail_kind(path: &Path) -> Result<ThumbnailRenderKind, String> {
         return Ok(ThumbnailRenderKind::Image);
     }
 
+    if is_image_extension(&extension) {
+        return Ok(ThumbnailRenderKind::Image);
+    }
+
     if fs::metadata(path)
         .map_err(|error| format!("Failed to read file metadata '{}': {error}", path.display()))?
         .len()
@@ -627,6 +807,30 @@ fn normalized_extension(path: &Path) -> String {
         .trim()
         .trim_start_matches('.')
         .to_ascii_lowercase()
+}
+
+fn is_image_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "avif"
+            | "bmp"
+            | "dds"
+            | "exr"
+            | "farbfeld"
+            | "ff"
+            | "gif"
+            | "hdr"
+            | "ico"
+            | "jpg"
+            | "jpeg"
+            | "png"
+            | "pnm"
+            | "qoi"
+            | "tga"
+            | "tif"
+            | "tiff"
+            | "webp"
+    )
 }
 
 fn is_video_extension(extension: &str) -> bool {

@@ -41,7 +41,7 @@
       "directoryScan": 2,
       "recursiveSearch": 2,
       "checksum": 1,
-      "thumbnailDecode": 0,
+      "thumbnailDecode": 4,
       "previewRead": 2,
       "archive": 1,
       "indexing": 0,

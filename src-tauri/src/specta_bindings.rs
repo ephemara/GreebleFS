@@ -134,8 +134,10 @@ use crate::terminal::{
     TerminalWriteRequest,
 };
 use crate::thumbnail_commands::{
-    ExplorerEntryThumbnail, ExplorerEntryThumbnailRequest, ExplorerThumbnailArtifact,
-    ExplorerThumbnailKind, ExplorerVideoHoverFrame,
+    ExplorerEntryThumbnail, ExplorerEntryThumbnailArtifactBatchResult,
+    ExplorerEntryThumbnailArtifactsBatchRequest, ExplorerEntryThumbnailArtifactsBatchResponse,
+    ExplorerEntryThumbnailRequest, ExplorerThumbnailArtifact, ExplorerThumbnailKind,
+    ExplorerVideoHoverFrame,
 };
 use crate::usr_profiles::{
     UsrManagedContentDirectoryStack, UsrProfileChangedEvent, UsrProfileCreateRequest,
@@ -333,6 +335,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_read_image_thumbnail,
             crate::thumbnail_commands::fs_read_entry_thumbnail,
             crate::thumbnail_commands::fs_read_entry_thumbnail_artifact,
+            crate::thumbnail_commands::fs_read_entry_thumbnail_artifacts_batch,
             crate::fs_commands::fs_write_file,
             crate::fs_commands::fs_get_runtime_cache_policy,
             crate::fs_commands::fs_list_dir_uncached,
@@ -667,6 +670,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerEntryThumbnail>()
         .typ::<ExplorerEntryThumbnailRequest>()
         .typ::<ExplorerThumbnailArtifact>()
+        .typ::<ExplorerEntryThumbnailArtifactsBatchRequest>()
+        .typ::<ExplorerEntryThumbnailArtifactBatchResult>()
+        .typ::<ExplorerEntryThumbnailArtifactsBatchResponse>()
         .typ::<PluginBackendResult>()
         .typ::<PluginDirectoryWatchEvent>()
         .typ::<PythonRuntimeConfig>()

@@ -77,6 +77,9 @@ import {
   type ExplorerDuplicateScanStartResponse,
   type ExplorerDuplicateScanStatus,
   type ExplorerEntryThumbnail,
+  type ExplorerEntryThumbnailArtifactBatchResult,
+  type ExplorerEntryThumbnailArtifactsBatchRequest,
+  type ExplorerEntryThumbnailArtifactsBatchResponse,
   type ExplorerThumbnailArtifact,
   type ExplorerEntryThumbnailRequest,
   type ExplorerSavedSearchRecord,
@@ -204,6 +207,12 @@ export type ExplorerDuplicateScan = ExplorerDuplicateScanStatus;
 export type ExplorerEntryThumbnailData = ExplorerEntryThumbnail;
 export type ExplorerEntryThumbnailInput = ExplorerEntryThumbnailRequest;
 export type ExplorerThumbnailArtifactData = ExplorerThumbnailArtifact;
+export type ExplorerEntryThumbnailArtifactsBatchInput =
+  ExplorerEntryThumbnailArtifactsBatchRequest;
+export type ExplorerEntryThumbnailArtifactBatchItem =
+  ExplorerEntryThumbnailArtifactBatchResult;
+export type ExplorerEntryThumbnailArtifactsBatchData =
+  ExplorerEntryThumbnailArtifactsBatchResponse;
 export type ExplorerChecksumInfo = FsChecksumEntryInfo;
 export type ExplorerItemProperties = FsItemPropertiesInfo;
 export type ExplorerJumpFilterEntryInput = FsJumpFilterEntry;
@@ -2021,6 +2030,37 @@ export async function readExplorerThumbnailArtifact(
     );
   }
   return unwrapTauriResult(await commands.fsReadEntryThumbnailArtifact(request));
+}
+
+export async function readExplorerThumbnailArtifactsBatch(
+  request: ExplorerEntryThumbnailArtifactsBatchInput,
+): Promise<ExplorerEntryThumbnailArtifactsBatchData> {
+  if (
+    request.requests.some(
+      (entryRequest) => getExplorerPathSourceKind(entryRequest.path) !== "local",
+    )
+  ) {
+    throw new Error(
+      "Generated thumbnail artifact batches are only available for local filesystem items.",
+    );
+  }
+  if (shouldUseExplorerNativeControl("thumbnailGeneration")) {
+    return callGreebleNativeWithInvokeFallback<
+      ExplorerEntryThumbnailArtifactsBatchData,
+      ExplorerEntryThumbnailArtifactsBatchInput
+    >(
+      "explorer",
+      "readThumbnailArtifactsBatch",
+      request,
+      () =>
+        commands
+          .fsReadEntryThumbnailArtifactsBatch(request)
+          .then(unwrapTauriResult),
+    );
+  }
+  return unwrapTauriResult(
+    await commands.fsReadEntryThumbnailArtifactsBatch(request),
+  );
 }
 
 export async function renameExplorerPath(

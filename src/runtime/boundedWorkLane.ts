@@ -54,6 +54,17 @@ export interface BoundedWorkLaneRunResult<
   telemetry: BoundedWorkLaneTelemetry<TPriority>;
 }
 
+export interface BoundedWorkLanePlan<
+  TCandidate extends BoundedWorkLaneCandidate<TPriority>,
+  TPriority extends string = string,
+> {
+  queuedCandidates: TCandidate[];
+  scheduledCandidates: TCandidate[];
+  droppedCandidates: TCandidate[];
+  coalescedCount: number;
+  maxConcurrentWork: number;
+}
+
 export interface RunBoundedWorkLaneInput<
   TCandidate extends BoundedWorkLaneCandidate<TPriority>,
   TValue,
@@ -81,21 +92,12 @@ export async function runBoundedWorkLane<
 >(
   input: RunBoundedWorkLaneInput<TCandidate, TValue, TPriority>,
 ): Promise<BoundedWorkLaneRunResult<TCandidate, TValue, TPriority>> {
-  const queue = normalizeBoundedWorkQueue<TCandidate, TPriority>(
+  const plan = createBoundedWorkLanePlan<TCandidate, TPriority>(
     input.candidates,
     input.policy,
   );
-  const scheduledCandidates = queue.queuedCandidates.slice(
-    0,
-    normalizePositiveInteger(input.policy.batchSize, 1),
-  );
-  const maxConcurrentWork = Math.max(
-    1,
-    Math.min(
-      normalizePositiveInteger(input.policy.maxConcurrentWork, 1),
-      scheduledCandidates.length || 1,
-    ),
-  );
+  const scheduledCandidates = plan.scheduledCandidates;
+  const maxConcurrentWork = plan.maxConcurrentWork;
   const results: BoundedWorkLaneCandidateResult<TCandidate, TValue>[] = [];
   let nextCandidateIndex = 0;
   let cancelled = false;
@@ -158,18 +160,18 @@ export async function runBoundedWorkLane<
   const failedCount = results.filter((result) => result.status === "rejected")
     .length;
   return {
-    queuedCandidates: queue.queuedCandidates,
+    queuedCandidates: plan.queuedCandidates,
     scheduledCandidates,
-    droppedCandidates: queue.droppedCandidates,
+    droppedCandidates: plan.droppedCandidates,
     results,
     telemetry: {
       candidateCount: input.candidates.length,
-      queuedCount: queue.queuedCandidates.length,
+      queuedCount: plan.queuedCandidates.length,
       scheduledCount: scheduledCandidates.length,
       completedCount: results.length,
       failedCount,
-      droppedCount: queue.droppedCandidates.length,
-      coalescedCount: queue.coalescedCount,
+      droppedCount: plan.droppedCandidates.length,
+      coalescedCount: plan.coalescedCount,
       cancelled,
       maxConcurrentWork,
       maxCandidateQueueDepth: normalizePositiveInteger(
@@ -181,6 +183,38 @@ export async function runBoundedWorkLane<
         scheduledCandidates,
       ),
     },
+  };
+}
+
+export function createBoundedWorkLanePlan<
+  TCandidate extends BoundedWorkLaneCandidate<TPriority>,
+  TPriority extends string = string,
+>(
+  candidates: readonly TCandidate[],
+  policy: BoundedWorkLanePolicy,
+): BoundedWorkLanePlan<TCandidate, TPriority> {
+  const queue = normalizeBoundedWorkQueue<TCandidate, TPriority>(
+    candidates,
+    policy,
+  );
+  const scheduledCandidates = queue.queuedCandidates.slice(
+    0,
+    normalizePositiveInteger(policy.batchSize, 1),
+  );
+  const maxConcurrentWork = Math.max(
+    1,
+    Math.min(
+      normalizePositiveInteger(policy.maxConcurrentWork, 1),
+      scheduledCandidates.length || 1,
+    ),
+  );
+
+  return {
+    queuedCandidates: queue.queuedCandidates,
+    scheduledCandidates,
+    droppedCandidates: queue.droppedCandidates,
+    coalescedCount: queue.coalescedCount,
+    maxConcurrentWork,
   };
 }
 

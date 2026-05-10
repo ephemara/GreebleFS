@@ -4,6 +4,7 @@ import type { ExplorerViewportSchedulerPolicy } from "../config/explorerPerforma
 import {
   buildExplorerViewportThumbnailWorkCandidates,
   runExplorerViewportThumbnailScheduler,
+  selectExplorerViewportThumbnailScheduledCandidates,
 } from "../runtime/explorerViewportThumbnailScheduler";
 
 interface TestEntry {
@@ -218,5 +219,44 @@ describe("explorerViewportThumbnailScheduler", () => {
     expect(result.telemetry.droppedCount).toBe(5);
     expect(result.telemetry.maxCandidateQueueDepth).toBe(3);
     expect(result.telemetry.queueOverflowStrategy).toBe("drop-lowest-priority");
+  });
+
+  it("selects a bounded batch for the native thumbnail artifact lane", () => {
+    const entries = Array.from({ length: 8 }, (_, index) => createEntry(index));
+    const policy: ExplorerViewportSchedulerPolicy = {
+      ...basePolicy,
+      batchSize: 4,
+      maxConcurrentThumbnailReads: 2,
+      maxCandidateQueueDepth: 5,
+      forwardPrefetchViewports: 1,
+      backwardPrefetchViewports: 0,
+    };
+    const candidates = buildExplorerViewportThumbnailWorkCandidates({
+      entries,
+      viewportStartIndex: 0,
+      viewportEndIndex: 4,
+      policy,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: (entry) =>
+        `${entry.entityId}::${entry.contentRevision}`,
+      shouldScheduleEntry: () => true,
+    });
+
+    const selection = selectExplorerViewportThumbnailScheduledCandidates(
+      candidates,
+      policy,
+    );
+
+    expect(selection.scheduledCandidates.map((candidate) => candidate.path)).toEqual([
+      "/entry-0.png",
+      "/entry-1.png",
+      "/entry-2.png",
+      "/entry-3.png",
+    ]);
+    expect(selection.telemetry.scheduledCount).toBe(4);
+    expect(selection.telemetry.queuedCount).toBe(5);
+    expect(selection.telemetry.droppedCount).toBe(3);
+    expect(selection.telemetry.completedCount).toBe(0);
+    expect(selection.telemetry.maxConcurrentThumbnailReads).toBe(2);
   });
 });

@@ -8,6 +8,7 @@ import {
   listExplorerTasks,
   openExplorerPathWithDialog,
   readExplorerThumbnailArtifact,
+  readExplorerThumbnailArtifactsBatch,
   renameExplorerPath,
   searchExplorerEntriesWithDiagnostics,
   transferExplorerItems,
@@ -165,6 +166,64 @@ describe("explorer backend native lanes", () => {
         entityId: null,
         contentRevision: null,
       },
+      expect.any(Function),
+    );
+    expect(invokeSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes thumbnail artifact batches through native control with generated invoke fallback", async () => {
+    const request = {
+      requests: [
+        {
+          path: "D:/demo/image-a.png",
+          maxWidth: 160,
+          maxHeight: 120,
+          includeVideoHoverScrub: false,
+          videoHoverFrameCount: null,
+          entityId: "entity-a",
+          contentRevision: "rev-a",
+        },
+        {
+          path: "D:/demo/image-b.png",
+          maxWidth: 160,
+          maxHeight: 120,
+          includeVideoHoverScrub: false,
+          videoHoverFrameCount: null,
+          entityId: "entity-b",
+          contentRevision: "rev-b",
+        },
+      ],
+      generation: 42,
+    };
+    const nativeResponse = {
+      results: [
+        {
+          index: 0,
+          path: "D:/demo/image-a.png",
+          artifact: artifact("D:/demo/image-a.png"),
+          error: null,
+        },
+        {
+          index: 1,
+          path: "D:/demo/image-b.png",
+          artifact: artifact("D:/demo/image-b.png"),
+          error: null,
+        },
+      ],
+      completedCount: 2,
+      failedCount: 0,
+    };
+    nativeControlMock.callGreebleNativeWithInvokeFallback.mockResolvedValue(nativeResponse);
+    const invokeSpy = vi.spyOn(commands, "fsReadEntryThumbnailArtifactsBatch");
+
+    await expect(readExplorerThumbnailArtifactsBatch(request)).resolves.toBe(
+      nativeResponse,
+    );
+
+    expect(nativeControlMock.callGreebleNativeWithInvokeFallback).toHaveBeenCalledWith(
+      "explorer",
+      "readThumbnailArtifactsBatch",
+      request,
       expect.any(Function),
     );
     expect(invokeSpy).not.toHaveBeenCalled();

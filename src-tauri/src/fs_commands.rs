@@ -36,7 +36,9 @@ use crate::runtime_pipeline::{
     HOST_EVENT_TOPIC_TASKS_PROGRESS,
 };
 use crate::telemetry::{finish_native_span, start_native_span, TelemetryConfig, TelemetryManager};
-use crate::thumbnail_commands::ExplorerEntryThumbnailRequest;
+use crate::thumbnail_commands::{
+    ExplorerEntryThumbnailArtifactsBatchRequest, ExplorerEntryThumbnailRequest,
+};
 pub use crate::volume_inventory::DriveInfo;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
@@ -3309,13 +3311,42 @@ pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
         "readThumbnailArtifact",
         move |request| {
             let args: ExplorerEntryThumbnailRequest = parse_native_pool_args(request)?;
+            let native_task_graph = app_for_thumbnail_artifact
+                .state::<NativeTaskGraphManager>()
+                .inner()
+                .clone();
             let artifact = tauri::async_runtime::block_on(
-                crate::thumbnail_commands::fs_read_entry_thumbnail_artifact(
+                crate::thumbnail_commands::read_entry_thumbnail_artifact_with_task_graph(
                     app_for_thumbnail_artifact.clone(),
+                    native_task_graph,
                     args,
+                    None,
                 ),
             )?;
             serialize_native_control_response(artifact)
+        },
+    )?;
+
+    let app_for_thumbnail_artifact_batch = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "readThumbnailArtifactsBatch",
+        move |request| {
+            let args: ExplorerEntryThumbnailArtifactsBatchRequest =
+                parse_native_pool_args(request)?;
+            let native_task_graph = app_for_thumbnail_artifact_batch
+                .state::<NativeTaskGraphManager>()
+                .inner()
+                .clone();
+            let response = tauri::async_runtime::block_on(
+                crate::thumbnail_commands::read_entry_thumbnail_artifacts_batch_with_task_graph(
+                    app_for_thumbnail_artifact_batch.clone(),
+                    native_task_graph,
+                    args,
+                ),
+            )?;
+            serialize_native_control_response(response)
         },
     )?;
 

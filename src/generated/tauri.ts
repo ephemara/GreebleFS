@@ -1021,6 +1021,14 @@ async fsReadEntryThumbnailArtifact(request: ExplorerEntryThumbnailRequest) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async fsReadEntryThumbnailArtifactsBatch(request: ExplorerEntryThumbnailArtifactsBatchRequest) : Promise<Result<ExplorerEntryThumbnailArtifactsBatchResponse, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_read_entry_thumbnail_artifacts_batch", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async fsWriteFile(path: string, content: FsWriteFileContent) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_write_file", { path, content }) };
@@ -2193,6 +2201,9 @@ export type ExplorerDuplicateGroup = { fileSize: number; contentHash: string; en
 export type ExplorerDuplicateScanStartResponse = { scanId: string }
 export type ExplorerDuplicateScanStatus = { scanId: string; rootPath: string; scannedFileCount: number; candidateFileCount: number; completed: boolean; cancelled: boolean; error: string | null; groups: ExplorerDuplicateGroup[] }
 export type ExplorerEntryThumbnail = { kind: ExplorerThumbnailKind; posterDataUrl: string; hoverFrames: ExplorerVideoHoverFrame[]; hoverFrameDelayMs: number | null }
+export type ExplorerEntryThumbnailArtifactBatchResult = { index: number; path: string; artifact: ExplorerThumbnailArtifact | null; error: string | null }
+export type ExplorerEntryThumbnailArtifactsBatchRequest = { requests: ExplorerEntryThumbnailRequest[]; generation: number | null }
+export type ExplorerEntryThumbnailArtifactsBatchResponse = { results: ExplorerEntryThumbnailArtifactBatchResult[]; completedCount: number; failedCount: number }
 export type ExplorerEntryThumbnailRequest = { path: string; maxWidth: number; maxHeight: number; includeVideoHoverScrub: boolean | null; videoHoverFrameCount: number | null; entityId: string | null; contentRevision: string | null }
 export type ExplorerHomeUsageRecord = { path: string; openCount: number; lastOpenedAt: number }
 export type ExplorerHomeUsageSnapshot = { mostUsed: ExplorerHomeUsageRecord[]; recent: ExplorerHomeUsageRecord[] }

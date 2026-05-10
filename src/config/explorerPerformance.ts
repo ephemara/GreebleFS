@@ -172,7 +172,7 @@ const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy = Obje
     directoryScan: 2,
     recursiveSearch: 2,
     checksum: 1,
-    thumbnailDecode: 0,
+    thumbnailDecode: 4,
     previewRead: 2,
     archive: 1,
     indexing: 0,
@@ -431,7 +431,7 @@ function normalizeNativeTaskGraph(
       thumbnailDecode: Math.round(asFiniteNumber(
         laneConcurrency?.thumbnailDecode,
         defaultLanes.thumbnailDecode,
-        { minimum: 0, maximum: 16 },
+        { minimum: 1, maximum: 16 },
       )),
       previewRead: Math.round(asFiniteNumber(
         laneConcurrency?.previewRead,

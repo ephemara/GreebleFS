@@ -675,7 +675,7 @@ import {
 import { computeExplorerBaseVisibleEntriesInBackground } from "../runtime/explorerVisibleEntriesRuntime";
 import {
   buildExplorerViewportThumbnailWorkCandidates,
-  runExplorerViewportThumbnailScheduler,
+  selectExplorerViewportThumbnailScheduledCandidates,
 } from "../runtime/explorerViewportThumbnailScheduler";
 import {
   buildExplorerViewportPreviewPrefetchCandidates,
@@ -701,6 +701,7 @@ import {
 import { readExplorerModelThumbnail } from "../runtime/modelThumbnailBackend";
 import {
   peekExplorerThumbnailForEntry,
+  readExplorerThumbnailsForEntriesBatch,
   readExplorerThumbnailForEntry,
 } from "../runtime/explorerThumbnailArtifactRuntime";
 import {
@@ -29170,7 +29171,7 @@ export function FileExplorer({
         ? null
         : (visibleEntryIndexLookup.get(selectedEntryPath) ?? null);
     const previewPrefetchCandidates =
-      buildExplorerViewportPreviewPrefetchCandidates({
+      buildExplorerViewportPreviewPrefetchCandidates<FileEntry>({
         entries: visibleEntries,
         viewportStartIndex: virtualWindow.startIndex,
         viewportEndIndex: virtualWindow.endIndex,
@@ -31293,7 +31294,7 @@ export function FileExplorer({
       return;
     }
 
-    const thumbnailCandidates = buildExplorerViewportThumbnailWorkCandidates({
+    const thumbnailCandidates = buildExplorerViewportThumbnailWorkCandidates<FileEntry>({
       entries: visibleEntries,
       viewportStartIndex: virtualWindow.startIndex,
       viewportEndIndex: virtualWindow.endIndex,
@@ -31316,17 +31317,11 @@ export function FileExplorer({
       return;
     }
 
-    const scheduledThumbnailCandidateLimit = Math.min(
-      Math.max(1, Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize)),
-      Math.max(
-        1,
-        Math.floor(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth),
-      ),
+    const schedulerSelection = selectExplorerViewportThumbnailScheduledCandidates(
+      thumbnailCandidates,
+      EXPLORER_VIEWPORT_SCHEDULER_POLICY,
     );
-    const scheduledCandidates = thumbnailCandidates.slice(
-      0,
-      scheduledThumbnailCandidateLimit,
-    );
+    const scheduledCandidates = schedulerSelection.scheduledCandidates;
     const pendingPaths = scheduledCandidates.map((candidate) => candidate.path);
     const schedulerBatchId = thumbnailSchedulerBatchIdRef.current + 1;
     thumbnailSchedulerBatchIdRef.current = schedulerBatchId;
@@ -31344,25 +31339,94 @@ export function FileExplorer({
         return changed ? next : current;
       });
 
-      void runExplorerViewportThumbnailScheduler({
-        candidates: thumbnailCandidates,
-        policy: EXPLORER_VIEWPORT_SCHEDULER_POLICY,
-        isStale: () =>
+      void (async () => {
+        const isStale = () =>
           !isExplorerMountedRef.current ||
-          thumbnailSchedulerBatchIdRef.current !== schedulerBatchId,
-        readCandidate: async (candidate) => {
-          if (candidate.isModelPreview) {
-            return readExplorerModelThumbnail({
-              entry: candidate.entry,
-              maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-              maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
-            });
-          }
-          return readExplorerThumbnailForEntry(
-            buildExplorerPosterThumbnailRequest(candidate.entry),
+          thumbnailSchedulerBatchIdRef.current !== schedulerBatchId;
+        type ScheduledThumbnailCandidate = (typeof scheduledCandidates)[number];
+        const schedulerResults: Array<{
+          candidate: ScheduledThumbnailCandidate;
+          scheduledIndex: number;
+          status: "fulfilled" | "rejected";
+          value: ExplorerEntryThumbnailData | null;
+          error: unknown | null;
+        }> = new Array(scheduledCandidates.length);
+        const artifactSlots = scheduledCandidates
+          .map((candidate, scheduledIndex) => ({ candidate, scheduledIndex }))
+          .filter(({ candidate }) => !candidate.isModelPreview);
+        const modelSlots = scheduledCandidates
+          .map((candidate, scheduledIndex) => ({ candidate, scheduledIndex }))
+          .filter(({ candidate }) => candidate.isModelPreview);
+
+        if (artifactSlots.length > 0 && !isStale()) {
+          const artifactThumbnails = await readExplorerThumbnailsForEntriesBatch({
+            requests: artifactSlots.map(({ candidate }) =>
+              buildExplorerPosterThumbnailRequest(candidate.entry),
+            ),
+            generation: schedulerBatchId,
+          });
+
+          artifactSlots.forEach(({ candidate, scheduledIndex }, index) => {
+            schedulerResults[scheduledIndex] = {
+              candidate,
+              scheduledIndex,
+              status: "fulfilled",
+              value: artifactThumbnails[index] ?? null,
+              error: null,
+            };
+          });
+        }
+
+        if (modelSlots.length > 0 && !isStale()) {
+          await Promise.all(
+            modelSlots.map(async ({ candidate, scheduledIndex }) => {
+              try {
+                schedulerResults[scheduledIndex] = {
+                  candidate,
+                  scheduledIndex,
+                  status: "fulfilled",
+                  value: await readExplorerModelThumbnail({
+                    entry: candidate.entry,
+                    maxWidth:
+                      EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                    maxHeight:
+                      EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+                  }),
+                  error: null,
+                };
+              } catch (error) {
+                schedulerResults[scheduledIndex] = {
+                  candidate,
+                  scheduledIndex,
+                  status: "rejected",
+                  value: null,
+                  error,
+                };
+              }
+            }),
           );
-        },
-      })
+        }
+
+        const committedResults = schedulerResults.filter(
+          (
+            result,
+          ): result is NonNullable<(typeof schedulerResults)[number]> =>
+            Boolean(result),
+        );
+        const failedCount = committedResults.filter(
+          (result) => result.status === "rejected",
+        ).length;
+        return {
+          scheduledCandidates,
+          results: committedResults,
+          telemetry: {
+            ...schedulerSelection.telemetry,
+            completedCount: committedResults.length,
+            failedCount,
+            cancelled: isStale(),
+          },
+        };
+      })()
         .then((schedulerResult) => {
           if (
             !isExplorerMountedRef.current ||

@@ -167,7 +167,7 @@ impl Default for NativeTaskLaneConcurrency {
             directory_scan: 2,
             recursive_search: 2,
             checksum: 1,
-            thumbnail_decode: 0,
+            thumbnail_decode: 4,
             preview_read: 2,
             archive: 1,
             indexing: 0,
@@ -240,7 +240,7 @@ impl NativeTaskGraphPolicy {
                 thumbnail_decode: clamp_usize(
                     shipped_lanes.thumbnail_decode,
                     default_lanes.thumbnail_decode,
-                    0,
+                    1,
                     16,
                 ),
                 preview_read: clamp_usize(
@@ -1543,5 +1543,16 @@ mod tests {
         assert_eq!(clamped.lane_concurrency.thumbnail_decode, 3);
         assert_eq!(clamped.lane_concurrency.preview_read, 4);
         assert_eq!(clamped.lane_concurrency.archive, 2);
+
+        let zero_thumbnail_lane = NativeTaskGraphPolicy::from_explorer_performance_json(
+            r#"{
+                "nativeTaskGraph": {
+                    "laneConcurrency": {
+                        "thumbnailDecode": 0
+                    }
+                }
+            }"#,
+        );
+        assert_eq!(zero_thumbnail_lane.lane_concurrency.thumbnail_decode, 1);
     }
 }

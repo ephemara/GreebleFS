@@ -1,3 +1,21 @@
+# 2026-05-10 - Batched Native Thumbnail Artifact Lane
+
+- Moved Explorer viewport thumbnail artifact reads from one request per entry into a native batch lane.
+  - Rust added `fs_read_entry_thumbnail_artifacts_batch` plus `explorer.readThumbnailArtifactsBatch` native-control routing. Both batch and single-artifact reads now submit decode/generation work through `NativeTaskGraphManager` on the `thumbnailDecode` lane.
+  - `thumbnailDecode` is active by default at concurrency `4` in `src-tauri/src/native_task_graph.rs`, `src/config/explorerPerformance.ts`, and the shipped explorer-performance profile manifest.
+  - `src/runtime/explorerBackend.ts` exposes `readExplorerThumbnailArtifactsBatch`, and `src/runtime/explorerThumbnailArtifactRuntime.ts` coalesces duplicate identities, uses the batch backend, resolves IPC artifact URLs, and preserves the resolved/pending thumbnail caches.
+  - `FileExplorer.tsx` now uses `selectExplorerViewportThumbnailScheduledCandidates(...)` to select one bounded viewport batch, sends non-model thumbnails through `readExplorerThumbnailsForEntriesBatch(...)`, and keeps model thumbnails on `modelThumbnailBackend.ts`.
+- Durable design rule:
+  - Do not add per-thumbnail `Promise.all` invoke/native-control loops in `FileExplorer.tsx`. Order and bound work through `explorerViewportThumbnailScheduler.ts`; read normal image/video thumbnail artifacts through `explorerThumbnailArtifactRuntime.ts`; keep GPU/model thumbnails behind `modelThumbnailBackend.ts`.
+  - Thumbnail artifact payloads should stay as IPC resource descriptors/URLs, not data URLs over JSON, unless deliberately using the legacy fallback path.
+- Validation:
+  - Passed: `bun run bindings:generate`
+  - Passed: `cargo fmt --manifest-path src-tauri/Cargo.toml`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bunx vitest run src/test/boundedWorkLane.test.ts src/test/explorerViewportThumbnailScheduler.test.ts src/test/explorerPerformance.test.ts src/test/explorerBackend.nativeLanes.test.ts src/test/explorerThumbnailArtifactRuntime.test.ts --reporter=dot --testTimeout=30000`
+  - Full `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on existing repo/worktree baseline errors outside this thumbnail pass; a narrowed probe no longer reports the thumbnail/FileExplorer inference errors after explicit scheduler generics.
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib native_task_graph` and `... thumbnail_commands` compile but the Windows test executable exits with the known `STATUS_ENTRYPOINT_NOT_FOUND` loader failure before tests run.
+
 # 2026-05-09 - Transparent 3D Model Thumbnail Cutouts
 
 - Switched Explorer model thumbnails from baked dark-square PNGs to transparent cutout PNGs.

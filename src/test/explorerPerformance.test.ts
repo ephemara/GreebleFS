@@ -55,7 +55,7 @@ describe("explorerPerformance", () => {
         directoryScan: 2,
         recursiveSearch: 2,
         checksum: 1,
-        thumbnailDecode: 0,
+        thumbnailDecode: 4,
         previewRead: 2,
         archive: 1,
         indexing: 0,
@@ -211,6 +211,15 @@ describe("explorerPerformance", () => {
         maintenance: 4,
       },
     });
+
+    const zeroThumbnailLane = normalizeExplorerPerformanceManifest({
+      nativeTaskGraph: {
+        laneConcurrency: {
+          thumbnailDecode: 0,
+        },
+      },
+    });
+    expect(zeroThumbnailLane.nativeTaskGraph.laneConcurrency.thumbnailDecode).toBe(1);
   });
 
   it("normalizes message stream defaults and clamps authored policy values", () => {
