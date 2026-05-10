@@ -227,6 +227,7 @@ import {
   resolveExplorerLayoutZoomStateAtValue,
   resolveEffectiveExplorerViewMode,
   resolveThemedExplorerViewModes,
+  shouldShowExplorerSortHeader,
   stepExplorerViewMode,
   type ExplorerGridMode,
   type ExplorerLayoutZoomState,
@@ -883,6 +884,27 @@ const EXPLORER_CONSTELLATION_ZOOM_SURFACE_SELECTOR =
   '[data-overlay-constellation-viewport="true"]';
 const EXPLORER_CONSTELLATION_UI_SELECTOR =
   '[data-overlay-constellation-ui="true"]';
+const EXPLORER_BACKGROUND_CONTEXT_MENU_ZONE_SELECTOR =
+  '[data-overlay-explorer-background-context-menu="true"]';
+const EXPLORER_CONTEXT_MENU_BLOCKING_TARGET_SELECTOR = [
+  "[data-entry-path]",
+  '[data-overlay-drag-source="file"]',
+  '[data-overlay-explorer-sort-header="true"]',
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "a",
+  '[contenteditable="true"]',
+  '[role="button"]',
+  '[role="menu"]',
+  '[role="menuitem"]',
+  '[data-native-text-selection-surface="true"]',
+  ".monaco-editor",
+].join(", ");
+const EXPLORER_SORT_HEADER_GRID_TEMPLATE =
+  "minmax(0, 2.75fr) minmax(0, 1fr) minmax(0, 1.5fr) minmax(0, 1fr)";
+const EXPLORER_TABLE_COLUMN_WIDTHS = ["44%", "16%", "24%", "16%"] as const;
 
 function getExplorerZoomGestureTargetElement(
   target: EventTarget | null,
@@ -2519,8 +2541,8 @@ function getExplorerEntryStateSurface(
         : "var(--overlay-explorer-toolbar-shadow)";
     return {
       background: "var(--overlay-explorer-item-drop-bg)",
-      borderColor: "var(--overlay-explorer-item-drop-border)",
-      boxShadow: `${dropShadow}, 0 0 0 1px var(--overlay-explorer-item-drop-border)`,
+      borderColor: "transparent",
+      boxShadow: dropShadow,
       transform: "translateY(calc(var(--overlay-explorer-hover-lift) * -1))",
     };
   }
@@ -2530,7 +2552,7 @@ function getExplorerEntryStateSurface(
       explorerTheme.selectionStyle === "outline"
         ? "transparent"
         : "var(--overlay-explorer-item-selected-bg)",
-    borderColor: "var(--overlay-explorer-item-selected-border)",
+    borderColor: "transparent",
     boxShadow:
       explorerTheme.selectionStyle === "glow"
         ? "var(--overlay-explorer-item-focus-shadow)"
@@ -2544,7 +2566,7 @@ function getExplorerHoverSurface(
 ): ExplorerEntrySurfaceState {
   return {
     background: "var(--overlay-explorer-item-hover-bg)",
-    borderColor: "var(--overlay-explorer-item-hover-border)",
+    borderColor: "transparent",
     boxShadow:
       explorerTheme.hoverStyle === "glow"
         ? "var(--overlay-explorer-item-focus-shadow)"
@@ -2664,6 +2686,39 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName) ||
     Boolean(element.closest(".monaco-editor"))
   );
+}
+
+function isExplorerBackgroundContextMenuTarget(
+  target: EventTarget | null,
+  currentTarget: EventTarget | null,
+): boolean {
+  if (!(currentTarget instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (!(target instanceof Node) || !currentTarget.contains(target)) {
+    return false;
+  }
+
+  if (target === currentTarget) {
+    return true;
+  }
+
+  if (!(target instanceof Element)) {
+    return true;
+  }
+
+  const blockedTarget = target.closest(
+    EXPLORER_CONTEXT_MENU_BLOCKING_TARGET_SELECTOR,
+  );
+  if (blockedTarget && currentTarget.contains(blockedTarget)) {
+    return false;
+  }
+
+  const backgroundZone = target.closest(
+    EXPLORER_BACKGROUND_CONTEXT_MENU_ZONE_SELECTOR,
+  );
+  return backgroundZone != null && currentTarget.contains(backgroundZone);
 }
 
 function resolveExplorerDropOperation(
@@ -8784,7 +8839,6 @@ interface StandardExplorerVirtualSurfaceProps {
   gridEntryElements: React.ReactNode;
   listEntryElements: React.ReactNode;
   tableEntryElements: React.ReactNode;
-  tableHeader: React.ReactNode;
 }
 
 const StandardExplorerVirtualSurface = React.memo(
@@ -8802,7 +8856,6 @@ const StandardExplorerVirtualSurface = React.memo(
     gridEntryElements,
     listEntryElements,
     tableEntryElements,
-    tableHeader,
   }: StandardExplorerVirtualSurfaceProps) {
     if (!shouldRender || currentPathIsHome || experimentalViewMode !== "off") {
       return null;
@@ -8812,23 +8865,31 @@ const StandardExplorerVirtualSurface = React.memo(
       return (
         <div
           data-overlay-explorer-virtual-surface="grid"
+          data-overlay-explorer-background-context-menu="true"
           style={{ minHeight: 0 }}
         >
-          <div style={{ height: topSpacer }} />
           <div
+            data-overlay-explorer-background-context-menu="true"
+            style={{ height: topSpacer }}
+          />
+          <div
+            data-overlay-explorer-background-context-menu="true"
             style={{
               display: "grid",
               gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
               gridAutoRows: "var(--overlay-explorer-grid-row-height)",
               gap: "var(--overlay-explorer-grid-gap)",
               padding: "0 var(--overlay-explorer-grid-padding)",
-              alignItems: "stretch",
+              alignItems: "start",
               transition: gridContainerTransition,
             }}
           >
             {gridEntryElements}
           </div>
-          <div style={{ height: bottomSpacer }} />
+          <div
+            data-overlay-explorer-background-context-menu="true"
+            style={{ height: bottomSpacer }}
+          />
         </div>
       );
     }
@@ -8841,11 +8902,18 @@ const StandardExplorerVirtualSurface = React.memo(
       return (
         <div
           data-overlay-explorer-virtual-surface="list"
+          data-overlay-explorer-background-context-menu="true"
           style={{ minHeight: 0 }}
         >
-          <div style={{ height: topSpacer }} />
+          <div
+            data-overlay-explorer-background-context-menu="true"
+            style={{ height: topSpacer }}
+          />
           {listEntryElements}
-          <div style={{ height: bottomSpacer }} />
+          <div
+            data-overlay-explorer-background-context-menu="true"
+            style={{ height: bottomSpacer }}
+          />
         </div>
       );
     }
@@ -8854,6 +8922,7 @@ const StandardExplorerVirtualSurface = React.memo(
       return (
         <table
           data-overlay-explorer-virtual-surface="table"
+          data-overlay-explorer-background-context-menu="true"
           style={{
             width: "100%",
             borderCollapse: "collapse",
@@ -8861,13 +8930,23 @@ const StandardExplorerVirtualSurface = React.memo(
             tableLayout: "fixed",
           }}
         >
-          {tableHeader}
+          <colgroup>
+            {EXPLORER_TABLE_COLUMN_WIDTHS.map((width, index) => (
+              <col key={index} style={{ width }} />
+            ))}
+          </colgroup>
           <tbody>
-            <tr style={{ height: topSpacer }}>
+            <tr
+              data-overlay-explorer-background-context-menu="true"
+              style={{ height: topSpacer }}
+            >
               <td colSpan={4} style={{ padding: 0, border: "none" }} />
             </tr>
             {tableEntryElements}
-            <tr style={{ height: bottomSpacer }}>
+            <tr
+              data-overlay-explorer-background-context-menu="true"
+              style={{ height: bottomSpacer }}
+            >
               <td colSpan={4} style={{ padding: 0, border: "none" }} />
             </tr>
           </tbody>
@@ -24640,8 +24719,8 @@ export function FileExplorer({
     [explorerTheme],
   );
   const explorerEntryBaseTransition = layoutZoomGestureActive
-    ? "background 0.08s linear, border-color 0.08s linear"
-    : "background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease";
+    ? "background 0.08s linear"
+    : "background 0.14s ease, box-shadow 0.14s ease";
   const handleEntryPointerEnter = useCallback(
     (
       entry: FileEntry,
@@ -29559,7 +29638,7 @@ export function FileExplorer({
         motionStepIndex,
         baseTransition: layoutZoomGestureActive
           ? "none"
-          : "background 0.14s ease, border-color 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+          : "background 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
       });
 
       return (
@@ -29587,7 +29666,6 @@ export function FileExplorer({
               : isSel
                 ? selectedEntrySurface.background
                 : idleEntrySurface.background,
-            border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
             borderRadius: "var(--overlay-explorer-grid-tile-radius)",
             padding: "var(--overlay-explorer-grid-item-padding)",
             cursor: "pointer",
@@ -29596,7 +29674,7 @@ export function FileExplorer({
             alignItems: "center",
             justifyContent: "flex-start",
             gap: 8,
-            height: "100%",
+            alignSelf: "start",
             minHeight: 0,
             boxSizing: "border-box",
             overflow: "hidden",
@@ -29798,13 +29876,6 @@ export function FileExplorer({
             gap: 12,
             height: "var(--overlay-explorer-list-row-height)",
             padding: "0 var(--overlay-explorer-list-padding)",
-            borderBottomWidth: 1,
-            borderBottomStyle: "solid",
-            borderBottomColor: isDrop
-              ? dropEntrySurface.borderColor
-              : isSel
-                ? selectedEntrySurface.borderColor
-                : "var(--overlay-explorer-toolbar-border)",
             background: isDrop
               ? dropEntrySurface.background
               : isSel
@@ -30052,7 +30123,6 @@ export function FileExplorer({
             cursor: "pointer",
             opacity: (entry.is_hidden ? 0.5 : 1) * dragPresentation.opacity,
             userSelect: "none",
-            borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
             height: virtualWindow.rowHeight,
             boxSizing: "border-box",
             boxShadow:
@@ -30254,81 +30324,114 @@ export function FileExplorer({
     virtualWindow.startIndex,
     virtualizedEntries,
   ]);
-  const standardExplorerTableHeader = useMemo(
-    () => (
-      <thead>
-        <tr
-          style={{
-            background: "var(--overlay-explorer-toolbar-bg)",
-            position: "sticky",
-            top: 0,
-            zIndex: 2,
-          }}
-        >
-          {[
-            { key: "name", label: "Name" },
-            { key: "size", label: "Size" },
-            { key: "date", label: "Modified" },
-            { key: "type", label: "Type" },
-          ].map((column) => (
-            <th
-              key={column.key}
+  const standardExplorerSortHeader = useMemo(() => {
+    if (!shouldShowExplorerSortHeader(effectiveViewMode)) {
+      return null;
+    }
+
+    return (
+      <div
+        data-overlay-explorer-sort-header="true"
+        data-no-empty-double-click="true"
+        role="row"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 3,
+          display: "grid",
+          gridTemplateColumns: EXPLORER_SORT_HEADER_GRID_TEMPLATE,
+          alignItems: "center",
+          width: "100%",
+          minHeight: 34,
+          background: "var(--overlay-explorer-toolbar-bg)",
+          boxSizing: "border-box",
+        }}
+      >
+        {[
+          { key: "name", label: "Name" },
+          { key: "size", label: "Size" },
+          { key: "date", label: "Modified" },
+          { key: "type", label: "Type" },
+        ].map((column) => (
+          <div
+            key={column.key}
+            role="columnheader"
+            data-overlay-explorer-sort-header-column={column.key}
+            style={{
+              minWidth: 0,
+              padding: "0 12px",
+              textAlign: "left",
+              color: EXP.muted,
+              fontWeight: 600,
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+            }}
+          >
+            <button
+              type="button"
+              aria-label={`Sort by ${column.label}`}
+              onClick={() => toggleSort(column.key as ExplorerSortKey)}
               style={{
-                padding: "6px 12px",
-                textAlign: "left",
-                color: EXP.muted,
-                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                maxWidth: "100%",
+                background: "none",
+                border: "none",
+                padding: 0,
+                color:
+                  explorerSettings.sortBy === column.key
+                    ? EXP.text
+                    : EXP.muted,
+                cursor: "pointer",
                 fontSize: 10,
+                fontWeight: 600,
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
-                borderBottom:
-                  "1px solid var(--overlay-explorer-toolbar-border)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
               }}
             >
-              <button
-                type="button"
-                onClick={() => toggleSort(column.key as ExplorerSortKey)}
+              <span
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "none",
-                  border: "none",
-                  padding: 0,
-                  color:
-                    explorerSettings.sortBy === column.key
-                      ? EXP.text
-                      : EXP.muted,
-                  cursor: "pointer",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
                 }}
               >
-                <span>{column.label}</span>
-                <span
-                  style={{
-                    color:
-                      explorerSettings.sortBy === column.key
-                        ? accent
-                        : EXP.muted2,
-                  }}
-                >
-                  {explorerSettings.sortBy === column.key
-                    ? explorerSettings.sortOrder === "asc"
-                      ? "↑"
-                      : "↓"
-                    : "·"}
-                </span>
-              </button>
-            </th>
-          ))}
-        </tr>
-      </thead>
-    ),
-    [accent, explorerSettings.sortBy, explorerSettings.sortOrder, toggleSort],
-  );
+                {column.label}
+              </span>
+              <span
+                aria-hidden="true"
+                style={{
+                  color:
+                    explorerSettings.sortBy === column.key
+                      ? accent
+                      : EXP.muted2,
+                  flexShrink: 0,
+                }}
+              >
+                {explorerSettings.sortBy === column.key
+                  ? explorerSettings.sortOrder === "asc"
+                    ? "↑"
+                    : "↓"
+                  : "·"}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  }, [
+    accent,
+    effectiveViewMode,
+    explorerSettings.sortBy,
+    explorerSettings.sortOrder,
+    toggleSort,
+  ]);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -31794,10 +31897,7 @@ export function FileExplorer({
             padding: densityStop.table.showRichMeta ? "8px 14px" : "6px 14px",
             borderRadius: 10,
             background: semanticTableRestingSurface.background,
-            borderTop: `1px solid ${semanticTableRestingSurface.borderColor}`,
-            borderRight: `1px solid ${semanticTableRestingSurface.borderColor}`,
-            borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
-            borderLeft: `1px solid ${semanticTableRestingSurface.borderColor}`,
+            borderColor: semanticTableRestingSurface.borderColor,
             cursor: "pointer",
             boxSizing: "border-box",
             userSelect: "none",
@@ -31985,7 +32085,7 @@ export function FileExplorer({
         style={{
           minHeight: semanticGridMinHeight,
           borderRadius: isCards ? 18 : 14,
-          border: `1px solid ${semanticGridRestingSurface.borderColor}`,
+          borderColor: semanticGridRestingSurface.borderColor,
           background: semanticGridRestingSurface.background,
           padding: semanticGridPadding,
           display: "flex",
@@ -32106,7 +32206,6 @@ export function FileExplorer({
             alignItems: "center",
             gap: 12,
             borderRadius: "var(--overlay-explorer-panel-radius)",
-            border: "1px solid var(--overlay-explorer-item-selected-border)",
             background: "var(--overlay-explorer-item-selected-bg)",
             padding: "12px 14px",
           }}
@@ -33150,7 +33249,7 @@ export function FileExplorer({
         style={{
           position: "relative",
           borderRadius: 18,
-          border: `1px solid ${timelineRestingSurface.borderColor}`,
+          borderColor: timelineRestingSurface.borderColor,
           background: timelineRestingSurface.background,
           boxShadow:
             dragPresentation.boxShadow ?? timelineRestingSurface.boxShadow,
@@ -35780,7 +35879,14 @@ export function FileExplorer({
                     }}
                     onClick={() => mainRef.current?.focus()}
                     onContextMenu={(e) => {
-                      if (e.target !== e.currentTarget) return;
+                      if (
+                        !isExplorerBackgroundContextMenuTarget(
+                          e.target,
+                          e.currentTarget,
+                        )
+                      ) {
+                        return;
+                      }
                       onBackgroundContextMenu(e);
                     }}
                     onDoubleClick={(e) => {
@@ -36068,6 +36174,11 @@ export function FileExplorer({
                     {/* Grid view */}
                     {effectiveExperimentalViewMode === "off" &&
                       !currentPathIsHome &&
+                      shouldRenderExplorerContent &&
+                      standardExplorerSortHeader}
+
+                    {effectiveExperimentalViewMode === "off" &&
+                      !currentPathIsHome &&
                       newItem.visible &&
                       virtualWindow.kind === "grid" &&
                       activeGridMetrics && (
@@ -36082,8 +36193,6 @@ export function FileExplorer({
                             style={{
                               background:
                                 "var(--overlay-explorer-item-selected-bg)",
-                              border:
-                                "1px solid var(--overlay-explorer-item-selected-border)",
                               borderRadius:
                                 "var(--overlay-explorer-grid-tile-radius)",
                               padding:
@@ -36162,8 +36271,6 @@ export function FileExplorer({
                             alignItems: "center",
                             gap: 10,
                             padding: "0 var(--overlay-explorer-list-padding)",
-                            borderBottom:
-                              "1px solid var(--overlay-explorer-toolbar-border)",
                             background:
                               "var(--overlay-explorer-item-selected-bg)",
                             boxSizing: "border-box",
@@ -36238,7 +36345,6 @@ export function FileExplorer({
                         <table
                           style={{
                             width: "100%",
-                            borderCollapse: "collapse",
                             fontSize: 12,
                           }}
                         >
@@ -36247,8 +36353,6 @@ export function FileExplorer({
                               style={{
                                 background:
                                   "var(--overlay-explorer-item-selected-bg)",
-                                borderBottom:
-                                  "1px solid var(--overlay-explorer-toolbar-border)",
                                 height: activeRowMetrics?.newItemHeight ?? 42,
                                 boxSizing: "border-box",
                               }}
@@ -36354,7 +36458,6 @@ export function FileExplorer({
                       gridEntryElements={gridVirtualizedEntryElements}
                       listEntryElements={listVirtualizedEntryElements}
                       tableEntryElements={tableVirtualizedEntryElements}
-                      tableHeader={standardExplorerTableHeader}
                     />
                   </div>
                 </OverlayScrollArea>

@@ -15,6 +15,7 @@ import {
   normalizeExplorerViewMode,
   resolveEffectiveExplorerViewMode,
   resolveThemedExplorerViewModes,
+  shouldShowExplorerSortHeader,
   stepExplorerGridZoom,
   stepExplorerViewMode,
 } from '../config/explorerViewModes';
@@ -114,6 +115,13 @@ describe('explorerViewModes', () => {
     expect(getExplorerViewModeDefinition('icons-xl').label).toBe('XL Icons');
     expect(getExplorerViewModeDefinition('icons-s').label).toBe('Small Icons');
     expect(getExplorerViewModeDefinition('details').shortLabel).toBe('Details');
+  });
+
+  it('shows the shared sort header by default unless a view mode opts out', () => {
+    expect(shouldShowExplorerSortHeader('icons-l')).toBe(true);
+    expect(shouldShowExplorerSortHeader('list')).toBe(true);
+    expect(shouldShowExplorerSortHeader('columns')).toBe(true);
+    expect(shouldShowExplorerSortHeader('details')).toBe(true);
   });
 
   it('maps persisted settings into the live layout zoom continuum', () => {

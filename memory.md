@@ -8880,3 +8880,30 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/explorerWorkflowModal.test.tsx --reporter=dot --testTimeout=30000`
   - Touched-file TypeScript filter produced no diagnostics for `src/components/AppModal.tsx` or `src/test/explorerWorkflowModal.test.tsx`; full repo `tsc` remains red from baseline diagnostics.
   - Native WebView CDP proof opened Batch Rename and captured `MCP/.state/screenshots/batch-rename-fixed-native.png`; computed styles showed a real `rgb(11, 19, 27)` modal surface, solid border, scrim, and copied explorer variables.
+
+# 2026-05-10 - Explorer Standard Sort Header And Empty-Canvas Right-Click
+
+- Standard Explorer view modes now treat the sort header as visible by default. `src/config/explorerViewModes.ts` adds the opt-out `sortHeader` policy plus `shouldShowExplorerSortHeader(...)`, and `src/components/FileExplorer.tsx` renders one shared `data-overlay-explorer-sort-header` strip for icon, list, columns, and details modes instead of relying on a table-only `<thead>`.
+- The standard virtual surface now marks real empty-canvas zones with `data-overlay-explorer-background-context-menu="true"`. `FileExplorer.tsx` routes those zones to the current-folder/background context menu while still blocking `[data-entry-path]`, file drag sources, buttons, editors, and native text-selection surfaces from being stolen by the background handler.
+- Icon tiles no longer stretch to fill the entire virtual grid row, so hover/right-click hit areas are closer to the visible tile and the blank row space behaves like canvas.
+- Durable rules:
+  - Keep sort chrome opt-out for standard modes; do not add future sort affordances only inside the table renderer.
+  - If a standard view adds gutters/spacers/non-entry canvas, mark those background zones explicitly rather than reintroducing a broad root context-menu fallback.
+  - Keep entry hover/tile hit areas tactile: virtualization may reserve row space, but file cards should not claim invisible row area just because the virtual row is tall.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerViewModes.test.ts --reporter=dot`
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shared sort header|current-folder context menu from empty" --reporter=dot --testTimeout=30000`
+  - Touched-file TypeScript filter: `tsc exit code 2; no touched-file diagnostics` for `FileExplorer.tsx`, `explorerViewModes.ts`, and the two touched tests. The repo-wide `tsc` baseline remains red.
+  - UI literal audit remains baseline-red with 720 existing findings, but a filtered audit reported no touched-file findings.
+  - Live MCP/WebView proof showed the sort header as an accessible row in Columns mode and a background-zone context menu opening `New Folder` instead of an entry menu. Screenshot evidence: `MCP/.state/screenshots/explorer-sort-header-background-menu-proof.png.png`.
+
+# 2026-05-10 - Explorer File Surfaces Are Borderless By Default
+
+- Standard Explorer icon/list/table rendering now treats file rows as one continuous surface instead of separated row/card boxes.
+  - `src/components/FileExplorer.tsx` removes the visible sort-header underline, list-row dividers, table-row dividers, grid tile borders, and new-item row/card borders from the shared standard render path.
+  - Adaptive semantic grid/table entries and timeline entries also avoid visible entry borders, using background/selection state instead so authored/future file layouts do not drift back into boxed cards.
+- Durable product rule:
+  - Explorer file entries should stay borderless by default. Selection, hover, drag/drop, and focus affordances should use fill, typography, opacity, or carefully scoped shadow instead of per-entry borders/dividers.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerViewModes.test.ts src/test/fileExplorer.viewModes.test.tsx -t "sort header|borderless|adaptive semantic grid visually minimal|restores adaptive semantic entries" --reporter=dot --testTimeout=30000`
+  - MCP live-WebView proof on the active table surface reported `0px` borders for the sticky sort header and all visible file rows; screenshot captured at `MCP/.state/screenshots/borderless-explorer-standard-surface.png.png`.

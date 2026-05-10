@@ -45,6 +45,10 @@ export interface ExplorerRowMetrics {
   iconSize: number;
 }
 
+export interface ExplorerViewSortHeaderPolicy {
+  enabled?: boolean;
+}
+
 export interface ExplorerViewModeDefinition {
   id: ExplorerViewMode;
   label: string;
@@ -52,6 +56,7 @@ export interface ExplorerViewModeDefinition {
   description: string;
   presentation: ExplorerViewPresentation;
   zoomOrder: number;
+  sortHeader?: ExplorerViewSortHeaderPolicy;
   grid?: ExplorerGridMetrics;
   rows?: ExplorerRowMetrics;
 }
@@ -239,6 +244,10 @@ export function normalizeExplorerViewMode(value: unknown): ExplorerViewMode {
 
 export function getExplorerViewModeDefinition(mode: ExplorerViewMode): ExplorerViewModeDefinition {
   return explorerViewModeMap.get(mode) ?? explorerViewModeMap.get(defaultExplorerViewMode)!;
+}
+
+export function shouldShowExplorerSortHeader(mode: ExplorerViewMode): boolean {
+  return getExplorerViewModeDefinition(mode).sortHeader?.enabled !== false;
 }
 
 export function isExplorerGridMode(mode: ExplorerViewMode): mode is ExplorerGridMode {

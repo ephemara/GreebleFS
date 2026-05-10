@@ -1327,6 +1327,34 @@ function getLatestExplorerContextMenuPanel() {
   return panel;
 }
 
+function getExplorerSortHeader() {
+  const header = document.querySelector(
+    '[data-overlay-explorer-sort-header="true"]',
+  ) as HTMLElement | null;
+  if (!header) {
+    throw new Error("Explorer sort header not found");
+  }
+  return header;
+}
+
+function getExplorerEntryElement(entryName: string): HTMLElement {
+  const entryLabel = screen
+    .getAllByText(entryName)
+    .find((candidate) =>
+      candidate.closest('[data-overlay-explorer-plane="file-area"]'),
+    );
+  if (!entryLabel) {
+    throw new Error(`Explorer label not found for ${entryName}`);
+  }
+  const entryElement = entryLabel.closest(
+    '[data-entry-path], tr, [draggable="true"]',
+  ) as HTMLElement | null;
+  if (!entryElement) {
+    throw new Error(`Explorer entry not found for ${entryName}`);
+  }
+  return entryElement;
+}
+
 function getExplorerActivityDockLaneIds(side: "left" | "right") {
   return getExplorerActivityDockLaneElements(side)
     .map((element) =>
@@ -6631,6 +6659,82 @@ const value = 1;
       "explorer-file-list",
     );
   });
+
+  it.each(["icons-l", "list", "columns", "details"] as const)(
+    "keeps the shared sort header available in %s mode",
+    async (viewMode) => {
+      useSettingsStore.getState().updateExplorer({ viewMode });
+
+      renderExplorer();
+      await screen.findByText("alpha");
+
+      const sortHeader = getExplorerSortHeader();
+      expect(
+        within(sortHeader).getByRole("button", { name: /sort by name/i }),
+      ).toBeInTheDocument();
+      expect(
+        within(sortHeader).getByRole("button", { name: /sort by modified/i }),
+      ).toBeInTheDocument();
+
+      fireEvent.click(
+        within(sortHeader).getByRole("button", { name: /sort by modified/i }),
+      );
+
+      await waitFor(() => {
+        expect(useSettingsStore.getState().settings.explorer.sortBy).toBe(
+          "date",
+        );
+        expect(useSettingsStore.getState().settings.explorer.sortOrder).toBe(
+          "desc",
+        );
+      });
+    },
+  );
+
+  it.each(["icons-l", "list", "columns", "details"] as const)(
+    "keeps the standard %s file surface borderless",
+    async (viewMode) => {
+      useSettingsStore.getState().updateExplorer({ viewMode });
+
+      renderExplorer();
+      await screen.findByText("alpha");
+
+      const sortHeader = getExplorerSortHeader();
+      const alphaEntry = getExplorerEntryElement("alpha");
+
+      expect(sortHeader.style.border).toBe("");
+      expect(sortHeader.style.borderBottom).toBe("");
+      expect(alphaEntry.style.border).toBe("");
+      expect(alphaEntry.style.borderTop).toBe("");
+      expect(alphaEntry.style.borderRight).toBe("");
+      expect(alphaEntry.style.borderBottom).toBe("");
+      expect(alphaEntry.style.borderLeft).toBe("");
+    },
+  );
+
+  it.each(["icons-l", "list", "columns", "details"] as const)(
+    "opens the current-folder context menu from empty %s surface space",
+    async (viewMode) => {
+      useSettingsStore.getState().updateExplorer({ viewMode });
+
+      renderExplorer();
+      await screen.findByText("alpha");
+
+      const backgroundZone = document.querySelector(
+        "[data-overlay-explorer-background-context-menu='true']",
+      ) as HTMLElement | null;
+      if (!backgroundZone) {
+        throw new Error("Explorer background context-menu zone not found");
+      }
+
+      fireEvent.contextMenu(backgroundZone);
+
+      await waitFor(() => {
+        expect(getExplorerContextMenuPanel()).toHaveTextContent("New Folder");
+      });
+      expect(getExplorerContextMenuPanel()).not.toHaveTextContent("Rename");
+    },
+  );
 
   it("does not mount an entire huge folder while waiting for viewport measurement", async () => {
     const longEntries = Array.from({ length: 2000 }, (_, index) => ({
