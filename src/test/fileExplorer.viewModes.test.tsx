@@ -1355,6 +1355,19 @@ function getExplorerEntryElement(entryName: string): HTMLElement {
   return entryElement;
 }
 
+function expectExplorerSurfaceBorderless(element: HTMLElement) {
+  const style = getComputedStyle(element);
+  const borderWidths = [
+    style.borderTopWidth,
+    style.borderRightWidth,
+    style.borderBottomWidth,
+    style.borderLeftWidth,
+  ];
+  expect(borderWidths.every((width) => width === "" || width === "0px")).toBe(
+    true,
+  );
+}
+
 function getExplorerActivityDockLaneIds(side: "left" | "right") {
   return getExplorerActivityDockLaneElements(side)
     .map((element) =>
@@ -6702,13 +6715,8 @@ const value = 1;
       const sortHeader = getExplorerSortHeader();
       const alphaEntry = getExplorerEntryElement("alpha");
 
-      expect(sortHeader.style.border).toBe("");
-      expect(sortHeader.style.borderBottom).toBe("");
-      expect(alphaEntry.style.border).toBe("");
-      expect(alphaEntry.style.borderTop).toBe("");
-      expect(alphaEntry.style.borderRight).toBe("");
-      expect(alphaEntry.style.borderBottom).toBe("");
-      expect(alphaEntry.style.borderLeft).toBe("");
+      expectExplorerSurfaceBorderless(sortHeader);
+      expectExplorerSurfaceBorderless(alphaEntry);
     },
   );
 
