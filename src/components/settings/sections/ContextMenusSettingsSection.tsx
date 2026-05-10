@@ -49,6 +49,7 @@ import {
   SettingsSectionHeader,
   SettingsRow,
   SettingsRowGroup,
+  SettingsSelect,
   ThemeBadge,
 } from '../SettingsPrimitives';
 
@@ -1154,7 +1155,7 @@ export function ContextMenusSettingsSection({
           <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
             <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Place Inside</span>
-              <select
+              <SettingsSelect
                 value={entry.parentEntryId ?? ''}
                 onChange={(event) =>
                   setContextMenuLayoutEntryParent(
@@ -1171,7 +1172,7 @@ export function ContextMenusSettingsSection({
                     {submenu.title}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </label>
             <div
               className="rounded border px-3 py-2 text-[10px] leading-4 opacity-55"
@@ -1225,7 +1226,7 @@ export function ContextMenusSettingsSection({
 
           <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
             <span className="block truncate">Place Inside</span>
-            <select
+            <SettingsSelect
               value={entry.parentEntryId ?? ''}
               onChange={(event) =>
                 setContextMenuLayoutEntryParent(
@@ -1242,14 +1243,14 @@ export function ContextMenusSettingsSection({
                   {submenu.title}
                 </option>
               ))}
-            </select>
+            </SettingsSelect>
           </label>
 
           {entry.kind === 'command' || entry.kind === 'group-slot' ? (
             <>
               <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                 <span>Quick Slot</span>
-                <select
+                <SettingsSelect
                   value={entry.quickSlot ?? 'none'}
                   onChange={(event) =>
                     setContextMenuLayoutEntryQuickSlot(
@@ -1265,12 +1266,12 @@ export function ContextMenusSettingsSection({
                       {option}
                     </option>
                   ))}
-                </select>
+                </SettingsSelect>
               </label>
 
               <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                 <span>Fallback Bucket</span>
-                <select
+                <SettingsSelect
                   value={entry.fallbackBucket ?? 'default'}
                   onChange={(event) =>
                     setContextMenuLayoutEntryFallbackBucket(
@@ -1286,7 +1287,7 @@ export function ContextMenusSettingsSection({
                       {option}
                     </option>
                   ))}
-                </select>
+                </SettingsSelect>
               </label>
             </>
           ) : null}
@@ -1300,7 +1301,7 @@ export function ContextMenusSettingsSection({
           <div className="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
             <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Group</span>
-              <select
+              <SettingsSelect
                 value={entry.group}
                 onChange={(event) =>
                   setContextMenuGroupSlotGroup(
@@ -1319,11 +1320,11 @@ export function ContextMenusSettingsSection({
                     {group}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </label>
             <label className="block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Source Filter</span>
-              <select
+              <SettingsSelect
                 value={entry.sourceFilter ?? 'any'}
                 onChange={(event) =>
                   setContextMenuGroupSlotSourceFilter(
@@ -1344,7 +1345,7 @@ export function ContextMenusSettingsSection({
                     </option>
                   ),
                 )}
-              </select>
+              </SettingsSelect>
             </label>
           </div>
         ) : null}
@@ -1486,7 +1487,7 @@ export function ContextMenusSettingsSection({
                     title="Active Menu Pack"
                     description="Choose the authored pack feeding the current context."
                     control={(
-                      <select
+                      <SettingsSelect
                         value={activeMenuPack?.id ?? ''}
                         onChange={event => setActiveMenuPackId(event.target.value)}
                         className="w-full rounded border px-3 py-2 text-[11px] outline-none"
@@ -1495,14 +1496,14 @@ export function ContextMenusSettingsSection({
                         {menuPacks.map(pack => (
                           <option key={pack.id} value={pack.id}>{pack.name}</option>
                         ))}
-                      </select>
+                      </SettingsSelect>
                     )}
                   />
                   <SettingsRow
                     title="Context Renderer"
                     description="Switch the runtime renderer for the selected context."
                     control={(
-                      <select
+                      <SettingsSelect
                         value={activeContextMenuLayout.renderer ?? 'classic'}
                         onChange={event => setContextMenuRendererForActiveContext(event.target.value as ExplorerMenuContextLayout['renderer'])}
                         className="w-full rounded border px-3 py-2 text-[11px] outline-none"
@@ -1511,7 +1512,7 @@ export function ContextMenusSettingsSection({
                         {['classic', 'hybrid', 'radial', 'sheet', 'hud'].map(renderer => (
                           <option key={renderer} value={renderer}>{renderer}</option>
                         ))}
-                      </select>
+                      </SettingsSelect>
                     )}
                   />
                 </SettingsRowGroup>
@@ -1573,7 +1574,7 @@ export function ContextMenusSettingsSection({
                     description="Inject a command from the filtered library into the selected branch."
                     control={(
                       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                        <select
+                        <SettingsSelect
                           value={contextMenuCommandDraftByContext[activeContextMenuContext] ?? ''}
                           onChange={event => setContextMenuCommandDraftByContext(current => ({
                             ...current,
@@ -1591,7 +1592,7 @@ export function ContextMenusSettingsSection({
                           {availableContextMenuCommandsForActiveContext.map(command => (
                             <option key={command.id} value={command.id}>{command.title}</option>
                           ))}
-                        </select>
+                        </SettingsSelect>
                         <OverlayActionButton
                           appearance={appearance}
                           size="compact"
@@ -1608,7 +1609,7 @@ export function ContextMenusSettingsSection({
                     description="Inject a runtime bucket of commands without hand-placing every item."
                     control={(
                       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                        <select
+                        <SettingsSelect
                           value={contextMenuGroupDraftByContext[activeContextMenuContext] ?? 'plugin'}
                           onChange={event => setContextMenuGroupDraftByContext(current => ({
                             ...current,
@@ -1621,7 +1622,7 @@ export function ContextMenusSettingsSection({
                           {explorerMenuGroupOptions.map(group => (
                             <option key={group} value={group}>{group}</option>
                           ))}
-                        </select>
+                        </SettingsSelect>
                         <OverlayActionButton
                           appearance={appearance}
                           size="compact"

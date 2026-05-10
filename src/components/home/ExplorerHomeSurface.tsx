@@ -12,6 +12,7 @@ import {
   StickyNote,
   Terminal,
 } from '@/components/AppIcons';
+import { AppSelect } from '../AppSelect';
 
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import { createDefaultDirectoryBookmarks } from '../../config/platform';
@@ -746,7 +747,7 @@ function ExplorerHomePresetSurface({
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {pack.runtime.presets.length > 1 && (
-              <select
+              <AppSelect
                 value={activePreset?.id ?? ''}
                 onChange={(event) => host.setPreset(event.target.value || null)}
                 style={{
@@ -764,7 +765,7 @@ function ExplorerHomePresetSurface({
                     {preset.name}
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             )}
             <button
               type="button"

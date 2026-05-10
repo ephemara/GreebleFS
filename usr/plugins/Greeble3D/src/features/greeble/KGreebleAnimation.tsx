@@ -1,6 +1,61 @@
 
 
 import { Film, Move, SkipBack, Play, Pause, Clock, Timer, Gamepad2, Key, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+
+function CompactTimelineSelect({ value, onChange, options, className }: any) {
+    const [open, setOpen] = useState(false);
+    const selectedOption = options.find((option: any) => String(option.value) === String(value)) ?? options[0];
+    const commitValue = (nextValue: any) => {
+        onChange?.({ target: { value: String(nextValue) }, currentTarget: { value: String(nextValue) } });
+        setOpen(false);
+    };
+
+    return (
+        <span
+            className="relative inline-block"
+            onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setOpen(false);
+                }
+            }}
+        >
+            <button
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded={open}
+                className={`${className} flex items-center gap-1`}
+                onClick={() => setOpen((current) => !current)}
+            >
+                <span>{selectedOption?.label ?? value}</span>
+                <span aria-hidden="true" className="text-[8px] opacity-70">v</span>
+            </button>
+            {open ? (
+                <span
+                    role="listbox"
+                    className="absolute left-0 top-full z-[9999] mt-1 grid min-w-full gap-1 rounded border border-[#333] bg-[#0a0a0a] p-1 shadow-2xl"
+                >
+                    {options.map((option: any) => {
+                        const active = String(option.value) === String(value);
+                        return (
+                            <button
+                                key={option.value}
+                                type="button"
+                                role="option"
+                                aria-selected={active}
+                                className={`rounded px-2 py-1 text-left text-[9px] ${active ? 'bg-pink-500/20 text-pink-200' : 'text-pink-400 hover:bg-[#1a1a1a]'}`}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => commitValue(option.value)}
+                            >
+                                {option.label}
+                            </button>
+                        );
+                    })}
+                </span>
+            ) : null}
+        </span>
+    );
+}
 
 export default function KGreebleAnimation({
     selectedObjectUUID,
@@ -103,12 +158,17 @@ export function KGreebleTimeline({
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2">
                         <span className="text-[9px] text-gray-400 font-bold flex items-center gap-1"><Clock size={10} /> FPS</span>
-                        <select value={targetFPS} onChange={(e) => setTargetFPS(parseInt(e.target.value))} className="bg-[#0a0a0a] border border-[#333] rounded text-[9px] text-pink-400 focus:border-pink-500 outline-none px-1 py-1 cursor-pointer hover:bg-[#1a1a1a]">
-                            <option value="24">24</option>
-                            <option value="30">30</option>
-                            <option value="60">60</option>
-                            <option value="120">120</option>
-                        </select>
+                        <CompactTimelineSelect
+                            value={targetFPS}
+                            onChange={(e: any) => setTargetFPS(parseInt(e.target.value))}
+                            className="bg-[#0a0a0a] border border-[#333] rounded text-[9px] text-pink-400 focus:border-pink-500 outline-none px-1 py-1 cursor-pointer hover:bg-[#1a1a1a]"
+                            options={[
+                                { value: 24, label: '24' },
+                                { value: 30, label: '30' },
+                                { value: 60, label: '60' },
+                                { value: 120, label: '120' },
+                            ]}
+                        />
                     </div>
                     <div className="flex items-center gap-2">
                         <span className="text-[9px] text-gray-400 font-bold flex items-center gap-1"><Timer size={10} /> DUR</span>

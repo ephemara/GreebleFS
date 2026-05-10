@@ -1,7 +1,7 @@
 import Editor from "@monaco-editor/react";
 import { AlertTriangle, Cpu, Eye, Layers3, Loader2 } from "@/components/AppIcons";
+import { AppSelect } from "./AppSelect";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -818,7 +818,7 @@ export function ExplorerShaderWorkbench({
           </div>
         </div>
         <div style={pickerRowStyle}>
-          <select
+          <AppSelect
             aria-label="Shader stage"
             value={selectedStage ?? ""}
             onChange={(event) => {
@@ -840,8 +840,8 @@ export function ExplorerShaderWorkbench({
                 {stage}
               </option>
             ))}
-          </select>
-          <select
+          </AppSelect>
+          <AppSelect
             aria-label="Shader entry point"
             value={selectedEntryPoint ?? ""}
             onChange={(event) =>
@@ -857,13 +857,13 @@ export function ExplorerShaderWorkbench({
                 {entryPoint.name}
               </option>
             ))}
-          </select>
+          </AppSelect>
           <span style={statusPillStyle}>
             {format.toUpperCase()}
             {isReadOnly ? " · Read only" : ""}
           </span>
           {onSceneChange ? (
-            <select
+            <AppSelect
               aria-label="Preview scene"
               value={selectedScene}
               onChange={(e) => onSceneChange(e.currentTarget.value as ShaderWorkbenchScene)}
@@ -873,7 +873,7 @@ export function ExplorerShaderWorkbench({
               <option value="torus">Torus</option>
               <option value="cube">Cube</option>
               <option value="fullscreen">Fullscreen</option>
-            </select>
+            </AppSelect>
           ) : null}
         </div>
       </div>

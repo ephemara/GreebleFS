@@ -35,6 +35,7 @@ import {
 } from '../runtime/vstBackend';
 import { PremiumSlider } from './PremiumSlider';
 import { OverlayToggle } from './OverlayToggle';
+import { AppSelect } from './AppSelect';
 import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
 import {
   getAudioDeckState,
@@ -1784,11 +1785,11 @@ export function ExplorerAudioWorkbench({
                   <div style={sectionHeaderStyle}>Transform & Export</div>
                   <div>
                     <label style={formLabelStyle}>Convert Format</label>
-                    <select style={formControlStyle} value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
+                    <AppSelect style={formControlStyle} value={convertFormat} onChange={(event) => setConvertFormat(event.target.value as 'mp3' | 'wav' | 'flac' | 'ogg')}>
                       {EXPLORER_AUDIO_EXPORT_FORMATS.map((format) => (
                         <option key={format.id} value={format.id}>{format.label}</option>
                       ))}
-                    </select>
+                    </AppSelect>
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--overlay-text-primary)' }}>
                     <OverlayToggle
@@ -1835,7 +1836,7 @@ export function ExplorerAudioWorkbench({
                       alignItems: 'center',
                     }}
                   >
-                    <select
+                    <AppSelect
                       value={selectedVstPluginPath}
                       onChange={(event) => {
                         setSelectedVstPluginPath(event.target.value);
@@ -1855,7 +1856,7 @@ export function ExplorerAudioWorkbench({
                           {plugin.name}
                         </option>
                       ))}
-                    </select>
+                    </AppSelect>
                     <button
                       type="button"
                       style={compactToolbarButtonStyle()}

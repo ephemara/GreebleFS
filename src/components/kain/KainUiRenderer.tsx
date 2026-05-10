@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { KainUiNode, KainUiSurface } from "@/runtime/kainUiScaffold";
+import { AppSelect } from "../AppSelect";
 import {
   SettingsActionButton,
   SettingsRow,
@@ -304,7 +305,7 @@ function KainUiNodeRenderer({
     const value = stringProp(node, "value", node.label ?? "semantic");
     const enabled = canRunAction(node, onAction, isActionEnabled) && !boolProp(node, "readonly", false);
     return (
-      <select
+      <AppSelect
         value={value}
         disabled={!enabled}
         onChange={() => {}}
@@ -321,7 +322,7 @@ function KainUiNodeRenderer({
         {...commonProps}
       >
         <option value={value}>{value}</option>
-      </select>
+      </AppSelect>
     );
   }
 

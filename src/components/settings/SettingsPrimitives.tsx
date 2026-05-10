@@ -16,6 +16,7 @@ import {
   type SelectHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { AppSelect } from '../AppSelect';
 import { FolderOpen, Info } from '../AppIcons';
 import { PremiumSlider } from '../PremiumSlider';
 import { OverlayToggle } from '../OverlayToggle';
@@ -547,7 +548,7 @@ export function SettingsSelect({
   style?: CSSProperties;
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, 'className' | 'style' | 'children'>) {
   return (
-    <select
+    <AppSelect
       className={`h-7 min-w-0 rounded border bg-transparent px-2 text-[11px] outline-none ${className}`.trim()}
       style={{
         borderColor: 'var(--overlay-workbench-settings-badge-border)',
@@ -558,7 +559,7 @@ export function SettingsSelect({
       {...selectProps}
     >
       {children}
-    </select>
+    </AppSelect>
   );
 }
 

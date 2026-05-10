@@ -267,6 +267,7 @@ import {
   SettingsRow,
   SettingsRowDescriptionProvider,
   SettingsRowGroup,
+  SettingsSelect,
   SettingsStatusPill,
   useSettingsRowDescriptionsVisible,
 } from "./settings/SettingsPrimitives";
@@ -8505,7 +8506,7 @@ export function SettingsPage({
             </div>
             <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Active Menu Pack</span>
-              <select
+              <SettingsSelect
                 value={activeMenuPack?.id ?? ""}
                 onChange={(event) => setActiveMenuPackId(event.target.value)}
                 className="mt-1 w-full rounded border px-3 py-2 text-[12px]"
@@ -8520,11 +8521,11 @@ export function SettingsPage({
                     {pack.name}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </label>
             <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Context Renderer</span>
-              <select
+              <SettingsSelect
                 value={activeContextMenuLayout.renderer ?? "classic"}
                 onChange={(event) =>
                   setContextMenuRendererForActiveContext(
@@ -8545,7 +8546,7 @@ export function SettingsPage({
                     </option>
                   ),
                 )}
-              </select>
+              </SettingsSelect>
             </label>
             <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] md:grid-cols-2 xl:grid-cols-1">
               <div
@@ -8615,7 +8616,7 @@ export function SettingsPage({
             </div>
             <label className="mt-2 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Add Command</span>
-              <select
+              <SettingsSelect
                 value={
                   contextMenuCommandDraftByContext[activeContextMenuContext] ??
                   ""
@@ -8643,7 +8644,7 @@ export function SettingsPage({
                     {command.title}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </label>
             <button
               type="button"
@@ -8659,7 +8660,7 @@ export function SettingsPage({
             </button>
             <label className="mt-3 block text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
               <span>Add Group Slot</span>
-              <select
+              <SettingsSelect
                 value={
                   contextMenuGroupDraftByContext[activeContextMenuContext] ??
                   "plugin"
@@ -8683,7 +8684,7 @@ export function SettingsPage({
                     {group}
                   </option>
                 ))}
-              </select>
+              </SettingsSelect>
             </label>
             <button
               type="button"
@@ -9016,7 +9017,7 @@ export function SettingsPage({
                   <div className="mt-3 grid grid-cols-1 gap-2">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                       <span>Group</span>
-                      <select
+                      <SettingsSelect
                         value={selectedContextMenuEntry.group}
                         onChange={(event) =>
                           setContextMenuGroupSlotGroup(
@@ -9037,11 +9038,11 @@ export function SettingsPage({
                             {group}
                           </option>
                         ))}
-                      </select>
+                      </SettingsSelect>
                     </label>
                     <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                       <span>Source Filter</span>
-                      <select
+                      <SettingsSelect
                         value={selectedContextMenuEntry.sourceFilter ?? "any"}
                         onChange={(event) =>
                           setContextMenuGroupSlotSourceFilter(
@@ -9066,7 +9067,7 @@ export function SettingsPage({
                             </option>
                           ),
                         )}
-                      </select>
+                      </SettingsSelect>
                     </label>
                   </div>
                 ) : null}
@@ -9074,7 +9075,7 @@ export function SettingsPage({
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                     <span>Parent</span>
-                    <select
+                    <SettingsSelect
                       value={selectedContextMenuEntry.parentEntryId ?? ""}
                       onChange={(event) =>
                         setContextMenuLayoutEntryParent(
@@ -9100,11 +9101,11 @@ export function SettingsPage({
                             {submenu.title}
                           </option>
                         ))}
-                    </select>
+                    </SettingsSelect>
                   </label>
                   <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                     <span>Quick Slot</span>
-                    <select
+                    <SettingsSelect
                       value={selectedContextMenuEntry.quickSlot ?? "none"}
                       onChange={(event) =>
                         setContextMenuLayoutEntryQuickSlot(
@@ -9124,11 +9125,11 @@ export function SettingsPage({
                           {option}
                         </option>
                       ))}
-                    </select>
+                    </SettingsSelect>
                   </label>
                   <label className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
                     <span>Fallback Bucket</span>
-                    <select
+                    <SettingsSelect
                       value={
                         selectedContextMenuEntry.fallbackBucket ?? "default"
                       }
@@ -9150,7 +9151,7 @@ export function SettingsPage({
                           {option}
                         </option>
                       ))}
-                    </select>
+                    </SettingsSelect>
                   </label>
                 </div>
 
@@ -13016,7 +13017,7 @@ export function SettingsPage({
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
                   Active Dock Presentation
                 </label>
-                <select
+                <SettingsSelect
                   aria-label="Active Dock Presentation"
                   value={settings.dock.activePresentationId ?? ""}
                   onChange={(event) =>
@@ -13032,7 +13033,7 @@ export function SettingsPage({
                       {presentation.name}
                     </option>
                   ))}
-                </select>
+                </SettingsSelect>
                 <p className="text-[11px] opacity-40">
                   Current: {resolvedDockPresentation.presentation.name}
                   {resolvedDockPresentation.explicitSelectionMissing
@@ -13209,7 +13210,7 @@ export function SettingsPage({
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
                   Preview Split Mode
                 </label>
-                <select
+                <SettingsSelect
                   aria-label="Dock Preview Split Mode"
                   value={settings.dock.previewSplitMode}
                   onChange={(event) =>
@@ -13223,7 +13224,7 @@ export function SettingsPage({
                 >
                   <option value="pane">Pane</option>
                   <option value="inline">Inline</option>
-                </select>
+                </SettingsSelect>
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
@@ -13453,7 +13454,7 @@ export function SettingsPage({
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
                   Integrated Shell Profile
                 </label>
-                <select
+                <SettingsSelect
                   aria-label="Integrated Shell Profile"
                   value={settings.terminal.shellProfile}
                   onChange={(event) => {
@@ -13483,7 +13484,7 @@ export function SettingsPage({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </SettingsSelect>
                 <p className="text-[11px] opacity-40">
                   {integratedShellProfileOptions.find(
                     (option) => option.id === settings.terminal.shellProfile,
@@ -13591,7 +13592,7 @@ export function SettingsPage({
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
                   Cursor Style
                 </label>
-                <select
+                <SettingsSelect
                   aria-label="Cursor Style"
                   value={settings.terminal.cursorStyle}
                   onChange={(event) =>
@@ -13606,7 +13607,7 @@ export function SettingsPage({
                   <option value="bar">Bar</option>
                   <option value="block">Block</option>
                   <option value="underline">Underline</option>
-                </select>
+                </SettingsSelect>
               </div>
 
               <div className="space-y-1.5 md:col-span-2">
@@ -13642,7 +13643,7 @@ export function SettingsPage({
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
                   External Terminal Profile
                 </label>
-                <select
+                <SettingsSelect
                   aria-label="External Terminal Profile"
                   value={settings.terminal.externalTerminalProfile}
                   onChange={(event) =>
@@ -13659,7 +13660,7 @@ export function SettingsPage({
                       {option.label}
                     </option>
                   ))}
-                </select>
+                </SettingsSelect>
                 <p className="text-[11px] opacity-40">
                   {externalProfileOptions.find(
                     (option) =>

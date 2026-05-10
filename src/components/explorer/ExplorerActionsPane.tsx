@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Search } from "@/components/AppIcons";
+import { AppSelect } from "../AppSelect";
 
 import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import type {
@@ -1290,7 +1291,7 @@ export function ExplorerActionsPane({
                       >
                         Size
                       </span>
-                      <select
+                      <AppSelect
                         value={selectedPlacement?.sizeVariant ?? "regular"}
                         onChange={(event) =>
                           onSetSelectedSizeVariant(
@@ -1313,7 +1314,7 @@ export function ExplorerActionsPane({
                             {variant}
                           </option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                   ) : null}
                   {selectedEntry.supportsWidthPx ? (

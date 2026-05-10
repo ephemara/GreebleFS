@@ -30,6 +30,7 @@ import {
   SettingsRow,
   SettingsRowGroup,
   SettingsSectionBlock,
+  SettingsSelect,
 } from '../SettingsPrimitives';
 import { openExplorerPicker } from '../../../runtime/explorerPicker';
 
@@ -151,7 +152,7 @@ function buildGeneratedFieldControl(
       );
     case 'select':
       return (
-        <select
+        <SettingsSelect
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           className="min-w-[180px] rounded border px-3 py-2 text-[12px]"
@@ -162,7 +163,7 @@ function buildGeneratedFieldControl(
               {option.label}
             </option>
           ))}
-        </select>
+        </SettingsSelect>
       );
     case 'text':
     default:

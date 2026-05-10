@@ -12,6 +12,7 @@ import {
   loadGitPanelRepositoryState,
 } from '../runtime/gitPanelBackend';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { AppSelect } from './AppSelect';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
 import { GitHistoryPanel } from './GitHistoryPanel';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
@@ -1214,7 +1215,7 @@ export function GitManager({
                     >
                       <GitBranch size={12} style={{ color: palette.muted }} />
                       <span style={{ fontSize: 10, fontWeight: 700, color: palette.muted }}>Branch</span>
-                      <select
+                      <AppSelect
                         aria-label="Git branch"
                         value={repoState.branch}
                         disabled={loading}
@@ -1239,7 +1240,7 @@ export function GitManager({
                             {branch.upstreamName ? ` • ${branch.upstreamName}` : ''}
                           </option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </label>
                   ) : null}
                   <button onClick={() => void refreshRepo()} disabled={loading} style={toolbarButtonStyle(palette)}><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button>

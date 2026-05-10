@@ -38,6 +38,7 @@ import {
   type ExplorerPdfSaveEditsOutput,
 } from '../runtime/pdfPreviewBackend';
 import { useSettingsStore } from '../store/settingsStore';
+import { AppSelect } from './AppSelect';
 import { AppDialogFrame, AppPromptDialog } from './AppModal';
 import {
   buildExplorerDraftPreservedMessage,
@@ -1231,7 +1232,7 @@ export function ExplorerPdfWorkbench({
 
       if (field.kind === 'dropdown' || field.kind === 'listbox') {
         return (
-          <select
+          <AppSelect
             data-pdf-form-field="true"
             key={field.fieldId}
             value={currentValue.stringValue ?? ''}
@@ -1253,7 +1254,7 @@ export function ExplorerPdfWorkbench({
                 {option.label}
               </option>
             ))}
-          </select>
+          </AppSelect>
         );
       }
 

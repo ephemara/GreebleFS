@@ -1,5 +1,5 @@
 id = "greeblefs-ui"
-version = "1.3.0"
+version = "1.3.1"
 name = "GreebleFS UI"
 description = "First-party shared React primitives for theme-aware GreebleFS plugins."
 packageKind = "library"

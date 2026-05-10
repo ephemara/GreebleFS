@@ -32,6 +32,7 @@ import {
   OverlayScrollArea,
   PremiumSlider,
 } from 'overlayterm-plugin';
+import { GreebleSelect } from '../GreebleSelect';
 
 export type BlendMode =
   | 'normal'
@@ -638,7 +639,7 @@ function LayerRow({
           onClick={(event) => event.stopPropagation()}
         >
           <span style={miniSectionLabelStyle}>Blend Mode</span>
-          <select
+          <GreebleSelect
             value={layer.blendMode ?? 'normal'}
             onChange={(event) => onBlendModeChange(layer.id, event.target.value as BlendMode)}
             style={inputStyle}
@@ -648,7 +649,7 @@ function LayerRow({
                 {resolveBlendModeLabel(blendMode)}
               </option>
             ))}
-          </select>
+          </GreebleSelect>
         </div>
       ) : null}
       {resolvedFeatures.contextMenu && onColorLabel ? (

@@ -9144,3 +9144,20 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `cargo test --manifest-path D:\tauron\crates\tauri\Cargo.toml native_buffer_pool --lib` with `CARGO_TARGET_DIR=D:\tauron\target-codex-native-buffer-pool`
   - Passed: MCP `smoke_screenshot` and `smoke` against the native WebView.
   - Known unrelated red: MCP `runtime_stack_quick` still fails from existing Settings/default drift, not from this cache/native directory lane.
+
+# 2026-05-10 - Global Themed Select Primitive
+
+- Replaced visible browser-native dropdowns across the app, Settings legacy/deep sections, Kain surfaces, Explorer workbenches, and first-party plugin/package code so native option hover colors cannot escape the GreebleFS theme again.
+- Durable implementation shape:
+  - `src/components/AppSelect.tsx` is now the app-level select/dropdown primitive. It uses React Aria/Stately select behavior, emits native-compatible `onChange` events for existing handlers, keeps a hidden native select for form compatibility, and renders compact themed trigger/listbox/option chrome through GreebleFS CSS vars.
+  - `SettingsSelect` in `src/components/settings/SettingsPrimitives.tsx` wraps `AppSelect`, so Settings rows can stay on the old ergonomic API while using the global themed dropdown system.
+  - `usr/packages/greeblefs-ui/src/GreebleSelect.tsx` is the package/plugin-safe dropdown primitive exported by `@greeblefs/ui`; first-party package/plugin code should import it rather than rendering visible native selects.
+  - `AppSelect` portals into the nearest `.overlay-window-host` when available so scoped `--overlay-*` variables survive React Aria overlay rendering. Font preview options may supply `fontFamily`, `fontStyle`, or `fontWeight`, but option-provided `fontSize` is intentionally ignored so menus stay compact.
+- Durable rule:
+  - Do not ship visible raw `<select>` UI in `src/**` or `usr/**`. Use `AppSelect`, `SettingsSelect`, or `GreebleSelect`; raw `<option>` children are allowed only as compatibility children under those wrappers.
+- Validation:
+  - Passed: `bunx vitest run src/test/appSelect.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lands directly on the icons section|renders settings overview" --reporter=dot --testTimeout=30000`
+  - Passed source scan: `rg -n "<select|</select>" src usr --glob '!src/vendor/**' --glob '!**/package-lock.json' --glob '!**/node_modules/**' --glob '!dist/**'` returned no app/plugin matches.
+  - Live MCP native WebView attached after HMR with `attachMode=native-cdp` and screenshot evidence at `MCP/.state/screenshots/app-select-after-tightening.png`; a separate visual open-menu proof still depends on navigating to a select-bearing panel in the live shell.
+  - Repo-wide `bunx tsc --noEmit --pretty false` remains baseline-red, but a touched-file diagnostic filter produced no diagnostics for the dropdown migration files.

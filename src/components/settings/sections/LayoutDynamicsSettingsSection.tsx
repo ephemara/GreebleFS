@@ -30,6 +30,7 @@ import {
   SettingsRow,
   SettingsSectionBlock,
   SettingsSectionHeader,
+  SettingsSelect,
   ThemeBadge,
 } from "../SettingsPrimitives";
 
@@ -586,7 +587,7 @@ export function LayoutDynamicsSettingsSection({
                             active={selectedPresetId != null}
                           />
                         </div>
-                        <select
+                        <SettingsSelect
                           aria-label={`${surface.label} layout dynamics preset`}
                           value={selectedPresetId ?? ""}
                           onChange={(event) =>
@@ -610,7 +611,7 @@ export function LayoutDynamicsSettingsSection({
                               {preset.label}
                             </option>
                           ))}
-                        </select>
+                        </SettingsSelect>
                       </label>
 
                       <RangeField

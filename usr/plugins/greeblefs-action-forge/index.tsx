@@ -22,6 +22,7 @@ import {
   ExplorerWorkflowMetaStrip,
   ExplorerWorkflowSection,
   ExplorerWorkflowStatusNotice,
+  GreebleSelect,
 } from '@greeblefs/ui';
 import {
   createFileOperations,
@@ -469,7 +470,7 @@ function ActionForgePanel({ plugin, api }) {
 
             {draft.packMode === 'existing' ? (
               <div style={{ display: 'grid', gap: 10 }}>
-                <select
+                <GreebleSelect
                   value={draft.selectedPackId}
                   onChange={(event) => {
                     const nextPack = packs.find((pack) => pack.id === event.currentTarget.value) ?? null;
@@ -490,7 +491,7 @@ function ActionForgePanel({ plugin, api }) {
                       {pack.name} · {formatCount(pack.actionCount)}
                     </option>
                   ))}
-                </select>
+                </GreebleSelect>
                 {selectedPack ? (
                   <div style={packCardStyle}>
                     <div style={packCardTitleStyle}>{selectedPack.name}</div>
@@ -725,7 +726,7 @@ function ActionForgePanel({ plugin, api }) {
 
             <ExplorerWorkflowFieldGrid columns={showAdvanced ? 3 : 2}>
               <Field label="Applies To">
-                <select
+                <GreebleSelect
                   value={draft.appliesTo}
                   onChange={(event) => setDraft((currentDraft) => ({
                     ...currentDraft,
@@ -736,10 +737,10 @@ function ActionForgePanel({ plugin, api }) {
                   <option value="any">Any</option>
                   <option value="file">Files</option>
                   <option value="directory">Folders</option>
-                </select>
+                </GreebleSelect>
               </Field>
               <Field label="Output">
-                <select
+                <GreebleSelect
                   value={draft.outputTarget}
                   onChange={(event) => setDraft((currentDraft) => ({
                     ...currentDraft,
@@ -752,7 +753,7 @@ function ActionForgePanel({ plugin, api }) {
                   <option value="preview-terminal">Preview Terminal</option>
                   <option value="native-terminal">Native Terminal</option>
                   <option value="silent">Silent</option>
-                </select>
+                </GreebleSelect>
               </Field>
               {showAdvanced ? (
                 <Field label="Extensions">

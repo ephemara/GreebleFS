@@ -1,4 +1,5 @@
 import React from 'react';
+import { GreebleSelect } from './GreebleSelect';
 import {
   ExplorerWorkflowButton,
   ExplorerWorkflowEmptyState,
@@ -29,10 +30,11 @@ export {
   ExplorerWorkflowStatusNotice,
 };
 
-export const greebleUiVersion = '1.3.0';
+export const greebleUiVersion = '1.3.1';
 
 export * from './dcc';
 export * from './layout';
+export { GreebleSelect };
 
 function mergeStyle(base, next) {
   return next ? { ...base, ...next } : base;
@@ -281,14 +283,6 @@ export function GreebleInput({ style, ...props }) {
 
 export function GreebleTextArea({ style, ...props }) {
   return <textarea {...props} style={mergeStyle(textAreaStyle, style)} />;
-}
-
-export function GreebleSelect({ children, style, ...props }) {
-  return (
-    <select {...props} style={mergeStyle(inputStyle, style)}>
-      {children}
-    </select>
-  );
 }
 
 export function GreebleSearchBox({ icon, style, inputStyle: nextInputStyle, ...props }) {
