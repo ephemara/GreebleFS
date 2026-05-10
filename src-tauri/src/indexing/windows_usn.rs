@@ -1,4 +1,4 @@
-use super::{volume_key_for_path, IndexedPathBuildOutput, IndexedPathRecord};
+use super::{volume_key_for_path, IndexedPathRecord, PathIndexBuildSource};
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::native_task_graph::NativeTaskCancellationToken;
 use std::collections::HashMap;
@@ -44,30 +44,53 @@ impl Drop for VolumeHandle {
     }
 }
 
-pub(super) fn build_records_from_usn(
+pub(super) struct WindowsUsnIndexPlan {
+    pub(super) source: PathIndexBuildSource,
+    volume_root: PathBuf,
+    high_usn: i64,
+}
+
+pub(super) fn prepare_usn_index(
     requested_root_path: &Path,
     token: &NativeTaskCancellationToken,
-) -> Result<IndexedPathBuildOutput, String> {
+) -> Result<WindowsUsnIndexPlan, String> {
+    token.throw_if_cancelled()?;
     let volume_root = resolve_volume_root(requested_root_path)?;
-    let requested_root_key = ExplorerPathKey::from_path(requested_root_path);
     let volume_handle = open_volume_handle(&volume_root)?;
     let journal = query_usn_journal(volume_handle.0)?;
-    let usn_records = enumerate_usn_records(volume_handle.0, journal.NextUsn, token)?;
+    Ok(WindowsUsnIndexPlan {
+        source: PathIndexBuildSource {
+            source: "windowsUsn".to_string(),
+            volume_key: volume_key_for_path(&volume_root),
+            journal_id: Some(journal.UsnJournalID),
+            last_usn: Some(journal.NextUsn),
+        },
+        volume_root,
+        high_usn: journal.NextUsn,
+    })
+}
+
+pub(super) fn stream_records_from_usn<F>(
+    plan: WindowsUsnIndexPlan,
+    requested_root_path: &Path,
+    token: &NativeTaskCancellationToken,
+    emit: F,
+) -> Result<(), String>
+where
+    F: FnMut(IndexedPathRecord) -> Result<(), String>,
+{
+    let requested_root_key = ExplorerPathKey::from_path(requested_root_path);
+    let volume_handle = open_volume_handle(&plan.volume_root)?;
+    let usn_records = enumerate_usn_records(volume_handle.0, plan.high_usn, token)?;
     token.throw_if_cancelled()?;
-    let records = reconstruct_index_records(
+    stream_index_records(
         requested_root_path,
         &requested_root_key,
-        &volume_root,
+        &plan.volume_root,
         usn_records,
         token,
-    )?;
-    Ok(IndexedPathBuildOutput {
-        source: "windowsUsn".to_string(),
-        volume_key: volume_key_for_path(&volume_root),
-        journal_id: Some(journal.UsnJournalID),
-        last_usn: Some(journal.NextUsn),
-        records,
-    })
+        emit,
+    )
 }
 
 fn resolve_volume_root(path: &Path) -> Result<PathBuf, String> {
@@ -248,15 +271,20 @@ fn parse_usn_record_v3(bytes: &[u8]) -> Result<UsnRecord, String> {
     })
 }
 
-fn reconstruct_index_records(
+fn stream_index_records<F>(
     requested_root_path: &Path,
     requested_root_key: &ExplorerPathKey,
     volume_root: &Path,
     usn_records: HashMap<String, UsnRecord>,
     token: &NativeTaskCancellationToken,
-) -> Result<Vec<IndexedPathRecord>, String> {
+    emit: F,
+) -> Result<(), String>
+where
+    F: FnMut(IndexedPathRecord) -> Result<(), String>,
+{
     let mut memo = HashMap::<String, Option<PathBuf>>::new();
-    let mut output = Vec::<IndexedPathRecord>::new();
+    let mut emitted = false;
+    let mut emit = emit;
     for file_ref in usn_records.keys() {
         token.throw_if_cancelled()?;
         let Some(path) = resolve_record_path(file_ref, volume_root, &usn_records, &mut memo) else {
@@ -270,18 +298,18 @@ fn reconstruct_index_records(
                 continue;
             }
             if let Some(record) = usn_records.get(file_ref) {
-                output.push(usn_record_to_indexed_record(&path, record));
+                emit(usn_record_to_indexed_record(&path, record))?;
+                emitted = true;
             }
         }
     }
-    output.sort_by(|left, right| left.path_key.cmp(&right.path_key));
-    if output.is_empty() && requested_root_path.exists() {
+    if !emitted && requested_root_path.exists() {
         return Err(format!(
             "USN enumeration produced no entries under {}",
             requested_root_path.display()
         ));
     }
-    Ok(output)
+    Ok(())
 }
 
 fn resolve_record_path(

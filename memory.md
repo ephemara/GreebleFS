@@ -9153,6 +9153,8 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - `src/generated/tauri.ts` includes the Specta command bindings for `pathIndexGetStatus`, `pathIndexStart`, `pathIndexListDir`, and `pathIndexSearch`.
 - Critical performance rule:
   - The Windows USN/MFT enumeration path in `src-tauri/src/indexing/windows_usn.rs` must stay pure USN data. Do not add per-record `fs::metadata`, `fs::symlink_metadata`, canonicalization, or other path-resolving syscalls inside the MFT loop or record conversion. Hydrate file size/fresh metadata only when serving the current directory's visible children.
+  - The Windows USN path now streams reconstructed `IndexedPathRecord`s into the chunked SQLite writer through `stream_records_from_usn`; do not reintroduce an `IndexedPathBuildOutput { records: Vec<_> }` handoff for USN/MFT records.
+  - The recursive fallback walker uses `ignore::WalkBuilder` file-type data and should not call per-entry metadata while bulk indexing. It stores size/mtime as zero and lets visible directory rows hydrate through `hydrate_record_metadata`.
 - Validation:
   - Passed: `cargo check --manifest-path src-tauri/Cargo.toml`
   - Passed: `bun run bindings:generate`
