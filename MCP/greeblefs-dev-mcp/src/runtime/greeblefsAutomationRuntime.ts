@@ -37,6 +37,30 @@ const preferredFallbackBrowserExecutables = [
   process.platform === 'win32' ? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe' : null,
   process.platform === 'win32' ? 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe' : null,
 ].filter((value): value is string => Boolean(value));
+const hostEventPollIntervalMs = normalizePositiveInteger(
+  process.env.GREEBLEFS_MCP_HOST_EVENT_POLL_MS,
+  1500,
+  500,
+  60_000,
+);
+const maxRetainedHostEventsPerSubscription = normalizePositiveInteger(
+  process.env.GREEBLEFS_MCP_MAX_RETAINED_HOST_EVENTS,
+  500,
+  25,
+  5000,
+);
+const defaultHttpFetchTimeoutMs = normalizePositiveInteger(
+  process.env.GREEBLEFS_MCP_HTTP_FETCH_TIMEOUT_MS,
+  3000,
+  250,
+  30_000,
+);
+const defaultHttpPostTimeoutMs = normalizePositiveInteger(
+  process.env.GREEBLEFS_MCP_HTTP_POST_TIMEOUT_MS,
+  10_000,
+  500,
+  60_000,
+);
 
 export interface GreeblefsTauriDevSessionRecord {
   version: number;
@@ -289,6 +313,25 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizePositiveInteger(
+  rawValue: string | number | null | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsedValue = typeof rawValue === 'number'
+    ? rawValue
+    : Number.parseInt(String(rawValue ?? ''), 10);
+  if (!Number.isFinite(parsedValue)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.trunc(parsedValue)));
+}
+
+function isTruthyEnvironmentFlag(value: string | null | undefined): boolean {
+  return /^(1|true|yes|on)$/i.test(value?.trim() ?? '');
+}
+
 function buildIsoTimestamp(): string {
   return new Date().toISOString();
 }
@@ -358,7 +401,7 @@ function resolvePathInsideRepo(pathLike: string): string {
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, {}, defaultHttpFetchTimeoutMs);
     if (!response.ok) {
       return null;
     }
@@ -373,9 +416,9 @@ async function fetchJsonWithHeaders<T>(
   headers: Record<string, string>,
 ): Promise<T | null> {
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers,
-    });
+    }, defaultHttpFetchTimeoutMs);
     if (!response.ok) {
       return null;
     }
@@ -390,14 +433,14 @@ async function postJson<T>(
   payload: unknown,
   headers: Record<string, string> = {},
 ): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...headers,
     },
     body: JSON.stringify(payload ?? null),
-  });
+  }, defaultHttpPostTimeoutMs);
   const responseText = await response.text();
   let decoded: T | null = null;
   if (responseText.trim()) {
@@ -410,6 +453,26 @@ async function postJson<T>(
     throw new Error(message || `HTTP ${response.status}`);
   }
   return decoded as T;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  timeout.unref?.();
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function formatErrorMessage(error: unknown): string {
@@ -700,7 +763,10 @@ export class GreeblefsAutomationRuntime {
       : false;
     if (options.includeAttachProbe && shouldAttemptAttachProbe) {
       try {
-        const page = await this.ensureAppPage();
+        const page = await this.ensureAppPage({
+          preferNative: true,
+          allowFallbackBrowser: false,
+        });
         await page.waitForFunction(() => Boolean((window as Window & {
           __GREEBLEFS_DEV_MCP__?: unknown;
         }).__GREEBLEFS_DEV_MCP__), undefined, { timeout: 5000 });
@@ -934,7 +1000,8 @@ export class GreeblefsAutomationRuntime {
       options.secondaryWindowKind ?? 'default-kind',
     ].join(':');
     const preferNative = options.preferNative !== false;
-    const allowFallbackBrowser = options.allowFallbackBrowser !== false;
+    const allowFallbackBrowser = options.allowFallbackBrowser === true
+      || isTruthyEnvironmentFlag(process.env.GREEBLEFS_MCP_ALLOW_BROWSER_FALLBACK);
 
     if (
       this.page
@@ -971,7 +1038,7 @@ export class GreeblefsAutomationRuntime {
 
     if (!allowFallbackBrowser) {
       throw new Error(
-        this.lastAttachError || 'Native WebView attach failed and browser fallback is disabled.',
+        `${this.lastAttachError || 'Native WebView attach failed.'} Browser fallback is explicit-only; pass allowFallbackBrowser=true or set GREEBLEFS_MCP_ALLOW_BROWSER_FALLBACK=1 if you intentionally want a separate browser session.`,
       );
     }
 
@@ -1652,7 +1719,7 @@ export class GreeblefsAutomationRuntime {
 
   private async checkUrlReachable(url: string): Promise<boolean> {
     try {
-      const response = await fetch(url);
+      const response = await fetchWithTimeout(url, {}, defaultHttpFetchTimeoutMs);
       return response.ok;
     } catch {
       return false;
@@ -1676,18 +1743,31 @@ export class GreeblefsAutomationRuntime {
   ): Promise<{ browser: Browser; page: Page }> {
     const systemBrowserErrors: string[] = [];
 
-    try {
-      return await this.launchSystemBrowserAndConnect(
-        frontendDevUrl,
-        options,
-        nativeWindows,
-        tauronWebviewDiagnostics,
-      );
-    } catch (error) {
-      systemBrowserErrors.push(formatErrorMessage(error));
+    if (isTruthyEnvironmentFlag(process.env.GREEBLEFS_MCP_USE_DETACHED_SYSTEM_BROWSER_FALLBACK)) {
+      try {
+        return await this.launchSystemBrowserAndConnect(
+          frontendDevUrl,
+          options,
+          nativeWindows,
+          tauronWebviewDiagnostics,
+        );
+      } catch (error) {
+        systemBrowserErrors.push(formatErrorMessage(error));
+        await this.terminateLaunchedFallbackBrowser();
+      }
     }
 
-    const browser = await this.launchFallbackBrowser();
+    let browser: Browser;
+    try {
+      browser = await this.launchFallbackBrowser();
+    } catch (error) {
+      if (systemBrowserErrors.length > 0) {
+        throw new Error(
+          `Browser fallback failed. Detached system-browser attempt: ${systemBrowserErrors.join(' | ')}. Managed Playwright attempt: ${formatErrorMessage(error)}`,
+        );
+      }
+      throw error;
+    }
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(frontendDevUrl, {
@@ -1963,7 +2043,8 @@ export class GreeblefsAutomationRuntime {
     }
     record.pollTimer = setTimeout(() => {
       void this.pollHostEventSubscription(subscriptionId);
-    }, immediate ? 0 : 350);
+    }, immediate ? 0 : hostEventPollIntervalMs);
+    record.pollTimer.unref?.();
   }
 
   private async pollHostEventSubscription(subscriptionId: string): Promise<void> {
@@ -1976,9 +2057,11 @@ export class GreeblefsAutomationRuntime {
       const nextSequence = update.subscription.latestSequence ?? record.latestSequence;
       if (update.events.length > 0 || nextSequence !== record.latestSequence) {
         record.latestSequence = nextSequence;
+        const retainedEvents = [...record.latestState.events, ...update.events]
+          .slice(-maxRetainedHostEventsPerSubscription);
         record.latestState = {
           subscription: update.subscription,
-          events: [...record.latestState.events, ...update.events],
+          events: retainedEvents,
         };
         for (const listener of record.listeners) {
           try {
@@ -1990,7 +2073,7 @@ export class GreeblefsAutomationRuntime {
       } else {
         record.latestState = {
           subscription: update.subscription,
-          events: record.latestState.events,
+          events: record.latestState.events.slice(-maxRetainedHostEventsPerSubscription),
         };
       }
     } catch {
@@ -2045,28 +2128,37 @@ export class GreeblefsAutomationRuntime {
       // Ignore browser close failures.
     }
     if (this.launchedFallbackBrowserPid) {
-      if (process.platform === 'win32') {
-        await new Promise<void>((resolve) => {
-          const child = spawn('taskkill', ['/PID', String(this.launchedFallbackBrowserPid), '/T', '/F'], {
-            stdio: 'ignore',
-            shell: false,
-          });
-          child.on('exit', () => resolve());
-          child.on('error', () => resolve());
-        });
-      } else {
-        try {
-          process.kill(this.launchedFallbackBrowserPid, 'SIGTERM');
-        } catch {
-          // Ignore fallback-browser kill failures.
-        }
-      }
+      await this.terminateLaunchedFallbackBrowser();
     }
     this.page = null;
     this.browser = null;
     this.attachMode = null;
     this.attachFingerprint = '';
     this.launchedFallbackBrowserPid = null;
+  }
+
+  private async terminateLaunchedFallbackBrowser(): Promise<void> {
+    if (!this.launchedFallbackBrowserPid) {
+      return;
+    }
+    const pid = this.launchedFallbackBrowserPid;
+    this.launchedFallbackBrowserPid = null;
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        const child = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+          stdio: 'ignore',
+          shell: false,
+        });
+        child.on('exit', () => resolve());
+        child.on('error', () => resolve());
+      });
+      return;
+    }
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // Ignore fallback-browser kill failures.
+    }
   }
 
   private async closeHostEventSubscriptions(): Promise<void> {

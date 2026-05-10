@@ -6,7 +6,7 @@ Standalone MCP server for driving a live `bun run tauri dev` GreebleFS session.
 
 - reads the dev-session status/log files published by `scripts/run-platform-tauri.mjs`
 - attaches to the running Tauri WebView through Playwright/CDP when available
-- falls back to the frontend dev URL for browser-side inspection when native attach is unavailable
+- can explicitly fall back to the frontend dev URL for browser-side inspection when native attach is unavailable
 - captures real desktop `greeblefs.exe` windows through a Windows-native screenshot path when WebView/CDP is unavailable
 - calls the dev-only in-app bridge for semantic state, performance, profiles, console retention, and host methods when the attachment is a real Tauri webview
 - exposes a compact MCP tool surface by default: `gfs_how_to_use`, `gfs_help`, `gfs_app`, `gfs_ui_snapshot`, `gfs_ui_act`, `gfs_ui_capture`, `gfs_host`, `gfs_events`, `gfs_code`, and `gfs_validate`
@@ -16,12 +16,15 @@ Standalone MCP server for driving a live `bun run tauri dev` GreebleFS session.
 ## Runtime notes
 
 - Runtime automation uses `node --import tsx`, not Bun. On this Windows host, Playwright browser/CDP attachment was reliable under Node and stalled under Bun.
+- Browser fallback is disabled by default. Pass `allowFallbackBrowser: true` to `gfs_app command=attach`, or set `GREEBLEFS_MCP_ALLOW_BROWSER_FALLBACK=1`, only when a separate browser session is intentional.
+- Detached system-browser fallback is disabled unless `GREEBLEFS_MCP_USE_DETACHED_SYSTEM_BROWSER_FALLBACK=1`; managed Playwright launches are preferred so fallback processes close with the MCP runtime.
+- Loopback health/RPC probes have bounded timeouts. Tune `GREEBLEFS_MCP_HTTP_FETCH_TIMEOUT_MS` or `GREEBLEFS_MCP_HTTP_POST_TIMEOUT_MS` only for measured cases.
 - TypeScript validation still uses Bun: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`.
 - `bun run tauri dev` publishes live session truth to:
   - `MCP/.state/tauri-dev-session.json`
   - `MCP/.state/tauri-dev.log`
 - The MCP runtime checks those files first so agents can tell whether the app is actually running before trying to attach.
-- Default MCP tool count should stay at 10 or fewer. Add new automation as commands on the compact router tools unless a capability truly needs top-level model attention.
+- Default MCP tool count should stay near 10-12. Add new automation as commands on the compact router tools unless a capability truly needs top-level model attention.
 
 ## Scripts
 
@@ -30,7 +33,7 @@ Standalone MCP server for driving a live `bun run tauri dev` GreebleFS session.
 - `bun run dev:http`
   Start the server on localhost Streamable HTTP.
 - `bun run doctor`
-  Run local attach/status diagnostics without starting the MCP transport.
+  Run local status diagnostics without starting the MCP transport. Use `node --import tsx src/index.ts --doctor --attach-probe` when you intentionally want a native WebView attach probe.
 - `bun run smoke`
   Run a live attach/snapshot smoke pass.
 - `bun run smoke:screenshot`

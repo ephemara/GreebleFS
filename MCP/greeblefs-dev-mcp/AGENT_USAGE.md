@@ -33,7 +33,7 @@ Use that with `gfs_code`. It returns branch, dirty files, recent commits, recent
 For live-app proof, start with:
 
 ```json
-{ "command": "status", "includeAttachProbe": true }
+{ "command": "status" }
 ```
 
 Use that with `gfs_app`. If the app is reachable, attach with `gfs_app command=attach`, inspect with `gfs_ui_snapshot`, act with `gfs_ui_act`, and capture proof with `gfs_ui_capture`.
@@ -69,7 +69,7 @@ Use that with `gfs_app`. If the app is reachable, attach with `gfs_app command=a
 Check whether the app is healthy:
 
 ```json
-{ "command": "status", "includeAttachProbe": true }
+{ "command": "status" }
 ```
 
 If status is unclear, run:
@@ -81,8 +81,10 @@ If status is unclear, run:
 Attach to the app:
 
 ```json
-{ "command": "attach", "preferNative": true, "allowFallbackBrowser": true }
+{ "command": "attach", "preferNative": true }
 ```
+
+Browser fallback is explicit-only because it spawns a separate browser process. Use `allowFallbackBrowser: true` only when you deliberately want browser-side inspection of the Vite dev URL after native WebView/CDP attach is unavailable.
 
 Inspect visible actions:
 

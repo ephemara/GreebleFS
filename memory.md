@@ -9202,3 +9202,19 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/appSelect.test.tsx src/test/gpuRuntimeStore.test.ts --reporter=dot`
   - Touched-file TypeScript filter returned no diagnostics for `AppSelect`, `gpuRuntimeStore`, `explorerDragAndDrop`, `explorerDragInteractions`, or `explorerPathIndex`.
   - Live WebView proof: System GPU select opens with options `Auto`, `Safe`, `Integrated`, `Discrete`; popover parent is `BODY`, nested overlay container count is `0`, computed popover/option font size is `8px`, and no `GPU runtime event subscription failed` text is visible.
+
+# 2026-05-10 - Dev MCP Browser Fallback And Polling Guardrails
+
+- Hardened the dev MCP server after browser/process fanout and performance spikes.
+  - Browser fallback is now explicit-only. `status`, `doctor`, resource reads, bridge snapshots, UI actions, and screenshot paths no longer launch a separate Chrome/Edge/Vite browser session as an availability probe. Agents must opt in with `allowFallbackBrowser=true` or process-wide `GREEBLEFS_MCP_ALLOW_BROWSER_FALLBACK=1`.
+  - `bun run mcp:doctor` is light by default; use `node --import tsx src/index.ts --doctor --attach-probe` only when a native WebView attach probe is intentional.
+  - Detached system-browser fallback is behind `GREEBLEFS_MCP_USE_DETACHED_SYSTEM_BROWSER_FALLBACK=1`; explicit fallback otherwise uses managed Playwright launches so the runtime can close them.
+  - Host-event subscriptions now poll every 1500ms by default, `unref()` their timers, and cap retained events at 500 per subscription. Tune with `GREEBLEFS_MCP_HOST_EVENT_POLL_MS` and `GREEBLEFS_MCP_MAX_RETAINED_HOST_EVENTS` only with proof.
+  - Native/session HTTP probes now use bounded fetch/post timeouts so stale loopback endpoints degrade instead of hanging MCP calls. Tune with `GREEBLEFS_MCP_HTTP_FETCH_TIMEOUT_MS` and `GREEBLEFS_MCP_HTTP_POST_TIMEOUT_MS` only for measured cases.
+- Durable rule:
+  - The dev MCP must never surprise-launch browsers or become a polling load generator. Prefer native automation/session-file truth first, native CDP attach only for deliberate UI work, and browser fallback only for explicit browser-side inspection.
+- Validation:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `bun run mcp:doctor` in light mode; the first run exposed missing HTTP timeouts, the fixed run completed in about five seconds while native automation/CDP were unavailable.
+  - Passed MCP stdio proof from the patched source: tool count stayed 11, `gfs_app status` and `gfs_app doctor` returned without errors, `attachMode` stayed `null`, and doctor reported the light/no-bridge path.
+  - Cleaned stale runtime debris from the old behavior: 12 old `node --import tsx src/index.ts --transport stdio` MCP processes and fallback Chrome trees whose command lines matched `D:\GreebleFS\MCP\.state\fallback-browser-profile`. Final scans found none remaining.

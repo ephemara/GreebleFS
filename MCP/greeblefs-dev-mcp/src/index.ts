@@ -90,15 +90,21 @@ function parseCliArguments(argv: string[]): {
   transport: 'stdio' | 'http';
   port: number;
   doctor: boolean;
+  doctorAttachProbe: boolean;
 } {
   let transport: 'stdio' | 'http' = 'stdio';
   let port = DEFAULT_HTTP_PORT;
   let doctor = false;
+  let doctorAttachProbe = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--doctor') {
       doctor = true;
+      continue;
+    }
+    if (value === '--attach-probe') {
+      doctorAttachProbe = true;
       continue;
     }
     if (value === '--transport' && argv[index + 1]) {
@@ -122,6 +128,7 @@ function parseCliArguments(argv: string[]): {
     transport,
     port,
     doctor,
+    doctorAttachProbe,
   };
 }
 
@@ -306,8 +313,11 @@ function wrapToolHandler(
   };
 }
 
-async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<Record<string, unknown>> {
-  const status = await runtime.getStatus({ includeAttachProbe: true });
+async function buildDoctorReport(
+  runtime: GreeblefsAutomationRuntime,
+  options: { includeAttachProbe?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  const status = await runtime.getStatus({ includeAttachProbe: options.includeAttachProbe === true });
   const logTail = await runtime.readDevLogTail(80);
   let bridgeStatus: unknown = null;
   let hostApiSchema: unknown = null;
@@ -326,7 +336,14 @@ async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<R
   }
 
   try {
-    hostApiSchema = await runtime.getHostApiSchema();
+    if (status.nativeAutomationReachable || status.bridgeReady) {
+      hostApiSchema = await runtime.getHostApiSchema();
+    } else {
+      hostApiSchema = {
+        unavailable: true,
+        reason: 'Native automation and attached bridge are unavailable; doctor skipped bridge attach by default.',
+      };
+    }
   } catch (error) {
     hostApiSchema = {
       unavailable: true,
@@ -1620,7 +1637,9 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
             status: await runtime.getStatus({ includeAttachProbe: args.includeAttachProbe === true }),
           });
         case 'doctor':
-          return buildJsonToolResult('App doctor report', await buildDoctorReport(runtime));
+          return buildJsonToolResult('App doctor report', await buildDoctorReport(runtime, {
+            includeAttachProbe: args.includeAttachProbe === true,
+          }));
         case 'start':
           return buildJsonToolResult('Started Tauri dev session', {
             status: await runtime.startTauriDev(),
@@ -2371,8 +2390,11 @@ async function buildServer(runtime: GreeblefsAutomationRuntime): Promise<McpServ
   return server;
 }
 
-async function runDoctorMode(runtime: GreeblefsAutomationRuntime): Promise<void> {
-  const report = await buildDoctorReport(runtime);
+async function runDoctorMode(
+  runtime: GreeblefsAutomationRuntime,
+  options: { includeAttachProbe?: boolean } = {},
+): Promise<void> {
+  const report = await buildDoctorReport(runtime, options);
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 }
 
@@ -2519,7 +2541,9 @@ async function main(): Promise<void> {
 
   try {
     if (cli.doctor) {
-      await runDoctorMode(runtime);
+      await runDoctorMode(runtime, {
+        includeAttachProbe: cli.doctorAttachProbe,
+      });
       await runtime.close();
       return;
     }
