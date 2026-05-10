@@ -9,6 +9,8 @@ Standalone MCP server for driving a live `bun run tauri dev` GreebleFS session.
 - falls back to the frontend dev URL for browser-side inspection when native attach is unavailable
 - captures real desktop `greeblefs.exe` windows through a Windows-native screenshot path when WebView/CDP is unavailable
 - calls the dev-only in-app bridge for semantic state, performance, profiles, console retention, and host methods when the attachment is a real Tauri webview
+- exposes a compact MCP tool surface by default: `gfs_help`, `gfs_app`, `gfs_ui_snapshot`, `gfs_ui_act`, `gfs_ui_capture`, `gfs_host`, `gfs_events`, `gfs_code`, and `gfs_validate`
+- keeps rich host methods discoverable through `gfs_help` / `gfs_host schema` and callable through `gfs_host command=call`, instead of registering one MCP tool per host method
 
 ## Runtime notes
 
@@ -18,6 +20,7 @@ Standalone MCP server for driving a live `bun run tauri dev` GreebleFS session.
   - `MCP/.state/tauri-dev-session.json`
   - `MCP/.state/tauri-dev.log`
 - The MCP runtime checks those files first so agents can tell whether the app is actually running before trying to attach.
+- Default MCP tool count should stay under 10. Add new automation as commands on the compact router tools unless a capability truly needs top-level model attention.
 
 ## Scripts
 
