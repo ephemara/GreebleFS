@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use uuid::Uuid;
 
-use crate::message_ring::{MessageFramedRing, MessageStreamsPolicy};
+use crate::message_ring::{MessageFramedRing, MessageRingTelemetry, MessageStreamsPolicy};
 use crate::runtime_pipeline::extension_host::{ExecutionContextSnapshot, FileTypeDescriptor};
 
 pub const HOST_EVENT_TOPIC_SELECTION_CHANGED: &str = "selection.changed";
@@ -128,6 +128,24 @@ pub struct HostEventBusState {
     message_stream_policy: MessageStreamsPolicy,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostEventTopicRingTelemetry {
+    pub topic: String,
+    pub latest_sequence: Option<u64>,
+    pub telemetry: MessageRingTelemetry,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostEventRingTelemetrySnapshot {
+    pub subscription_count: usize,
+    pub latest_topic_count: usize,
+    pub history_topic_count: usize,
+    pub next_sequence: u64,
+    pub topics: Vec<HostEventTopicRingTelemetry>,
+}
+
 impl HostEventBusState {
     pub fn new(message_stream_policy: MessageStreamsPolicy) -> Self {
         Self {
@@ -149,6 +167,31 @@ impl HostEventBusState {
 
     pub fn topic_catalog(&self) -> Vec<HostTopicDescriptor> {
         builtin_host_topic_catalog()
+    }
+
+    pub fn ring_telemetry_snapshot(&self) -> HostEventRingTelemetrySnapshot {
+        let records = self.records_guard();
+        let mut topics = records
+            .history_by_topic
+            .iter()
+            .map(|(topic, ring)| HostEventTopicRingTelemetry {
+                topic: topic.clone(),
+                latest_sequence: records
+                    .latest_by_topic
+                    .get(topic)
+                    .map(|event| event.sequence),
+                telemetry: ring.telemetry_snapshot(),
+            })
+            .collect::<Vec<_>>();
+        topics.sort_by(|left, right| left.topic.cmp(&right.topic));
+
+        HostEventRingTelemetrySnapshot {
+            subscription_count: records.subscriptions.len(),
+            latest_topic_count: records.latest_by_topic.len(),
+            history_topic_count: records.history_by_topic.len(),
+            next_sequence: records.next_sequence,
+            topics,
+        }
     }
 
     pub fn active_execution_context_snapshot(&self) -> Option<ExecutionContextSnapshot> {

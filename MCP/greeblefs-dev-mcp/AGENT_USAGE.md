@@ -11,13 +11,13 @@ Default tools:
 - `gfs_how_to_use`: read this markdown manual.
 - `gfs_help`: list router tools, commands, and host method ids.
 - `gfs_app`: inspect or control the live Tauri dev app.
-- `gfs_ui_snapshot`: read UI, console, telemetry, performance, and profile state.
+- `gfs_ui_snapshot`: read UI, console, telemetry, performance, native flow, and profile state.
 - `gfs_ui_act`: click, type, press keys, invoke actions, evaluate scripts, and clear console retention.
 - `gfs_ui_capture`: capture screenshots and accessibility trees.
 - `gfs_host`: read/call extension-host methods.
 - `gfs_events`: inspect, subscribe to, and publish host events.
 - `gfs_code`: gather coding context, git state, memory, architecture, and workspace file data.
-- `gfs_validate`: plan and run focused validation.
+- `gfs_validate`: plan and run focused validation plus native performance probes.
 
 ## Quick Start
 
@@ -47,7 +47,7 @@ Use that with `gfs_app`. If the app is reachable, attach with `gfs_app command=a
 - `gfs_app`
   - `status`, `doctor`, `start`, `stop`, `wait_ready`, `attach`, `log`, `windows`.
 - `gfs_ui_snapshot`
-  - `snapshot`, `actions`, `console`, `telemetry`, `performance`, `profile`.
+  - `snapshot`, `actions`, `console`, `telemetry`, `performance`, `flow`, `profile`.
 - `gfs_ui_act`
   - `click`, `hover`, `type`, `key`, `select`, `drag`, `invoke_action`, `evaluate`, `console_clear`.
 - `gfs_ui_capture`
@@ -59,7 +59,7 @@ Use that with `gfs_app`. If the app is reachable, attach with `gfs_app command=a
 - `gfs_code`
   - `agent_context`, `git_status`, `git_branch`, `git_recent_commits`, `git_changed_files`, `git_diff`, `git_show`, `memory_recent`, `memory_search`, `architecture`, `lessons`, `workspace_read`, `workspace_write`, `workspace_list`, `workspace_stat`, `workspace_delete`, `workspace_run`.
 - `gfs_validate`
-  - `plan`, `run`, `typecheck`, `test_file`, `rust_test`, `smoke`, `smoke_screenshot`, `runtime_stack_quick`.
+  - `plan`, `run`, `typecheck`, `test_file`, `rust_test`, `smoke`, `smoke_screenshot`, `runtime_stack_quick`, `native_ring_benchmark`.
 
 ## Recipes
 
@@ -98,6 +98,22 @@ Capture visual proof:
 ```json
 { "command": "screenshot", "pathHint": "feature-proof", "includeImageData": false }
 ```
+
+Inspect backend-native performance flow after code changes:
+
+```json
+{ "command": "flow", "limit": 40 }
+```
+
+Use that with `gfs_ui_snapshot`. It returns app status, recent git changes, frontend performance, native task graph policy/telemetry, preview streaming policy, host-event and telemetry ring pressure, native buffer pool, native byte-stream, GPU status, recent telemetry records, and agent-readable warning signals.
+
+Probe WebView2 native ring throughput:
+
+```json
+{ "command": "native_ring_benchmark", "windowLabel": "main", "packets": 256, "packetBytes": 4096, "capacity": 4194304 }
+```
+
+Use that with `gfs_validate`. It posts a benchmark-scoped native ring to the target WebView and returns packet/byte/drop/timing telemetry.
 
 Discover host methods:
 

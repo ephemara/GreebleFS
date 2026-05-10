@@ -180,8 +180,8 @@ const compactToolCatalog = {
     summary: 'Control and inspect the live GreebleFS dev app/session.',
   },
   gfs_ui_snapshot: {
-    commands: ['snapshot', 'actions', 'console', 'telemetry', 'performance', 'profile'],
-    summary: 'Read app/UI state without driving the surface.',
+    commands: ['snapshot', 'actions', 'console', 'telemetry', 'performance', 'flow', 'profile'],
+    summary: 'Read app/UI state and backend performance flow without driving the surface.',
   },
   gfs_ui_act: {
     commands: ['click', 'hover', 'type', 'key', 'select', 'drag', 'invoke_action', 'evaluate', 'console_clear'],
@@ -222,8 +222,8 @@ const compactToolCatalog = {
     summary: 'Compact coding context, git, memory, architecture, and repo workspace operations.',
   },
   gfs_validate: {
-    commands: ['plan', 'run', 'typecheck', 'test_file', 'rust_test', 'smoke', 'smoke_screenshot', 'runtime_stack_quick'],
-    summary: 'Plan and run focused validation commands.',
+    commands: ['plan', 'run', 'typecheck', 'test_file', 'rust_test', 'smoke', 'smoke_screenshot', 'runtime_stack_quick', 'native_ring_benchmark'],
+    summary: 'Plan and run focused validation commands, including native performance probes.',
   },
 } as const;
 
@@ -819,6 +819,197 @@ async function buildAgentContext(runtime: GreeblefsAutomationRuntime, limit: num
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function readPath(root: unknown, pathSegments: string[]): unknown {
+  let cursor: unknown = root;
+  for (const segment of pathSegments) {
+    const record = asRecord(cursor);
+    if (!record || !(segment in record)) {
+      return undefined;
+    }
+    cursor = record[segment];
+  }
+  return cursor;
+}
+
+function readNumberPath(root: unknown, pathSegments: string[]): number | null {
+  const value = readPath(root, pathSegments);
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function collectPerformanceFlowSignals(nativeFlow: unknown, frontendPerformance: unknown): Array<Record<string, unknown>> {
+  const signals: Array<Record<string, unknown>> = [];
+  const pushSignal = (severity: 'info' | 'warn' | 'critical', area: string, message: string, value?: unknown) => {
+    signals.push({ severity, area, message, value });
+  };
+
+  if (asRecord(nativeFlow)?.unavailable === true) {
+    pushSignal('critical', 'native-automation', 'Native performance flow is unavailable; backend truth cannot be assessed from this snapshot.', asRecord(nativeFlow)?.reason);
+    return signals;
+  }
+
+  const nativeQueueDepth = readNumberPath(nativeFlow, ['nativeTaskGraph', 'telemetry', 'queueDepth']) ?? 0;
+  const nativeActiveTasks = readNumberPath(nativeFlow, ['nativeTaskGraph', 'telemetry', 'activeTasks']) ?? 0;
+  const nativeRejectedTasks = readNumberPath(nativeFlow, ['nativeTaskGraph', 'telemetry', 'rejectedTasks']) ?? 0;
+  const nativeFailedTasks = readNumberPath(nativeFlow, ['nativeTaskGraph', 'telemetry', 'failedTasks']) ?? 0;
+  const nativeStaleCancelledTasks = readNumberPath(nativeFlow, ['nativeTaskGraph', 'telemetry', 'staleCancelledTasks']) ?? 0;
+  if (nativeQueueDepth > 0 || nativeActiveTasks > 0) {
+    pushSignal('info', 'native-task-graph', 'Native task graph has live queued or active work.', { queueDepth: nativeQueueDepth, activeTasks: nativeActiveTasks });
+  }
+  if (nativeRejectedTasks > 0) {
+    pushSignal('critical', 'native-task-graph', 'Native task graph rejected work; inspect lane caps, stale cancellation, and queue pressure.', nativeRejectedTasks);
+  }
+  if (nativeFailedTasks > 0) {
+    pushSignal('warn', 'native-task-graph', 'Native task graph has failed work in this session.', nativeFailedTasks);
+  }
+  if (nativeStaleCancelledTasks > 0) {
+    pushSignal('info', 'native-task-graph', 'Stale native work was cancelled, which is expected during fast navigation but useful for regression analysis.', nativeStaleCancelledTasks);
+  }
+
+  const nativeBufferPool = readPath(nativeFlow, ['nativeBuffers', 'nativeBufferPool']);
+  const inFlightBuffers = readNumberPath(nativeBufferPool, ['inFlight']) ?? 0;
+  const bufferWaitCount = readNumberPath(nativeBufferPool, ['waitCount']) ?? 0;
+  const generationMismatchCount = readNumberPath(nativeBufferPool, ['generationMismatchCount']) ?? 0;
+  if (inFlightBuffers > 0) {
+    pushSignal('info', 'native-buffer-pool', 'Native shared buffers are currently in flight.', inFlightBuffers);
+  }
+  if (bufferWaitCount > 0) {
+    pushSignal('warn', 'native-buffer-pool', 'Native buffer pool waited for slots; this can indicate payload pressure or slow JS release.', bufferWaitCount);
+  }
+  if (generationMismatchCount > 0) {
+    pushSignal('critical', 'native-buffer-pool', 'Native buffer pool saw generation mismatches; inspect JS release ordering.', generationMismatchCount);
+  }
+
+  const nativeByteStream = readPath(nativeFlow, ['nativeBuffers', 'nativeByteStream']);
+  const streamPostFailures = readNumberPath(nativeByteStream, ['postFailures']) ?? 0;
+  const streamDroppedBytes = readNumberPath(nativeByteStream, ['droppedBytes']) ?? 0;
+  const unavailableSubscriptions = readNumberPath(nativeByteStream, ['unavailableSubscriptions']) ?? 0;
+  if (streamPostFailures > 0 || unavailableSubscriptions > 0) {
+    pushSignal('warn', 'native-byte-stream', 'Native byte streams had failed or unavailable subscribers.', { postFailures: streamPostFailures, unavailableSubscriptions });
+  }
+  if (streamDroppedBytes > 0) {
+    pushSignal('warn', 'native-byte-stream', 'Native byte stream payloads were dropped before delivery.', streamDroppedBytes);
+  }
+
+  const telemetryRingOverflow = readPath(nativeFlow, ['messageRings', 'telemetryRecentRecords', 'overflow']);
+  if (asRecord(telemetryRingOverflow)?.overflowed === true) {
+    pushSignal('warn', 'message-rings', 'Telemetry recent-record ring overflowed; older diagnostics were evicted.', telemetryRingOverflow);
+  }
+  const hostEventTopics = readPath(nativeFlow, ['messageRings', 'hostEvents', 'topics']);
+  if (Array.isArray(hostEventTopics)) {
+    for (const topic of hostEventTopics) {
+      const topicName = String(readPath(topic, ['topic']) ?? 'unknown');
+      const overflow = readPath(topic, ['telemetry', 'overflow']);
+      if (asRecord(overflow)?.overflowed === true) {
+        pushSignal('warn', 'host-event-rings', `Host event ring overflowed for ${topicName}.`, overflow);
+      }
+    }
+  }
+
+  const frontendStatus = asRecord(frontendPerformance);
+  if (frontendStatus?.unavailable === true) {
+    pushSignal('info', 'frontend-performance', 'Frontend performance bridge snapshot is unavailable; backend-native flow is still authoritative for native changes.', frontendStatus.reason);
+  }
+
+  if (signals.length === 0) {
+    pushSignal('info', 'performance-flow', 'No obvious native queue, buffer, stream, or ring pressure is visible in this snapshot.');
+  }
+  return signals;
+}
+
+async function buildPerformanceFlowReport(runtime: GreeblefsAutomationRuntime, limit: number): Promise<Record<string, unknown>> {
+  const [
+    appStatus,
+    nativeFlow,
+    frontendPerformance,
+    telemetryStatus,
+    telemetryRecords,
+    gitStatus,
+    gitRecentCommits,
+    changedFiles,
+  ] = await Promise.all([
+    runtime.getStatus({ includeAttachProbe: false }).catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.getNativePerformanceFlowSnapshot().catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.getPerformanceSnapshot().catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.getTelemetryStatus().catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.getTelemetryRecords(limit).catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.runWorkspaceCommand('git status --short --branch').catch((error) => ({
+      command: 'git status --short --branch',
+      cwd: runtime.getRepoRoot(),
+      exitCode: 1,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    })),
+    runtime.runWorkspaceCommand(`git log -n ${limit} --pretty=format:"%h %ad %s" --date=short`).catch((error) => ({
+      command: 'git log',
+      cwd: runtime.getRepoRoot(),
+      exitCode: 1,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    })),
+    collectChangedFiles(runtime).catch(() => []),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    purpose: 'Agent-facing performance flow snapshot for verifying whether recent code changes are visible in the live native/backend path.',
+    appStatus,
+    recentChanges: {
+      gitStatus: gitStatus.stdout,
+      recentCommits: gitRecentCommits.stdout,
+      changedFiles,
+    },
+    nativeFlow,
+    frontendPerformance,
+    telemetry: {
+      status: telemetryStatus,
+      records: telemetryRecords,
+    },
+    signals: collectPerformanceFlowSignals(nativeFlow, frontendPerformance),
+    followupTools: {
+      nativeRingBenchmark: {
+        tool: 'gfs_validate',
+        payload: {
+          command: 'native_ring_benchmark',
+          windowLabel: 'main',
+          packets: 256,
+          packetBytes: 4096,
+          capacity: 4194304,
+        },
+      },
+      hostEventReplay: {
+        tool: 'gfs_events',
+        payload: {
+          command: 'snapshot',
+          request: {
+            replayFrom: 0,
+          },
+        },
+      },
+    },
+  };
+}
+
 function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRuntime): void {
   const uiSnapshotCache = new Map<string, {
     revision: number;
@@ -969,7 +1160,7 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
     'gfs_ui_snapshot',
     {
       title: 'GreebleFS UI Snapshot',
-      description: 'Router for read-only UI state: snapshot, actions, console, telemetry, performance, profile.',
+      description: 'Router for read-only UI state: snapshot, actions, console, telemetry, performance, native flow, profile.',
       inputSchema: z.object({
         command: z.enum(compactToolCatalog.gfs_ui_snapshot.commands).default('snapshot'),
         includeDom: z.boolean().optional(),
@@ -1034,6 +1225,10 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
         case 'performance':
           return buildJsonToolResult('Read performance snapshot', {
             performance: await runtime.getPerformanceSnapshot(),
+          });
+        case 'flow':
+          return buildJsonToolResult('Read native performance flow snapshot', {
+            performanceFlow: await buildPerformanceFlowReport(runtime, args.limit ?? 40),
           });
         case 'profile':
           return buildJsonToolResult('Read profile snapshot', {
@@ -1451,7 +1646,7 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
     'gfs_validate',
     {
       title: 'GreebleFS Validate',
-      description: 'Router for focused validation: plan, run, typecheck, test_file, rust_test, smoke, smoke_screenshot, runtime_stack_quick.',
+      description: 'Router for focused validation: plan, run, typecheck, test_file, rust_test, smoke, smoke_screenshot, runtime_stack_quick, native_ring_benchmark.',
       inputSchema: z.object({
         command: z.enum(compactToolCatalog.gfs_validate.commands),
         files: z.array(z.string()).optional(),
@@ -1460,6 +1655,11 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
         shellCommand: z.string().optional(),
         cwd: z.string().optional(),
         target: z.enum(['repo', 'mcp']).optional(),
+        windowLabel: z.string().optional(),
+        ringId: z.string().optional(),
+        packets: z.number().int().positive().optional(),
+        packetBytes: z.number().int().positive().optional(),
+        capacity: z.number().int().positive().optional(),
       }),
       annotations: {
         destructiveHint: true,
@@ -1522,6 +1722,16 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
         case 'runtime_stack_quick':
           return buildJsonToolResult('Ran runtime stack quick validation', {
             result: await runtime.runWorkspaceCommand('bun run test:runtime-stack:quick'),
+          });
+        case 'native_ring_benchmark':
+          return buildJsonToolResult('Ran native ring benchmark', {
+            result: await runtime.runNativeRingBenchmark({
+              webviewLabel: args.windowLabel,
+              ringId: args.ringId,
+              packets: args.packets,
+              packetBytes: args.packetBytes,
+              capacity: args.capacity,
+            }),
           });
         default:
           throw new Error(`Unknown gfs_validate command: ${String(args.command)}`);

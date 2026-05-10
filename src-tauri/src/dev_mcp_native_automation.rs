@@ -38,6 +38,7 @@ struct DevMcpNativeAutomationCapabilities {
     health: bool,
     host_api: bool,
     host_events: bool,
+    performance: bool,
     telemetry: bool,
     usr_profiles: bool,
     window_metadata: bool,
@@ -77,6 +78,16 @@ struct DevMcpNativeAutomationRpcRequest {
     method: String,
     #[serde(default)]
     payload: Option<Value>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeRingBenchmarkRpcPayload {
+    webview_label: Option<String>,
+    ring_id: Option<String>,
+    packets: Option<u64>,
+    packet_bytes: Option<usize>,
+    capacity: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -226,6 +237,7 @@ pub fn start_dev_mcp_native_automation_server(
             health: true,
             host_api: true,
             host_events: true,
+            performance: true,
             telemetry: true,
             usr_profiles: true,
             window_metadata: true,
@@ -488,6 +500,46 @@ async fn dispatch_rpc_request(
                 .map_err(|error| {
                     format!("Failed to serialize the native host-events snapshot response: {error}")
                 })
+        }
+        "performance.get_flow_snapshot" => {
+            crate::dev_observatory::build_greeblefs_runtime_snapshot(&state.app)
+        }
+        "diagnostics.native_ring_benchmark" => {
+            let payload = request
+                .payload
+                .map(serde_json::from_value::<NativeRingBenchmarkRpcPayload>)
+                .transpose()
+                .map_err(|error| {
+                    format!("Failed to decode native ring benchmark payload: {error}")
+                })?
+                .unwrap_or_default();
+            let webview_label = payload
+                .webview_label
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("main");
+            let ring_id = payload
+                .ring_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("agent-native-ring-probe");
+            let packets = payload.packets.unwrap_or(256).clamp(1, 16_384);
+            let packet_bytes = payload.packet_bytes.unwrap_or(4096).clamp(1, 256 * 1024);
+            let capacity = payload
+                .capacity
+                .unwrap_or(4 * 1024 * 1024)
+                .clamp(packet_bytes, 64 * 1024 * 1024);
+            serde_json::to_value(tauri::native_ring::post_ring_benchmark(
+                &state.app,
+                webview_label,
+                ring_id,
+                packets,
+                packet_bytes,
+                capacity,
+            )?)
+            .map_err(|error| format!("Failed to serialize native ring benchmark: {error}"))
         }
         "telemetry.get_status" => serde_json::to_value(crate::telemetry::telemetry_get_status(
             state.app.clone(),

@@ -66,6 +66,7 @@ export interface GreeblefsNativeAutomationCapabilities {
   health?: boolean;
   hostApi?: boolean;
   hostEvents?: boolean;
+  performance?: boolean;
   telemetry?: boolean;
   usrProfiles?: boolean;
   windowMetadata?: boolean;
@@ -252,6 +253,14 @@ export interface GreeblefsNativeWindowScreenshotResult {
       height: number;
     };
   };
+}
+
+export interface GreeblefsNativeRingBenchmarkOptions {
+  webviewLabel?: string;
+  ringId?: string;
+  packets?: number;
+  packetBytes?: number;
+  capacity?: number;
 }
 
 interface NativeAutomationRpcEnvelope<T> {
@@ -1215,6 +1224,14 @@ export class GreeblefsAutomationRuntime {
 
   async getPerformanceSnapshot(): Promise<unknown> {
     return this.invokeBridgeMethod('getPerformanceSnapshot');
+  }
+
+  async getNativePerformanceFlowSnapshot(): Promise<unknown> {
+    return this.invokeNativeAutomationRpc('performance.get_flow_snapshot');
+  }
+
+  async runNativeRingBenchmark(options: GreeblefsNativeRingBenchmarkOptions = {}): Promise<unknown> {
+    return this.invokeNativeAutomationRpc('diagnostics.native_ring_benchmark', options);
   }
 
   async listVisibleActions(options: { includeUnnamed?: boolean } = {}): Promise<unknown[]> {

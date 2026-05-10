@@ -9066,3 +9066,19 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
 - Validation:
   - Passed: `bunx vitest run src/test/explorerViewModes.test.ts src/test/fileExplorer.viewModes.test.tsx -t "sort header|borderless|adaptive semantic grid visually minimal|restores adaptive semantic entries" --reporter=dot --testTimeout=30000`
   - MCP live-WebView proof on the active table surface reported `0px` borders for the sticky sort header and all visible file rows; screenshot captured at `MCP/.state/screenshots/borderless-explorer-standard-surface.png.png`.
+
+# 2026-05-10 - Dev MCP Native Performance Flow For Agents
+
+- Added an agent-facing native performance flow lane without increasing the top-level MCP tool count.
+  - `src-tauri/src/dev_observatory.rs` now exposes one reusable `greeblefs.runtime` snapshot with native task graph policy/telemetry, preview streaming policy, host-event/message-ring telemetry, telemetry recent-record ring state, native buffer pool telemetry, native byte-stream telemetry, GPU status, and native-ring probe metadata.
+  - `src-tauri/src/dev_mcp_native_automation.rs` now serves `performance.get_flow_snapshot` and `diagnostics.native_ring_benchmark` through the native automation RPC. The automation session capability map advertises `performance: true`.
+  - `MCP/greeblefs-dev-mcp/src/index.ts` keeps the compact router shape: `gfs_ui_snapshot command=flow` returns app status, recent git changes, frontend performance, native flow, telemetry records, and derived warning signals; `gfs_validate command=native_ring_benchmark` runs a benchmark-scoped WebView2 native ring probe.
+  - `src-tauri/src/runtime_pipeline/host_events.rs` now exposes bounded host-event ring telemetry so agents can see replay pressure and overflow rather than only latest event snapshots.
+- Durable rule:
+  - Keep future agent performance diagnostics inside existing MCP routers unless a capability truly deserves top-level model attention. Agents should use `flow` first, then targeted host events or native ring benchmarks only when the snapshot points there.
+- Validation:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `bun run mcp:doctor`, showing native automation `performance: true`.
+  - Passed direct native RPC smoke: `performance.get_flow_snapshot` returned native task graph, host-event rings, native buffer pool, native byte-stream, and native-ring metadata.
+  - Passed direct native ring probe with `packets=4`, `packetBytes=1024`, `capacity=65536`, returning `4096` bytes posted and `0` dropped bytes.
