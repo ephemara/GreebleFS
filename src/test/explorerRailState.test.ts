@@ -6,8 +6,10 @@ import {
   createExplorerBookmarkFolder,
   createExplorerCustomCategory,
   inferBookmarkCategoryIds,
+  isExplorerRailTreeNodeExpanded,
   normalizeExplorerRailSnapshot,
   planExplorerBookmarkImport,
+  toggleExplorerRailTreeNode,
   toggleExplorerBookmarkCategoryFilter,
 } from '../components/explorer/explorerRailState';
 
@@ -71,5 +73,18 @@ describe('explorerRailState', () => {
     const tree = buildExplorerBookmarkTree(filteredSnapshot);
     expect(tree).toHaveLength(1);
     expect(tree[0].node.name).toBe('Reference');
+  });
+
+  it('persists quick access tree node expansion overrides', () => {
+    const base = createDefaultExplorerRailSnapshot();
+    const librariesNode = { id: 'libraries', defaultExpanded: false };
+    const expanded = toggleExplorerRailTreeNode(base, librariesNode);
+
+    expect(isExplorerRailTreeNodeExpanded(expanded, librariesNode)).toBe(true);
+    expect(expanded.expandedTreeNodeIds).toEqual(['libraries']);
+
+    const collapsed = toggleExplorerRailTreeNode(expanded, librariesNode);
+    expect(isExplorerRailTreeNodeExpanded(collapsed, librariesNode)).toBe(false);
+    expect(collapsed.collapsedTreeNodeIds).toEqual(['libraries']);
   });
 });

@@ -2,16 +2,22 @@
   "version": 1,
   "id": "toon-clubhouse",
   "name": "Toon Clubhouse",
-  "description": "An editorial home surface with big cards, saved-search stickers, and a bright folder runway for the Toon bundle.",
+  "description": "Compact Toon-flavored routes, actions, widgets, and saved-search surface.",
   "author": "Codex",
-  "tags": [
-    "toon",
-    "home",
-    "editorial"
-  ],
-  "homePack": {
-    "entryModule": "index.tsx",
-    "apiVersion": 1,
-    "supportsLiveSwap": true
-  }
+  "tags": ["toon", "home", "editorial"],
+  "defaultPresetId": "clubhouse",
+  "presets": [
+    {
+      "id": "clubhouse",
+      "name": "Clubhouse",
+      "modules": [
+        { "id": "quick-access", "moduleId": "quick-access", "limit": 6 },
+        { "id": "bookmarks", "moduleId": "bookmarks", "limit": 6 },
+        { "id": "saved-searches", "moduleId": "saved-searches", "limit": 4 },
+        { "id": "launchpad", "moduleId": "launchpad", "limit": 6 },
+        { "id": "actions", "moduleId": "actions", "limit": 5 },
+        { "id": "widgets", "moduleId": "widgets", "limit": 2 }
+      ]
+    }
+  ]
 }

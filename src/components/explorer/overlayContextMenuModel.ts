@@ -91,8 +91,16 @@ export interface ExplorerSideRailTagContextMenuRequest {
   tag: ExplorerTagMetadataSnapshot["tags"][number] | null;
 }
 
+export interface ExplorerSideRailControlsContextMenuRequest {
+  kind: "rail-controls";
+  event: ReactMouseEvent<HTMLElement>;
+  nodes: OverlayContextMenuNode[];
+  presentation?: OverlayContextMenuPresentationOptions;
+}
+
 export type ExplorerSideRailContextMenuRequest =
-  ExplorerSideRailTagContextMenuRequest;
+  | ExplorerSideRailTagContextMenuRequest
+  | ExplorerSideRailControlsContextMenuRequest;
 
 export function createOverlayContextMenuCommandNode(input: {
   id: string;

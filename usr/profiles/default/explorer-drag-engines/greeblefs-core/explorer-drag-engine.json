@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-drag-engines",
+  "name": "GreebleFS Core Drag Engines",
+  "description": "Built-in Explorer drag/drop engine presets. Kain and user-authored policies can emit the same shape.",
+  "defaultEngineId": "performance",
+  "sourcePath": "usr/profiles/default/explorer-drag-engines/greeblefs-core/explorer-drag-engine.json",
+  "engines": [
+    {
+      "id": "performance",
+      "name": "Performance",
+      "description": "Lean registered hit testing and CSS transform presentation for low-latency Explorer drags.",
+      "sourceKind": "usr-shipped-package",
+      "tags": ["default", "fast", "css"],
+      "engine": {
+        "pointer": {
+          "startDistancePx": 6,
+          "coalesceWithRaf": true,
+          "hitTestMode": "registered-rects",
+          "statePublish": "on-change",
+          "sharedSessionLingerMs": 1500
+        },
+        "intent": {
+          "plainDrag": "internal",
+          "nativeOutModifier": "alt",
+          "copyModifierByPlatform": {
+            "windows": "ctrl",
+            "linux": "ctrl",
+            "macos": "alt"
+          }
+        },
+        "dropTargets": {
+          "surfacePriority": {
+            "scope-root": 0,
+            "non-target-chrome": 0,
+            "navigation-target": 1,
+            "directory-target": 2
+          },
+          "directoryAutoOpenDelayMs": 950,
+          "navigationAutoOpenDelayMs": 900,
+          "tabAutoOpenDelayMs": 1050
+        },
+        "autoscroll": {
+          "enabled": true,
+          "edgePx": 88,
+          "outsetPx": 24,
+          "minSpeedPxPerSecond": 220,
+          "maxSpeedPxPerSecond": 1680
+        },
+        "presentation": {
+          "overlayRenderer": "css-transform",
+          "pointerOffset": { "x": 18, "y": 20 },
+          "maxStackDepth": 1,
+          "spring": { "stiffness": 420, "damping": 34, "mass": 0.42 },
+          "rotationSpring": { "stiffness": 320, "damping": 26, "mass": 0.3 },
+          "tiltFactor": 0.04,
+          "maxTiltDegrees": 3,
+          "sourceGhostOpacity": 0.24,
+          "sourceGhostScale": 0.985,
+          "targetHighlightScale": 1.018,
+          "targetHighlightOpacity": 0.92,
+          "dwellIndicatorHeightPx": 2,
+          "folderInhaleScale": 1.025,
+          "folderDwellScale": 1.045,
+          "folderInhaleLiftPx": 1,
+          "folderDwellLiftPx": 3,
+          "dropBurstDurationMs": 120,
+          "cancelBurstDurationMs": 90,
+          "glassBlurEnabled": false,
+          "heavyShadowEnabled": false,
+          "overlayRadiusPx": 12
+        }
+      },
+      "controls": {
+        "pointerStartDistancePx": 6,
+        "dwellDelayScale": 1,
+        "autoscrollSpeedScale": 1,
+        "overlayWeight": 0.25,
+        "targetMagnetism": 0.55,
+        "nativeOutModifier": "alt"
+      }
+    },
+    {
+      "id": "balanced",
+      "name": "Balanced",
+      "description": "Keeps the same Explorer semantics with a little more stacked feedback and stronger target inhale.",
+      "sourceKind": "usr-shipped-package",
+      "tags": ["default", "motion", "stack"],
+      "engine": {
+        "pointer": {
+          "startDistancePx": 6,
+          "coalesceWithRaf": true,
+          "hitTestMode": "registered-rects",
+          "statePublish": "on-change",
+          "sharedSessionLingerMs": 1500
+        },
+        "intent": {
+          "plainDrag": "internal",
+          "nativeOutModifier": "alt",
+          "copyModifierByPlatform": {
+            "windows": "ctrl",
+            "linux": "ctrl",
+            "macos": "alt"
+          }
+        },
+        "dropTargets": {
+          "surfacePriority": {
+            "scope-root": 0,
+            "non-target-chrome": 0,
+            "navigation-target": 1,
+            "directory-target": 2
+          },
+          "directoryAutoOpenDelayMs": 950,
+          "navigationAutoOpenDelayMs": 900,
+          "tabAutoOpenDelayMs": 1050
+        },
+        "autoscroll": {
+          "enabled": true,
+          "edgePx": 88,
+          "outsetPx": 24,
+          "minSpeedPxPerSecond": 220,
+          "maxSpeedPxPerSecond": 1680
+        },
+        "presentation": {
+          "overlayRenderer": "css-transform",
+          "pointerOffset": { "x": 18, "y": 20 },
+          "maxStackDepth": 2,
+          "spring": { "stiffness": 420, "damping": 34, "mass": 0.42 },
+          "rotationSpring": { "stiffness": 320, "damping": 26, "mass": 0.3 },
+          "tiltFactor": 0.12,
+          "maxTiltDegrees": 6,
+          "sourceGhostOpacity": 0.28,
+          "sourceGhostScale": 0.985,
+          "targetHighlightScale": 1.028,
+          "targetHighlightOpacity": 0.96,
+          "dwellIndicatorHeightPx": 3,
+          "folderInhaleScale": 1.05,
+          "folderDwellScale": 1.085,
+          "folderInhaleLiftPx": 2,
+          "folderDwellLiftPx": 5,
+          "dropBurstDurationMs": 170,
+          "cancelBurstDurationMs": 120,
+          "glassBlurEnabled": false,
+          "heavyShadowEnabled": true,
+          "overlayRadiusPx": 16
+        }
+      },
+      "controls": {
+        "pointerStartDistancePx": 6,
+        "dwellDelayScale": 1,
+        "autoscrollSpeedScale": 1,
+        "overlayWeight": 0.55,
+        "targetMagnetism": 0.8,
+        "nativeOutModifier": "alt"
+      }
+    },
+    {
+      "id": "cinematic",
+      "name": "Cinematic",
+      "description": "Heavier spring overlay and card stack for visual richness when the machine can afford it.",
+      "sourceKind": "usr-shipped-package",
+      "tags": ["motion", "spring", "stack"],
+      "engine": {
+        "pointer": {
+          "startDistancePx": 6,
+          "coalesceWithRaf": true,
+          "hitTestMode": "element-from-point",
+          "statePublish": "every-frame",
+          "sharedSessionLingerMs": 1500
+        },
+        "intent": {
+          "plainDrag": "internal",
+          "nativeOutModifier": "alt",
+          "copyModifierByPlatform": {
+            "windows": "ctrl",
+            "linux": "ctrl",
+            "macos": "alt"
+          }
+        },
+        "dropTargets": {
+          "surfacePriority": {
+            "scope-root": 0,
+            "non-target-chrome": 0,
+            "navigation-target": 1,
+            "directory-target": 2
+          },
+          "directoryAutoOpenDelayMs": 950,
+          "navigationAutoOpenDelayMs": 900,
+          "tabAutoOpenDelayMs": 1050
+        },
+        "autoscroll": {
+          "enabled": true,
+          "edgePx": 88,
+          "outsetPx": 24,
+          "minSpeedPxPerSecond": 220,
+          "maxSpeedPxPerSecond": 1680
+        },
+        "presentation": {
+          "overlayRenderer": "framer-spring",
+          "pointerOffset": { "x": 18, "y": 20 },
+          "maxStackDepth": 3,
+          "spring": { "stiffness": 420, "damping": 34, "mass": 0.42 },
+          "rotationSpring": { "stiffness": 320, "damping": 26, "mass": 0.3 },
+          "tiltFactor": 0.16,
+          "maxTiltDegrees": 8,
+          "sourceGhostOpacity": 0.28,
+          "sourceGhostScale": 0.985,
+          "targetHighlightScale": 1.028,
+          "targetHighlightOpacity": 0.96,
+          "dwellIndicatorHeightPx": 3,
+          "folderInhaleScale": 1.05,
+          "folderDwellScale": 1.085,
+          "folderInhaleLiftPx": 2,
+          "folderDwellLiftPx": 5,
+          "dropBurstDurationMs": 170,
+          "cancelBurstDurationMs": 120,
+          "glassBlurEnabled": true,
+          "heavyShadowEnabled": true,
+          "overlayRadiusPx": 22
+        }
+      },
+      "controls": {
+        "pointerStartDistancePx": 6,
+        "dwellDelayScale": 1,
+        "autoscrollSpeedScale": 1,
+        "overlayWeight": 0.9,
+        "targetMagnetism": 0.8,
+        "nativeOutModifier": "alt"
+      }
+    },
+    {
+      "id": "native-first",
+      "name": "Native First",
+      "description": "Plain drags prefer the OS drag-out bridge when available; useful for file handoff-heavy sessions.",
+      "sourceKind": "usr-shipped-package",
+      "tags": ["native", "handoff"],
+      "engine": {
+        "pointer": {
+          "startDistancePx": 8,
+          "coalesceWithRaf": true,
+          "hitTestMode": "registered-rects",
+          "statePublish": "on-change",
+          "sharedSessionLingerMs": 1500
+        },
+        "intent": {
+          "plainDrag": "native-out",
+          "nativeOutModifier": "alt",
+          "copyModifierByPlatform": {
+            "windows": "ctrl",
+            "linux": "ctrl",
+            "macos": "alt"
+          }
+        },
+        "dropTargets": {
+          "surfacePriority": {
+            "scope-root": 0,
+            "non-target-chrome": 0,
+            "navigation-target": 1,
+            "directory-target": 2
+          },
+          "directoryAutoOpenDelayMs": 950,
+          "navigationAutoOpenDelayMs": 900,
+          "tabAutoOpenDelayMs": 1050
+        },
+        "autoscroll": {
+          "enabled": true,
+          "edgePx": 88,
+          "outsetPx": 24,
+          "minSpeedPxPerSecond": 220,
+          "maxSpeedPxPerSecond": 1680
+        },
+        "presentation": {
+          "overlayRenderer": "css-transform",
+          "pointerOffset": { "x": 18, "y": 20 },
+          "maxStackDepth": 1,
+          "spring": { "stiffness": 420, "damping": 34, "mass": 0.42 },
+          "rotationSpring": { "stiffness": 320, "damping": 26, "mass": 0.3 },
+          "tiltFactor": 0.04,
+          "maxTiltDegrees": 3,
+          "sourceGhostOpacity": 0.24,
+          "sourceGhostScale": 0.985,
+          "targetHighlightScale": 1.018,
+          "targetHighlightOpacity": 0.92,
+          "dwellIndicatorHeightPx": 2,
+          "folderInhaleScale": 1.025,
+          "folderDwellScale": 1.045,
+          "folderInhaleLiftPx": 1,
+          "folderDwellLiftPx": 3,
+          "dropBurstDurationMs": 120,
+          "cancelBurstDurationMs": 90,
+          "glassBlurEnabled": false,
+          "heavyShadowEnabled": false,
+          "overlayRadiusPx": 12
+        }
+      },
+      "controls": {
+        "pointerStartDistancePx": 8,
+        "dwellDelayScale": 1,
+        "autoscrollSpeedScale": 1,
+        "overlayWeight": 0.2,
+        "targetMagnetism": 0.5,
+        "nativeOutModifier": "alt"
+      }
+    }
+  ]
+}

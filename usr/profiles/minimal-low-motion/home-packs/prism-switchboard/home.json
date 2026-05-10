@@ -2,12 +2,30 @@
   "version": 1,
   "id": "prism-switchboard",
   "name": "Prism Switchboard",
-  "description": "A cinematic folder deck with persistent card switching, big editorial tiles, and an intentionally more expressive Home personality.",
+  "description": "Compact switchboard for pinned folders, launch routes, actions, and widgets.",
   "author": "GreebleFS",
   "tags": ["showcase", "cards", "favorites", "switcher", "editorial"],
-  "homePack": {
-    "entryModule": "index.tsx",
-    "apiVersion": 1,
-    "supportsLiveSwap": true
-  }
+  "defaultPresetId": "switchboard",
+  "presets": [
+    {
+      "id": "switchboard",
+      "name": "Switchboard",
+      "modules": [
+        { "id": "bookmarks", "moduleId": "bookmarks", "limit": 6 },
+        { "id": "quick-access", "moduleId": "quick-access", "limit": 6 },
+        { "id": "launchpad", "moduleId": "launchpad", "limit": 6 },
+        { "id": "actions", "moduleId": "actions", "limit": 5 },
+        { "id": "widgets", "moduleId": "widgets", "limit": 2 }
+      ]
+    },
+    {
+      "id": "recall",
+      "name": "Recall",
+      "modules": [
+        { "id": "recent", "moduleId": "recent-folders", "limit": 6 },
+        { "id": "most-used", "moduleId": "most-used-folders", "limit": 6 },
+        { "id": "saved-searches", "moduleId": "saved-searches", "limit": 4 }
+      ]
+    }
+  ]
 }

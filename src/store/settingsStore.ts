@@ -75,6 +75,11 @@ import {
   type ExplorerMenuLayoutEntry,
   type ExplorerContextMenuItemOverrideMap,
 } from '../config/explorerContextMenu';
+import {
+  normalizeExplorerDragEngineControlValueMap,
+  normalizeExplorerDragEngineSelectionId,
+  type ExplorerDragEngineControlValues,
+} from '../config/explorerDragEngines';
 import { DEFAULT_EXPLORER_MENU_PACK_ID } from '../config/menuPacks';
 import {
   createDefaultKeybindingSettings,
@@ -318,6 +323,8 @@ export interface ExplorerSettings {
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
   activeMenuPackId: string | null;
+  activeDragEngineId: string | null;
+  dragEngineControlValuesById: Record<string, ExplorerDragEngineControlValues>;
   contextMenuLayoutOverridesByContext: ExplorerMenuContextLayoutOverrideMap;
   contextMenuItemOverrides: ExplorerContextMenuItemOverrideMap;
   preferredWorkbenchByExtension: ExplorerPreferredWorkbenchByExtension;
@@ -895,6 +902,10 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'layoutUiResetRevision');
   const hasExplicitActiveMenuPackId = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'activeMenuPackId');
+  const hasExplicitActiveDragEngineId = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'activeDragEngineId');
+  const hasExplicitDragEngineControlValuesById = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'dragEngineControlValuesById');
   const hasExplicitContextMenuLayoutOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'contextMenuLayoutOverridesByContext');
   const hasExplicitContextMenuItemOverrides = updates != null
@@ -998,6 +1009,14 @@ function normalizeExplorerSettings(
     activeMenuPackId: hasExplicitActiveMenuPackId
       ? normalizeExplorerMenuPackId(updates?.activeMenuPackId)
       : base.activeMenuPackId,
+    activeDragEngineId: hasExplicitActiveDragEngineId
+      ? normalizeExplorerDragEngineSelectionId(updates?.activeDragEngineId)
+      : base.activeDragEngineId,
+    dragEngineControlValuesById: hasExplicitDragEngineControlValuesById
+      ? normalizeExplorerDragEngineControlValueMap(
+          updates?.dragEngineControlValuesById,
+        )
+      : base.dragEngineControlValuesById,
     contextMenuLayoutOverridesByContext: hasExplicitContextMenuLayoutOverrides
       ? normalizeExplorerMenuContextLayoutOverrideMap(updates?.contextMenuLayoutOverridesByContext)
       : base.contextMenuLayoutOverridesByContext,
@@ -1866,6 +1885,8 @@ const runtimeFallbackDefaultSettings: Settings = {
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
     activeMenuPackId: DEFAULT_EXPLORER_MENU_PACK_ID,
+    activeDragEngineId: null,
+    dragEngineControlValuesById: {},
     contextMenuLayoutOverridesByContext: {},
     contextMenuItemOverrides: {},
     preferredWorkbenchByExtension: {},

@@ -45,6 +45,8 @@ export interface ExplorerRailSnapshot {
   nodes: ExplorerBookmarkNode[];
   collapsedSectionIds: ExplorerRailSectionId[];
   expandedFolderIds: string[];
+  expandedTreeNodeIds: string[];
+  collapsedTreeNodeIds: string[];
   activeCategoryIds: string[];
   searchQuery: string;
   viewMode: ExplorerRailViewMode;
@@ -93,6 +95,8 @@ export const defaultExplorerRailSnapshot: ExplorerRailSnapshot = {
   nodes: [],
   collapsedSectionIds: [],
   expandedFolderIds: [],
+  expandedTreeNodeIds: [],
+  collapsedTreeNodeIds: [],
   activeCategoryIds: [],
   searchQuery: '',
   viewMode: 'default',
@@ -106,6 +110,8 @@ export function createDefaultExplorerRailSnapshot(): ExplorerRailSnapshot {
     nodes: [],
     collapsedSectionIds: [],
     expandedFolderIds: [],
+    expandedTreeNodeIds: [],
+    collapsedTreeNodeIds: [],
     activeCategoryIds: [],
     searchQuery: '',
     viewMode: 'default',
@@ -155,6 +161,8 @@ export function normalizeExplorerRailSnapshot(value: unknown): ExplorerRailSnaps
     expandedFolderIds: Array.isArray(source?.expandedFolderIds)
       ? source.expandedFolderIds.filter((entry): entry is string => typeof entry === 'string' && validNodeIds.has(entry))
       : [],
+    expandedTreeNodeIds: normalizeStringIdList(source?.expandedTreeNodeIds),
+    collapsedTreeNodeIds: normalizeStringIdList(source?.collapsedTreeNodeIds),
     activeCategoryIds: Array.isArray(source?.activeCategoryIds)
       ? source.activeCategoryIds.filter((entry): entry is string => typeof entry === 'string' && categoryIds.has(entry))
       : [],
@@ -242,6 +250,34 @@ export function setExplorerRailAutoExpandToOpenFolder(
     ...snapshot,
     autoExpandToOpenFolder,
   };
+}
+
+export function isExplorerRailTreeNodeExpanded(
+  snapshot: ExplorerRailSnapshot,
+  node: { id: string; defaultExpanded?: boolean },
+): boolean {
+  if (snapshot.collapsedTreeNodeIds.includes(node.id)) {
+    return false;
+  }
+  return snapshot.expandedTreeNodeIds.includes(node.id) || node.defaultExpanded === true;
+}
+
+export function toggleExplorerRailTreeNode(
+  snapshot: ExplorerRailSnapshot,
+  node: { id: string; defaultExpanded?: boolean },
+): ExplorerRailSnapshot {
+  const expanded = isExplorerRailTreeNodeExpanded(snapshot, node);
+  return expanded
+    ? {
+        ...snapshot,
+        expandedTreeNodeIds: snapshot.expandedTreeNodeIds.filter((entry) => entry !== node.id),
+        collapsedTreeNodeIds: uniqueStringIdList([...snapshot.collapsedTreeNodeIds, node.id]),
+      }
+    : {
+        ...snapshot,
+        expandedTreeNodeIds: uniqueStringIdList([...snapshot.expandedTreeNodeIds, node.id]),
+        collapsedTreeNodeIds: snapshot.collapsedTreeNodeIds.filter((entry) => entry !== node.id),
+      };
 }
 
 export function toggleExplorerBookmarkCategoryFilter(snapshot: ExplorerRailSnapshot, categoryId: string): ExplorerRailSnapshot {
@@ -711,6 +747,18 @@ function compareBookmarkNodes(a: ExplorerBookmarkNode, b: ExplorerBookmarkNode):
 
 function normalizeCategoryIds(categoryIds: string[]): string[] {
   return Array.from(new Set(categoryIds.filter((entry) => typeof entry === 'string' && entry.trim()))).sort();
+}
+
+function normalizeStringIdList(value: unknown): string[] {
+  return Array.isArray(value) ? uniqueStringIdList(value) : [];
+}
+
+function uniqueStringIdList(value: unknown[]): string[] {
+  return Array.from(new Set(
+    value
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim()),
+  ));
 }
 
 function collectDescendantIds(nodes: ExplorerBookmarkNode[], nodeId: string): string[] {

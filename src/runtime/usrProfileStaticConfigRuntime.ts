@@ -6,9 +6,11 @@ import {
 } from '../config/managedContentDirectoryStacks';
 import { applyUsrExplorerChromeLayoutManifest } from '../config/explorerChromeLayouts';
 import { applyUsrExplorerCustomizeControlManifest } from '../config/explorerCustomizeCatalog';
+import { applyUsrExplorerDragEngineManifest } from '../config/explorerDragEngines';
 import { applyUsrExplorerExperimentalModeManifest } from '../config/explorerExperimentalModes';
 import { applyUsrExplorerModeProfileManifest } from '../config/explorerModeProfiles';
 import { applyUsrExplorerPerformanceManifest } from '../config/explorerPerformance';
+import { applyUsrExplorerRailTreeManifest } from '../config/explorerRailTree';
 import { applyUsrExplorerShellLayoutManifest } from '../config/explorerShellLayouts';
 import { applyUsrExplorerWorkspaceLayoutManifest } from '../config/explorerWorkspaceLayouts';
 import { applyUsrExplorerZoomBehaviorManifest } from '../config/explorerZoomBehavior';
@@ -25,6 +27,10 @@ type ExplorerCustomizeControlManifest = Exclude<
   Parameters<typeof applyUsrExplorerCustomizeControlManifest>[0],
   null | undefined
 >;
+type ExplorerDragEngineManifest = Exclude<
+  Parameters<typeof applyUsrExplorerDragEngineManifest>[0],
+  null | undefined
+>;
 type ExplorerExperimentalModeManifest = Exclude<
   Parameters<typeof applyUsrExplorerExperimentalModeManifest>[0],
   null | undefined
@@ -35,6 +41,10 @@ type ExplorerModeProfileManifest = Exclude<
 >;
 type ExplorerPerformanceManifest = Exclude<
   Parameters<typeof applyUsrExplorerPerformanceManifest>[0],
+  null | undefined
+>;
+type ExplorerRailTreeManifest = Exclude<
+  Parameters<typeof applyUsrExplorerRailTreeManifest>[0],
   null | undefined
 >;
 type ExplorerShellLayoutManifest = Exclude<
@@ -243,6 +253,20 @@ const usrStaticManifestRuntimeCatalog: readonly StaticManifestRuntimeLane[] = [
       }),
     applyManifest: applyUsrExplorerShellLayoutManifest,
   }),
+  createStaticManifestRuntimeLane<ExplorerRailTreeManifest>({
+    laneId: 'explorerRailTrees' as ManagedContentDirectoryId,
+    manifestNames: [
+      'explorer-rail-tree.json',
+      'explorer-rail-tree.toml',
+      'manifest.json',
+      'manifest.toml',
+    ] as const,
+    buildManifest: (records: readonly StaticManifestRecord[]) =>
+      castStaticManifest<ExplorerRailTreeManifest>(
+        mergeStaticManifestRecordsLeftBiased(records),
+      ),
+    applyManifest: applyUsrExplorerRailTreeManifest,
+  }),
   createStaticManifestRuntimeLane<ExplorerWorkspaceLayoutManifest>({
     laneId: 'explorerWorkspaceLayouts' as ManagedContentDirectoryId,
     manifestNames: [
@@ -315,8 +339,22 @@ const usrStaticManifestRuntimeCatalog: readonly StaticManifestRuntimeLane[] = [
     buildManifest: (records: readonly StaticManifestRecord[]) =>
       castStaticManifest<ExplorerZoomBehaviorManifest>(
         mergeStaticManifestRecordsLeftBiased(records),
-      ),
+    ),
     applyManifest: applyUsrExplorerZoomBehaviorManifest,
+  }),
+  createStaticManifestRuntimeLane<ExplorerDragEngineManifest>({
+    laneId: 'explorerDragEngines' as ManagedContentDirectoryId,
+    manifestNames: [
+      'explorer-drag-engine.json',
+      'explorer-drag-engine.toml',
+      'manifest.json',
+      'manifest.toml',
+    ] as const,
+    buildManifest: (records: readonly StaticManifestRecord[]) =>
+      castStaticManifest<ExplorerDragEngineManifest>(
+        mergeStaticManifestRecordsLeftBiased(records),
+      ),
+    applyManifest: applyUsrExplorerDragEngineManifest,
   }),
   createStaticManifestRuntimeLane<ExplorerPerformanceManifest>({
     laneId: 'explorerPerformance' as ManagedContentDirectoryId,

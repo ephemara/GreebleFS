@@ -2,12 +2,31 @@
   "version": 1,
   "id": "atlas-cockpit",
   "name": "Atlas Cockpit",
-  "description": "Dense operations wall for people who want their explorer home to feel like a command bridge instead of a dead landing page.",
+  "description": "Compact operations surface for folders, actions, widgets, drives, and task pulse.",
   "author": "GreebleFS",
   "tags": ["showcase", "dense", "cockpit", "telemetry", "operations"],
-  "homePack": {
-    "entryModule": "index.tsx",
-    "apiVersion": 1,
-    "supportsLiveSwap": true
-  }
+  "defaultPresetId": "ops",
+  "presets": [
+    {
+      "id": "ops",
+      "name": "Ops",
+      "modules": [
+        { "id": "most-used", "moduleId": "most-used-folders", "limit": 6 },
+        { "id": "actions", "moduleId": "actions", "limit": 5 },
+        { "id": "widgets", "moduleId": "widgets", "limit": 2 },
+        { "id": "task-center", "moduleId": "task-center", "limit": 4 },
+        { "id": "drives", "moduleId": "drives", "limit": 4 }
+      ]
+    },
+    {
+      "id": "routes",
+      "name": "Routes",
+      "modules": [
+        { "id": "quick-access", "moduleId": "quick-access", "limit": 6 },
+        { "id": "bookmarks", "moduleId": "bookmarks", "limit": 6 },
+        { "id": "saved-searches", "moduleId": "saved-searches", "limit": 4 },
+        { "id": "launchpad", "moduleId": "launchpad", "limit": 6 }
+      ]
+    }
+  ]
 }

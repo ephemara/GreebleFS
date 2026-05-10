@@ -1,3 +1,16 @@
+# 2026-05-10 - Borderless Explorer Rail Rows
+
+- Removed the per-row/button border treatment from the Explorer side rail so Quick Access, Drives, bookmarks, saved searches, and local tree rows no longer render as stacked pill cards.
+  - `ExplorerSideRail.tsx` now uses borderless selectable rows, transparent idle backgrounds, compact padding, and a slim left active/ancestor lane instead of outline boxes.
+  - Chevron expand buttons are also borderless and smaller; drag/drop still gets a transient inset affordance so file-drop targets stay visible.
+  - `src/config/explorerRail.ts` default rail wording now describes open spacing instead of card chrome.
+- Durable design rule:
+  - Do not reintroduce default borders or idle card backgrounds for rail navigation rows. If a theme needs a louder rail, make it an authored rail presentation option rather than hardcoding borders into `getRailSelectableRowStyle(...)` or `treeIconButtonStyle(...)`.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerRailTree.test.ts src/test/explorerRailState.test.ts src/test/explorerSideRail.test.tsx --reporter=dot --testTimeout=30000`.
+  - Filtered project typecheck reported no diagnostics for the touched rail/config files; repo-wide `tsc` still exits nonzero on existing baseline errors.
+  - Live MCP/WebView proof attached through native CDP. Console proof `RAIL_BORDERLESS_OPEN_SPACING_PROOF` showed sampled rail rows with `borderStyle: none`, `borderWidth: 0px`, transparent idle backgrounds, and inner button borders at `0px`.
+
 # 2026-05-10 - Batched Native Thumbnail Artifact Lane
 
 - Moved Explorer viewport thumbnail artifact reads from one request per entry into a native batch lane.
@@ -15,6 +28,23 @@
   - Passed: `bunx vitest run src/test/boundedWorkLane.test.ts src/test/explorerViewportThumbnailScheduler.test.ts src/test/explorerPerformance.test.ts src/test/explorerBackend.nativeLanes.test.ts src/test/explorerThumbnailArtifactRuntime.test.ts --reporter=dot --testTimeout=30000`
   - Full `bunx tsc --noEmit --pretty false -p tsconfig.json` still fails on existing repo/worktree baseline errors outside this thumbnail pass; a narrowed probe no longer reports the thumbnail/FileExplorer inference errors after explicit scheduler generics.
   - `cargo test --manifest-path src-tauri/Cargo.toml --lib native_task_graph` and `... thumbnail_commands` compile but the Windows test executable exits with the known `STATUS_ENTRYPOINT_NOT_FOUND` loader failure before tests run.
+
+# 2026-05-09 - Explorer Rail Tree Config Core
+
+- Added a profile-authored Explorer rail tree lane so Quick Access roots are no longer hardcoded in `ExplorerSideRail.tsx`.
+  - New shipped manifest: `usr/profiles/default/explorer-rail-trees/greeblefs-core/explorer-rail-tree.json`.
+  - New loader/runtime seam: `src/config/explorerRailTree.ts`, registered through `usr/manifest.json`, `src/config/appContentDirectories.ts`, and `src/runtime/usrProfileStaticConfigRuntime.ts`.
+  - The manifest supports `action`, `path`, and `group` nodes, platform filters, `{home}` path templates, nested children, icon slots, and an inline-node policy.
+  - Default roots now include Home, Desktop, Cloud Storage, File Collections, Libraries, FTP, and Linux only on Linux. Libraries contains home-relative Documents/Downloads/Pictures/Music/Videos children.
+- `ExplorerSideRail.tsx` now renders Quick Access from that manifest while keeping local drive folder expansion on the existing lazy/cached loader and virtualizing large child-folder lists.
+- `explorerRailState` now persists `expandedTreeNodeIds` and `collapsedTreeNodeIds` so authored rail groups can remember user expansion without baking state into JSX.
+- Durable design rule:
+  - Add or change rail roots in `explorer-rail-tree.json` or through the `explorerRailTrees` profile-overlay lane. Do not add new fixed Quick Access rows directly in `ExplorerSideRail.tsx` unless a new node kind genuinely needs a renderer.
+  - Keep static roots cheap: path/action/group nodes should render from manifest data only. Real filesystem child enumeration belongs behind explicit local drive/folder expansion and must stay lazy.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerRailTree.test.ts src/test/explorerRailState.test.ts src/test/explorerSideRail.test.tsx --reporter=dot --testTimeout=30000`.
+  - Filtered project typecheck reported no diagnostics for the touched rail/config/runtime files; repo-wide `tsc` still exits nonzero on existing baseline errors.
+  - MCP app attach fell back to the browser dev URL and hit the known Tauron API init race (`metadata`/`invoke` undefined), so live DOM proof was not usable in this pass.
 
 # 2026-05-09 - Transparent 3D Model Thumbnail Cutouts
 

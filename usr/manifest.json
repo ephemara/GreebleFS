@@ -74,6 +74,14 @@
       "profileMode": "shared-root"
     },
     {
+      "id": "explorerRailTrees",
+      "relativeDirectory": "explorer-rail-trees",
+      "envVarSuffix": "EXPLORER_RAIL_TREES",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
+    },
+    {
       "id": "explorerChromeLayouts",
       "relativeDirectory": "explorer-chrome-layouts",
       "envVarSuffix": "EXPLORER_CHROME_LAYOUTS",
@@ -133,6 +141,14 @@
       "id": "explorerZoomBehaviors",
       "relativeDirectory": "explorer-zoom-behaviors",
       "envVarSuffix": "EXPLORER_ZOOM_BEHAVIORS",
+      "bundled": true,
+      "bootstrapToManagedRoot": true,
+      "profileMode": "profile-overlay"
+    },
+    {
+      "id": "explorerDragEngines",
+      "relativeDirectory": "explorer-drag-engines",
+      "envVarSuffix": "EXPLORER_DRAG_ENGINES",
       "bundled": true,
       "bootstrapToManagedRoot": true,
       "profileMode": "profile-overlay"

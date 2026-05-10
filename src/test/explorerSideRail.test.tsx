@@ -6,6 +6,7 @@ import { getExplorerRailWidthBounds } from '../config/explorerRail';
 
 vi.mock('../runtime/explorerBackend', () => {
   return {
+    getExplorerHomeDir: vi.fn(async () => 'C:\\Users\\Alex'),
     isCloudExplorerPath: (path: string) => path.trim().startsWith('cloud://'),
     listExplorerLocation: vi.fn(),
   };
@@ -142,6 +143,42 @@ describe('ExplorerSideRail', () => {
 
     fireEvent.pointerEnter(homeButton);
     expect(homeButton.style.transform).toContain('translate3d');
+  });
+
+  it('renders manifest-backed quick access roots including Libraries', async () => {
+    const onNavigate = vi.fn();
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\Users\\Alex\\Documents"
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={onNavigate}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Libraries' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Documents' })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: 'Collapse Libraries' }).style.borderStyle).toBe('none');
+    expect(screen.getByRole('treeitem', { name: /Libraries/ }).style.borderStyle).toBe('none');
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Desktop' })).not.toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Desktop' }));
+    expect(onNavigate).toHaveBeenCalledWith('C:\\Users\\Alex\\Desktop');
   });
 
   it('keeps bookmark row management controls hidden until manage mode is enabled', () => {

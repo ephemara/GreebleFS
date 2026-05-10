@@ -352,6 +352,10 @@ import {
   createExplorerHomeQuickAccessItems,
   resolveExplorerHomePackSelection,
 } from "./home/ExplorerHomeSurface";
+import type {
+  ExplorerHomeActionItem,
+  ExplorerHomeWidgetItem,
+} from "./home/homePackRuntime";
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerDragOverlay } from "./explorer/ExplorerDragOverlay";
 import { ExplorerActionsPane } from "./explorer/ExplorerActionsPane";
@@ -23832,8 +23836,10 @@ export function FileExplorer({
     (
       widget: ExplorerWidgetDescriptor,
       placement?: ExplorerChromeResolvedControlPlacement | null,
+      instanceIdOverride?: string,
     ): ExplorerWidgetHost => {
-      const widgetInstanceId = getExplorerWidgetInstanceId(widget, placement);
+      const widgetInstanceId =
+        instanceIdOverride ?? getExplorerWidgetInstanceId(widget, placement);
       const existingHost =
         explorerWidgetHostByInstanceIdRef.current.get(widgetInstanceId) ?? null;
       if (existingHost) {
@@ -24070,6 +24076,41 @@ export function FileExplorer({
       explorerWidgetData,
       explorerWidgetSession,
       getExplorerWidgetInstanceId,
+    ],
+  );
+  const renderExplorerHomeWidget = useCallback(
+    (widgetId: string, slotId = widgetId): React.ReactNode => {
+      const normalizedWidgetId = widgetId.trim();
+      if (!normalizedWidgetId) {
+        return null;
+      }
+      const widget = explorerWidgetCatalog.find(
+        (candidate) => candidate.id === normalizedWidgetId,
+      );
+      if (!widget?.component || !widget.available) {
+        return null;
+      }
+      const WidgetComponent = widget.component;
+      const widgetInstanceId = `${String(instanceId)}:home:${slotId}`;
+      return (
+        <WidgetComponent
+          descriptor={widget}
+          instanceId={widgetInstanceId}
+          appearance={explorerWidgetAppearance}
+          session={explorerWidgetSession}
+          data={explorerWidgetData}
+          host={createExplorerWidgetHost(widget, null, widgetInstanceId)}
+          placement={null}
+        />
+      );
+    },
+    [
+      createExplorerWidgetHost,
+      explorerWidgetAppearance,
+      explorerWidgetCatalog,
+      explorerWidgetData,
+      explorerWidgetSession,
+      instanceId,
     ],
   );
   const constellationFieldLayout = useMemo(
@@ -25202,6 +25243,48 @@ export function FileExplorer({
       });
     },
     [buildExplorerChromeActionRuntimeContext],
+  );
+  const homeActionItems = useMemo<ExplorerHomeActionItem[]>(
+    () =>
+      actions.map((action) => ({
+        id: action.id,
+        title: action.title,
+        description: action.description,
+        packName: action.packName,
+        sourceBadgeLabel: action.sourceBadgeLabel,
+        presentationKind: action.presentation.kind,
+        outputTarget: action.presentation.outputTarget,
+        iconName: action.iconName,
+        tags: [...action.tags],
+        canRunFromHome: canExecuteExplorerChromeAction(action, "explorerToolbar"),
+      })),
+    [actions, canExecuteExplorerChromeAction],
+  );
+  const homeWidgetItems = useMemo<ExplorerHomeWidgetItem[]>(
+    () =>
+      explorerWidgetCatalog.map((widget) => ({
+        id: widget.id,
+        title: widget.title,
+        shortLabel: widget.shortLabel,
+        description: widget.description,
+        category: widget.category,
+        sourceLabel: widget.sourceLabel,
+        rendererKind: widget.rendererKind,
+        available: widget.available,
+        tags: [...widget.tags],
+        canRenderInHome: widget.available && widget.component != null,
+      })),
+    [explorerWidgetCatalog],
+  );
+  const runExplorerHomeAction = useCallback(
+    (actionId: string) => {
+      const action = actions.find((candidate) => candidate.id === actionId);
+      if (!action || !canExecuteExplorerChromeAction(action, "explorerToolbar")) {
+        return;
+      }
+      void executeExplorerChromeActionControl(action, "explorerToolbar", "mouse");
+    },
+    [actions, canExecuteExplorerChromeAction, executeExplorerChromeActionControl],
   );
   const renderExplorerActionChromeControl = useCallback(
     (
@@ -35897,6 +35980,8 @@ export function FileExplorer({
                         drives={drives}
                         tasks={homeTasks}
                         launchpad={homeLaunchpad}
+                        actions={homeActionItems}
+                        widgets={homeWidgetItems}
                         packState={activeHomePackState}
                         onNavigate={(path) => {
                           void navigate(path);
@@ -35906,6 +35991,8 @@ export function FileExplorer({
                         }}
                         onOpenPanel={onOpenPanel}
                         onOpenSettingsSection={onOpenSettingsSection}
+                        onRunAction={runExplorerHomeAction}
+                        onRenderWidget={renderExplorerHomeWidget}
                         onRefresh={() => {
                           void refresh();
                         }}

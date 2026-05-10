@@ -132,7 +132,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/explorer/ExplorerActionsPane.tsx`
   Docked explorer-side host for the unified explorer action library plus chrome customization. In normal runtime it does not browse a separate authored-actions-only catalog anymore; `FileExplorer.tsx` feeds it scoped runtime menus (`selection` / `current-folder` / `preview`) built through `buildExplorerRuntimeMenu(...)`, so the pane can launch the same built-in, action-pack, plugin, preview, and `Open With` commands as the live context menu against the actual explorer cwd/selection. In customize mode it still becomes the all-in browser/inspector for built-in explorer controls and authored actions instead of spawning a floating overlay.
 - `src/components/explorer/ExplorerSideRail.tsx`
-  Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
+  Explorer rail, drives, bookmarks, saved searches, tag-filter browsing, and the profile-authored quick-access navigation tree. The static root tree comes from `usr/profiles/default/explorer-rail-trees/greeblefs-core/explorer-rail-tree.json` through `src/config/explorerRailTree.ts`; use that manifest for Directory Opus-style roots such as Libraries, Desktop, Cloud Storage, Linux, File Collections, or FTP instead of hardcoding new rail rows in JSX.
 - `src/components/home/ExplorerHomeSurface.tsx`, `src/components/home/homePackRuntime.tsx`, and `src/config/homePackages.ts`
   Explorer Home surface runtime. This subsystem owns the virtual `greeblefs://home` route, the constrained host data/actions exposed to Home packs, built-in Home packs (`command-center`, `favorites-deck`), and authored pack discovery from `home-packs/`.
 - `src/components/WorkbenchTopBar.tsx`
@@ -305,6 +305,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shared explorer thumbnail runtime above `FileExplorer.tsx`. It resolves backend-owned `IpcArtifactDescriptor` thumbnail outputs into browser-safe local asset URLs and caches results by `entityId + contentRevision + dimensions + hover variant` so folder opens and refreshes can preserve visible thumbnails instead of treating every relist as a cold start.
 - `src/config/explorerPerformance.ts`
   Data-driven Explorer hot-path policy loader from `usr/profiles/default/explorer-performance/**/explorer-performance.json`. It owns folder-activation timing, navigation budgets, viewport thumbnail/preview scheduling, native task graph lane caps, message-stream retention, and preview-streaming chunk/byte limits; tune this manifest first before hardcoding batch sizes, settle delays, prefetch spans, lane caps, or byte ceilings in React or Rust.
+- `src/config/explorerRailTree.ts`
+  Data-driven Explorer side-rail root-tree loader from `usr/profiles/default/explorer-rail-trees/**/explorer-rail-tree.json`. It normalizes action/path/group nodes, platform gates, `{home}` path templates, static library children, and inline-node limits. `ExplorerSideRail.tsx` renders these roots without scanning directories; only local drive branches use the existing lazy folder loader.
 - `src/runtime/explorerCollectionPreviewThumbnails.ts`
   Shared forced-thumbnail seam for folder/archive `overview` mode. It bypasses the normal explorer thumbnail toggle, reuses artifact/model thumbnail readers for local entries, and stages archive members into temporary real files before reading thumbnails so virtual-archive previews stay thumbnail-capable.
 - `src/runtime/globalSearchBackend.ts`

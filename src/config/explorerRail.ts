@@ -72,7 +72,7 @@ export const explorerRailViewModes: ExplorerRailViewModeDefinition[] = [
     id: 'default',
     label: 'Default',
     shortLabel: 'Def',
-    description: 'Rich explorer rail with clearer cards, metadata, and branch emphasis.',
+    description: 'Rich explorer rail with metadata, open spacing, and branch emphasis.',
     useCompactChrome: false,
     hideSupportingMeta: false,
     flattenDriveRows: false,

@@ -11,16 +11,19 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
   ChevronRight,
+  Database,
   Folder,
   FolderPlus,
   FolderOpen,
   FolderTree,
   HardDrive,
   Home,
+  Monitor,
   Pencil,
   Search,
   Star,
   Tag,
+  Terminal,
   Undo2,
   X,
 } from "@/components/AppIcons";
@@ -33,13 +36,14 @@ import type { ResolvedOverlayAppearance } from "../../config/appearance";
 import { matchesKeybinding } from "../../config/hotkeys";
 import { useExplorerStore } from "../../store/explorerStore";
 import { useSettingsStore } from "../../store/settingsStore";
-import {
-  ExplorerChromeSurface,
-  type ExplorerChromeSurfaceLayoutDynamics,
-} from "./ExplorerChromeSurface";
+import type { ExplorerChromeSurfaceLayoutDynamics } from "./ExplorerChromeSurface";
 import type {
   ExplorerChromeContextMenuRequest,
   ExplorerSideRailContextMenuRequest,
+} from "./overlayContextMenuModel";
+import {
+  createOverlayContextMenuCommandNode,
+  createOverlayContextMenuSeparatorNode,
 } from "./overlayContextMenuModel";
 import {
   applyExplorerBookmarkImportPlan,
@@ -51,6 +55,7 @@ import {
   getAllExplorerBookmarkCategories,
   isExplorerBookmarkFolderExpanded,
   isExplorerRailSectionCollapsed,
+  isExplorerRailTreeNodeExpanded,
   planExplorerBookmarkImport,
   removeExplorerBookmarkNode,
   renameExplorerBookmarkNode,
@@ -59,12 +64,14 @@ import {
   setExplorerRailViewMode,
   toggleExplorerBookmarkCategoryFilter,
   toggleExplorerBookmarkFolder,
+  toggleExplorerRailTreeNode,
   toggleExplorerRailSection,
   type ExplorerBookmarkImportPlan,
   type ExplorerBookmarkImportSource,
   type ExplorerBookmarkTreeNode,
 } from "./explorerRailState";
 import {
+  getExplorerHomeDir,
   isCloudExplorerPath,
   listExplorerLocation,
   type ExplorerDriveInfo,
@@ -81,12 +88,7 @@ import type {
   ExplorerChromeControlId,
   ExplorerChromeLayoutId,
   ExplorerChromeOverrideSnapshot,
-  ExplorerChromeResolvedControlPlacement,
-  ExplorerChromeResolvedSurface,
-  ExplorerChromeSurfaceId,
-  ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";
-import { resolveExplorerChromeSurfaceLayout } from "../../config/explorerChromeLayouts";
 import { getExplorerChromeCommandId } from "../../config/explorerCustomizeCatalog";
 import {
   explorerRailViewModes,
@@ -95,10 +97,18 @@ import {
   type ExplorerRailViewModeDefinition,
 } from "../../config/explorerRail";
 import {
+  getExplorerRailTreeQuickAccessNodes,
+  resolveExplorerRailTreeNodePath,
+  type ExplorerRailTreeNodeDefinition,
+} from "../../config/explorerRailTree";
+import {
   resolveExplorerThemeRecipe,
   type ResolvedExplorerRailThemeRecipe,
 } from "../../config/explorerTheme";
-import { isExplorerHomePath } from "../../config/explorerVirtualLocations";
+import {
+  isExplorerHomePath,
+  normalizeExplorerVirtualPath,
+} from "../../config/explorerVirtualLocations";
 import {
   createExplorerDropSurfaceBinding,
   getExplorerDropBindingElementProps,
@@ -217,6 +227,25 @@ interface TreeRowProps {
   onDragLeaveFolder: () => void;
 }
 
+interface ExplorerRailTreeNodeRowProps {
+  accent: string;
+  bindRailMotion: (
+    active?: boolean,
+    motionStepIndex?: number,
+  ) => InteractionMotionBinding;
+  compactTree: boolean;
+  dense: boolean;
+  viewMode: ExplorerRailViewModeDefinition;
+  currentPath: string;
+  homeDir: string | null;
+  node: ExplorerRailTreeNodeDefinition;
+  depth: number;
+  showSupportingMeta: boolean;
+  treeIndentStep: number;
+  onNavigate: (path: string) => void;
+  onGoHome: () => void;
+}
+
 type LocalFolderTreeLoadState = {
   childFolders: ExplorerFileEntry[];
   status: "idle" | "loading" | "ready" | "error";
@@ -251,17 +280,13 @@ interface LocalFolderTreeRowProps {
 
 const EXPLORER_RAIL_DENSE_WIDTH = 260;
 const EXPLORER_RAIL_ULTRA_DENSE_WIDTH = 220;
-const EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH = 320;
 
 export function ExplorerSideRail({
   appearance,
   accent,
-  brandLabel,
   sidebarWidth,
   currentPath,
   dropScopeId = "explorer-drop-standalone",
-  locationTitle: locationTitleProp,
-  locationLabel: locationLabelProp,
   drives,
   drivesLoading,
   showHiddenFiles,
@@ -279,12 +304,7 @@ export function ExplorerSideRail({
   onBookmarkCreated,
   resolveDroppedSources,
   localTreeRefreshRevision = 0,
-  chromeLayoutId,
-  chromeOverride,
-  railHeaderLayoutDynamics,
-  onChromeContextMenuRequest,
   onContextMenuRequest,
-  chromeEditMode,
 }: ExplorerSideRailProps) {
   const railRootRef = useRef<HTMLDivElement>(null);
   const rail = useExplorerStore((state) => state.rail);
@@ -378,10 +398,6 @@ export function ExplorerSideRail({
   const compactTree = dense || railViewMode.hideSupportingMeta;
   const showSupportingMeta = !ultraDense && !railViewMode.hideSupportingMeta;
   const showDriveCapacity = !ultraDense && !railViewMode.hideDriveCapacity;
-  const showVerboseDragGuide =
-    !isCompactDock &&
-    sidebarWidth >= EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH &&
-    railViewMode.id === "default";
   const [isManageMode, setIsManageMode] = useState(false);
   const [draftFolderParentId, setDraftFolderParentId] = useState<
     string | null | false
@@ -431,19 +447,6 @@ export function ExplorerSideRail({
     () => getAllExplorerBookmarkCategories(rail.customCategories),
     [rail.customCategories],
   );
-  const bookmarkCount = useMemo(
-    () => rail.nodes.filter((node) => node.kind === "bookmark").length,
-    [rail.nodes],
-  );
-  const currentPathIsHome = isExplorerHomePath(currentPath);
-  const locationTitle =
-    locationTitleProp ??
-    (currentPathIsHome ? "Home" : currentPath.trim() || "Home");
-  const locationLabel = locationLabelProp ?? getPathLeaf(locationTitle);
-  const normalizedBrandLabel = brandLabel.trim();
-  const showBrandLabel =
-    normalizedBrandLabel.length > 0 &&
-    !["explorer", "overlayterm"].includes(normalizedBrandLabel.toLowerCase());
   const filteredRail = useMemo(
     () => ({
       ...rail,
@@ -455,13 +458,41 @@ export function ExplorerSideRail({
     () => buildExplorerBookmarkTree(filteredRail),
     [filteredRail],
   );
+  const [homeDirectoryPath, setHomeDirectoryPath] = useState<string | null>(
+    null,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void getExplorerHomeDir()
+      .then((path) => {
+        if (!cancelled) {
+          setHomeDirectoryPath(path.trim() || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHomeDirectoryPath(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const quickAccessTreeNodes = useMemo(
+    () => getExplorerRailTreeQuickAccessNodes(),
+    [railTheme],
+  );
+  const sortedDrives = useMemo(
+    () => [...drives].sort(compareExplorerDriveForRail),
+    [drives],
+  );
   const localDrives = useMemo(
     () =>
-      drives.filter(
+      sortedDrives.filter(
         (drive): drive is Extract<ExplorerDriveInfo, { kind: "local" }> =>
           drive.kind === "local",
       ),
-    [drives],
+    [sortedDrives],
   );
   const rawLocalDrivePaths = useMemo(
     () =>
@@ -916,8 +947,7 @@ export function ExplorerSideRail({
         label: "Rail Bookmark Summary",
         surfaces: ["railHeader"],
         isVisible: () =>
-          !usesMinimalBookmarkChrome &&
-          (bookmarkCount > 0 || showVerboseDragGuide),
+          !usesMinimalBookmarkChrome,
         render: () => (
           <>
             <span style={railMetaPillStyle}>{bookmarkCount} pinned</span>
@@ -1255,45 +1285,26 @@ export function ExplorerSideRail({
             updateRail(toggleExplorerRailSection(rail, "quick-access"))
           }
         >
-          {(() => {
-            const homeMotion = bindRailMotion(currentPathIsHome, 0);
-            return (
-              <button
-                type="button"
-                onClick={onGoHome}
-                {...homeMotion.motionDataAttributes}
-                onPointerEnter={homeMotion.onPointerEnter}
-                onPointerLeave={homeMotion.onPointerLeave}
-                onPointerDown={homeMotion.onPointerDown}
-                onPointerUp={homeMotion.onPointerUp}
-                onPointerCancel={homeMotion.onPointerCancel}
-                style={{
-                  ...quickLinkButtonStyle(
-                    currentPathIsHome,
-                    accent,
-                    dense,
-                    railViewMode,
-                  ),
-                  ...homeMotion.motionStyle,
-                }}
-              >
-                <Home
-                  size={dense ? 12 : 13}
-                  style={{ color: accent, flexShrink: 0 }}
-                />
-                <div style={{ minWidth: 0 }}>
-                  <div style={bookmarkTitleStyle(railViewMode, "default")}>
-                    Home
-                  </div>
-                  {showSupportingMeta && (
-                    <div style={bookmarkMetaStyle(railViewMode)}>
-                      Open the explorer home surface.
-                    </div>
-                  )}
-                </div>
-              </button>
-            );
-          })()}
+          <div role="tree" aria-label="Quick access tree">
+            {quickAccessTreeNodes.map((node) => (
+              <ExplorerRailTreeNodeRow
+                key={node.id}
+                accent={accent}
+                bindRailMotion={bindRailMotion}
+                compactTree={compactTree}
+                dense={dense}
+                viewMode={railViewMode}
+                currentPath={currentPath}
+                homeDir={homeDirectoryPath}
+                node={node}
+                depth={0}
+                showSupportingMeta={showSupportingMeta}
+                treeIndentStep={railViewMode.treeIndentStep}
+                onNavigate={onNavigate}
+                onGoHome={onGoHome}
+              />
+            ))}
+          </div>
         </RailSection>
 
         <RailSection
@@ -1312,10 +1323,10 @@ export function ExplorerSideRail({
                 <div
                   key={index}
                   style={{
-                    height: dense ? 26 : 38,
-                    borderRadius: 9,
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid var(--overlay-border)",
+                    height: dense ? 22 : 30,
+                    borderRadius: 5,
+                    background: "rgba(255,255,255,0.035)",
+                    border: "none",
                   }}
                 />
               ))}
@@ -1323,7 +1334,7 @@ export function ExplorerSideRail({
           )}
 
           {!drivesLoading &&
-            drives.map((drive, index) => {
+            sortedDrives.map((drive, index) => {
               const isCloudDrive = drive.kind === "cloud";
               const drivePath = drive.path;
               const isActive = isCloudDrive
@@ -1431,7 +1442,7 @@ export function ExplorerSideRail({
                 index,
               );
               return (
-                <div key={drive.id} style={{ marginBottom: 4 }}>
+                <div key={drive.id} style={{ marginBottom: 2 }}>
                   <div
                     {...driveRowMotion.motionDataAttributes}
                     onPointerEnter={driveRowMotion.onPointerEnter}
@@ -2239,6 +2250,175 @@ export function ExplorerSideRail({
   );
 }
 
+function ExplorerRailTreeNodeRow({
+  accent,
+  bindRailMotion,
+  compactTree,
+  dense,
+  viewMode,
+  currentPath,
+  homeDir,
+  node,
+  depth,
+  showSupportingMeta,
+  treeIndentStep,
+  onNavigate,
+  onGoHome,
+}: ExplorerRailTreeNodeRowProps) {
+  const rail = useExplorerStore((state) => state.rail);
+  const updateRail = useExplorerStore((state) => state.updateRail);
+  const resolvedPath = resolveExplorerRailTreeNodePath(node, { homeDir });
+  const canExpand = node.children.length > 0;
+  const isExpanded = canExpand
+    ? isExplorerRailTreeNodeExpanded(rail, node)
+    : false;
+  const childRelation = getExplorerRailTreeChildRelation({
+    currentPath,
+    homeDir,
+    node,
+  });
+  const isActive = isExplorerRailTreeNodeActive({
+    currentPath,
+    node,
+    resolvedPath,
+  });
+  const rowState: RailSelectableRowState = isActive
+    ? "active"
+    : isExpanded || childRelation !== "none"
+      ? "ancestor"
+      : "idle";
+  const rowMotion = bindRailMotion(rowState !== "idle", depth);
+  const Icon = getExplorerRailTreeNodeIcon(node);
+  const iconEmphasis: RailTextEmphasis = isActive
+    ? "active"
+    : rowState === "ancestor"
+      ? "ancestor"
+      : "default";
+  const canActivate =
+    node.action === "go-home" || typeof resolvedPath === "string" || canExpand;
+
+  const activateNode = () => {
+    if (node.action === "go-home") {
+      onGoHome();
+      return;
+    }
+    if (resolvedPath) {
+      onNavigate(resolvedPath);
+      return;
+    }
+    if (canExpand) {
+      updateRail(toggleExplorerRailTreeNode(rail, node));
+    }
+  };
+
+  return (
+    <div style={{ marginTop: depth === 0 ? 2 : 1 }}>
+      <div
+        role="treeitem"
+        aria-expanded={canExpand ? isExpanded : undefined}
+        aria-selected={isActive}
+        data-rail-row-state={rowState}
+        {...rowMotion.motionDataAttributes}
+        onPointerEnter={rowMotion.onPointerEnter}
+        onPointerLeave={rowMotion.onPointerLeave}
+        onPointerDown={rowMotion.onPointerDown}
+        onPointerUp={rowMotion.onPointerUp}
+        onPointerCancel={rowMotion.onPointerCancel}
+        style={{
+          ...getRailSelectableRowStyle({
+            accent,
+            viewMode,
+            dense,
+            state: rowState,
+            treeDepth: depth,
+          }),
+          display: "flex",
+          alignItems: "center",
+          opacity: canActivate ? 1 : 0.68,
+          paddingLeft: (compactTree ? 6 : 8) + depth * treeIndentStep,
+          ...rowMotion.motionStyle,
+        }}
+      >
+        {canExpand ? (
+          <button
+            type="button"
+            aria-label={isExpanded ? `Collapse ${node.label}` : `Expand ${node.label}`}
+            onClick={() => updateRail(toggleExplorerRailTreeNode(rail, node))}
+            style={treeIconButtonStyle(viewMode, isExpanded || isActive)}
+          >
+            {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </button>
+        ) : (
+          <span style={{ width: compactTree ? 18 : 20, flexShrink: 0 }} />
+        )}
+
+        <button
+          type="button"
+          aria-label={node.label}
+          disabled={!canActivate}
+          onClick={activateNode}
+          {...rowMotion.motionDataAttributes}
+          onPointerEnter={rowMotion.onPointerEnter}
+          onPointerLeave={rowMotion.onPointerLeave}
+          onPointerDown={rowMotion.onPointerDown}
+          onPointerUp={rowMotion.onPointerUp}
+          onPointerCancel={rowMotion.onPointerCancel}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: viewMode.presentation.rowChrome === "compact" ? 6 : 8,
+            background: "transparent",
+            border: "none",
+            color: "var(--overlay-text-primary)",
+            cursor: canActivate ? "pointer" : "default",
+            padding: 0,
+            textAlign: "left",
+            ...rowMotion.motionStyle,
+          }}
+        >
+          <Icon
+            size={dense ? 11 : 13}
+            style={{
+              color: resolveRailIconColor(viewMode, accent, iconEmphasis),
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={bookmarkTitleStyle(viewMode, iconEmphasis)}>
+              {node.label}
+            </div>
+            {showSupportingMeta && resolvedPath && (
+              <div style={bookmarkMetaStyle(viewMode)}>{resolvedPath}</div>
+            )}
+          </div>
+        </button>
+      </div>
+
+      {isExpanded &&
+        node.children.map((child) => (
+          <ExplorerRailTreeNodeRow
+            key={child.id}
+            accent={accent}
+            bindRailMotion={bindRailMotion}
+            compactTree={compactTree}
+            dense={dense}
+            viewMode={viewMode}
+            currentPath={currentPath}
+            homeDir={homeDir}
+            node={child}
+            depth={depth + 1}
+            showSupportingMeta={showSupportingMeta}
+            treeIndentStep={treeIndentStep}
+            onNavigate={onNavigate}
+            onGoHome={onGoHome}
+          />
+        ))}
+    </div>
+  );
+}
+
 function BookmarkTreeRow({
   accent,
   bindRailMotion,
@@ -2303,7 +2483,7 @@ function BookmarkTreeRow({
   const rowMotion = bindRailMotion(rowState !== "idle");
 
   return (
-    <div style={{ marginTop: 4 }}>
+    <div style={{ marginTop: 2 }}>
       <div
         role="treeitem"
         aria-expanded={isFolder ? isExpanded : undefined}
@@ -2724,7 +2904,7 @@ function LocalFolderTreeRow({
           <div
             key={childPath}
             style={{
-              marginTop: virtualRow ? 0 : 4,
+              marginTop: virtualRow ? 0 : 2,
               ...(virtualRow
                 ? {
                     position: "absolute",
@@ -2969,6 +3149,110 @@ function RailSection({
       </div>
     </section>
   );
+}
+
+function getExplorerRailTreeNodeIcon(
+  node: ExplorerRailTreeNodeDefinition,
+): typeof Folder {
+  switch (node.icon) {
+    case "cloud":
+      return Database;
+    case "collections":
+      return FolderTree;
+    case "desktop":
+      return Monitor;
+    case "ftp":
+      return Terminal;
+    case "home":
+      return Home;
+    case "libraries":
+      return FolderOpen;
+    case "linux":
+      return Terminal;
+    case "folder":
+    default:
+      return Folder;
+  }
+}
+
+function isExplorerRailTreeNodeActive(args: {
+  currentPath: string;
+  node: ExplorerRailTreeNodeDefinition;
+  resolvedPath: string | null;
+}): boolean {
+  if (args.node.action === "go-home") {
+    return isExplorerHomePath(args.currentPath);
+  }
+  if (!args.resolvedPath) {
+    return false;
+  }
+  return areExplorerRailTreePathsSame(args.currentPath, args.resolvedPath);
+}
+
+function getExplorerRailTreeChildRelation(args: {
+  currentPath: string;
+  homeDir: string | null;
+  node: ExplorerRailTreeNodeDefinition;
+}): "active-child" | "descendant-child" | "none" {
+  for (const child of args.node.children) {
+    const resolvedChildPath = resolveExplorerRailTreeNodePath(child, {
+      homeDir: args.homeDir,
+    });
+    if (
+      isExplorerRailTreeNodeActive({
+        currentPath: args.currentPath,
+        node: child,
+        resolvedPath: resolvedChildPath,
+      })
+    ) {
+      return "active-child";
+    }
+    if (
+      resolvedChildPath &&
+      areExplorerRailTreePathsSameOrDescendant(resolvedChildPath, args.currentPath)
+    ) {
+      return "descendant-child";
+    }
+    const nestedRelation = getExplorerRailTreeChildRelation({
+      currentPath: args.currentPath,
+      homeDir: args.homeDir,
+      node: child,
+    });
+    if (nestedRelation !== "none") {
+      return nestedRelation;
+    }
+  }
+  return "none";
+}
+
+function areExplorerRailTreePathsSame(
+  leftPath: string,
+  rightPath: string,
+): boolean {
+  const left = normalizeExplorerVirtualPath(leftPath);
+  const right = normalizeExplorerVirtualPath(rightPath);
+  if (left.startsWith("greeblefs://") || right.startsWith("greeblefs://")) {
+    return left === right;
+  }
+  if (left.startsWith("cloud://") || right.startsWith("cloud://")) {
+    return left === right;
+  }
+  return isSameLocalPath(left, right);
+}
+
+function areExplorerRailTreePathsSameOrDescendant(
+  candidateAncestorPath: string,
+  candidatePath: string,
+): boolean {
+  const ancestor = normalizeExplorerVirtualPath(candidateAncestorPath);
+  const path = normalizeExplorerVirtualPath(candidatePath);
+  if (ancestor.startsWith("greeblefs://") || path.startsWith("greeblefs://")) {
+    return ancestor === path;
+  }
+  if (ancestor.startsWith("cloud://") || path.startsWith("cloud://")) {
+    return path === ancestor || path.startsWith(`${ancestor.replace(/\/+$/, "")}/`);
+  }
+  return isSameOrDescendantLocalPath(ancestor, path);
 }
 
 function formatBytes(bytes: number): string {
@@ -3499,39 +3783,24 @@ function getRailSelectableRowStyle(args: {
   const isAncestor = state === "ancestor";
   const isDropTarget = state === "drop-target";
   const paddingY = dense
-    ? rowChrome === "plain"
+    ? rowChrome === "carded"
       ? 4
-      : 5
+      : 3
     : rowChrome === "carded"
-      ? 8
-      : rowChrome === "plain"
-        ? 5
-        : 6;
-  const paddingX = dense
-    ? rowChrome === "plain"
-      ? 4
-      : 6
-    : rowChrome === "carded"
-      ? 9
-      : rowChrome === "plain"
+      ? 5
+      : rowChrome === "compact"
         ? 4
-        : 8;
-  const baseBorder =
-    rowChrome === "compact"
-      ? "rgba(255,255,255,0.05)"
-      : rowChrome === "plain"
-        ? "transparent"
-      : flattened || rowChrome === "tree"
-        ? "transparent"
-        : "var(--overlay-explorer-chip-border)";
-  const baseBackground =
-    rowChrome === "carded"
-      ? "var(--overlay-explorer-chip-bg)"
-    : rowChrome === "compact"
-        ? "rgba(255,255,255,0.015)"
-      : rowChrome === "plain"
-        ? "transparent"
-        : "transparent";
+        : 3;
+  const paddingX = dense
+    ? rowChrome === "carded"
+      ? 6
+      : 4
+    : rowChrome === "carded"
+      ? 7
+      : rowChrome === "compact"
+        ? 5
+        : 4;
+  const baseBackground = "transparent";
   const stateBackground = isDropTarget
     ? `${accent}16`
     : isActive
@@ -3543,25 +3812,25 @@ function getRailSelectableRowStyle(args: {
           ? `linear-gradient(90deg, ${accent}12, transparent 84%)`
           : `${accent}0d`
         : baseBackground;
+  const branchShadow =
+    isActive || isAncestor
+      ? `inset ${isActive ? 3 : 2}px 0 0 ${accent}`
+      : "none";
+  const dropShadow = isDropTarget
+    ? `inset 0 0 0 1px ${accent}66, inset 3px 0 0 ${accent}`
+    : branchShadow;
 
   return {
-    gap: rowChrome === "compact" ? 5 : 6,
+    gap: rowChrome === "compact" ? 4 : 5,
     padding: `${paddingY}px ${paddingX}px`,
     borderRadius:
-      rowChrome === "carded" ? 12 : rowChrome === "tree" ? 10 : rowChrome === "plain" ? 6 : 8,
-    border: `1px solid ${isDropTarget ? `${accent}77` : isActive ? `${accent}55` : baseBorder}`,
+      rowChrome === "carded" ? 6 : rowChrome === "tree" ? 4 : rowChrome === "plain" ? 3 : 5,
+    border: "none",
     background: stateBackground,
-    boxShadow:
-      viewMode.presentation.activeBranchStyle === "lane"
-      || rowChrome === "tree"
-      || rowChrome === "plain"
-        ? `inset ${isActive ? 3 : isAncestor ? 1.5 : 0}px 0 0 ${isActive || isAncestor ? accent : "transparent"}`
-        : viewMode.presentation.activeBranchStyle === "bold" && isActive
-          ? `inset 0 0 0 1px ${accent}44`
-          : "none",
+    boxShadow: dropShadow,
     position: "relative",
     marginLeft:
-      rowChrome === "tree" || rowChrome === "plain"
+      flattened || rowChrome === "tree" || rowChrome === "plain"
         ? Math.max(treeDepth - 1, 0) * 2
         : 0,
   };
@@ -3571,31 +3840,23 @@ function treeIconButtonStyle(
   viewMode: ExplorerRailViewModeDefinition,
   active: boolean,
 ): React.CSSProperties {
+  const rowChrome = viewMode.presentation.rowChrome;
+  const size = rowChrome === "tree" || rowChrome === "plain" ? 16 : 18;
   return {
-    width: 20,
-    height: 20,
-    borderRadius:
-      viewMode.presentation.rowChrome === "tree"
-        ? 999
-        : "var(--overlay-explorer-control-radius)",
-    border: `1px solid ${active
-      ? "var(--overlay-explorer-chip-active-border)"
-      : viewMode.presentation.rowChrome === "plain"
-        ? "transparent"
-        : "var(--overlay-explorer-chip-border)"}`,
+    width: size,
+    height: size,
+    borderRadius: rowChrome === "tree" || rowChrome === "plain" ? 4 : 5,
+    border: "none",
     background: active
-      ? "var(--overlay-explorer-chip-active-bg)"
-      : viewMode.presentation.rowChrome === "tree"
-        ? "rgba(255,255,255,0.025)"
-        : viewMode.presentation.rowChrome === "plain"
-          ? "transparent"
-        : "var(--overlay-explorer-chip-bg)",
+      ? "color-mix(in srgb, var(--overlay-accent) 18%, transparent)"
+      : "transparent",
     color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-dim)",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     cursor: "pointer",
     flexShrink: 0,
+    padding: 0,
   };
 }
 
@@ -3640,29 +3901,6 @@ function bookmarkMetaStyle(
     overflow: "hidden",
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
-  };
-}
-
-function quickLinkButtonStyle(
-  active: boolean,
-  accent: string,
-  dense: boolean,
-  viewMode: ExplorerRailViewModeDefinition,
-): React.CSSProperties {
-  return {
-    ...getRailSelectableRowStyle({
-      accent,
-      viewMode,
-      dense,
-      state: active ? "active" : "idle",
-    }),
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-    color: "var(--overlay-text-primary)",
-    cursor: "pointer",
-    textAlign: "left",
   };
 }
 

@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
+  ArrowRight,
   FolderOpen,
   HardDrive,
   LayoutGrid,
@@ -7,6 +8,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  Sparkles,
   StickyNote,
   Terminal,
 } from '@/components/AppIcons';
@@ -22,19 +24,34 @@ import type {
 } from '../../runtime/explorerBackend';
 import type {
   ExplorerHomeBookmarkItem,
+  ExplorerHomeActionItem,
   ExplorerHomeLaunchpadItem,
   ExplorerHomePackContext,
   ExplorerHomePackHost,
   ExplorerHomePackModuleLayout,
   ExplorerHomePackPresetDefinition,
   ExplorerHomeUsageEntry,
+  ExplorerHomeViewportState,
+  ExplorerHomeWidgetItem,
 } from './homePackRuntime';
 import { ExplorerHomePackBoundary } from './homePackRuntime';
 
-const FALLBACK_EXPLORER_HOME_PACK_ID = 'command-center';
+const FALLBACK_EXPLORER_HOME_PACK_ID = 'magnum-opus';
+
+const explorerHomeSurfaceShellStyle: CSSProperties = {
+  width: '100%',
+  maxWidth: '100%',
+  minWidth: 0,
+  minHeight: '100%',
+  boxSizing: 'border-box',
+  overflowX: 'hidden',
+  containerType: 'inline-size',
+  background: 'var(--overlay-explorer-content-bg)',
+};
 
 export interface ExplorerHomeHostData {
   appearance: ResolvedOverlayAppearance;
+  viewport: ExplorerHomeViewportState;
   activePresetId: string | null;
   usageTrackingEnabled: boolean;
   quickAccess: ExplorerHomePackHost['quickAccess'];
@@ -45,6 +62,8 @@ export interface ExplorerHomeHostData {
   drives: ExplorerDriveInfo[];
   tasks: ExplorerTaskSnapshot[];
   launchpad: ExplorerHomeLaunchpadItem[];
+  actions: ExplorerHomeActionItem[];
+  widgets: ExplorerHomeWidgetItem[];
   packState: Record<string, unknown>;
   packWarnings: string[];
   diagnostics: ExplorerHomePackHost['diagnostics'];
@@ -55,6 +74,8 @@ export interface ExplorerHomeHostActions {
   openSavedSearch: (savedSearch: ExplorerSavedSearch) => void;
   openPanel: (panelId: string) => void;
   openSettingsSection: (section: SettingsSectionKey) => void;
+  runAction: (actionId: string) => void;
+  renderWidget: (widgetId: string, slotId?: string) => React.ReactNode;
   refresh: () => void;
   updatePackState: (updates: Record<string, unknown>) => void;
   setPreset: (presetId: string | null) => void;
@@ -84,11 +105,15 @@ interface ExplorerHomeSurfaceProps {
   drives: ExplorerDriveInfo[];
   tasks: ExplorerTaskSnapshot[];
   launchpad: ExplorerHomeLaunchpadItem[];
+  actions: ExplorerHomeActionItem[];
+  widgets: ExplorerHomeWidgetItem[];
   packState: Record<string, unknown>;
   onNavigate: (path: string) => void;
   onOpenSavedSearch: (savedSearch: ExplorerSavedSearch) => void;
   onOpenPanel: (panelId: string) => void;
   onOpenSettingsSection: (section: SettingsSectionKey) => void;
+  onRunAction: (actionId: string) => void;
+  onRenderWidget: (widgetId: string, slotId?: string) => React.ReactNode;
   onRefresh: () => void;
   onUpdatePackState: (updates: Record<string, unknown>) => void;
   onSetPreset: (presetId: string | null) => void;
@@ -101,6 +126,18 @@ function normalizePackId(value: string | null | undefined): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function createExplorerHomeViewportState(width: number): ExplorerHomeViewportState {
+  const measuredWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
+  return {
+    width: measuredWidth,
+    density: measuredWidth > 0 && measuredWidth < 560
+      ? 'narrow'
+      : measuredWidth > 0 && measuredWidth < 920
+        ? 'compact'
+        : 'wide',
+  };
 }
 
 function canRenderExplorerHomePack(pack: LoadedExplorerHomePack | null | undefined): boolean {
@@ -132,31 +169,31 @@ export function createExplorerHomeLaunchpadItems(): ExplorerHomeLaunchpadItem[] 
     {
       id: 'launchpad-terminal',
       label: 'Terminal',
-      description: 'Open the integrated shell.',
+      description: 'Integrated shell',
       panelId: 'terminal',
     },
     {
       id: 'launchpad-settings',
       label: 'Settings',
-      description: 'Tune Home packs, shell chrome, and explorer behavior.',
+      description: 'Control deck',
       panelId: 'settings',
     },
     {
       id: 'launchpad-plugins',
       label: 'Plugins',
-      description: 'Browse live runtime extensions.',
+      description: 'Runtime extensions',
       panelId: 'plugins',
     },
     {
       id: 'launchpad-notes',
       label: 'Notes',
-      description: 'Jump to built-in notes and reference material.',
+      description: 'Notes surface',
       panelId: 'notes',
     },
     {
       id: 'launchpad-storage',
       label: 'Storage',
-      description: 'Inspect storage surfaces and roots.',
+      description: 'Storage map',
       panelId: 'storage',
     },
   ];
@@ -210,6 +247,7 @@ export function createExplorerHomeHost(
 ): ExplorerHomePackHost {
   return {
     appearance: data.appearance,
+    viewport: data.viewport,
     activePresetId: data.activePresetId,
     usageTrackingEnabled: data.usageTrackingEnabled,
     quickAccess: data.quickAccess,
@@ -220,6 +258,8 @@ export function createExplorerHomeHost(
     drives: data.drives,
     tasks: data.tasks,
     launchpad: data.launchpad,
+    actions: data.actions,
+    widgets: data.widgets,
     packState: data.packState,
     packWarnings: data.packWarnings,
     diagnostics: data.diagnostics,
@@ -227,6 +267,8 @@ export function createExplorerHomeHost(
     openSavedSearch: actions.openSavedSearch,
     openPanel: actions.openPanel,
     openSettingsSection: actions.openSettingsSection,
+    runAction: actions.runAction,
+    renderWidget: actions.renderWidget,
     refresh: actions.refresh,
     updatePackState: actions.updatePackState,
     setPreset: actions.setPreset,
@@ -296,6 +338,10 @@ function renderModuleLabel(moduleId: string): string {
       return 'Drives + Roots';
     case 'launchpad':
       return 'Launchpad';
+    case 'actions':
+      return 'Actions';
+    case 'widgets':
+      return 'Widgets';
     default:
       return moduleId;
   }
@@ -330,10 +376,14 @@ function HomeModuleCard({
   return (
     <section
       style={{
-        borderRadius: 20,
+        minWidth: 0,
+        borderRadius: 8,
         border: '1px solid var(--overlay-explorer-chip-border)',
-        background: 'linear-gradient(180deg, rgba(14,19,30,0.98) 0%, rgba(9,12,20,0.98) 100%)',
-        padding: 16,
+        background: 'color-mix(in srgb, var(--overlay-explorer-content-bg) 88%, black 12%)',
+        padding: 10,
+        display: 'grid',
+        gap: 9,
+        boxSizing: 'border-box',
       }}
     >
       <div>
@@ -341,7 +391,7 @@ function HomeModuleCard({
           style={{
             fontSize: 10,
             fontWeight: 700,
-            letterSpacing: '0.14em',
+            letterSpacing: '0.1em',
             textTransform: 'uppercase',
             color: 'var(--overlay-accent)',
           }}
@@ -349,12 +399,12 @@ function HomeModuleCard({
           {title}
         </div>
         {subtitle ? (
-          <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.5, color: 'var(--overlay-text-muted)' }}>
+          <div style={{ marginTop: 4, fontSize: 10, lineHeight: 1.35, color: 'var(--overlay-text-muted)' }}>
             {subtitle}
           </div>
         ) : null}
       </div>
-      <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         {children}
       </div>
     </section>
@@ -366,40 +416,48 @@ function HomeActionRow({
   meta,
   icon,
   onClick,
+  disabled = false,
 }: {
   label: string;
   meta: string;
   icon: React.ReactNode;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       style={{
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: 12,
-        padding: '12px 14px',
-        borderRadius: 14,
+        alignItems: 'center',
+        gap: 9,
+        width: '100%',
+        minWidth: 0,
+        minHeight: 34,
+        padding: '7px 9px',
+        borderRadius: 7,
         border: '1px solid var(--overlay-explorer-chip-border)',
         background: 'var(--overlay-explorer-chip-bg)',
-        color: 'var(--overlay-text-primary)',
+        color: disabled ? 'var(--overlay-text-dim)' : 'var(--overlay-text-primary)',
         textAlign: 'left',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.64 : 1,
+        boxSizing: 'border-box',
       }}
     >
-      <span style={{ color: 'var(--overlay-accent)', marginTop: 1 }}>{icon}</span>
+      <span style={{ color: 'var(--overlay-accent)', display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
       <span style={{ minWidth: 0, flex: 1 }}>
-        <span style={{ display: 'block', fontSize: 12, fontWeight: 700 }}>
+        <span style={{ display: 'block', fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
         <span
           style={{
             display: 'block',
-            marginTop: 4,
-            fontSize: 11,
-            lineHeight: 1.5,
+            marginTop: 2,
+            fontSize: 10,
+            lineHeight: 1.25,
             color: 'var(--overlay-text-muted)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -410,6 +468,7 @@ function HomeActionRow({
           {meta}
         </span>
       </span>
+      <ArrowRight size={12} style={{ color: 'var(--overlay-text-dim)', flexShrink: 0 }} />
     </button>
   );
 }
@@ -557,11 +616,85 @@ function renderPresetModule(
           ))}
         </HomeModuleCard>
       );
+    case 'actions': {
+      const preferredActions = host.actions
+        .filter((action) => action.canRunFromHome)
+        .slice(0, limit);
+      const fallbackActions = preferredActions.length > 0
+        ? preferredActions
+        : host.actions.slice(0, limit);
+      return (
+        <HomeModuleCard
+          title={module.title ?? renderModuleLabel(module.moduleId)}
+          subtitle={module.description}
+        >
+          {fallbackActions.length > 0 ? fallbackActions.map((action) => (
+            <HomeActionRow
+              key={action.id}
+              label={action.title}
+              meta={`${action.presentationKind} · ${action.sourceBadgeLabel}`}
+              icon={<Sparkles size={15} />}
+              disabled={!action.canRunFromHome}
+              onClick={() => host.runAction(action.id)}
+            />
+          )) : (
+            <div style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+              No actions loaded
+            </div>
+          )}
+        </HomeModuleCard>
+      );
+    }
+    case 'widgets':
+      return (
+        <HomeModuleCard
+          title={module.title ?? renderModuleLabel(module.moduleId)}
+          subtitle={module.description}
+        >
+          {host.widgets.slice(0, limit).map((widget) => {
+            const widgetNode = widget.canRenderInHome
+              ? host.renderWidget(widget.id, `${module.id}:${widget.id}`)
+              : null;
+            return (
+              <div
+                key={widget.id}
+                style={{
+                  minWidth: 0,
+                  borderRadius: 7,
+                  border: '1px solid var(--overlay-explorer-chip-border)',
+                  background: 'var(--overlay-explorer-chip-bg)',
+                  padding: widgetNode ? 6 : '7px 9px',
+                  overflow: 'hidden',
+                }}
+              >
+                {widgetNode ?? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <LayoutGrid size={14} style={{ color: 'var(--overlay-accent)', flexShrink: 0 }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {widget.shortLabel || widget.title}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {widget.category}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {host.widgets.length === 0 ? (
+            <div style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+              No widgets loaded
+            </div>
+          ) : null}
+        </HomeModuleCard>
+      );
     default:
       return (
         <HomeModuleCard
           title={module.title ?? renderModuleLabel(module.moduleId)}
-          subtitle={module.description ?? 'This module id is not supported by the host catalog yet.'}
+          subtitle={module.description}
         >
           <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
             Unknown module id: <code>{module.moduleId}</code>
@@ -580,49 +713,49 @@ function ExplorerHomePresetSurface({
 }) {
   const activePreset = resolveActivePreset(pack, host.activePresetId);
   const modules = activePreset?.modules ?? [];
+  const surfaceIsNarrow = host.viewport.density === 'narrow';
 
   return (
-    <div style={{ display: 'grid', gap: 18, padding: '18px 20px 28px' }}>
+    <div style={{ display: 'grid', gap: 10, padding: '10px', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
       <section
         style={{
-          borderRadius: 24,
-          padding: 20,
+          minWidth: 0,
+          borderRadius: 8,
+          padding: 10,
           border: '1px solid var(--overlay-explorer-chip-border)',
-          background: 'linear-gradient(180deg, rgba(13,18,31,0.96) 0%, rgba(7,10,18,0.99) 100%)',
+          background: 'color-mix(in srgb, var(--overlay-explorer-content-bg) 90%, black 10%)',
+          boxSizing: 'border-box',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-          <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
                 fontSize: 10,
                 fontWeight: 700,
-                letterSpacing: '0.16em',
+                letterSpacing: '0.1em',
                 textTransform: 'uppercase',
                 color: 'var(--overlay-accent)',
               }}
             >
-              Explorer Home
+              {activePreset?.name ?? 'Home'}
             </div>
-            <h2 style={{ marginTop: 10, fontSize: 28, lineHeight: 1.05, color: 'var(--overlay-text-primary)' }}>
+            <h2 style={{ marginTop: 4, fontSize: 18, lineHeight: 1.1, color: 'var(--overlay-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {pack.name}
             </h2>
-            <p style={{ marginTop: 8, maxWidth: 780, fontSize: 12, lineHeight: 1.65, color: 'var(--overlay-text-muted)' }}>
-              {pack.description ?? 'Manifest-driven home pack using the built-in host module catalog.'}
-            </p>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {pack.runtime.presets.length > 1 && (
               <select
                 value={activePreset?.id ?? ''}
                 onChange={(event) => host.setPreset(event.target.value || null)}
                 style={{
-                  minHeight: 36,
-                  borderRadius: 12,
+                  minHeight: 30,
+                  borderRadius: 7,
                   border: '1px solid var(--overlay-explorer-chip-border)',
                   background: 'var(--overlay-explorer-chip-bg)',
                   color: 'var(--overlay-text-primary)',
-                  padding: '0 12px',
+                  padding: '0 8px',
                   fontSize: 11,
                 }}
               >
@@ -637,9 +770,9 @@ function ExplorerHomePresetSurface({
               type="button"
               onClick={() => host.openSettingsSection('home')}
               style={{
-                minHeight: 36,
-                padding: '0 12px',
-                borderRadius: 12,
+                minHeight: 30,
+                padding: '0 9px',
+                borderRadius: 7,
                 border: '1px solid var(--overlay-explorer-chip-border)',
                 background: 'var(--overlay-explorer-chip-bg)',
                 color: 'var(--overlay-text-primary)',
@@ -648,7 +781,7 @@ function ExplorerHomePresetSurface({
                 fontWeight: 700,
               }}
             >
-              Customize Home
+              Tune
             </button>
           </div>
         </div>
@@ -658,8 +791,11 @@ function ExplorerHomePresetSurface({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: 18,
+            gridTemplateColumns: surfaceIsNarrow
+              ? 'minmax(0, 1fr)'
+              : 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))',
+            gap: 10,
+            minWidth: 0,
           }}
         >
           {modules.map((module) => (
@@ -669,9 +805,9 @@ function ExplorerHomePresetSurface({
           ))}
         </div>
       ) : (
-        <HomeModuleCard title="Empty Preset" subtitle="This Home preset does not define any modules yet.">
+        <HomeModuleCard title="Empty Preset">
           <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-            Add modules to the active preset or switch to another preset from Settings.
+            No modules
           </div>
         </HomeModuleCard>
       )}
@@ -681,24 +817,24 @@ function ExplorerHomePresetSurface({
 
 function renderFallbackSurface(message: string) {
   return (
-    <div style={{ display: 'grid', placeItems: 'center', minHeight: 280, padding: 24 }}>
+    <div style={{ display: 'grid', placeItems: 'center', minHeight: 180, padding: 12, minWidth: 0 }}>
       <div
         style={{
-          maxWidth: 620,
-          borderRadius: 20,
+          width: 'min(100%, 420px)',
+          borderRadius: 8,
           border: '1px solid var(--overlay-explorer-chip-border)',
-          background: 'linear-gradient(180deg, rgba(17,22,35,0.96) 0%, rgba(9,12,20,0.99) 100%)',
-          padding: 24,
+          background: 'var(--overlay-explorer-chip-bg)',
+          padding: 12,
           color: 'var(--overlay-text-primary)',
         }}
       >
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--overlay-accent)' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--overlay-accent)' }}>
           Explorer Home
         </div>
-        <div style={{ marginTop: 10, fontSize: 18, fontWeight: 700 }}>
-          Home pack fallback
+        <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700 }}>
+          Home pack unavailable
         </div>
-        <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.6, color: 'var(--overlay-text-muted)' }}>
+        <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.45, color: 'var(--overlay-text-muted)' }}>
           {message}
         </div>
       </div>
@@ -721,15 +857,25 @@ export function ExplorerHomeSurface({
   drives,
   tasks,
   launchpad,
+  actions,
+  widgets,
   packState,
   onNavigate,
   onOpenSavedSearch,
   onOpenPanel,
   onOpenSettingsSection,
+  onRunAction,
+  onRenderWidget,
   onRefresh,
   onUpdatePackState,
   onSetPreset,
 }: ExplorerHomeSurfaceProps) {
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const [measuredViewportWidth, setMeasuredViewportWidth] = useState(0);
+  const viewport = useMemo(
+    () => createExplorerHomeViewportState(measuredViewportWidth),
+    [measuredViewportWidth],
+  );
   const selection = useMemo(
     () => resolveExplorerHomePackSelection({
       packs,
@@ -747,6 +893,30 @@ export function ExplorerHomeSurface({
         : null)
     : null;
 
+  useEffect(() => {
+    const node = surfaceRef.current;
+    if (!node) {
+      return undefined;
+    }
+
+    const updateWidth = () => {
+      const nextWidth = Math.round(node.getBoundingClientRect().width);
+      setMeasuredViewportWidth((currentWidth) => (
+        currentWidth === nextWidth ? currentWidth : nextWidth
+      ));
+    };
+
+    updateWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateWidth);
+      return () => window.removeEventListener('resize', updateWidth);
+    }
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const host = useMemo<ExplorerHomePackHost | null>(() => {
     if (!activePack) {
       return null;
@@ -755,6 +925,7 @@ export function ExplorerHomeSurface({
     return createExplorerHomeHost(
       {
         appearance,
+        viewport,
         activePresetId,
         usageTrackingEnabled,
         quickAccess,
@@ -765,6 +936,8 @@ export function ExplorerHomeSurface({
         drives,
         tasks,
         launchpad,
+        actions,
+        widgets,
         packState,
         packWarnings: selection.warnings,
         diagnostics: {
@@ -778,15 +951,17 @@ export function ExplorerHomeSurface({
         openSavedSearch: onOpenSavedSearch,
         openPanel: onOpenPanel,
         openSettingsSection: onOpenSettingsSection,
+        runAction: onRunAction,
+        renderWidget: onRenderWidget,
         refresh: onRefresh,
         updatePackState: onUpdatePackState,
         setPreset: onSetPreset,
       },
     );
   }, [
+    actions,
     activePack,
     activePresetId,
-    activePresetIdByPackId,
     appearance,
     bookmarks,
     drives,
@@ -796,6 +971,8 @@ export function ExplorerHomeSurface({
     onOpenPanel,
     onOpenSavedSearch,
     onOpenSettingsSection,
+    onRunAction,
+    onRenderWidget,
     onRefresh,
     onSetPreset,
     onUpdatePackState,
@@ -809,11 +986,17 @@ export function ExplorerHomeSurface({
     selection.warnings,
     tasks,
     usageTrackingEnabled,
+    viewport,
+    widgets,
   ]);
 
   if (!activePack || !host) {
-    return renderFallbackSurface(
-      'No Home packs are currently available. Open Settings -> Home to inspect the runtime catalog.',
+    return (
+      <div ref={surfaceRef} data-overlay-explorer-home-surface style={explorerHomeSurfaceShellStyle}>
+        {renderFallbackSurface(
+          'No Home packs are currently available. Open Settings -> Home to inspect the runtime catalog.',
+        )}
+      </div>
     );
   }
 
@@ -826,22 +1009,28 @@ export function ExplorerHomeSurface({
   );
 
   if (!activePack.runtime.component) {
-    return fallback;
+    return (
+      <div ref={surfaceRef} data-overlay-explorer-home-surface style={explorerHomeSurfaceShellStyle}>
+        {fallback}
+      </div>
+    );
   }
 
   return (
-    <ExplorerHomePackBoundary
-      pack={activePack.runtime}
-      fallback={fallback}
-      onError={() => {
-        console.warn(`GreebleFS: falling back to preset renderer for home pack ${activePack.id}`);
-      }}
-      render={(Component) => (
-        <Component
-          pack={packContext}
-          host={host}
-        />
-      )}
-    />
+    <div ref={surfaceRef} data-overlay-explorer-home-surface style={explorerHomeSurfaceShellStyle}>
+      <ExplorerHomePackBoundary
+        pack={activePack.runtime}
+        fallback={fallback}
+        onError={() => {
+          console.warn(`GreebleFS: falling back to preset renderer for home pack ${activePack.id}`);
+        }}
+        render={(Component) => (
+          <Component
+            pack={packContext}
+            host={host}
+          />
+        )}
+      />
+    </div>
   );
 }

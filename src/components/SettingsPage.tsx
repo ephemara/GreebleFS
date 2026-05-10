@@ -7322,6 +7322,10 @@ export function SettingsPage({
         ? createExplorerHomeHost(
             {
               appearance,
+              viewport: {
+                width: 0,
+                density: "wide",
+              },
               activePresetId: activeHomePresetId,
               usageTrackingEnabled: settings.home.usageTrackingEnabled,
               quickAccess: homeQuickAccess,
@@ -7332,6 +7336,8 @@ export function SettingsPage({
               drives: homeDrives,
               tasks: homeTasks,
               launchpad: homeLaunchpad,
+              actions: [],
+              widgets: [],
               packState: activeHomePackState,
               packWarnings: homeSelection.warnings,
               diagnostics: {
@@ -7345,6 +7351,8 @@ export function SettingsPage({
               openSavedSearch: () => undefined,
               openPanel: () => undefined,
               openSettingsSection: setActiveSection,
+              runAction: () => undefined,
+              renderWidget: () => null,
               refresh: () => {
                 void onRefreshHomePacks();
               },

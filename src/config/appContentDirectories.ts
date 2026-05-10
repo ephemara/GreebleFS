@@ -131,6 +131,19 @@ const shippedManagedDirectoryMetadata = {
     ],
     order: 26.15,
   },
+  explorerRailTrees: {
+    label: "Explorer Rail Trees",
+    description:
+      "Author source-tree roots, library groups, and compact navigation presets for the Explorer side rail here.",
+    keywords: [
+      "explorer rail",
+      "file tree",
+      "navigation tree",
+      "libraries",
+      "quick access",
+    ],
+    order: 26.18,
+  },
   explorerChromeLayouts: {
     label: "Explorer Chrome Layouts",
     description:
@@ -223,6 +236,20 @@ const shippedManagedDirectoryMetadata = {
       "zoom tokens",
     ],
     order: 27.4,
+  },
+  explorerDragEngines: {
+    label: "Explorer Drag Engines",
+    description:
+      "Author Explorer drag/drop pointer, target, autoscroll, and presentation engine presets here.",
+    keywords: [
+      "explorer drag",
+      "drag and drop",
+      "drop target",
+      "autoscroll",
+      "drag overlay",
+      "interaction policy",
+    ],
+    order: 27.5,
   },
   explorerPerformance: {
     label: "Explorer Performance",

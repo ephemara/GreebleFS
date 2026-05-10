@@ -1,15 +1,16 @@
 import { useRef, useSyncExternalStore } from "react";
 import type { RuntimePlatform } from "../../config/platform";
 import {
-  EXPLORER_DRAG_CANCEL_BURST_DURATION_MS,
-  EXPLORER_DRAG_DROP_BURST_DURATION_MS,
-  EXPLORER_DRAG_OVERLAY_POINTER_OFFSET,
-  EXPLORER_TAB_AUTO_OPEN_DELAY_MS,
-  explorerAutoOpenDelayMsByRole,
-  explorerDropSurfacePriority,
   type ExplorerDropSurfaceRole,
   type ExplorerResolvedDropSurfaceKind,
-} from "../../config/explorerDragInteractions";
+  resolveEffectiveExplorerDragEngine,
+  type ResolvedExplorerDragEngine,
+} from "../../config/explorerDragEngines";
+import {
+  recordExplorerPerformanceSample,
+  type ExplorerPerformanceMetadata,
+  type ExplorerPerformanceMetricId,
+} from "../../config/performanceTelemetry";
 
 export type ExplorerDragIntent = "internal" | "native-out";
 export type ExplorerDragOperation = "move" | "copy";
@@ -159,7 +160,57 @@ export function getExplorerPreviewDropSurfaceId(path: string): string {
   return `explorer-preview:${path}`;
 }
 
-const EXPLORER_SHARED_DRAG_SESSION_LINGER_MS = 1500;
+let explorerDragEnginePolicy = resolveEffectiveExplorerDragEngine();
+const explorerDragTelemetryLastRecordedAtByMetric = new Map<
+  ExplorerPerformanceMetricId,
+  number
+>();
+
+export function configureExplorerDragEnginePolicy(
+  policy: ResolvedExplorerDragEngine | null | undefined,
+): void {
+  const nextPolicy = policy ?? resolveEffectiveExplorerDragEngine();
+  if (nextPolicy.id === explorerDragEnginePolicy.id) {
+    explorerDragEnginePolicy = nextPolicy;
+    return;
+  }
+  explorerDragEnginePolicy = nextPolicy;
+  clearExplorerResolvedDropHitCache();
+  clearExplorerCachedElementRects();
+}
+
+export function getCurrentExplorerDragEnginePolicy(): ResolvedExplorerDragEngine {
+  return explorerDragEnginePolicy;
+}
+
+function getDragNow(): number {
+  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+}
+
+function recordExplorerDragMetric(
+  metricId: ExplorerPerformanceMetricId,
+  durationMs: number,
+  metadata: ExplorerPerformanceMetadata = {},
+): void {
+  const now = Date.now();
+  const lastRecordedAt =
+    explorerDragTelemetryLastRecordedAtByMetric.get(metricId) ?? 0;
+  if (now - lastRecordedAt < 80) {
+    return;
+  }
+  explorerDragTelemetryLastRecordedAtByMetric.set(metricId, now);
+  recordExplorerPerformanceSample({
+    metricId,
+    durationMs,
+    recordedAt: now,
+    metadata: {
+      engineId: explorerDragEnginePolicy.id,
+      ...metadata,
+    },
+  });
+}
 
 const explorerDropSurfaceBindingById = new Map<
   string,
@@ -246,6 +297,55 @@ function emitExplorerDragInteractionState(): void {
   }
 }
 
+function pointsEqual(
+  left: { x: number; y: number } | null,
+  right: { x: number; y: number } | null,
+): boolean {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      Math.abs(left.x - right.x) < 0.01 &&
+      Math.abs(left.y - right.y) < 0.01)
+  );
+}
+
+function areExplorerDragStatesEquivalent(
+  left: ExplorerDragInteractionState,
+  right: ExplorerDragInteractionState,
+): boolean {
+  return (
+    left.active === right.active &&
+    left.phase === right.phase &&
+    left.sourceKind === right.sourceKind &&
+    left.sourceScopeId === right.sourceScopeId &&
+    left.sourcePrimaryPath === right.sourcePrimaryPath &&
+    left.sourceItemKind === right.sourceItemKind &&
+    left.sourceIconSrc === right.sourceIconSrc &&
+    left.sourceStackItems === right.sourceStackItems &&
+    left.operation === right.operation &&
+    left.paths === right.paths &&
+    left.itemCount === right.itemCount &&
+    left.primaryLabel === right.primaryLabel &&
+    pointsEqual(left.pointer, right.pointer) &&
+    pointsEqual(left.overlayPointer, right.overlayPointer) &&
+    left.scopeId === right.scopeId &&
+    left.targetPath === right.targetPath &&
+    left.targetKind === right.targetKind &&
+    left.targetSurfaceId === right.targetSurfaceId &&
+    left.targetSurfaceRole === right.targetSurfaceRole &&
+    pointsEqual(left.presentationTargetPoint, right.presentationTargetPoint) &&
+    left.valid === right.valid &&
+    left.invalidReason === right.invalidReason &&
+    left.externalWindowItemCount === right.externalWindowItemCount &&
+    left.dwellSurfaceId === right.dwellSurfaceId &&
+    left.dwellTargetPath === right.dwellTargetPath &&
+    Math.abs(left.dwellProgress - right.dwellProgress) < 0.001 &&
+    left.dwellDelayMs === right.dwellDelayMs &&
+    left.dwellLabel === right.dwellLabel
+  );
+}
+
 function setExplorerDragInteractionState(
   nextState:
     | ExplorerDragInteractionState
@@ -257,7 +357,14 @@ function setExplorerDragInteractionState(
     typeof nextState === "function"
       ? nextState(explorerDragInteractionState)
       : nextState;
-  if (resolvedNextState === explorerDragInteractionState) {
+  if (
+    resolvedNextState === explorerDragInteractionState ||
+    (explorerDragEnginePolicy.pointer.statePublish === "on-change" &&
+      areExplorerDragStatesEquivalent(
+        explorerDragInteractionState,
+        resolvedNextState,
+      ))
+  ) {
     return;
   }
   explorerDragInteractionState = resolvedNextState;
@@ -550,10 +657,14 @@ function scheduleExplorerDragAutoOpen(hit: ExplorerResolvedDropHit | null): void
 
   const configuredDelay =
     behavior.autoOpenDelayMs ??
-    explorerAutoOpenDelayMsByRole[hit.surfaceRole] ??
+    (hit.surfaceRole === "directory-target"
+      ? explorerDragEnginePolicy.dropTargets.directoryAutoOpenDelayMs
+      : hit.surfaceRole === "navigation-target"
+        ? explorerDragEnginePolicy.dropTargets.navigationAutoOpenDelayMs
+        : null) ??
     (hit.targetKind === "navigation"
-      ? EXPLORER_TAB_AUTO_OPEN_DELAY_MS
-      : EXPLORER_TAB_AUTO_OPEN_DELAY_MS);
+      ? explorerDragEnginePolicy.dropTargets.tabAutoOpenDelayMs
+      : explorerDragEnginePolicy.dropTargets.tabAutoOpenDelayMs);
   if (!configuredDelay || configuredDelay <= 0) {
     clearExplorerDragAutoOpenState();
     updateExplorerDragDwellState({
@@ -662,7 +773,9 @@ function resolveExplorerDropHitFromCandidateElements(args: {
     if (!hit) {
       continue;
     }
-    const priority = explorerDropSurfacePriority[hit.surfaceRole] ?? 0;
+    const priority =
+      explorerDragEnginePolicy.dropTargets.surfacePriority[hit.surfaceRole] ??
+      0;
     if (priority > bestPriority) {
       bestPriority = priority;
       bestHit = hit;
@@ -744,6 +857,40 @@ function tryResolveExplorerDropHitFromCachedTarget(point: {
   });
 }
 
+function resolveExplorerDropHitFromRegisteredSurfaces(point: {
+  x: number;
+  y: number;
+}): ExplorerResolvedDropHit | null {
+  let bestHit: ExplorerResolvedDropHit | null = null;
+  let bestPriority = -Infinity;
+  let bestArea = Infinity;
+  for (const [surfaceId, element] of explorerDropSurfaceElementById) {
+    if (!element.isConnected || !isPointWithinElementRect(element, point)) {
+      continue;
+    }
+    const metadata = explorerDropSurfaceMetadataById.get(surfaceId) ?? null;
+    const hit = resolveDropHitFromSurfaceMetadata({
+      metadata,
+      point,
+      targetElement: element,
+    });
+    if (!hit) {
+      continue;
+    }
+    const priority =
+      explorerDragEnginePolicy.dropTargets.surfacePriority[hit.surfaceRole] ??
+      0;
+    const rect = getExplorerCachedElementRect(element);
+    const area = Math.max(1, rect.width * rect.height);
+    if (priority > bestPriority || (priority === bestPriority && area < bestArea)) {
+      bestHit = hit;
+      bestPriority = priority;
+      bestArea = area;
+    }
+  }
+  return bestHit;
+}
+
 function resolveLegacyExplorerDropHitFromElement(
   element: HTMLElement,
   point: { x: number; y: number },
@@ -818,6 +965,7 @@ export function resolveExplorerDropHitFromPoint(
   pointer: ExplorerDropPointerLike,
   scaleFactor = 1,
 ): ExplorerResolvedDropHit | null {
+  const startedAt = getDragNow();
   if (
     typeof document === "undefined" ||
     typeof document.elementFromPoint !== "function"
@@ -829,12 +977,37 @@ export function resolveExplorerDropHitFromPoint(
   const cachedHit = tryResolveExplorerDropHitFromCachedTarget(point);
   if (cachedHit) {
     explorerLastResolvedDropHit = cachedHit;
+    recordExplorerDragMetric(
+      "explorer_drag_hit_test",
+      getDragNow() - startedAt,
+      { mode: "cached" },
+    );
     return cachedHit;
+  }
+
+  if (explorerDragEnginePolicy.pointer.hitTestMode === "registered-rects") {
+    const registeredHit = resolveExplorerDropHitFromRegisteredSurfaces(point);
+    if (registeredHit) {
+      explorerLastResolvedDropHit = registeredHit.targetElement
+        ? registeredHit
+        : null;
+      recordExplorerDragMetric(
+        "explorer_drag_hit_test",
+        getDragNow() - startedAt,
+        { mode: "registered-rects" },
+      );
+      return registeredHit;
+    }
   }
 
   const elementAtPointer = document.elementFromPoint(point.x, point.y);
   if (!(elementAtPointer instanceof HTMLElement)) {
     clearExplorerResolvedDropHitCache();
+    recordExplorerDragMetric(
+      "explorer_drag_hit_test",
+      getDragNow() - startedAt,
+      { mode: "element-from-point", hit: false },
+    );
     return null;
   }
 
@@ -845,6 +1018,11 @@ export function resolveExplorerDropHitFromPoint(
       point,
     );
     explorerLastResolvedDropHit = legacyHit?.targetElement ? legacyHit : null;
+    recordExplorerDragMetric(
+      "explorer_drag_hit_test",
+      getDragNow() - startedAt,
+      { mode: "legacy", hit: Boolean(legacyHit) },
+    );
     return legacyHit;
   }
 
@@ -854,6 +1032,11 @@ export function resolveExplorerDropHitFromPoint(
     enforcePointContainment: true,
   });
   explorerLastResolvedDropHit = resolvedHit?.targetElement ? resolvedHit : null;
+  recordExplorerDragMetric(
+    "explorer_drag_hit_test",
+    getDragNow() - startedAt,
+    { mode: "element-from-point", hit: Boolean(resolvedHit) },
+  );
   return resolvedHit;
 }
 

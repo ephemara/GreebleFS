@@ -53,6 +53,39 @@ export interface ExplorerHomeLaunchpadItem {
   panelId: string;
 }
 
+export type ExplorerHomeViewportDensity = 'narrow' | 'compact' | 'wide';
+
+export interface ExplorerHomeViewportState {
+  width: number;
+  density: ExplorerHomeViewportDensity;
+}
+
+export interface ExplorerHomeActionItem {
+  id: string;
+  title: string;
+  description?: string;
+  packName: string;
+  sourceBadgeLabel: string;
+  presentationKind: 'command' | 'workflow';
+  outputTarget: string;
+  iconName?: string;
+  tags: string[];
+  canRunFromHome: boolean;
+}
+
+export interface ExplorerHomeWidgetItem {
+  id: string;
+  title: string;
+  shortLabel: string;
+  description?: string;
+  category: string;
+  sourceLabel: string;
+  rendererKind: 'react' | 'wasm-panel';
+  available: boolean;
+  tags: string[];
+  canRenderInHome: boolean;
+}
+
 export type ExplorerHomeHostModuleId =
   | 'quick-access'
   | 'bookmarks'
@@ -61,7 +94,9 @@ export type ExplorerHomeHostModuleId =
   | 'saved-searches'
   | 'task-center'
   | 'drives'
-  | 'launchpad';
+  | 'launchpad'
+  | 'actions'
+  | 'widgets';
 
 export interface ExplorerHomePackModuleLayout {
   id: string;
@@ -90,6 +125,7 @@ export interface ExplorerHomePackContext {
 
 export interface ExplorerHomePackHost {
   appearance: ResolvedOverlayAppearance;
+  viewport: ExplorerHomeViewportState;
   activePresetId: string | null;
   usageTrackingEnabled: boolean;
   quickAccess: ExplorerHomeQuickAccessItem[];
@@ -100,6 +136,8 @@ export interface ExplorerHomePackHost {
   drives: ExplorerDriveInfo[];
   tasks: ExplorerTaskSnapshot[];
   launchpad: ExplorerHomeLaunchpadItem[];
+  actions: ExplorerHomeActionItem[];
+  widgets: ExplorerHomeWidgetItem[];
   packState: Record<string, unknown>;
   packWarnings: string[];
   diagnostics: {
@@ -111,6 +149,8 @@ export interface ExplorerHomePackHost {
   openSavedSearch: (savedSearch: ExplorerSavedSearch) => void;
   openPanel: (panelId: string) => void;
   openSettingsSection: (section: SettingsSectionKey) => void;
+  runAction: (actionId: string) => void;
+  renderWidget: (widgetId: string, slotId?: string) => React.ReactNode;
   refresh: () => void;
   updatePackState: (updates: Record<string, unknown>) => void;
   setPreset: (presetId: string | null) => void;

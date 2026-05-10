@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "id": "greeblefs-core-explorer-rail-tree",
+  "name": "GreebleFS Core Explorer Rail Tree",
+  "description": "Profile-authored navigation roots for the Explorer side rail.",
+  "quickAccessNodes": [
+    {
+      "id": "home",
+      "kind": "action",
+      "action": "go-home",
+      "label": "Home",
+      "icon": "home"
+    },
+    {
+      "id": "desktop",
+      "kind": "path",
+      "pathTemplate": "{home}/Desktop",
+      "label": "Desktop",
+      "icon": "desktop"
+    },
+    {
+      "id": "cloud-storage",
+      "kind": "group",
+      "label": "Cloud Storage",
+      "icon": "cloud"
+    },
+    {
+      "id": "linux",
+      "kind": "path",
+      "path": "/",
+      "label": "Linux",
+      "icon": "linux",
+      "platforms": ["linux"]
+    },
+    {
+      "id": "file-collections",
+      "kind": "group",
+      "label": "File Collections",
+      "icon": "collections"
+    },
+    {
+      "id": "libraries",
+      "kind": "group",
+      "label": "Libraries",
+      "icon": "libraries",
+      "defaultExpanded": false,
+      "children": [
+        {
+          "id": "library-documents",
+          "kind": "path",
+          "pathTemplate": "{home}/Documents",
+          "label": "Documents",
+          "icon": "folder"
+        },
+        {
+          "id": "library-downloads",
+          "kind": "path",
+          "pathTemplate": "{home}/Downloads",
+          "label": "Downloads",
+          "icon": "folder"
+        },
+        {
+          "id": "library-pictures",
+          "kind": "path",
+          "pathTemplate": "{home}/Pictures",
+          "label": "Pictures",
+          "icon": "folder"
+        },
+        {
+          "id": "library-music",
+          "kind": "path",
+          "pathTemplate": "{home}/Music",
+          "label": "Music",
+          "icon": "folder"
+        },
+        {
+          "id": "library-videos",
+          "kind": "path",
+          "pathTemplate": "{home}/Videos",
+          "label": "Videos",
+          "icon": "folder"
+        }
+      ]
+    },
+    {
+      "id": "ftp",
+      "kind": "group",
+      "label": "FTP",
+      "icon": "ftp"
+    }
+  ],
+  "virtualization": {
+    "maxInlineStaticNodes": 96
+  }
+}
