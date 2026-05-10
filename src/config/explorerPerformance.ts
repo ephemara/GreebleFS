@@ -6,6 +6,7 @@ export interface ExplorerFolderActivationPerformance {
   doubleClickSecondClickImmediateNavigation: boolean;
   doubleClickDedupeWindowMs: number;
   pointerDownDirectoryWarmEnabled: boolean;
+  directoryResultCacheTtlMs: number;
 }
 
 export interface ExplorerPerformanceBudgets {
@@ -33,10 +34,11 @@ export interface ExplorerViewportPreviewPrefetchPolicy {
   backwardPrefetchViewports: number;
 }
 
-export type ShippedExplorerViewportSchedulerPolicy =
-  Partial<Omit<ExplorerViewportSchedulerPolicy, "previewPrefetch">> & {
-    previewPrefetch?: Partial<ExplorerViewportPreviewPrefetchPolicy>;
-  };
+export type ShippedExplorerViewportSchedulerPolicy = Partial<
+  Omit<ExplorerViewportSchedulerPolicy, "previewPrefetch">
+> & {
+  previewPrefetch?: Partial<ExplorerViewportPreviewPrefetchPolicy>;
+};
 
 export type ExplorerNativeTaskGraphOverflowPolicy = "cancelStaleQueuedFirst";
 
@@ -61,10 +63,11 @@ export interface ExplorerNativeTaskGraphPolicy {
   laneConcurrency: ExplorerNativeTaskGraphLaneConcurrency;
 }
 
-export type ShippedExplorerNativeTaskGraphPolicy =
-  Partial<Omit<ExplorerNativeTaskGraphPolicy, "laneConcurrency">> & {
-    laneConcurrency?: Partial<ExplorerNativeTaskGraphLaneConcurrency>;
-  };
+export type ShippedExplorerNativeTaskGraphPolicy = Partial<
+  Omit<ExplorerNativeTaskGraphPolicy, "laneConcurrency">
+> & {
+  laneConcurrency?: Partial<ExplorerNativeTaskGraphLaneConcurrency>;
+};
 
 export type ExplorerMessageStreamOverflowPolicy = "drop-oldest";
 
@@ -85,13 +88,17 @@ export interface ExplorerMessageStreamsPolicy {
   telemetry: ExplorerMessageStreamRingPolicy;
 }
 
-export type ShippedExplorerMessageStreamsPolicy =
-  Partial<Omit<ExplorerMessageStreamsPolicy, "defaultTopic" | "terminal" | "taskOutput" | "telemetry">> & {
-    defaultTopic?: Partial<ExplorerMessageStreamRingPolicy>;
-    terminal?: Partial<ExplorerMessageStreamRingPolicy>;
-    taskOutput?: Partial<ExplorerMessageStreamRingPolicy>;
-    telemetry?: Partial<ExplorerMessageStreamRingPolicy>;
-  };
+export type ShippedExplorerMessageStreamsPolicy = Partial<
+  Omit<
+    ExplorerMessageStreamsPolicy,
+    "defaultTopic" | "terminal" | "taskOutput" | "telemetry"
+  >
+> & {
+  defaultTopic?: Partial<ExplorerMessageStreamRingPolicy>;
+  terminal?: Partial<ExplorerMessageStreamRingPolicy>;
+  taskOutput?: Partial<ExplorerMessageStreamRingPolicy>;
+  telemetry?: Partial<ExplorerMessageStreamRingPolicy>;
+};
 
 export interface ExplorerPreviewStreamingPolicy {
   enabled: boolean;
@@ -131,87 +138,94 @@ export interface ExplorerPerformanceManifest {
   previewStreaming: ExplorerPreviewStreamingPolicy;
 }
 
-const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance = Object.freeze({
-  doubleClickPreviewPrimeDelayMs: 180,
-  doubleClickSecondClickImmediateNavigation: true,
-  doubleClickDedupeWindowMs: 96,
-  pointerDownDirectoryWarmEnabled: true,
-});
+const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance =
+  Object.freeze({
+    doubleClickPreviewPrimeDelayMs: 180,
+    doubleClickSecondClickImmediateNavigation: true,
+    doubleClickDedupeWindowMs: 96,
+    pointerDownDirectoryWarmEnabled: true,
+    directoryResultCacheTtlMs: 30_000,
+  });
 
-const defaultExplorerPerformanceBudgets: ExplorerPerformanceBudgets = Object.freeze({
-  doubleClickSecondClickToNavigateDispatchMs: 1,
-});
+const defaultExplorerPerformanceBudgets: ExplorerPerformanceBudgets =
+  Object.freeze({
+    doubleClickSecondClickToNavigateDispatchMs: 1,
+  });
 
-const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy = Object.freeze({
-  enabled: true,
-  batchSize: 12,
-  maxConcurrentThumbnailReads: 4,
-  settleDelayMs: 88,
-  forwardPrefetchViewports: 1,
-  backwardPrefetchViewports: 0.5,
-  cancelStaleBatches: true,
-  maxCandidateQueueDepth: 96,
-  queueOverflowStrategy: "drop-lowest-priority",
-  previewPrefetch: Object.freeze({
+const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy =
+  Object.freeze({
     enabled: true,
-    batchSize: 4,
-    maxConcurrentPreviewReads: 2,
-    forwardPrefetchViewports: 0.5,
-    backwardPrefetchViewports: 0.25,
-  }),
-});
+    batchSize: 12,
+    maxConcurrentThumbnailReads: 4,
+    settleDelayMs: 88,
+    forwardPrefetchViewports: 1,
+    backwardPrefetchViewports: 0.5,
+    cancelStaleBatches: true,
+    maxCandidateQueueDepth: 96,
+    queueOverflowStrategy: "drop-lowest-priority",
+    previewPrefetch: Object.freeze({
+      enabled: true,
+      batchSize: 4,
+      maxConcurrentPreviewReads: 2,
+      forwardPrefetchViewports: 0.5,
+      backwardPrefetchViewports: 0.25,
+    }),
+  });
 
-const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy = Object.freeze({
-  enabled: true,
-  maxQueuedTasks: 256,
-  staleCancellationEnabled: true,
-  telemetryEnabled: true,
-  progressEmitIntervalMs: 80,
-  overflowPolicy: "cancelStaleQueuedFirst",
-  laneConcurrency: Object.freeze({
-    directoryScan: 2,
-    recursiveSearch: 2,
-    checksum: 1,
-    thumbnailDecode: 4,
-    previewRead: 2,
-    archive: 1,
-    indexing: 0,
-    maintenance: 0,
-  }),
-});
+const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy =
+  Object.freeze({
+    enabled: true,
+    maxQueuedTasks: 256,
+    staleCancellationEnabled: true,
+    telemetryEnabled: true,
+    progressEmitIntervalMs: 80,
+    overflowPolicy: "cancelStaleQueuedFirst",
+    laneConcurrency: Object.freeze({
+      directoryScan: 2,
+      recursiveSearch: 2,
+      checksum: 1,
+      thumbnailDecode: 4,
+      previewRead: 2,
+      archive: 1,
+      indexing: 0,
+      maintenance: 0,
+    }),
+  });
 
-const defaultExplorerMessageStreamsPolicy: ExplorerMessageStreamsPolicy = Object.freeze({
-  enabled: true,
-  telemetryEnabled: true,
-  maxFrameBytes: 32768,
-  replayResponseLimit: 512,
-  overflowPolicy: "drop-oldest",
-  defaultTopic: Object.freeze({
-    maxMessages: 256,
-    maxBytes: 1024 * 1024,
-  }),
-  terminal: Object.freeze({
-    maxMessages: 2048,
-    maxBytes: 4 * 1024 * 1024,
-  }),
-  taskOutput: Object.freeze({
-    maxMessages: 1024,
-    maxBytes: 2 * 1024 * 1024,
-  }),
-  telemetry: Object.freeze({
-    maxMessages: 400,
-    maxBytes: 2 * 1024 * 1024,
-  }),
-});
+const defaultExplorerMessageStreamsPolicy: ExplorerMessageStreamsPolicy =
+  Object.freeze({
+    enabled: true,
+    telemetryEnabled: true,
+    maxFrameBytes: 32768,
+    replayResponseLimit: 512,
+    overflowPolicy: "drop-oldest",
+    defaultTopic: Object.freeze({
+      maxMessages: 256,
+      maxBytes: 1024 * 1024,
+    }),
+    terminal: Object.freeze({
+      maxMessages: 2048,
+      maxBytes: 4 * 1024 * 1024,
+    }),
+    taskOutput: Object.freeze({
+      maxMessages: 1024,
+      maxBytes: 2 * 1024 * 1024,
+    }),
+    telemetry: Object.freeze({
+      maxMessages: 400,
+      maxBytes: 2 * 1024 * 1024,
+    }),
+  });
 
-const defaultExplorerPreviewStreamingPolicy: ExplorerPreviewStreamingPolicy = Object.freeze({
-  enabled: true,
-  chunkBytes: 64 * 1024,
-  textMaxBytes: 10 * 1024 * 1024,
-  dataUriMaxBytes: 12 * 1024 * 1024,
-  binaryMaxBytes: 256 * 1024 * 1024,
-  archiveEntryMaxBytes: 256 * 1024 * 1024,
-});
+const defaultExplorerPreviewStreamingPolicy: ExplorerPreviewStreamingPolicy =
+  Object.freeze({
+    enabled: true,
+    chunkBytes: 64 * 1024,
+    textMaxBytes: 10 * 1024 * 1024,
+    dataUriMaxBytes: 12 * 1024 * 1024,
+    binaryMaxBytes: 256 * 1024 * 1024,
+    archiveEntryMaxBytes: 256 * 1024 * 1024,
+  });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
@@ -222,9 +236,8 @@ function asFiniteNumber(
   fallback: number,
   options: { minimum: number; maximum: number },
 ): number {
-  const candidate = typeof value === "number" && Number.isFinite(value)
-    ? value
-    : fallback;
+  const candidate =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return clampNumber(candidate, options.minimum, options.maximum);
 }
 
@@ -270,23 +283,34 @@ function normalizeFolderActivationPerformance(
   value: ShippedExplorerPerformanceManifest["folderActivation"],
 ): ExplorerFolderActivationPerformance {
   return {
-    doubleClickPreviewPrimeDelayMs: Math.round(asFiniteNumber(
-      value?.doubleClickPreviewPrimeDelayMs,
-      defaultFolderActivationPerformance.doubleClickPreviewPrimeDelayMs,
-      { minimum: 0, maximum: 1000 },
-    )),
+    doubleClickPreviewPrimeDelayMs: Math.round(
+      asFiniteNumber(
+        value?.doubleClickPreviewPrimeDelayMs,
+        defaultFolderActivationPerformance.doubleClickPreviewPrimeDelayMs,
+        { minimum: 0, maximum: 1000 },
+      ),
+    ),
     doubleClickSecondClickImmediateNavigation: asBoolean(
       value?.doubleClickSecondClickImmediateNavigation,
       defaultFolderActivationPerformance.doubleClickSecondClickImmediateNavigation,
     ),
-    doubleClickDedupeWindowMs: Math.round(asFiniteNumber(
-      value?.doubleClickDedupeWindowMs,
-      defaultFolderActivationPerformance.doubleClickDedupeWindowMs,
-      { minimum: 0, maximum: 1000 },
-    )),
+    doubleClickDedupeWindowMs: Math.round(
+      asFiniteNumber(
+        value?.doubleClickDedupeWindowMs,
+        defaultFolderActivationPerformance.doubleClickDedupeWindowMs,
+        { minimum: 0, maximum: 1000 },
+      ),
+    ),
     pointerDownDirectoryWarmEnabled: asBoolean(
       value?.pointerDownDirectoryWarmEnabled,
       defaultFolderActivationPerformance.pointerDownDirectoryWarmEnabled,
+    ),
+    directoryResultCacheTtlMs: Math.round(
+      asFiniteNumber(
+        value?.directoryResultCacheTtlMs,
+        defaultFolderActivationPerformance.directoryResultCacheTtlMs,
+        { minimum: 0, maximum: 300_000 },
+      ),
     ),
   };
 }
@@ -312,21 +336,27 @@ function normalizeViewportScheduling(
       value?.enabled,
       defaultExplorerViewportSchedulerPolicy.enabled,
     ),
-    batchSize: Math.round(asFiniteNumber(
-      value?.batchSize,
-      defaultExplorerViewportSchedulerPolicy.batchSize,
-      { minimum: 1, maximum: 128 },
-    )),
-    maxConcurrentThumbnailReads: Math.round(asFiniteNumber(
-      value?.maxConcurrentThumbnailReads,
-      defaultExplorerViewportSchedulerPolicy.maxConcurrentThumbnailReads,
-      { minimum: 1, maximum: 32 },
-    )),
-    settleDelayMs: Math.round(asFiniteNumber(
-      value?.settleDelayMs,
-      defaultExplorerViewportSchedulerPolicy.settleDelayMs,
-      { minimum: 0, maximum: 1000 },
-    )),
+    batchSize: Math.round(
+      asFiniteNumber(
+        value?.batchSize,
+        defaultExplorerViewportSchedulerPolicy.batchSize,
+        { minimum: 1, maximum: 128 },
+      ),
+    ),
+    maxConcurrentThumbnailReads: Math.round(
+      asFiniteNumber(
+        value?.maxConcurrentThumbnailReads,
+        defaultExplorerViewportSchedulerPolicy.maxConcurrentThumbnailReads,
+        { minimum: 1, maximum: 32 },
+      ),
+    ),
+    settleDelayMs: Math.round(
+      asFiniteNumber(
+        value?.settleDelayMs,
+        defaultExplorerViewportSchedulerPolicy.settleDelayMs,
+        { minimum: 0, maximum: 1000 },
+      ),
+    ),
     forwardPrefetchViewports: asFiniteNumber(
       value?.forwardPrefetchViewports,
       defaultExplorerViewportSchedulerPolicy.forwardPrefetchViewports,
@@ -341,11 +371,13 @@ function normalizeViewportScheduling(
       value?.cancelStaleBatches,
       defaultExplorerViewportSchedulerPolicy.cancelStaleBatches,
     ),
-    maxCandidateQueueDepth: Math.round(asFiniteNumber(
-      value?.maxCandidateQueueDepth,
-      defaultExplorerViewportSchedulerPolicy.maxCandidateQueueDepth,
-      { minimum: 1, maximum: 1024 },
-    )),
+    maxCandidateQueueDepth: Math.round(
+      asFiniteNumber(
+        value?.maxCandidateQueueDepth,
+        defaultExplorerViewportSchedulerPolicy.maxCandidateQueueDepth,
+        { minimum: 1, maximum: 1024 },
+      ),
+    ),
     queueOverflowStrategy: asQueueOverflowStrategy(
       value?.queueOverflowStrategy,
       defaultExplorerViewportSchedulerPolicy.queueOverflowStrategy,
@@ -355,17 +387,21 @@ function normalizeViewportScheduling(
         previewPrefetch?.enabled,
         defaultExplorerViewportSchedulerPolicy.previewPrefetch.enabled,
       ),
-      batchSize: Math.round(asFiniteNumber(
-        previewPrefetch?.batchSize,
-        defaultExplorerViewportSchedulerPolicy.previewPrefetch.batchSize,
-        { minimum: 1, maximum: 64 },
-      )),
-      maxConcurrentPreviewReads: Math.round(asFiniteNumber(
-        previewPrefetch?.maxConcurrentPreviewReads,
-        defaultExplorerViewportSchedulerPolicy.previewPrefetch
-          .maxConcurrentPreviewReads,
-        { minimum: 1, maximum: 16 },
-      )),
+      batchSize: Math.round(
+        asFiniteNumber(
+          previewPrefetch?.batchSize,
+          defaultExplorerViewportSchedulerPolicy.previewPrefetch.batchSize,
+          { minimum: 1, maximum: 64 },
+        ),
+      ),
+      maxConcurrentPreviewReads: Math.round(
+        asFiniteNumber(
+          previewPrefetch?.maxConcurrentPreviewReads,
+          defaultExplorerViewportSchedulerPolicy.previewPrefetch
+            .maxConcurrentPreviewReads,
+          { minimum: 1, maximum: 16 },
+        ),
+      ),
       forwardPrefetchViewports: asFiniteNumber(
         previewPrefetch?.forwardPrefetchViewports,
         defaultExplorerViewportSchedulerPolicy.previewPrefetch
@@ -389,12 +425,17 @@ function normalizeNativeTaskGraph(
   const defaultLanes = defaultExplorerNativeTaskGraphPolicy.laneConcurrency;
 
   return {
-    enabled: asBoolean(value?.enabled, defaultExplorerNativeTaskGraphPolicy.enabled),
-    maxQueuedTasks: Math.round(asFiniteNumber(
-      value?.maxQueuedTasks,
-      defaultExplorerNativeTaskGraphPolicy.maxQueuedTasks,
-      { minimum: 1, maximum: 4096 },
-    )),
+    enabled: asBoolean(
+      value?.enabled,
+      defaultExplorerNativeTaskGraphPolicy.enabled,
+    ),
+    maxQueuedTasks: Math.round(
+      asFiniteNumber(
+        value?.maxQueuedTasks,
+        defaultExplorerNativeTaskGraphPolicy.maxQueuedTasks,
+        { minimum: 1, maximum: 4096 },
+      ),
+    ),
     staleCancellationEnabled: asBoolean(
       value?.staleCancellationEnabled,
       defaultExplorerNativeTaskGraphPolicy.staleCancellationEnabled,
@@ -403,56 +444,69 @@ function normalizeNativeTaskGraph(
       value?.telemetryEnabled,
       defaultExplorerNativeTaskGraphPolicy.telemetryEnabled,
     ),
-    progressEmitIntervalMs: Math.round(asFiniteNumber(
-      value?.progressEmitIntervalMs,
-      defaultExplorerNativeTaskGraphPolicy.progressEmitIntervalMs,
-      { minimum: 16, maximum: 1000 },
-    )),
+    progressEmitIntervalMs: Math.round(
+      asFiniteNumber(
+        value?.progressEmitIntervalMs,
+        defaultExplorerNativeTaskGraphPolicy.progressEmitIntervalMs,
+        { minimum: 16, maximum: 1000 },
+      ),
+    ),
     overflowPolicy: asNativeTaskGraphOverflowPolicy(
       value?.overflowPolicy,
       defaultExplorerNativeTaskGraphPolicy.overflowPolicy,
     ),
     laneConcurrency: {
-      directoryScan: Math.round(asFiniteNumber(
-        laneConcurrency?.directoryScan,
-        defaultLanes.directoryScan,
-        { minimum: 1, maximum: 16 },
-      )),
-      recursiveSearch: Math.round(asFiniteNumber(
-        laneConcurrency?.recursiveSearch,
-        defaultLanes.recursiveSearch,
-        { minimum: 1, maximum: 16 },
-      )),
-      checksum: Math.round(asFiniteNumber(
-        laneConcurrency?.checksum,
-        defaultLanes.checksum,
-        { minimum: 1, maximum: 8 },
-      )),
-      thumbnailDecode: Math.round(asFiniteNumber(
-        laneConcurrency?.thumbnailDecode,
-        defaultLanes.thumbnailDecode,
-        { minimum: 1, maximum: 16 },
-      )),
-      previewRead: Math.round(asFiniteNumber(
-        laneConcurrency?.previewRead,
-        defaultLanes.previewRead,
-        { minimum: 0, maximum: 16 },
-      )),
-      archive: Math.round(asFiniteNumber(
-        laneConcurrency?.archive,
-        defaultLanes.archive,
-        { minimum: 0, maximum: 8 },
-      )),
-      indexing: Math.round(asFiniteNumber(
-        laneConcurrency?.indexing,
-        defaultLanes.indexing,
-        { minimum: 0, maximum: 8 },
-      )),
-      maintenance: Math.round(asFiniteNumber(
-        laneConcurrency?.maintenance,
-        defaultLanes.maintenance,
-        { minimum: 0, maximum: 4 },
-      )),
+      directoryScan: Math.round(
+        asFiniteNumber(
+          laneConcurrency?.directoryScan,
+          defaultLanes.directoryScan,
+          { minimum: 1, maximum: 16 },
+        ),
+      ),
+      recursiveSearch: Math.round(
+        asFiniteNumber(
+          laneConcurrency?.recursiveSearch,
+          defaultLanes.recursiveSearch,
+          { minimum: 1, maximum: 16 },
+        ),
+      ),
+      checksum: Math.round(
+        asFiniteNumber(laneConcurrency?.checksum, defaultLanes.checksum, {
+          minimum: 1,
+          maximum: 8,
+        }),
+      ),
+      thumbnailDecode: Math.round(
+        asFiniteNumber(
+          laneConcurrency?.thumbnailDecode,
+          defaultLanes.thumbnailDecode,
+          { minimum: 1, maximum: 16 },
+        ),
+      ),
+      previewRead: Math.round(
+        asFiniteNumber(laneConcurrency?.previewRead, defaultLanes.previewRead, {
+          minimum: 0,
+          maximum: 16,
+        }),
+      ),
+      archive: Math.round(
+        asFiniteNumber(laneConcurrency?.archive, defaultLanes.archive, {
+          minimum: 0,
+          maximum: 8,
+        }),
+      ),
+      indexing: Math.round(
+        asFiniteNumber(laneConcurrency?.indexing, defaultLanes.indexing, {
+          minimum: 0,
+          maximum: 8,
+        }),
+      ),
+      maintenance: Math.round(
+        asFiniteNumber(laneConcurrency?.maintenance, defaultLanes.maintenance, {
+          minimum: 0,
+          maximum: 4,
+        }),
+      ),
     },
   };
 }
@@ -463,39 +517,48 @@ function normalizeMessageStreamRing(
   maxFrameBytes: number,
 ): ExplorerMessageStreamRingPolicy {
   return {
-    maxMessages: Math.round(asFiniteNumber(
-      value?.maxMessages,
-      fallback.maxMessages,
-      { minimum: 1, maximum: 65536 },
-    )),
-    maxBytes: Math.round(asFiniteNumber(
-      value?.maxBytes,
-      fallback.maxBytes,
-      { minimum: maxFrameBytes, maximum: 256 * 1024 * 1024 },
-    )),
+    maxMessages: Math.round(
+      asFiniteNumber(value?.maxMessages, fallback.maxMessages, {
+        minimum: 1,
+        maximum: 65536,
+      }),
+    ),
+    maxBytes: Math.round(
+      asFiniteNumber(value?.maxBytes, fallback.maxBytes, {
+        minimum: maxFrameBytes,
+        maximum: 256 * 1024 * 1024,
+      }),
+    ),
   };
 }
 
 function normalizeMessageStreams(
   value: ShippedExplorerPerformanceManifest["messageStreams"],
 ): ExplorerMessageStreamsPolicy {
-  const maxFrameBytes = Math.round(asFiniteNumber(
-    value?.maxFrameBytes,
-    defaultExplorerMessageStreamsPolicy.maxFrameBytes,
-    { minimum: 1024, maximum: 1024 * 1024 },
-  ));
+  const maxFrameBytes = Math.round(
+    asFiniteNumber(
+      value?.maxFrameBytes,
+      defaultExplorerMessageStreamsPolicy.maxFrameBytes,
+      { minimum: 1024, maximum: 1024 * 1024 },
+    ),
+  );
   return {
-    enabled: asBoolean(value?.enabled, defaultExplorerMessageStreamsPolicy.enabled),
+    enabled: asBoolean(
+      value?.enabled,
+      defaultExplorerMessageStreamsPolicy.enabled,
+    ),
     telemetryEnabled: asBoolean(
       value?.telemetryEnabled,
       defaultExplorerMessageStreamsPolicy.telemetryEnabled,
     ),
     maxFrameBytes,
-    replayResponseLimit: Math.round(asFiniteNumber(
-      value?.replayResponseLimit,
-      defaultExplorerMessageStreamsPolicy.replayResponseLimit,
-      { minimum: 1, maximum: 4096 },
-    )),
+    replayResponseLimit: Math.round(
+      asFiniteNumber(
+        value?.replayResponseLimit,
+        defaultExplorerMessageStreamsPolicy.replayResponseLimit,
+        { minimum: 1, maximum: 4096 },
+      ),
+    ),
     overflowPolicy: asMessageStreamOverflowPolicy(
       value?.overflowPolicy,
       defaultExplorerMessageStreamsPolicy.overflowPolicy,
@@ -531,31 +594,41 @@ function normalizePreviewStreaming(
       value?.enabled,
       defaultExplorerPreviewStreamingPolicy.enabled,
     ),
-    chunkBytes: Math.round(asFiniteNumber(
-      value?.chunkBytes,
-      defaultExplorerPreviewStreamingPolicy.chunkBytes,
-      { minimum: 4 * 1024, maximum: 1024 * 1024 },
-    )),
-    textMaxBytes: Math.round(asFiniteNumber(
-      value?.textMaxBytes,
-      defaultExplorerPreviewStreamingPolicy.textMaxBytes,
-      { minimum: 1024, maximum: 64 * 1024 * 1024 },
-    )),
-    dataUriMaxBytes: Math.round(asFiniteNumber(
-      value?.dataUriMaxBytes,
-      defaultExplorerPreviewStreamingPolicy.dataUriMaxBytes,
-      { minimum: 1024, maximum: 64 * 1024 * 1024 },
-    )),
-    binaryMaxBytes: Math.round(asFiniteNumber(
-      value?.binaryMaxBytes,
-      defaultExplorerPreviewStreamingPolicy.binaryMaxBytes,
-      { minimum: 1024, maximum: 512 * 1024 * 1024 },
-    )),
-    archiveEntryMaxBytes: Math.round(asFiniteNumber(
-      value?.archiveEntryMaxBytes,
-      defaultExplorerPreviewStreamingPolicy.archiveEntryMaxBytes,
-      { minimum: 1024, maximum: 512 * 1024 * 1024 },
-    )),
+    chunkBytes: Math.round(
+      asFiniteNumber(
+        value?.chunkBytes,
+        defaultExplorerPreviewStreamingPolicy.chunkBytes,
+        { minimum: 4 * 1024, maximum: 1024 * 1024 },
+      ),
+    ),
+    textMaxBytes: Math.round(
+      asFiniteNumber(
+        value?.textMaxBytes,
+        defaultExplorerPreviewStreamingPolicy.textMaxBytes,
+        { minimum: 1024, maximum: 64 * 1024 * 1024 },
+      ),
+    ),
+    dataUriMaxBytes: Math.round(
+      asFiniteNumber(
+        value?.dataUriMaxBytes,
+        defaultExplorerPreviewStreamingPolicy.dataUriMaxBytes,
+        { minimum: 1024, maximum: 64 * 1024 * 1024 },
+      ),
+    ),
+    binaryMaxBytes: Math.round(
+      asFiniteNumber(
+        value?.binaryMaxBytes,
+        defaultExplorerPreviewStreamingPolicy.binaryMaxBytes,
+        { minimum: 1024, maximum: 512 * 1024 * 1024 },
+      ),
+    ),
+    archiveEntryMaxBytes: Math.round(
+      asFiniteNumber(
+        value?.archiveEntryMaxBytes,
+        defaultExplorerPreviewStreamingPolicy.archiveEntryMaxBytes,
+        { minimum: 1024, maximum: 512 * 1024 * 1024 },
+      ),
+    ),
   };
 }
 
@@ -565,13 +638,12 @@ export function normalizeExplorerPerformanceManifest(
   return Object.freeze({
     version: Math.max(
       1,
-      Math.round(asFiniteNumber(manifest?.version, 1, { minimum: 1, maximum: 1000 })),
+      Math.round(
+        asFiniteNumber(manifest?.version, 1, { minimum: 1, maximum: 1000 }),
+      ),
     ),
     id: asString(manifest?.id, "greeblefs-core-explorer-performance"),
-    name: asString(
-      manifest?.name,
-      "GreebleFS Core Explorer Performance",
-    ),
+    name: asString(manifest?.name, "GreebleFS Core Explorer Performance"),
     description: asString(
       manifest?.description,
       "Canonical Explorer hot-path interaction tuning and latency budgets.",
@@ -580,7 +652,9 @@ export function normalizeExplorerPerformanceManifest(
       manifest?.folderActivation,
     ),
     budgets: normalizeBudgets(manifest?.budgets),
-    viewportScheduling: normalizeViewportScheduling(manifest?.viewportScheduling),
+    viewportScheduling: normalizeViewportScheduling(
+      manifest?.viewportScheduling,
+    ),
     nativeTaskGraph: normalizeNativeTaskGraph(manifest?.nativeTaskGraph),
     messageStreams: normalizeMessageStreams(manifest?.messageStreams),
     previewStreaming: normalizePreviewStreaming(manifest?.previewStreaming),
@@ -601,6 +675,9 @@ export let EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS =
 
 export let EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
   defaultFolderActivationPerformance.pointerDownDirectoryWarmEnabled;
+
+export let EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS =
+  defaultFolderActivationPerformance.directoryResultCacheTtlMs;
 
 export let EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
   defaultExplorerPerformanceBudgets.doubleClickSecondClickToNavigateDispatchMs;
@@ -624,15 +701,17 @@ export function applyUsrExplorerPerformanceManifest(
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS =
     explorerPerformance.folderActivation.doubleClickPreviewPrimeDelayMs;
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION =
-    explorerPerformance.folderActivation.doubleClickSecondClickImmediateNavigation;
+    explorerPerformance.folderActivation
+      .doubleClickSecondClickImmediateNavigation;
   EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS =
     explorerPerformance.folderActivation.doubleClickDedupeWindowMs;
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED =
     explorerPerformance.folderActivation.pointerDownDirectoryWarmEnabled;
+  EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS =
+    explorerPerformance.folderActivation.directoryResultCacheTtlMs;
   EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS =
     explorerPerformance.budgets.doubleClickSecondClickToNavigateDispatchMs;
-  EXPLORER_VIEWPORT_SCHEDULER_POLICY =
-    explorerPerformance.viewportScheduling;
+  EXPLORER_VIEWPORT_SCHEDULER_POLICY = explorerPerformance.viewportScheduling;
   EXPLORER_NATIVE_TASK_GRAPH_POLICY = explorerPerformance.nativeTaskGraph;
   EXPLORER_MESSAGE_STREAMS_POLICY = explorerPerformance.messageStreams;
   EXPLORER_PREVIEW_STREAMING_POLICY = explorerPerformance.previewStreaming;

@@ -9122,3 +9122,25 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
   - Passed MCP stdio client proof: `gfs_kain` appears in the tool list, `doctor` returns `KAIN Doctor`, `run 00_hello_and_cli.kn` returns `hello from kain`, and docs search returns matches.
   - Passed MCP stdio client proof: `gfs_kain validate_examples path=00_hello_and_cli.kn` validated one docs example.
+
+# 2026-05-10 - Explorer Folder Activation Cache And Native Directory Lane
+
+- Fixed the folder-open hot path behaving like every local folder was cold. The old pointer-down warmer wrote into `src/components/explorer/explorerDirectoryCache.ts`, but actual local policy navigation in `src/runtime/explorerBackend.ts` called `listExplorerLocation(...)` directly, so a warmed folder still paid native listing work on open.
+- Durable implementation shape:
+  - `src/runtime/explorerBackend.ts` now owns the shared directory-result cache. `loadCachedExplorerLocation(...)` dedupes in-flight loads, serves warm listings for the manifest-backed `folderActivation.directoryResultCacheTtlMs` window, and is used by local Explorer policy navigation.
+  - `src/components/explorer/explorerDirectoryCache.ts` is now only a compatibility re-export so side-rail and pointer warmers feed the same cache that folder navigation consumes.
+  - `src/config/explorerPerformance.ts` and `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json` add `directoryResultCacheTtlMs`, defaulting to 30000ms.
+  - `src-tauri/src/fs_commands.rs` now routes directory-list cache misses through `NativeTaskGraphManager` on `NativeTaskLane::DirectoryScan`; native-control `explorer.listDirSnapshot`, generated `fs_list_dir`, and runtime-host list calls all share that lane while preserving the Rust directory cache and `ExplorerPathKey` invalidation.
+  - `D:/tauron/crates/tauri/src/native_buffer_pool.rs` now reclaims stale `PostedToJs` buffers for the same webview/size class after 15 seconds before waiting for a slot, preventing the Explorer native pool from getting stuck at the cap if the renderer fails to release buffers.
+- MCP/native performance pass:
+  - Real native WebView attached through `gfs_app attach` / `gfs_ui_snapshot flow` with `attachMode=native-cdp`.
+  - Direct native automation RPC repeated `explorer.list_location` for `D:\GreebleFS`, `D:\GreebleFS\src`, `D:\GreebleFS\src-tauri\src`, and `D:\GreebleFS\reference\spacedrive-main\core\src\ops\indexing`. First passes were 9-34ms including automation overhead; warm repeats were 5-13ms, with Rust `fs_list_dir` spans in the sub-millisecond to low-millisecond range on repeat calls.
+  - Native task graph directory lane advanced with `directoryScanFailed=0`; native buffer pool stayed healthy with `waitCount=0` and later settled back to `free=23`, `inFlight=0`, `postedToJs=0`.
+- Remaining architecture gap:
+  - This is a warm folder activation/listing cache, not the full Spacedrive-style persistent path index. The next indexing pass should build a durable native path/hierarchy index with watcher invalidation and expose query/result payloads through native-control plus buffer-pool/native-stream delivery, then enable the currently reserved native task graph `indexing` lane.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerBackend.nativePool.test.ts src/test/explorerPerformance.test.ts --reporter=dot --testTimeout=30000`
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`
+  - Passed: `cargo test --manifest-path D:\tauron\crates\tauri\Cargo.toml native_buffer_pool --lib` with `CARGO_TARGET_DIR=D:\tauron\target-codex-native-buffer-pool`
+  - Passed: MCP `smoke_screenshot` and `smoke` against the native WebView.
+  - Known unrelated red: MCP `runtime_stack_quick` still fails from existing Settings/default drift, not from this cache/native directory lane.

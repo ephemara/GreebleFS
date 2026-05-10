@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildExplorerArchiveVirtualPath } from "../config/explorerArchives";
 import { commands } from "../runtime/tauriClient";
 import {
+  invalidateExplorerDirectoryResultCaches,
+  loadCachedExplorerLocation,
   listExplorerLocation,
+  navigateExplorerPolicySession,
   readExplorerPreviewBytes,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
@@ -45,28 +48,56 @@ describe("explorer backend native pool routing", () => {
     nativePoolRuntimeMock.recordExplorerNativePoolAttempt.mockClear();
     nativePoolRuntimeMock.recordExplorerNativePoolFallback.mockClear();
     nativePoolRuntimeMock.recordExplorerNativePoolSuccess.mockClear();
+    invalidateExplorerDirectoryResultCaches();
     vi.restoreAllMocks();
   });
 
   it("prefers native pooled snapshots for local directory listings", async () => {
     const nativeEntry = fileEntry("D:/demo/native.txt");
     const fsListSpy = vi.spyOn(commands, "fsListDir");
-    nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool.mockResolvedValue([
-      nativeEntry,
-    ]);
+    nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool.mockResolvedValue(
+      [nativeEntry],
+    );
 
     const listing = await listExplorerLocation("D:/demo", false);
 
     expect(listing.entries).toEqual([nativeEntry]);
     expect(fsListSpy).not.toHaveBeenCalled();
-    expect(nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool).toHaveBeenCalledWith({
+    expect(
+      nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool,
+    ).toHaveBeenCalledWith({
       path: "D:/demo",
       showHidden: false,
       bypassCache: false,
     });
-    expect(nativePoolRuntimeMock.recordExplorerNativePoolSuccess).toHaveBeenCalledWith(
-      "directoryListingSnapshots",
+    expect(
+      nativePoolRuntimeMock.recordExplorerNativePoolSuccess,
+    ).toHaveBeenCalledWith("directoryListingSnapshots");
+  });
+
+  it("reuses warmed local directory listings when policy navigation opens the same folder", async () => {
+    const nativeEntry = fileEntry("D:/warm/native.txt");
+    nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool.mockResolvedValue(
+      [nativeEntry],
     );
+
+    await loadCachedExplorerLocation({
+      path: "D:/warm",
+      showHidden: false,
+      listLocation: listExplorerLocation,
+    });
+    const navigation = await navigateExplorerPolicySession({
+      sessionId: "native-pool-warm-cache",
+      path: "D:/warm",
+      pushHistory: true,
+      historyIndex: null,
+      showHidden: false,
+    });
+
+    expect(navigation.listing?.entries).toEqual([nativeEntry]);
+    expect(
+      nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to invoke directory listing when the native pooled snapshot fails", async () => {
@@ -82,10 +113,9 @@ describe("explorer backend native pool routing", () => {
     const listing = await listExplorerLocation("D:/demo", false);
 
     expect(listing.entries).toEqual([fallbackEntry]);
-    expect(nativePoolRuntimeMock.recordExplorerNativePoolFallback).toHaveBeenCalledWith(
-      "directoryListingSnapshots",
-      expect.any(Error),
-    );
+    expect(
+      nativePoolRuntimeMock.recordExplorerNativePoolFallback,
+    ).toHaveBeenCalledWith("directoryListingSnapshots", expect.any(Error));
   });
 
   it("uses native pooled preview bytes for local and archive paths", async () => {
@@ -96,7 +126,10 @@ describe("explorer backend native pool routing", () => {
       new Uint8Array([4, 5, 6]),
     );
     const localInvokeSpy = vi.spyOn(commands, "fsReadPreviewBytes");
-    const archiveInvokeSpy = vi.spyOn(commands, "fsReadArchiveEntryPreviewBytes");
+    const archiveInvokeSpy = vi.spyOn(
+      commands,
+      "fsReadArchiveEntryPreviewBytes",
+    );
 
     const localBytes = await readExplorerPreviewBytes("D:/demo/a.bin", 3);
     const archiveBytes = await readExplorerPreviewBytes(
@@ -114,12 +147,16 @@ describe("explorer backend native pool routing", () => {
   });
 
   it("keeps cloud preview bytes on the binary invoke fallback", async () => {
-    vi.spyOn(commands, "cloudReadPreviewBytes").mockResolvedValue(new Uint8Array([9]));
+    vi.spyOn(commands, "cloudReadPreviewBytes").mockResolvedValue(
+      new Uint8Array([9]),
+    );
 
     const bytes = await readExplorerPreviewBytes("cloud://demo/file.bin", 1);
 
     expect([...bytes]).toEqual([9]);
-    expect(nativePoolRuntimeMock.readLocalExplorerPreviewBytesViaNativePool).not.toHaveBeenCalled();
+    expect(
+      nativePoolRuntimeMock.readLocalExplorerPreviewBytesViaNativePool,
+    ).not.toHaveBeenCalled();
     expect(
       nativePoolRuntimeMock.readArchiveEntryExplorerPreviewBytesViaNativePool,
     ).not.toHaveBeenCalled();

@@ -808,9 +808,11 @@ async fn runtime_host_list_explorer_location(
     }
 
     let identity_manager = app.state::<ExplorerIdentityManager>();
+    let native_task_graph = app.state::<NativeTaskGraphManager>();
     let entries = fs_list_dir(
         app.clone(),
         identity_manager,
+        native_task_graph,
         path.clone(),
         request.show_hidden,
     )

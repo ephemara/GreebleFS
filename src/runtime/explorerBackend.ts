@@ -14,7 +14,10 @@ import {
   EXPLORER_HOME_PATH,
   isExplorerVirtualPath,
 } from "../config/explorerVirtualLocations";
-import { EXPLORER_PREVIEW_STREAMING_POLICY } from "../config/explorerPerformance";
+import {
+  EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS,
+  EXPLORER_PREVIEW_STREAMING_POLICY,
+} from "../config/explorerPerformance";
 import { isExecutableBinaryExtension } from "../config/filePreview";
 import type { RuntimePlatform } from "../config/platform";
 import { resolveGreebleNativeLaneSelection } from "../config/nativeLaneMigration";
@@ -342,10 +345,7 @@ export function isRemoteExplorerPath(path: string): boolean {
   return path.trim().startsWith(REMOTE_PROTOCOL_PREFIX);
 }
 
-export type ExplorerPathSourceKind =
-  | ExplorerSourceKind
-  | "archive"
-  | "virtual";
+export type ExplorerPathSourceKind = ExplorerSourceKind | "archive" | "virtual";
 
 type ParsedRemoteExplorerPath = {
   connectionId: string;
@@ -366,9 +366,9 @@ function parseRemoteExplorerPath(
     }
     return {
       connectionId: decodeURIComponent(segments[0] ?? ""),
-      relativeSegments: segments.slice(2).map((segment) =>
-        decodeURIComponent(segment),
-      ),
+      relativeSegments: segments
+        .slice(2)
+        .map((segment) => decodeURIComponent(segment)),
     };
   } catch {
     return null;
@@ -836,17 +836,21 @@ export async function listExplorerArchiveDir(
     ),
   );
 
-  return entries.map((entry) => toExplorerArchiveVirtualEntry(archivePath, entry));
+  return entries.map((entry) =>
+    toExplorerArchiveVirtualEntry(archivePath, entry),
+  );
 }
 
 function shouldUseExplorerNativeBufferPool(
   systemId: "directoryListingSnapshots" | "previewByteReads",
 ): boolean {
-  return resolveGreebleNativeLaneSelection(
-    systemId,
-    {},
-    { nativeBufferPool: isExplorerNativePoolAvailable() },
-  ).activeLane === "native_buffer_pool";
+  return (
+    resolveGreebleNativeLaneSelection(
+      systemId,
+      {},
+      { nativeBufferPool: isExplorerNativePoolAvailable() },
+    ).activeLane === "native_buffer_pool"
+  );
 }
 
 type ExplorerNativeControlSystemId =
@@ -859,11 +863,13 @@ type ExplorerNativeControlSystemId =
 function shouldUseExplorerNativeControl(
   systemId: ExplorerNativeControlSystemId,
 ): boolean {
-  return resolveGreebleNativeLaneSelection(
-    systemId,
-    {},
-    { nativeControl: isGreebleNativeControlAvailable() },
-  ).activeLane === "native_control";
+  return (
+    resolveGreebleNativeLaneSelection(
+      systemId,
+      {},
+      { nativeControl: isGreebleNativeControlAvailable() },
+    ).activeLane === "native_control"
+  );
 }
 
 async function callExplorerNativeControlWithFallback<TResult, TArgs = unknown>(
@@ -884,11 +890,13 @@ async function callExplorerNativeControlWithFallback<TResult, TArgs = unknown>(
 }
 
 function shouldUseExplorerNativeRing(systemId: "searchResultStreams"): boolean {
-  return resolveGreebleNativeLaneSelection(
-    systemId,
-    {},
-    { nativeRing: isExplorerNativeRingSearchStreamAvailable() },
-  ).activeLane === "native_ring";
+  return (
+    resolveGreebleNativeLaneSelection(
+      systemId,
+      {},
+      { nativeRing: isExplorerNativeRingSearchStreamAvailable() },
+    ).activeLane === "native_ring"
+  );
 }
 
 async function listLocalExplorerDirWithFallback(
@@ -916,6 +924,99 @@ async function listLocalExplorerDirWithFallback(
       ? await commands.fsListDirUncached(path, showHidden)
       : await commands.fsListDir(path, showHidden),
   );
+}
+
+interface ExplorerDirectoryResultCacheEntry {
+  listing: ExplorerLocationListing;
+  cachedAt: number;
+}
+
+const explorerDirectoryResultCache = new Map<
+  string,
+  Promise<ExplorerLocationListing> | ExplorerDirectoryResultCacheEntry
+>();
+
+export function getExplorerDirectoryCacheKey(
+  path: string,
+  showHidden: boolean,
+): string {
+  return `${showHidden ? "hidden" : "visible"}::${path}`;
+}
+
+export async function loadCachedExplorerLocation(args: {
+  path: string;
+  showHidden: boolean;
+  listLocation: (
+    path: string,
+    showHidden: boolean,
+  ) => Promise<ExplorerLocationListing>;
+  forceRefresh?: boolean;
+}): Promise<ExplorerLocationListing> {
+  const key = getExplorerDirectoryCacheKey(args.path, args.showHidden);
+  if (args.forceRefresh) {
+    explorerDirectoryResultCache.delete(key);
+  }
+
+  const cachedValue = explorerDirectoryResultCache.get(key);
+  if (cachedValue) {
+    if (cachedValue instanceof Promise) {
+      return cachedValue;
+    }
+    if (
+      EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS > 0 &&
+      Date.now() - cachedValue.cachedAt <=
+        EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS
+    ) {
+      return cachedValue.listing;
+    }
+    explorerDirectoryResultCache.delete(key);
+  }
+
+  const pending = args
+    .listLocation(args.path, args.showHidden)
+    .then((listing) => {
+      explorerDirectoryResultCache.set(key, {
+        listing,
+        cachedAt: Date.now(),
+      });
+      return listing;
+    })
+    .catch((error) => {
+      explorerDirectoryResultCache.delete(key);
+      throw error;
+    });
+  explorerDirectoryResultCache.set(key, pending);
+  return pending;
+}
+
+export function storeExplorerCachedLocation(args: {
+  path: string;
+  showHidden: boolean;
+  listing: ExplorerLocationListing;
+}): void {
+  explorerDirectoryResultCache.set(
+    getExplorerDirectoryCacheKey(args.path, args.showHidden),
+    {
+      listing: args.listing,
+      cachedAt: Date.now(),
+    },
+  );
+}
+
+export function invalidateExplorerDirectoryResultCaches(
+  pathPrefix?: string,
+): void {
+  if (!pathPrefix) {
+    explorerDirectoryResultCache.clear();
+    return;
+  }
+
+  for (const key of [...explorerDirectoryResultCache.keys()]) {
+    const [, cachedPath] = key.split("::");
+    if (cachedPath && cachedPath.startsWith(pathPrefix)) {
+      explorerDirectoryResultCache.delete(key);
+    }
+  }
 }
 
 export async function listExplorerLocation(
@@ -1005,7 +1106,10 @@ const EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR =
   "VITE_GREEBLEFS_EXPLORER_POLICY_RUNTIME";
 const LEGACY_EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR =
   "VITE_OVERLAYTERM_EXPLORER_POLICY_RUNTIME";
-const localExplorerPolicySessions = new Map<string, ExplorerPolicySessionSnapshot>();
+const localExplorerPolicySessions = new Map<
+  string,
+  ExplorerPolicySessionSnapshot
+>();
 
 function normalizeExplorerPolicySessionId(sessionId: string): string {
   return sessionId.trim() || "primary";
@@ -1053,7 +1157,8 @@ export function resolveExplorerPolicyRuntimeMode(args?: {
   platform?: RuntimePlatform;
   env?: Record<string, string | undefined>;
 }): ExplorerPolicyRuntimeMode {
-  const env = args?.env ?? (import.meta.env as Record<string, string | undefined>);
+  const env =
+    args?.env ?? (import.meta.env as Record<string, string | undefined>);
   const explicitMode = resolveExplorerPolicyRuntimeModeOverride(
     env[EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR] ??
       env[LEGACY_EXPLORER_POLICY_RUNTIME_MODE_ENV_VAR],
@@ -1101,7 +1206,10 @@ async function bootstrapLocalExplorerPolicySession(
 ): Promise<ExplorerPolicyBootstrapResult> {
   const sessionId = normalizeExplorerPolicySessionId(request.sessionId);
   const snapshot = normalizeExplorerPolicySessionSnapshot(request.session);
-  localExplorerPolicySessions.set(sessionId, cloneExplorerPolicySessionSnapshot(snapshot));
+  localExplorerPolicySessions.set(
+    sessionId,
+    cloneExplorerPolicySessionSnapshot(snapshot),
+  );
   return { snapshot: cloneExplorerPolicySessionSnapshot(snapshot) };
 }
 
@@ -1127,7 +1235,10 @@ async function navigateLocalExplorerPolicySession(
     request.pushHistory,
     request.historyIndex,
   );
-  localExplorerPolicySessions.set(sessionId, cloneExplorerPolicySessionSnapshot(snapshot));
+  localExplorerPolicySessions.set(
+    sessionId,
+    cloneExplorerPolicySessionSnapshot(snapshot),
+  );
 
   if (nextPath === EXPLORER_HOME_PATH) {
     return {
@@ -1140,7 +1251,11 @@ async function navigateLocalExplorerPolicySession(
 
   return {
     snapshot: cloneExplorerPolicySessionSnapshot(snapshot),
-    listing: await listExplorerLocation(nextPath, request.showHidden),
+    listing: await loadCachedExplorerLocation({
+      path: nextPath,
+      showHidden: request.showHidden,
+      listLocation: listExplorerLocation,
+    }),
     isHome: false,
     clearSelection: true,
   };
@@ -1231,9 +1346,10 @@ export async function listExplorerDirUncached(
 export async function getExplorerDrives(): Promise<ExplorerDriveInfo[]> {
   const [localDrives, remoteConnections, cloudSnapshot] = await Promise.all([
     commands.fsGetDrives().then(unwrapTauriResult),
-    commands.remoteListConnections().then(unwrapTauriResult).catch(
-      (): ExplorerRemoteConnectionSummary[] => [],
-    ),
+    commands
+      .remoteListConnections()
+      .then(unwrapTauriResult)
+      .catch((): ExplorerRemoteConnectionSummary[] => []),
     listCloudAccounts().catch(
       (): ExplorerCloudAccountsSnapshot => ({ accounts: [], providers: [] }),
     ),
@@ -1446,11 +1562,8 @@ export async function getExplorerAssociatedPrograms(
   return callExplorerNativeControlWithFallback<
     ExplorerAssociatedProgramsCatalog,
     { path: string }
-  >(
-    "explorerActionControls",
-    "getAssociatedPrograms",
-    { path },
-    () => commands.openWithGetAssociatedPrograms(path).then(unwrapTauriResult),
+  >("explorerActionControls", "getAssociatedPrograms", { path }, () =>
+    commands.openWithGetAssociatedPrograms(path).then(unwrapTauriResult),
   );
 }
 
@@ -1471,7 +1584,11 @@ export async function openExplorerPathWithProgram(
     { path, programPath, launchArguments },
     async () => {
       unwrapTauriResult(
-        await commands.openWithLaunchProgram(path, programPath, launchArguments),
+        await commands.openWithLaunchProgram(
+          path,
+          programPath,
+          launchArguments,
+        ),
       );
     },
   );
@@ -1502,11 +1619,8 @@ export async function getExplorerShellContextMenu(
   return callExplorerNativeControlWithFallback<
     ExplorerShellContextMenuItem[],
     ExplorerShellContextMenuRequest
-  >(
-    "explorerActionControls",
-    "getShellContextMenu",
-    request,
-    () => commands.openWithGetShellContextMenu(request).then(unwrapTauriResult),
+  >("explorerActionControls", "getShellContextMenu", request, () =>
+    commands.openWithGetShellContextMenu(request).then(unwrapTauriResult),
   );
 }
 
@@ -1589,7 +1703,10 @@ export async function createExplorerDir(path: string): Promise<void> {
   }
   if (isRemoteExplorerPath(path)) {
     unwrapTauriResult(
-      await commands.remoteCreateDirectory(getParentDir(path), getLeafName(path)),
+      await commands.remoteCreateDirectory(
+        getParentDir(path),
+        getLeafName(path),
+      ),
     );
     return;
   }
@@ -1633,10 +1750,14 @@ export async function createExplorerFile(
   const payload = toWritablePayload(content);
   switch (getExplorerPathSourceKind(parentPath)) {
     case "cloud":
-      unwrapTauriResult(await commands.cloudCreateFile(parentPath, name, payload));
+      unwrapTauriResult(
+        await commands.cloudCreateFile(parentPath, name, payload),
+      );
       return;
     case "remote":
-      unwrapTauriResult(await commands.remoteCreateFile(parentPath, name, payload));
+      unwrapTauriResult(
+        await commands.remoteCreateFile(parentPath, name, payload),
+      );
       return;
     case "local": {
       const separator = parentPath.includes("\\") ? "\\" : "/";
@@ -1648,7 +1769,9 @@ export async function createExplorerFile(
       return;
     }
     default:
-      throw new Error("Files can only be created in local, remote, or cloud folders.");
+      throw new Error(
+        "Files can only be created in local, remote, or cloud folders.",
+      );
   }
 }
 
@@ -1658,16 +1781,24 @@ export async function transferExplorerItems(
   operation: ExplorerFileTransferOperation,
   collisionPolicy: ExplorerFileTransferCollisionPolicy = "keep_both",
 ): Promise<ExplorerFileTransferResult[]> {
-  const sourceKinds = new Set(sources.map((source) => getExplorerPathSourceKind(source)));
+  const sourceKinds = new Set(
+    sources.map((source) => getExplorerPathSourceKind(source)),
+  );
   const targetKind = getExplorerPathSourceKind(targetDir);
   const involvesCloud = targetKind === "cloud" || sourceKinds.has("cloud");
   const involvesRemote = targetKind === "remote" || sourceKinds.has("remote");
 
-  if ((targetKind !== "local" && targetKind !== "cloud" && targetKind !== "remote")
-    || [...sourceKinds].some(
+  if (
+    (targetKind !== "local" &&
+      targetKind !== "cloud" &&
+      targetKind !== "remote") ||
+    [...sourceKinds].some(
       (kind) => kind !== "local" && kind !== "cloud" && kind !== "remote",
-    )) {
-    throw new Error("Transfers are only available for local, remote, or cloud items.");
+    )
+  ) {
+    throw new Error(
+      "Transfers are only available for local, remote, or cloud items.",
+    );
   }
 
   if (involvesCloud || involvesRemote) {
@@ -1708,9 +1839,10 @@ export async function transferExplorerItems(
     "explorerFileOperationControls",
     "transferItems",
     { targetDir, sources, operation, collisionPolicy },
-    () => commands
-      .fsTransferItems(targetDir, sources, operation, collisionPolicy)
-      .then(unwrapTauriResult),
+    () =>
+      commands
+        .fsTransferItems(targetDir, sources, operation, collisionPolicy)
+        .then(unwrapTauriResult),
   );
 }
 
@@ -1720,8 +1852,8 @@ export async function planExplorerItemTransfer(
   operation: ExplorerFileTransferOperation,
 ): Promise<ExplorerFileTransferCollision[]> {
   if (
-    getExplorerPathSourceKind(targetDir) !== "local"
-    || sources.some((source) => getExplorerPathSourceKind(source) !== "local")
+    getExplorerPathSourceKind(targetDir) !== "local" ||
+    sources.some((source) => getExplorerPathSourceKind(source) !== "local")
   ) {
     return [];
   }
@@ -1736,9 +1868,10 @@ export async function planExplorerItemTransfer(
     "explorerFileOperationControls",
     "planTransferItems",
     { targetDir, sources, operation },
-    () => commands
-      .fsPlanTransferItems(targetDir, sources, operation)
-      .then(unwrapTauriResult),
+    () =>
+      commands
+        .fsPlanTransferItems(targetDir, sources, operation)
+        .then(unwrapTauriResult),
   );
 }
 
@@ -1746,11 +1879,8 @@ export async function listExplorerTasks(): Promise<ExplorerTaskSnapshot[]> {
   return callExplorerNativeControlWithFallback<
     ExplorerTaskSnapshot[],
     undefined
-  >(
-    "explorerTaskControls",
-    "listTasks",
-    undefined,
-    () => commands.fsListExplorerTasks().then(unwrapTauriResult),
+  >("explorerTaskControls", "listTasks", undefined, () =>
+    commands.fsListExplorerTasks().then(unwrapTauriResult),
   );
 }
 
@@ -1760,14 +1890,9 @@ export async function clearExplorerTaskHistory(
   await callExplorerNativeControlWithFallback<
     void,
     { scope: ExplorerTaskHistoryScope }
-  >(
-    "explorerTaskControls",
-    "clearTaskHistory",
-    { scope },
-    async () => {
-      unwrapTauriResult(await commands.fsClearExplorerTaskHistory(scope));
-    },
-  );
+  >("explorerTaskControls", "clearTaskHistory", { scope }, async () => {
+    unwrapTauriResult(await commands.fsClearExplorerTaskHistory(scope));
+  });
 }
 
 export async function retryExplorerTask(
@@ -1776,11 +1901,8 @@ export async function retryExplorerTask(
   return callExplorerNativeControlWithFallback<
     ExplorerTaskSnapshot,
     { taskId: string }
-  >(
-    "explorerTaskControls",
-    "retryTask",
-    { taskId },
-    () => commands.fsRetryExplorerTask(taskId).then(unwrapTauriResult),
+  >("explorerTaskControls", "retryTask", { taskId }, () =>
+    commands.fsRetryExplorerTask(taskId).then(unwrapTauriResult),
   );
 }
 
@@ -1790,11 +1912,8 @@ export async function cancelExplorerTask(
   return callExplorerNativeControlWithFallback<
     ExplorerTaskSnapshot,
     { taskId: string }
-  >(
-    "explorerTaskControls",
-    "cancelTask",
-    { taskId },
-    () => commands.fsCancelExplorerTask(taskId).then(unwrapTauriResult),
+  >("explorerTaskControls", "cancelTask", { taskId }, () =>
+    commands.fsCancelExplorerTask(taskId).then(unwrapTauriResult),
   );
 }
 
@@ -1814,7 +1933,9 @@ export async function writeExplorerFile(
       unwrapTauriResult(await commands.fsWriteFile(path, payload));
       return;
     default:
-      throw new Error("Writing files is only available for local, remote, or cloud items.");
+      throw new Error(
+        "Writing files is only available for local, remote, or cloud items.",
+      );
   }
 }
 
@@ -1839,7 +1960,9 @@ export async function readExplorerTextFile(
     case "local":
       return unwrapTauriResult(await commands.fsReadTextFile(path));
     default:
-      throw new Error("Text file reads are only available for local, remote, or cloud items.");
+      throw new Error(
+        "Text file reads are only available for local, remote, or cloud items.",
+      );
   }
 }
 
@@ -1864,7 +1987,9 @@ export async function readExplorerFileBase64(
     case "local":
       return unwrapTauriResult(await commands.fsReadFileBase64(path));
     default:
-      throw new Error("Binary file reads are only available for local, remote, or cloud items.");
+      throw new Error(
+        "Binary file reads are only available for local, remote, or cloud items.",
+      );
   }
 }
 
@@ -1918,18 +2043,27 @@ export async function readExplorerPreviewBytes(
       }
       return readIpcBinaryBytes("fsPreviewBytes", path, maxBytes);
     default:
-      throw new Error("Preview bytes are only available for local, remote, or cloud items.");
+      throw new Error(
+        "Preview bytes are only available for local, remote, or cloud items.",
+      );
   }
 }
 
-function bytesToExplorerPreviewDataUri(path: string, bytes: Uint8Array): string {
+function bytesToExplorerPreviewDataUri(
+  path: string,
+  bytes: Uint8Array,
+): string {
   return `data:${detectExplorerPreviewMimeType(path)};base64,${bytesToBase64(bytes)}`;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  const bufferCtor = (globalThis as typeof globalThis & {
-    Buffer?: { from(value: Uint8Array): { toString(encoding: "base64"): string } };
-  }).Buffer;
+  const bufferCtor = (
+    globalThis as typeof globalThis & {
+      Buffer?: {
+        from(value: Uint8Array): { toString(encoding: "base64"): string };
+      };
+    }
+  ).Buffer;
   if (bufferCtor) {
     return bufferCtor.from(bytes).toString("base64");
   }
@@ -1995,7 +2129,9 @@ export async function readExplorerImageThumbnail(
         await commands.fsReadImageThumbnail(path, maxWidth, maxHeight),
       );
     default:
-      throw new Error("Image previews are only available for local, remote, or cloud items.");
+      throw new Error(
+        "Image previews are only available for local, remote, or cloud items.",
+      );
   }
 }
 
@@ -2022,14 +2158,13 @@ export async function readExplorerThumbnailArtifact(
     return callGreebleNativeWithInvokeFallback<
       ExplorerThumbnailArtifactData,
       ExplorerEntryThumbnailInput
-    >(
-      "explorer",
-      "readThumbnailArtifact",
-      request,
-      () => commands.fsReadEntryThumbnailArtifact(request).then(unwrapTauriResult),
+    >("explorer", "readThumbnailArtifact", request, () =>
+      commands.fsReadEntryThumbnailArtifact(request).then(unwrapTauriResult),
     );
   }
-  return unwrapTauriResult(await commands.fsReadEntryThumbnailArtifact(request));
+  return unwrapTauriResult(
+    await commands.fsReadEntryThumbnailArtifact(request),
+  );
 }
 
 export async function readExplorerThumbnailArtifactsBatch(
@@ -2037,7 +2172,8 @@ export async function readExplorerThumbnailArtifactsBatch(
 ): Promise<ExplorerEntryThumbnailArtifactsBatchData> {
   if (
     request.requests.some(
-      (entryRequest) => getExplorerPathSourceKind(entryRequest.path) !== "local",
+      (entryRequest) =>
+        getExplorerPathSourceKind(entryRequest.path) !== "local",
     )
   ) {
     throw new Error(
@@ -2048,14 +2184,10 @@ export async function readExplorerThumbnailArtifactsBatch(
     return callGreebleNativeWithInvokeFallback<
       ExplorerEntryThumbnailArtifactsBatchData,
       ExplorerEntryThumbnailArtifactsBatchInput
-    >(
-      "explorer",
-      "readThumbnailArtifactsBatch",
-      request,
-      () =>
-        commands
-          .fsReadEntryThumbnailArtifactsBatch(request)
-          .then(unwrapTauriResult),
+    >("explorer", "readThumbnailArtifactsBatch", request, () =>
+      commands
+        .fsReadEntryThumbnailArtifactsBatch(request)
+        .then(unwrapTauriResult),
     );
   }
   return unwrapTauriResult(
@@ -2082,14 +2214,20 @@ export async function renameExplorerPath(
         "Cloud rename only supports changing the item name within the same parent folder.",
       );
     }
-    unwrapTauriResult(await commands.cloudRenamePath(oldPath, getLeafName(newPath)));
+    unwrapTauriResult(
+      await commands.cloudRenamePath(oldPath, getLeafName(newPath)),
+    );
     return;
   }
 
   if (oldKind === "remote") {
     const oldParsed = parseRemoteExplorerPath(oldPath);
     const newParsed = parseRemoteExplorerPath(newPath);
-    if (!oldParsed || !newParsed || oldParsed.connectionId !== newParsed.connectionId) {
+    if (
+      !oldParsed ||
+      !newParsed ||
+      oldParsed.connectionId !== newParsed.connectionId
+    ) {
       throw new Error(
         "Remote rename only supports changing the item name within the same connection.",
       );
@@ -2099,12 +2237,16 @@ export async function renameExplorerPath(
         "Remote rename only supports changing the item name within the same parent folder.",
       );
     }
-    unwrapTauriResult(await commands.remoteRenamePath(oldPath, getLeafName(newPath)));
+    unwrapTauriResult(
+      await commands.remoteRenamePath(oldPath, getLeafName(newPath)),
+    );
     return;
   }
 
   if (oldKind !== "local") {
-    throw new Error("Renaming is only available for local, remote, or cloud items.");
+    throw new Error(
+      "Renaming is only available for local, remote, or cloud items.",
+    );
   }
 
   await callExplorerNativeControlWithFallback<
@@ -2145,7 +2287,9 @@ export async function deleteExplorerPath(
       );
       return;
     default:
-      throw new Error("Delete is only available for local, remote, or cloud items.");
+      throw new Error(
+        "Delete is only available for local, remote, or cloud items.",
+      );
   }
 }
 
@@ -2172,18 +2316,24 @@ export async function deleteExplorerPaths(paths: string[]): Promise<void> {
     return;
   }
   if (kind === "cloud") {
-    await Promise.all(paths.map(async (path) => {
-      unwrapTauriResult(await commands.cloudDeletePath(path));
-    }));
+    await Promise.all(
+      paths.map(async (path) => {
+        unwrapTauriResult(await commands.cloudDeletePath(path));
+      }),
+    );
     return;
   }
   if (kind === "remote") {
-    await Promise.all(paths.map(async (path) => {
-      unwrapTauriResult(await commands.remoteDeletePath(path));
-    }));
+    await Promise.all(
+      paths.map(async (path) => {
+        unwrapTauriResult(await commands.remoteDeletePath(path));
+      }),
+    );
     return;
   }
-  throw new Error("Batch delete is only available for local, remote, or cloud items.");
+  throw new Error(
+    "Batch delete is only available for local, remote, or cloud items.",
+  );
 }
 
 export async function trashExplorerPaths(
@@ -2198,11 +2348,8 @@ export async function trashExplorerPaths(
   return callExplorerNativeControlWithFallback<
     ExplorerTrashAction,
     { paths: string[] }
-  >(
-    "explorerFileOperationControls",
-    "trashPaths",
-    { paths: localPaths },
-    () => commands.fsTrash(localPaths).then(unwrapTauriResult),
+  >("explorerFileOperationControls", "trashPaths", { paths: localPaths }, () =>
+    commands.fsTrash(localPaths).then(unwrapTauriResult),
   );
 }
 
@@ -2310,12 +2457,16 @@ export async function deleteExplorerSavedSearch(id: string): Promise<void> {
 export async function getExplorerSemanticIndexSummary(
   rootPath: string,
 ): Promise<ExplorerSemanticIndexSummaryValue> {
-  if (!getExplorerSourceCapabilitiesForPath(rootPath).supportsSemanticIndexing) {
+  if (
+    !getExplorerSourceCapabilitiesForPath(rootPath).supportsSemanticIndexing
+  ) {
     throw new Error(
       "Semantic indexing is only available for local filesystem roots.",
     );
   }
-  return unwrapTauriResult(await commands.explorerSemanticIndexGetSummary(rootPath));
+  return unwrapTauriResult(
+    await commands.explorerSemanticIndexGetSummary(rootPath),
+  );
 }
 
 export async function buildExplorerSemanticIndex(
@@ -2389,7 +2540,9 @@ export async function upsertRemoteConnection(
   return unwrapTauriResult(await commands.remoteUpsertConnection(request));
 }
 
-export async function deleteRemoteConnection(connectionId: string): Promise<void> {
+export async function deleteRemoteConnection(
+  connectionId: string,
+): Promise<void> {
   unwrapTauriResult(await commands.remoteDeleteConnection(connectionId));
 }
 

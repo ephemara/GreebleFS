@@ -7,7 +7,8 @@
     "doubleClickPreviewPrimeDelayMs": 180,
     "doubleClickSecondClickImmediateNavigation": true,
     "doubleClickDedupeWindowMs": 96,
-    "pointerDownDirectoryWarmEnabled": true
+    "pointerDownDirectoryWarmEnabled": true,
+    "directoryResultCacheTtlMs": 30000
   },
   "budgets": {
     "doubleClickSecondClickToNavigateDispatchMs": 1

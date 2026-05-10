@@ -719,6 +719,29 @@ fn explorer_task_registry() -> &'static Mutex<ExplorerTaskRegistry> {
     EXPLORER_TASK_REGISTRY.get_or_init(|| Mutex::new(ExplorerTaskRegistry::default()))
 }
 
+fn store_dir_listing_cache(
+    cache_key: ExplorerPathKey,
+    show_hidden: bool,
+    entries: Vec<FileEntry>,
+    directory_modified_ms: Option<u64>,
+) {
+    if fs_cache_policy().dir_list_cache_ttl.is_zero() {
+        return;
+    }
+
+    if let Ok(mut cache) = dir_list_cache().lock() {
+        prune_expired_dir_list_cache(&mut cache);
+        cache.entry(cache_key).or_default().set(
+            show_hidden,
+            CachedDirListing {
+                entries,
+                directory_modified_ms,
+                cached_at: Instant::now(),
+            },
+        );
+    }
+}
+
 pub fn initialize_fs_command_events(app: AppHandle) {
     let _ = FS_COMMAND_APP_HANDLE.set(app);
 }
@@ -3017,9 +3040,11 @@ where
 async fn list_dir(
     app: &AppHandle,
     identity_manager: &ExplorerIdentityManager,
+    native_task_graph: Option<&NativeTaskGraphManager>,
     dir_path: PathBuf,
     show_hidden: bool,
     bypass_cache: bool,
+    task_priority: NativeTaskPriority,
 ) -> Result<Vec<FileEntry>, String> {
     let policy = fs_cache_policy();
     let path_label = dir_path.to_string_lossy().to_string();
@@ -3048,19 +3073,46 @@ async fn list_dir(
         }
     }
 
+    if let Some(native_task_graph) = native_task_graph {
+        let app_for_task = app.clone();
+        let cache_key_for_task = cache_key.clone();
+        let work_key =
+            NativeTaskWorkKey::new(format!("dir-list:{}:{}", show_hidden, cache_key.as_str()));
+        let submission = native_task_graph.submit_async(
+            NativeTaskRequest::new(
+                NativeTaskLane::DirectoryScan,
+                task_priority,
+                "list directory",
+            )
+            .with_work_key(work_key),
+            move |token| async move {
+                token.throw_if_cancelled()?;
+                let identity_manager = app_for_task.state::<ExplorerIdentityManager>();
+                let entries =
+                    list_dir_via_yazi(&app_for_task, &identity_manager, &dir_path, show_hidden)
+                        .await?;
+                token.throw_if_cancelled()?;
+                store_dir_listing_cache(
+                    cache_key_for_task,
+                    show_hidden,
+                    entries.clone(),
+                    directory_modified_ms,
+                );
+                Ok(entries)
+            },
+        )?;
+
+        return submission.wait().await;
+    }
+
     let entries = list_dir_via_yazi(app, identity_manager, &dir_path, show_hidden).await?;
     if !policy.dir_list_cache_ttl.is_zero() {
-        if let Ok(mut cache) = dir_list_cache().lock() {
-            prune_expired_dir_list_cache(&mut cache);
-            cache.entry(cache_key).or_default().set(
-                show_hidden,
-                CachedDirListing {
-                    entries: entries.clone(),
-                    directory_modified_ms,
-                    cached_at: Instant::now(),
-                },
-            );
-        }
+        store_dir_listing_cache(
+            cache_key,
+            show_hidden,
+            entries.clone(),
+            directory_modified_ms,
+        );
     }
 
     Ok(entries)
@@ -3223,12 +3275,15 @@ pub fn register_native_pool_handlers(app: &AppHandle) -> Result<(), String> {
         let stream_id = require_native_pool_stream_id(args.stream_id)?;
         let entries = tauri::async_runtime::block_on(async {
             let identity_manager = app_for_list_dir.state::<ExplorerIdentityManager>();
+            let native_task_graph = app_for_list_dir.state::<NativeTaskGraphManager>();
             list_dir(
                 &app_for_list_dir,
                 &identity_manager,
+                Some(native_task_graph.inner()),
                 PathBuf::from(args.path),
                 args.show_hidden,
                 args.bypass_cache.unwrap_or(false),
+                NativeTaskPriority::Visible,
             )
             .await
         })?;
@@ -3704,6 +3759,7 @@ pub fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy {
 pub async fn fs_list_dir(
     app: AppHandle,
     identity_manager: State<'_, ExplorerIdentityManager>,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
@@ -3722,9 +3778,11 @@ pub async fn fs_list_dir(
     let result = list_dir(
         &app,
         &identity_manager,
+        Some(native_task_graph.inner()),
         PathBuf::from(path),
         show_hidden,
         false,
+        NativeTaskPriority::Visible,
     )
     .await;
     let status = if result.is_ok() { "ok" } else { "error" };
@@ -3751,6 +3809,7 @@ pub async fn fs_list_dir(
 pub async fn fs_list_dir_uncached(
     app: AppHandle,
     identity_manager: State<'_, ExplorerIdentityManager>,
+    native_task_graph: State<'_, NativeTaskGraphManager>,
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
@@ -3769,9 +3828,11 @@ pub async fn fs_list_dir_uncached(
     let result = list_dir(
         &app,
         &identity_manager,
+        Some(native_task_graph.inner()),
         PathBuf::from(path),
         show_hidden,
         true,
+        NativeTaskPriority::UserInitiated,
     )
     .await;
     let status = if result.is_ok() { "ok" } else { "error" };
@@ -7061,9 +7122,11 @@ mod tests {
         list_dir(
             &app_handle,
             &identity_manager,
+            None,
             PathBuf::from(path),
             show_hidden,
             false,
+            NativeTaskPriority::Visible,
         )
         .await
     }
@@ -7078,9 +7141,11 @@ mod tests {
         list_dir(
             &app_handle,
             &identity_manager,
+            None,
             PathBuf::from(path),
             show_hidden,
             true,
+            NativeTaskPriority::UserInitiated,
         )
         .await
     }

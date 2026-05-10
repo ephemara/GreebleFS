@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS,
   EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
@@ -18,10 +19,15 @@ describe("explorerPerformance", () => {
   it("loads folder activation speed policy from the shipped /usr config", () => {
     expect(explorerPerformance.id).toBe("greeblefs-core-explorer-performance");
     expect(EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS).toBe(180);
-    expect(EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION).toBe(true);
+    expect(EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION).toBe(
+      true,
+    );
     expect(EXPLORER_FOLDER_DOUBLE_CLICK_DEDUPE_WINDOW_MS).toBe(96);
     expect(EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED).toBe(true);
-    expect(EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS).toBe(1);
+    expect(EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS).toBe(30000);
+    expect(
+      EXPLORER_DOUBLE_CLICK_SECOND_CLICK_TO_NAVIGATE_DISPATCH_BUDGET_MS,
+    ).toBe(1);
     expect(explorerPerformance.viewportScheduling).toEqual({
       enabled: true,
       batchSize: 12,
@@ -41,9 +47,13 @@ describe("explorerPerformance", () => {
       },
     });
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize).toBe(12);
-    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxConcurrentThumbnailReads).toBe(4);
+    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxConcurrentThumbnailReads).toBe(
+      4,
+    );
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth).toBe(96);
-    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(4);
+    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(
+      4,
+    );
     expect(explorerPerformance.nativeTaskGraph).toEqual({
       enabled: true,
       maxQueuedTasks: 256,
@@ -62,9 +72,13 @@ describe("explorerPerformance", () => {
         maintenance: 0,
       },
     });
-    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan).toBe(2);
+    expect(
+      EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan,
+    ).toBe(2);
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.checksum).toBe(1);
-    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.previewRead).toBe(2);
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.previewRead).toBe(
+      2,
+    );
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.archive).toBe(1);
     expect(explorerPerformance.previewStreaming).toEqual({
       enabled: true,
@@ -75,7 +89,9 @@ describe("explorerPerformance", () => {
       archiveEntryMaxBytes: 268435456,
     });
     expect(EXPLORER_PREVIEW_STREAMING_POLICY.chunkBytes).toBe(65536);
-    expect(EXPLORER_PREVIEW_STREAMING_POLICY.archiveEntryMaxBytes).toBe(268435456);
+    expect(EXPLORER_PREVIEW_STREAMING_POLICY.archiveEntryMaxBytes).toBe(
+      268435456,
+    );
     expect(explorerPerformance.messageStreams).toEqual({
       enabled: true,
       telemetryEnabled: true,
@@ -219,7 +235,9 @@ describe("explorerPerformance", () => {
         },
       },
     });
-    expect(zeroThumbnailLane.nativeTaskGraph.laneConcurrency.thumbnailDecode).toBe(1);
+    expect(
+      zeroThumbnailLane.nativeTaskGraph.laneConcurrency.thumbnailDecode,
+    ).toBe(1);
   });
 
   it("normalizes message stream defaults and clamps authored policy values", () => {
