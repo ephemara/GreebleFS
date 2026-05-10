@@ -723,6 +723,36 @@ export function SettingsMetricStrip({
   }>;
   className?: string;
 }) {
+  const getMetricCellClassName = (index: number) => {
+    const classes = ['min-w-0 px-3 py-2'];
+
+    if (index > 0) {
+      classes.push('border-t');
+    }
+
+    if (index % 2 === 1) {
+      classes.push('sm:border-l');
+    }
+    if (index >= 2) {
+      classes.push('sm:border-t');
+    } else {
+      classes.push('sm:border-t-0');
+    }
+
+    if (index % 3 !== 0) {
+      classes.push('xl:border-l');
+    } else {
+      classes.push('xl:border-l-0');
+    }
+    if (index >= 3) {
+      classes.push('xl:border-t');
+    } else {
+      classes.push('xl:border-t-0');
+    }
+
+    return classes.join(' ');
+  };
+
   return (
     <div
       className={`grid min-w-0 grid-cols-1 overflow-hidden rounded border sm:grid-cols-2 xl:grid-cols-3 ${className}`.trim()}
@@ -735,7 +765,7 @@ export function SettingsMetricStrip({
       {items.map((item, index) => (
         <div
           key={item.id}
-          className={`min-w-0 px-3 py-2 ${index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''} sm:[&:nth-child(2n+1)]:border-l-0 sm:[&:nth-child(n+3)]:border-t xl:[&:nth-child(n)]:border-l xl:[&:nth-child(3n+1)]:border-l-0 xl:[&:nth-child(n+4)]:border-t`}
+          className={getMetricCellClassName(index)}
           style={{
             borderColor: 'var(--overlay-workbench-settings-card-border)',
             background: item.tone === 'accent' ? 'var(--overlay-workbench-chrome-button-active-bg)' : undefined,

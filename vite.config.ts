@@ -1,5 +1,5 @@
 import { defineConfig, searchForWorkspaceRoot } from "vite";
-import react from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import { projectPath, tauronApiDistPath, tauronApiViteAliases } from "./vite.shared.ts";

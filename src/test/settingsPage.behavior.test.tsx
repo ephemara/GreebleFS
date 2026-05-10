@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { SettingsPage } from '../components/SettingsPage';
+import { SettingsPage } from '../components/SettingsPageLegacy';
 import { createBuiltInOverlayAnimations } from '../components/animationRuntime';
 import { getBuiltInExplorerHomePacks } from '../components/home/builtInHomePacks';
 import { createBuiltInOverlayShaders } from '../components/shaderRuntime';

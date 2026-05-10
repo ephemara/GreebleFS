@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { SettingsPage } from '../components/SettingsPage';
+import { SettingsPage } from '../components/SettingsPageLegacy';
 import { createBuiltInOverlayShaders, type LoadedOverlayShader } from '../components/shaderRuntime';
 import { resolveOverlayAppearance } from '../config/appearance';
 import { useSettingsStore } from '../store/settingsStore';

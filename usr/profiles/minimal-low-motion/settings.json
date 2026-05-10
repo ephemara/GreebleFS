@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.7,
+    "appZoom": 1,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -2628,7 +2628,7 @@
       "timeline-surface": 0
     },
     "explorerWidgetStateByInstanceId": {},
-    "folderClickMode": "single",
+    "folderClickMode": "double",
     "folderIconRules": [
       {
         "icon": "folder_ai",
@@ -2852,7 +2852,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-m"
+    "viewMode": "details"
   },
   "home": {
     "activePackId": null,
@@ -2985,10 +2985,7 @@
           "plugins",
           "terminal",
           "go-sample-panel",
-          "notes",
-          "kain-workbench-smoke",
-          "greeblefs-index-photo-gallery",
-          "greeblefs-workbench-sqlite"
+          "notes"
         ]
       }
     },
@@ -3230,7 +3227,7 @@
         "version": 3
       }
     },
-    "zenFocusMode": true
+    "zenFocusMode": false
   },
   "plugins": {
     "enablementByPluginId": {},
@@ -3259,7 +3256,7 @@
     "shellProfile": "auto",
     "showSidebar": false,
     "windowMode": "windowed",
-    "windowedHeight": 936,
+    "windowedHeight": 906,
     "windowedWidth": 1683
   }
 }
