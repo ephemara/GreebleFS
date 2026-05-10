@@ -912,7 +912,11 @@ async function listLocalExplorerDirWithFallback(
   showHidden: boolean,
   bypassCache: boolean,
 ): Promise<ExplorerFileEntry[]> {
-  return listLocalDirectoryEntriesFast(path, { showHidden, bypassCache });
+  return listLocalDirectoryEntriesFast(path, {
+    showHidden,
+    bypassCache,
+    allowPathIndex: !bypassCache,
+  });
 }
 
 interface ExplorerDirectoryResultCacheEntry {

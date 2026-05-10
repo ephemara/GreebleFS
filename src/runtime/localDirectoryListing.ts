@@ -16,6 +16,11 @@ import { commands, unwrapTauriResult } from "./tauriClient";
 export interface LocalDirectoryListingOptions {
   showHidden?: boolean;
   bypassCache?: boolean;
+  /**
+   * Durable path-index reads are deliberately opt-in. Generic frontend catalog
+   * discovery should use the live native-buffer listing lane without kicking
+   * off recursive index builds during app startup.
+   */
   allowPathIndex?: boolean;
   allowNativePool?: boolean;
 }
@@ -26,7 +31,7 @@ export async function listLocalDirectoryEntriesFast(
 ): Promise<FileEntry[]> {
   const showHidden = options.showHidden ?? false;
   const bypassCache = options.bypassCache ?? false;
-  const allowPathIndex = options.allowPathIndex ?? !bypassCache;
+  const allowPathIndex = options.allowPathIndex ?? false;
   const allowNativePool = options.allowNativePool ?? true;
 
   if (!bypassCache && allowPathIndex) {

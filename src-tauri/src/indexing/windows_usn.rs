@@ -1,11 +1,12 @@
 use super::{volume_key_for_path, IndexedPathRecord, PathIndexBuildSource};
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::native_task_graph::NativeTaskCancellationToken;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, GENERIC_READ, HANDLE, INVALID_HANDLE_VALUE,
 };
@@ -22,6 +23,15 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 const USN_ENUM_BUFFER_BYTES: usize = 1024 * 1024;
 const WINDOWS_TICK_MS_DIVISOR: i64 = 10_000;
 const WINDOWS_UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+const ERROR_ACCESS_DENIED: u32 = 5;
+const ERROR_JOURNAL_NOT_ACTIVE: u32 = 1179;
+const USN_RAW_ACCESS_DENIED_MESSAGE: &str =
+    "Windows USN indexing requires raw NTFS volume read permission";
+const USN_JOURNAL_UNAVAILABLE_MESSAGE: &str = "Windows USN journal is unavailable for this volume";
+const USN_VOLUME_CACHED_UNAVAILABLE_MESSAGE: &str =
+    "Windows USN indexing is disabled for this volume after the fast path was unavailable";
+
+static USN_UNAVAILABLE_VOLUMES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 struct UsnRecord {
@@ -56,8 +66,14 @@ pub(super) fn prepare_usn_index(
 ) -> Result<WindowsUsnIndexPlan, String> {
     token.throw_if_cancelled()?;
     let volume_root = resolve_volume_root(requested_root_path)?;
+    if is_usn_unavailable_cached(&volume_root) {
+        return Err(format!(
+            "{USN_VOLUME_CACHED_UNAVAILABLE_MESSAGE}: {}",
+            volume_root.display()
+        ));
+    }
     let volume_handle = open_volume_handle(&volume_root)?;
-    let journal = query_usn_journal(volume_handle.0)?;
+    let journal = query_usn_journal(volume_handle.0, &volume_root)?;
     Ok(WindowsUsnIndexPlan {
         source: PathIndexBuildSource {
             source: "windowsUsn".to_string(),
@@ -128,15 +144,57 @@ fn open_volume_handle(volume_root: &Path) -> Result<VolumeHandle, String> {
         )
     };
     if handle == INVALID_HANDLE_VALUE {
+        let error = unsafe { GetLastError() };
+        if error == ERROR_ACCESS_DENIED {
+            remember_usn_unavailable(&volume_root);
+            return Err(format!(
+                "{USN_RAW_ACCESS_DENIED_MESSAGE} for {volume_path}; run GreebleFS elevated or through a privileged index service to use the USN/MFT fast path"
+            ));
+        }
         return Err(format!(
             "Failed to open NTFS volume {volume_path} for USN indexing: Win32 error {}",
-            unsafe { GetLastError() }
+            error
         ));
     }
     Ok(VolumeHandle(handle))
 }
 
-fn query_usn_journal(handle: HANDLE) -> Result<USN_JOURNAL_DATA_V0, String> {
+pub(super) fn is_first_unavailable_fallback(error: &str) -> bool {
+    error.contains(USN_RAW_ACCESS_DENIED_MESSAGE) || error.contains(USN_JOURNAL_UNAVAILABLE_MESSAGE)
+}
+
+pub(super) fn is_cached_unavailable_fallback(error: &str) -> bool {
+    error.contains(USN_VOLUME_CACHED_UNAVAILABLE_MESSAGE)
+}
+
+fn unavailable_volume_cache() -> &'static Mutex<HashSet<String>> {
+    USN_UNAVAILABLE_VOLUMES.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn is_usn_unavailable_cached(volume_root: &Path) -> bool {
+    let key = volume_cache_key(volume_root);
+    unavailable_volume_cache()
+        .lock()
+        .map(|volumes| volumes.contains(&key))
+        .unwrap_or(false)
+}
+
+fn remember_usn_unavailable(volume_root: &Path) {
+    let key = volume_cache_key(volume_root);
+    if let Ok(mut volumes) = unavailable_volume_cache().lock() {
+        volumes.insert(key);
+    }
+}
+
+fn volume_cache_key(volume_root: &Path) -> String {
+    volume_root
+        .to_string_lossy()
+        .replace('/', "\\")
+        .trim_end_matches('\\')
+        .to_ascii_lowercase()
+}
+
+fn query_usn_journal(handle: HANDLE, volume_root: &Path) -> Result<USN_JOURNAL_DATA_V0, String> {
     let mut output = unsafe { zeroed::<USN_JOURNAL_DATA_V0>() };
     let mut returned = 0u32;
     let ok = unsafe {
@@ -152,9 +210,24 @@ fn query_usn_journal(handle: HANDLE) -> Result<USN_JOURNAL_DATA_V0, String> {
         )
     };
     if ok == 0 {
+        let error = unsafe { GetLastError() };
+        if error == ERROR_ACCESS_DENIED {
+            remember_usn_unavailable(volume_root);
+            return Err(format!(
+                "{USN_RAW_ACCESS_DENIED_MESSAGE} while querying {}; run GreebleFS elevated or through a privileged index service to use the USN/MFT fast path",
+                volume_root.display()
+            ));
+        }
+        if error == ERROR_JOURNAL_NOT_ACTIVE {
+            remember_usn_unavailable(volume_root);
+            return Err(format!(
+                "{USN_JOURNAL_UNAVAILABLE_MESSAGE}: FSCTL_QUERY_USN_JOURNAL returned Win32 error {error} for {}",
+                volume_root.display()
+            ));
+        }
         return Err(format!(
             "FSCTL_QUERY_USN_JOURNAL failed: Win32 error {}",
-            unsafe { GetLastError() }
+            error
         ));
     }
     Ok(output)

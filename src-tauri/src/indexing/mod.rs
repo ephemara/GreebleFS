@@ -589,7 +589,15 @@ fn build_index_root_into_database(
         ) {
             Ok(status) => return Ok(status),
             Err(error) if input.recursive_fallback => {
-                eprintln!("GreebleFS path index: Windows USN index fallback: {error}");
+                if windows_usn::is_first_unavailable_fallback(&error) {
+                    eprintln!(
+                        "GreebleFS path index: Windows USN unavailable for {}; using recursive fallback. {}",
+                        input.requested_root_path.display(),
+                        error
+                    );
+                } else if !windows_usn::is_cached_unavailable_fallback(&error) {
+                    eprintln!("GreebleFS path index: Windows USN index fallback: {error}");
+                }
             }
             Err(error) => return Err(error),
         }

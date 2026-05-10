@@ -9,6 +9,7 @@ import {
   readExplorerPreviewBytes,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
+import { listLocalDirectoryEntriesFast } from "../runtime/localDirectoryListing";
 
 const nativePoolRuntimeMock = vi.hoisted(() => ({
   available: true,
@@ -78,6 +79,27 @@ describe("explorer backend native pool routing", () => {
     expect(
       nativePoolRuntimeMock.recordExplorerNativePoolSuccess,
     ).toHaveBeenCalledWith("directoryListingSnapshots");
+  });
+
+  it("keeps generic local directory discovery off the durable path index by default", async () => {
+    const nativeEntry = fileEntry("D:/catalog/native.txt");
+    nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool.mockResolvedValue(
+      [nativeEntry],
+    );
+
+    const entries = await listLocalDirectoryEntriesFast("D:/catalog");
+
+    expect(entries).toEqual([nativeEntry]);
+    expect(
+      nativePoolRuntimeMock.listIndexedExplorerDirectorySnapshotViaNativePool,
+    ).not.toHaveBeenCalled();
+    expect(
+      nativePoolRuntimeMock.listLocalExplorerDirectorySnapshotViaNativePool,
+    ).toHaveBeenCalledWith({
+      path: "D:/catalog",
+      showHidden: false,
+      bypassCache: false,
+    });
   });
 
   it("prefers indexed native pooled snapshots before live directory snapshots", async () => {
