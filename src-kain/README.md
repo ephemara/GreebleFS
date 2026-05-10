@@ -245,6 +245,8 @@ python -m py_compile src-python\greeblefs_sidecar\actions.py src-python\greeblef
 
 The full FFI reference lane should be run from `usr/plugins-kain/kain-plugin-ffi-full-stack-example/` after importing the Cargo helper and building the local C library.
 
+If a Python/Node FFI smoke reports `Unknown identifier 'py_bridge_exec'`, the staged Kain executable is too old for stdlib submodule type registration. Rebuild Kain from `D:/Kain-Lang` after the `kain-core/src/types.rs` stdlib-import fix and restage or point validation at that fresh `kain.exe`.
+
 ## What Is Possible Now
 
 These are capability lanes Kain can grow into inside GreebleFS. Some are active now, some are next-step architecture targets unlocked by the bridge.

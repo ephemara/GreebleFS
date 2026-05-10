@@ -97,9 +97,9 @@ fn main() -> String:
     let final_path = output_path("kain-image-converter-final.ppm")
     let report_path = output_path("kain-image-converter-ffi-report.txt")
 
-    js_web_document_write(html_path, html)
-    js_web_image_write(base_path, base_ppm)
-    js_web_image_write(final_path, final_ppm)
+    let html_write = js_bridge_call_method(helper, "writeDocumentPayload", [html_path, html])
+    let base_write = js_bridge_call_method(helper, "writeImagePayload", [base_path, base_ppm])
+    let final_write = js_bridge_call_method(helper, "writeImagePayload", [final_path, final_ppm])
 
     let report = "Kain image converter full-stack FFI smoke\n"
     let report = report + "revision: " + str(GREEBLEFS_KAIN_IMAGE_TOOLS_REVISION) + "\n"
@@ -120,6 +120,9 @@ fn main() -> String:
     let report = report + "cargo_role: calculated fit dimensions and checksums\n"
     let report = report + "c_role: mutated the shared image through native ABI\n"
     let report = report + "node_role: emitted HTML plus PPM preview artifacts\n"
+    let report = report + "node_html_bytes: " + str(html_write.bytes) + "\n"
+    let report = report + "node_base_bytes: " + str(base_write.bytes) + "\n"
+    let report = report + "node_final_bytes: " + str(final_write.bytes) + "\n"
     let report = report + "html_path: " + html_path + "\n"
     let report = report + "base_path: " + base_path + "\n"
     let report = report + "final_path: " + final_path + "\n"

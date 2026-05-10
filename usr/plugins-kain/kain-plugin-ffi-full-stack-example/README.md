@@ -20,3 +20,5 @@ D:\GreebleFS\toolchains\kain\payload\bin\kain.exe smoke.kn -t interpret
 ```
 
 Generated `outputs/`, `generated/`, and native library artifacts are ignored.
+
+If the staged payload reports `Unknown identifier 'py_bridge_exec'`, rebuild/restage Kain from `D:/Kain-Lang`; this example requires the stdlib submodule import typechecker fix that lets `use std::python::bridge` expose its exported helpers during type checking.

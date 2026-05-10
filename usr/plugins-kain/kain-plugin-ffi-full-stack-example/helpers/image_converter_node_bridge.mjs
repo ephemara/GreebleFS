@@ -1,3 +1,13 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+
+function ensureParentDir(path) {
+  const parent = dirname(path);
+  if (parent && parent !== '.') {
+    mkdirSync(parent, { recursive: true });
+  }
+}
+
 function ppmText(width, height, bytes) {
   let out = `P3\n${width} ${height}\n255\n`;
   for (let index = 0; index < bytes.length; index += 4) {
@@ -86,4 +96,17 @@ export function makeConverterDocument(title, width, height, baseBytes, finalByte
 </body>
 </html>`,
   };
+}
+
+export function writeDocumentPayload(path, payload) {
+  ensureParentDir(path);
+  writeFileSync(path, payload.text, 'utf8');
+  return { path, bytes: Buffer.byteLength(payload.text, 'utf8'), mime_type: payload.mime_type };
+}
+
+export function writeImagePayload(path, payload) {
+  ensureParentDir(path);
+  const bytes = payload.bytes ?? new TextEncoder().encode(payload.text ?? '');
+  writeFileSync(path, Buffer.from(bytes));
+  return { path, bytes: bytes.length, mime_type: payload.mime_type };
 }
