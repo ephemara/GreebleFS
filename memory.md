@@ -17,17 +17,30 @@
 
 # 2026-05-10 - Dev MCP Compact Tool Surface
 
-- Collapsed the default GreebleFS dev MCP tool surface from 81 visible tools to 9 compact router tools.
-  - Default tools are now `gfs_help`, `gfs_app`, `gfs_ui_snapshot`, `gfs_ui_act`, `gfs_ui_capture`, `gfs_host`, `gfs_events`, `gfs_code`, and `gfs_validate`.
+- Collapsed the default GreebleFS dev MCP tool surface from 81 visible tools to 9 compact router tools. A later markdown manual pass brought the current default surface to 10 tools by adding `gfs_how_to_use`.
+  - The first compact set was `gfs_help`, `gfs_app`, `gfs_ui_snapshot`, `gfs_ui_act`, `gfs_ui_capture`, `gfs_host`, `gfs_events`, `gfs_code`, and `gfs_validate`.
   - Per-host-method typed MCP tool generation is no longer registered by default. Agents should discover host method ids with `gfs_help category=host_commands` or `gfs_host command=schema`, then execute through `gfs_host command=call`.
 - Added coding-agent helper commands inside `gfs_code` and `gfs_validate` for agent context, recent git commits, changed files, recent/searchable memory, architecture/lessons lookup, validation planning, focused typecheck/test runs, and MCP smoke commands.
 - Durable rule:
   - Keep the default dev MCP surface under about 10-15 tools. Add new capability as a command on an existing router unless it truly needs independent top-level model attention. Do not bring back one MCP tool per host method.
 - Validation:
   - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`.
+  - Passed: temporary Streamable HTTP MCP proof returned 10 tools, verified `gfs_how_to_use section=quick_start`, and read `manual://gfs-dev-mcp/how-to-use` as `text/markdown`.
   - Passed: temporary Streamable HTTP MCP `tools/list` proof returned exactly 9 tools.
   - Passed: `gfs_help category=host_commands` proof returned the compact host router plus 47 discoverable host API methods.
   - Passed: router command proof for `gfs_code command=git_recent_commits` and `gfs_validate command=plan`.
+
+# 2026-05-10 - Dev MCP Markdown Agent Manual
+
+- Added a markdown-backed usage manual for the compact GreebleFS dev MCP surface.
+  - Current default tools are `gfs_how_to_use`, `gfs_help`, `gfs_app`, `gfs_ui_snapshot`, `gfs_ui_act`, `gfs_ui_capture`, `gfs_host`, `gfs_events`, `gfs_code`, and `gfs_validate`.
+  - `MCP/greeblefs-dev-mcp/AGENT_USAGE.md` is the source of truth for agent-facing usage guidance, examples, router command maps, host-method flow, validation flow, and troubleshooting notes.
+  - `gfs_how_to_use` reads that markdown and can return the full manual or one section (`overview`, `quick_start`, `tool_map`, `recipes`, `payloads`, `host_methods`, `validation`, or `troubleshooting`).
+  - The same manual is exposed as the MCP resource `manual://gfs-dev-mcp/how-to-use`.
+- Durable rule:
+  - Keep usage guidance in `AGENT_USAGE.md` rather than long tool descriptions. Update the manual whenever router commands or recommended agent workflows change.
+- Validation:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`.
 
 # 2026-05-10 - Kain Plugin System V1
 

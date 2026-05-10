@@ -15,6 +15,8 @@ import {
 
 const DEFAULT_HTTP_PORT = 4281;
 const MAX_JSON_PREVIEW_CHARS = 20_000;
+const AGENT_USAGE_MANUAL_WORKSPACE_PATH = 'MCP/greeblefs-dev-mcp/AGENT_USAGE.md';
+const AGENT_USAGE_MANUAL_RESOURCE_URI = 'manual://gfs-dev-mcp/how-to-use';
 
 const uiTargetSchema = z.object({
   selector: z.string().optional(),
@@ -101,6 +103,18 @@ function safeJsonText(value: unknown): string {
   return `${raw.slice(0, MAX_JSON_PREVIEW_CHARS)}\n...truncated...\n`;
 }
 
+function buildMarkdownToolResult(markdown: string, structuredContent: Record<string, unknown>): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: markdown,
+      },
+    ],
+    structuredContent,
+  };
+}
+
 function buildJsonToolResult(summary: string, data: Record<string, unknown>, options: { isError?: boolean } = {}): CallToolResult {
   return {
     content: [
@@ -153,8 +167,12 @@ function normalizeHostApiSchema(value: unknown): HostApiSchemaRecord | null {
 }
 
 const compactToolCatalog = {
+  gfs_how_to_use: {
+    commands: ['all', 'overview', 'quick_start', 'tool_map', 'recipes', 'payloads', 'host_methods', 'validation', 'troubleshooting'],
+    summary: 'Read the markdown-backed agent manual for this compact MCP surface.',
+  },
   gfs_help: {
-    commands: ['all', 'app', 'ui_snapshot', 'ui_act', 'ui_capture', 'host', 'events', 'code', 'validate', 'host_commands'],
+    commands: ['all', 'how_to_use', 'app', 'ui_snapshot', 'ui_act', 'ui_capture', 'host', 'events', 'code', 'validate', 'host_commands'],
     summary: 'Show compact MCP command groups and, on demand, the rich host API method catalog.',
   },
   gfs_app: {
@@ -325,6 +343,28 @@ async function buildDoctorReport(runtime: GreeblefsAutomationRuntime): Promise<R
 }
 
 function registerResources(server: McpServer, runtime: GreeblefsAutomationRuntime): void {
+  server.registerResource(
+    'agent-usage-manual',
+    AGENT_USAGE_MANUAL_RESOURCE_URI,
+    {
+      title: 'GreebleFS Dev MCP Agent Manual',
+      description: 'Markdown instructions for using the compact GreebleFS dev MCP router tools.',
+      mimeType: 'text/markdown',
+    },
+    async () => {
+      const manual = await readAgentUsageManual(runtime);
+      return {
+        contents: [
+          {
+            uri: AGENT_USAGE_MANUAL_RESOURCE_URI,
+            mimeType: 'text/markdown',
+            text: manual,
+          },
+        ],
+      };
+    },
+  );
+
   server.registerResource(
     'status-current',
     'status://app',
@@ -628,6 +668,67 @@ function summarizeHostApiSchema(hostApiSchema: HostApiSchemaRecord | null): Reco
   };
 }
 
+function normalizeManualSectionId(value: unknown): string {
+  return typeof value === 'string' && value.length > 0 ? value : 'all';
+}
+
+function markdownSectionTitleFromId(sectionId: string): string | null {
+  switch (sectionId) {
+    case 'overview':
+      return 'Overview';
+    case 'quick_start':
+      return 'Quick Start';
+    case 'tool_map':
+      return 'Tool Map';
+    case 'recipes':
+      return 'Recipes';
+    case 'payloads':
+      return 'Payloads';
+    case 'host_methods':
+      return 'Host Methods';
+    case 'validation':
+      return 'Validation';
+    case 'troubleshooting':
+      return 'Troubleshooting';
+    default:
+      return null;
+  }
+}
+
+function extractMarkdownSection(markdown: string, sectionId: string): string {
+  if (sectionId === 'all') {
+    return markdown;
+  }
+  const title = markdownSectionTitleFromId(sectionId);
+  if (!title) {
+    return markdown;
+  }
+  const lines = markdown.split(/\r?\n/);
+  const heading = `## ${title}`;
+  const startIndex = lines.findIndex((line) => line.trim() === heading);
+  if (startIndex < 0) {
+    return markdown;
+  }
+  let endIndex = lines.length;
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index])) {
+      endIndex = index;
+      break;
+    }
+  }
+  const titleLine = lines.find((line) => line.startsWith('# ')) ?? '# GreebleFS Dev MCP Agent Manual';
+  return [
+    titleLine,
+    '',
+    ...lines.slice(startIndex, endIndex),
+  ].join('\n').trimEnd() + '\n';
+}
+
+async function readAgentUsageManual(runtime: GreeblefsAutomationRuntime): Promise<string> {
+  const result = await runtime.readWorkspaceText(AGENT_USAGE_MANUAL_WORKSPACE_PATH);
+  return result.content;
+}
+
 function buildValidationPlan(files: string[]): Array<{ reason: string; command: string }> {
   const normalizedFiles = files.map((file) => file.replace(/\\/g, '/'));
   const commands: Array<{ reason: string; command: string }> = [];
@@ -723,6 +824,39 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
     revision: number;
     snapshot: Record<string, unknown>;
   }>();
+
+  server.registerTool(
+    'gfs_how_to_use',
+    {
+      title: 'GreebleFS MCP How To Use',
+      description: 'Read the markdown-backed agent manual for this MCP server. Use sections to avoid pulling the full manual.',
+      inputSchema: z.object({
+        section: z.enum(compactToolCatalog.gfs_how_to_use.commands).optional(),
+        includeHostCommands: z.boolean().optional(),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    wrapToolHandler('gfs_how_to_use', async ({ section, includeHostCommands }) => {
+      const sectionId = normalizeManualSectionId(section);
+      const manual = await readAgentUsageManual(runtime);
+      const markdown = extractMarkdownSection(manual, sectionId);
+      let hostCommands: unknown = null;
+      if (includeHostCommands === true) {
+        const hostApiSchema = normalizeHostApiSchema(await runtime.getHostApiSchema());
+        hostCommands = summarizeHostApiSchema(hostApiSchema);
+      }
+      return buildMarkdownToolResult(markdown, {
+        manualPath: AGENT_USAGE_MANUAL_WORKSPACE_PATH,
+        resourceUri: AGENT_USAGE_MANUAL_RESOURCE_URI,
+        section: sectionId,
+        sections: compactToolCatalog.gfs_how_to_use.commands,
+        hostCommands,
+      });
+    }),
+  );
 
   server.registerTool(
     'gfs_help',
