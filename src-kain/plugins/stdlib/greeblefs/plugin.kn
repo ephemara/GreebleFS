@@ -19,6 +19,9 @@ fn build_kain_plugin_stdlib() -> Any:
     json_array_push(surface_kinds, "runtime")
     json_array_push(surface_kinds, "tool")
     json_array_push(surface_kinds, "generated-artifact")
+    json_array_push(surface_kinds, "authoring-reference")
+    json_array_push(surface_kinds, "contract")
+    json_array_push(surface_kinds, "pipeline-stage")
 
     json_array_push(ffi_lanes, "python")
     json_array_push(ffi_lanes, "node")
@@ -37,7 +40,7 @@ fn build_kain_plugin_stdlib() -> Any:
     json_object_set(stdlib, "schemaVersion", 1)
     json_object_set(stdlib, "kind", "greeblefs.kain.plugin.stdlib")
     json_object_set(stdlib, "source", "src-kain/plugins/stdlib/greeblefs/plugin.kn")
-    json_object_set(stdlib, "summary", "Kain plugin authoring vocabulary for GreebleFS workbenches, preview workbenches, tools, actions, FFI lanes, WASM artifacts, Cargo FFI, and compatibility output.")
+    json_object_set(stdlib, "summary", "Kain plugin authoring vocabulary for GreebleFS workbenches, preview workbenches, tools, actions, authoring references, contracts, pipeline stages, FFI lanes, WASM artifacts, Cargo FFI, and compatibility output.")
     json_object_set(stdlib, "surfaceKinds", surface_kinds)
     json_object_set(stdlib, "ffiLanes", ffi_lanes)
     json_object_set(stdlib, "rendererKinds", string_array_5("kain-host", "react-compat", "wasm-panel", "semantic-surface", "generated-compat"))

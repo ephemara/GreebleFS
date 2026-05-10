@@ -129,6 +129,51 @@ describe('kainPluginCatalog', () => {
               cratePath: 'plugin.runtime/cargo/smoke',
             },
           ],
+          authoring: {
+            id: 'image-tool.reference',
+            summary: 'Reference plugin.',
+            entry: 'usr/plugins-kain/image-tool/plugin.kn',
+            languageFeatures: [
+              {
+                id: 'typed-domain-model',
+                label: 'Typed domain model',
+                status: 'live',
+                sourcePath: 'usr/plugins-kain/image-tool/plugin.kn',
+              },
+            ],
+            examples: [
+              {
+                id: 'minimal',
+                label: 'Minimal',
+                path: 'plugin.examples/00_minimal.kn',
+                kind: 'run',
+                proof: 'kain run',
+                features: ['workbench'],
+              },
+            ],
+            designRules: ['Kain owns intent'],
+            smokeCommands: ['kain run plugin.kn'],
+          },
+          contracts: [
+            {
+              id: 'tool.contract',
+              kind: 'tool',
+              symbol: 'build_tool',
+              sourcePath: 'plugin.kn',
+              status: 'live',
+              summary: 'Tool contract.',
+            },
+          ],
+          pipelineStages: [
+            {
+              id: 'python-bytes',
+              label: 'Python',
+              runtime: 'python',
+              entry: 'worker.py',
+              status: 'live',
+              outputs: ['output-file'],
+            },
+          ],
         },
       ],
       consumers: ['src/runtime/kainPluginCatalog.ts'],
@@ -174,6 +219,19 @@ describe('kainPluginCatalog', () => {
     });
     expect(catalog?.plugins[0]?.wasmTargets[0]?.buildTarget).toBe('wasm32-unknown-unknown');
     expect(catalog?.plugins[0]?.cargoFfiTargets[0]?.status).toBe('declared');
+    expect(catalog?.plugins[0]?.authoring?.languageFeatures[0]).toMatchObject({
+      id: 'typed-domain-model',
+      status: 'live',
+    });
+    expect(catalog?.plugins[0]?.authoring?.examples[0]?.features).toEqual(['workbench']);
+    expect(catalog?.plugins[0]?.contracts[0]).toMatchObject({
+      id: 'tool.contract',
+      kind: 'tool',
+    });
+    expect(catalog?.plugins[0]?.pipelineStages[0]).toMatchObject({
+      id: 'python-bytes',
+      runtime: 'python',
+    });
     expect(selectKainPluginPreviewWorkbenches(catalog)).toHaveLength(1);
   });
 });

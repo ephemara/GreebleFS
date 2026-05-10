@@ -1,0 +1,10 @@
+outputs/
+generated/
+.kain/
+native/*.dll
+native/*.dylib
+native/*.so
+native/*.exp
+native/*.lib
+native/*.obj
+native/*.pdb

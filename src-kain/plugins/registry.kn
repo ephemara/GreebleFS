@@ -38,6 +38,18 @@ fn string_array_6(a: String, b: String, c: String, d: String, e: String, f: Stri
     json_array_push(items, f)
     return items
 
+fn string_array_8(a: String, b: String, c: String, d: String, e: String, f: String, g: String, h: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    json_array_push(items, c)
+    json_array_push(items, d)
+    json_array_push(items, e)
+    json_array_push(items, f)
+    json_array_push(items, g)
+    json_array_push(items, h)
+    return items
+
 fn append_item(items, value: Any) -> Int:
     json_array_push(items, value)
     return 0
@@ -279,6 +291,95 @@ fn image_converter_action(id: String, label: String, summary: String, effect: St
     json_object_set(item, "ffiLanes", ffi_lanes)
     return item
 
+fn image_converter_authoring_feature(id: String, label: String, status: String, source_path: String, summary: String) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "status", status)
+    json_object_set(item, "sourcePath", source_path)
+    json_object_set(item, "summary", summary)
+    return item
+
+fn image_converter_reference_example(id: String, label: String, path: String, example_kind: String, proof: String, features: Array<String>) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "path", path)
+    json_object_set(item, "kind", example_kind)
+    json_object_set(item, "proof", proof)
+    json_object_set(item, "features", features)
+    return item
+
+fn image_converter_contract(id: String, contract_kind: String, symbol: String, source_path: String, status: String, summary: String) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "kind", contract_kind)
+    json_object_set(item, "symbol", symbol)
+    json_object_set(item, "sourcePath", source_path)
+    json_object_set(item, "status", status)
+    json_object_set(item, "summary", summary)
+    return item
+
+fn image_converter_pipeline_stage(id: String, label: String, runtime: String, entry: String, status: String, summary: String, outputs: Array<String>) -> Any:
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "label", label)
+    json_object_set(item, "runtime", runtime)
+    json_object_set(item, "entry", entry)
+    json_object_set(item, "status", status)
+    json_object_set(item, "summary", summary)
+    json_object_set(item, "outputs", outputs)
+    return item
+
+fn build_image_converter_authoring_reference() -> Any:
+    let reference = json_object_new()
+    let features = json_array_new()
+    let examples = json_array_new()
+    let smoke_commands = json_array_new()
+
+    append_item(features, image_converter_authoring_feature("typed-domain-model", "Structs, enums, traits, impls", "live", "usr/plugins-kain/kain-image-converter/plugin.kn", "The plugin declares typed conversion intent and plugin contracts before emitting host metadata."))
+    append_item(features, image_converter_authoring_feature("compiler-owned-intents", "Patch law converge orchestrate examples", "authored", "usr/plugins-kain/kain-plugin-authoring-examples", "The example ladder shows Kain runtime intent forms for future plugin pipelines."))
+    append_item(features, image_converter_authoring_feature("python-ffi", "Python FFI execution", "live", "src-python/greeblefs_sidecar/image_converter_runtime.py", "Pillow executes inspect plan convert SVG embed and ICO output."))
+    append_item(features, image_converter_authoring_feature("node-cargo-c-wasm", "Node Cargo C and WASM lanes", "declared", "usr/plugins-kain/kain-image-converter/plugin.runtime", "The package declares each growth lane with a file-level bridge manifest."))
+
+    append_item(examples, image_converter_reference_example("minimal-plugin", "Minimal Kain plugin catalog", "usr/plugins-kain/kain-plugin-authoring-examples/00_minimal_plugin.kn", "run", "kain run", string_array_3("json-catalog", "workbench", "action")))
+    append_item(examples, image_converter_reference_example("contracts-and-laws", "Contracts and laws", "usr/plugins-kain/kain-plugin-authoring-examples/01_contracts_and_laws.kn", "run", "kain run", string_array_4("struct", "enum", "trait", "law")))
+    append_item(examples, image_converter_reference_example("orchestrated-pipeline", "Orchestrated FFI pipeline", "usr/plugins-kain/kain-plugin-authoring-examples/02_orchestrated_ffi_pipeline.kn", "build", "kain build -t rust/js/ts", string_array_4("world", "patch", "converge", "orchestrate")))
+    append_item(examples, image_converter_reference_example("component-world", "Component and world UI contract", "usr/plugins-kain/kain-plugin-authoring-examples/03_component_world_reference.kn", "build", "kain build -t rust", string_array_3("component", "world", "jsx")))
+
+    json_array_push(smoke_commands, "kain run usr/plugins-kain/kain-image-converter/plugin.kn")
+    json_array_push(smoke_commands, "kain run usr/plugins-kain/kain-image-converter/plugin.runtime/kain/image_converter_pipeline.kn")
+    json_array_push(smoke_commands, "kain build usr/plugins-kain/kain-image-converter/plugin.kn -t ts")
+
+    json_object_set(reference, "id", "kain-image-converter.reference")
+    json_object_set(reference, "summary", "Canonical example for writing GreebleFS Kain plugins.")
+    json_object_set(reference, "entry", "usr/plugins-kain/kain-image-converter/plugin.kn")
+    json_object_set(reference, "languageFeatures", features)
+    json_object_set(reference, "examples", examples)
+    json_object_set(reference, "designRules", string_array_6("Kain owns plugin intent", "GreebleFS owns trusted rendering", "Host bridges write bytes", "FFI lanes are explicit", "Generated compatibility is optional", "Examples must smoke"))
+    json_object_set(reference, "smokeCommands", smoke_commands)
+    return reference
+
+fn build_image_converter_contracts() -> Array<Any>:
+    let items = json_array_new()
+    append_item(items, image_converter_contract("plugin.catalog", "plugin-definition", "build_kain_plugin", "usr/plugins-kain/kain-image-converter/plugin.kn", "live", "Complete plugin catalog record consumed by GreebleFS."))
+    append_item(items, image_converter_contract("tool.image-converter", "tool", "build_image_converter_tool", "usr/plugins-kain/kain-image-converter/plugin.kn", "live", "Format resize backend and UI intent for the host."))
+    append_item(items, image_converter_contract("workbench.main", "workbench", "image_converter_workbench", "usr/plugins-kain/kain-image-converter/plugin.kn", "live", "Primary workbench mounted through KainPluginWorkbenchHost."))
+    append_item(items, image_converter_contract("preview.image", "preview-workbench", "image_converter_preview_workbench", "usr/plugins-kain/kain-image-converter/plugin.kn", "live", "Preview lane contribution for image files."))
+    append_item(items, image_converter_contract("orchestrate.pipeline", "orchestrate", "convert_pipeline", "usr/plugins-kain/kain-plugin-authoring-examples/02_orchestrated_ffi_pipeline.kn", "authored", "Cross-runtime pipeline contract example for future direct Kain execution."))
+    return items
+
+fn build_image_converter_pipeline_stages() -> Array<Any>:
+    let items = json_array_new()
+    append_item(items, image_converter_pipeline_stage("catalog", "Kain plugin catalog", "kain", "usr/plugins-kain/kain-image-converter/plugin.kn", "live", "Returns the source-of-truth workbench tool and action contract.", string_array_2("plugin-definition", "tool-contract")))
+    append_item(items, image_converter_pipeline_stage("bridge-approval", "Resident Tauron Kain bridge", "tauri-view", "src-kain/app/main.kn", "live", "Approves trusted plugin actions and routes safe payloads.", string_array_2("action-proof", "host-context")))
+    append_item(items, image_converter_pipeline_stage("python-bytes", "Python Pillow sidecar", "python", "src-python/greeblefs_sidecar/image_converter_runtime.py", "live", "Inspects plans resizes converts emits SVG embeds and writes outputs.", string_array_3("image-info", "output-file", "warnings")))
+    append_item(items, image_converter_pipeline_stage("node-optimizer", "Node Sharp/SVGO optimizer", "node", "usr/plugins-kain/kain-image-converter/plugin.runtime/node/image_converter_node_bridge.kn", "declared", "Future fast raster and vector optimization lane.", string_array_2("optimized-raster", "optimized-svg")))
+    append_item(items, image_converter_pipeline_stage("cargo-helper", "Cargo image math helper", "cargo-ffi", "usr/plugins-kain/kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools", "compiled-helper", "Plugin-owned Rust helper exports C ABI fit-dimension functions.", string_array_2("fit-width", "fit-height")))
+    append_item(items, image_converter_pipeline_stage("c-codecs", "C runtime codec bridge", "c-runtime", "usr/plugins-kain/kain-image-converter/plugin.runtime/c-runtime/image_converter_c_runtime_bridge.kn", "available-in-kain", "Future DLL SDK and native-codec lane for formats Pillow cannot write.", string_array_2("native-codec", "sdk-bridge")))
+    append_item(items, image_converter_pipeline_stage("wasm-preview", "WASM preview worker", "wasm", "usr/plugins-kain/kain-image-converter/plugin.runtime/wasm/image_converter_preview_worker.kn", "declared", "Future portable preview transform worker.", string_array_2("worker-wasm", "preview-payload")))
+    return items
+
 fn build_image_converter_tool() -> Any:
     let tool = json_object_new()
     let formats = json_array_new()
@@ -305,7 +406,7 @@ fn build_image_converter_tool() -> Any:
     append_item(backends, image_converter_backend("python-pillow", "Python Pillow", "python", "primary inspect, resize, convert, ICO, SVG embed", "live", true, string_array_2("pillow", "numpy"), "src-python/greeblefs_sidecar/image_converter_runtime.py"))
     append_item(backends, image_converter_backend("node-sharp-svgo", "Node Sharp/SVGO", "node", "future npm-native optimization lane", "declared", false, string_array_2("sharp", "svgo"), "usr/plugins-kain/kain-image-converter/plugin.runtime/node/image_converter_node_bridge.kn"))
     append_item(backends, image_converter_backend("cargo-image-resvg", "Cargo image/resvg", "cargo-ffi", "compiled plugin-owned native helper lane", "compiled-helper", false, string_array_3("image", "resvg", "ico"), "usr/plugins-kain/kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools"))
-    append_item(backends, image_converter_backend("c-runtime-codecs", "C Runtime Codecs", "c-runtime", "future SDK/DLL codec lane", "available-in-kain", false, string_array_2("stb_image", "native-codecs"), "plugin.runtime/c-runtime"))
+    append_item(backends, image_converter_backend("c-runtime-codecs", "C Runtime Codecs", "c-runtime", "future SDK/DLL codec lane", "available-in-kain", false, string_array_2("stb_image", "native-codecs"), "usr/plugins-kain/kain-image-converter/plugin.runtime/c-runtime/image_converter_c_runtime_bridge.kn"))
     append_item(backends, image_converter_backend("wasm-preview-worker", "WASM Preview Worker", "wasm", "future portable preview worker", "declared", false, string_array_2("wasm32", "kain"), "usr/plugins-kain/kain-image-converter/plugin.runtime/wasm/image_converter_preview_worker.kn"))
 
     json_object_set(ui, "density", "compact")
@@ -450,14 +551,14 @@ fn build_kain_image_converter_plugin() -> Any:
 
     json_object_set(plugin, "id", "kain-image-converter")
     json_object_set(plugin, "name", "Kain Image Converter")
-    json_object_set(plugin, "version", "0.1.0")
-    json_object_set(plugin, "description", "First real Kain-native workbench plugin for image inspect, resize, conversion, ICO, SVG, and future Node/Cargo/C/WASM lanes.")
+    json_object_set(plugin, "version", "0.2.0")
+    json_object_set(plugin, "description", "Canonical Kain-native plugin example: typed image conversion intent, workbench and preview surfaces, trusted Python FFI, declared Node/Cargo/C/WASM lanes, and runnable authoring examples.")
     json_object_set(plugin, "category", "Kain Plugins")
     json_object_set(plugin, "source", "usr/plugins-kain/kain-image-converter/plugin.kn")
     json_object_set(plugin, "directory", "usr/plugins-kain/kain-image-converter")
     json_object_set(plugin, "manifestPath", "usr/plugins-kain/kain-image-converter/plugin.kn")
     json_object_set(plugin, "status", "live")
-    json_object_set(plugin, "tags", string_array_6("kain", "workbench", "image", "converter", "ffi", "python"))
+    json_object_set(plugin, "tags", string_array_8("kain", "workbench", "image", "converter", "ffi", "python", "reference", "orchestrate"))
     json_object_set(plugin, "permissions", permissions)
     json_object_set(plugin, "ffiCapabilities", ffi_capabilities)
     json_object_set(plugin, "runtimes", runtimes)
@@ -468,6 +569,9 @@ fn build_kain_image_converter_plugin() -> Any:
     json_object_set(plugin, "wasmTargets", wasm_targets)
     json_object_set(plugin, "cargoFfiTargets", cargo_targets)
     json_object_set(plugin, "generatedArtifacts", artifacts)
+    json_object_set(plugin, "authoring", build_image_converter_authoring_reference())
+    json_object_set(plugin, "contracts", build_image_converter_contracts())
+    json_object_set(plugin, "pipelineStages", build_image_converter_pipeline_stages())
     return plugin
 
 fn build_kain_plugin_catalog() -> Any:

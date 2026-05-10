@@ -17,6 +17,36 @@ const DEFAULT_HTTP_PORT = 4281;
 const MAX_JSON_PREVIEW_CHARS = 20_000;
 const AGENT_USAGE_MANUAL_WORKSPACE_PATH = 'MCP/greeblefs-dev-mcp/AGENT_USAGE.md';
 const AGENT_USAGE_MANUAL_RESOURCE_URI = 'manual://gfs-dev-mcp/how-to-use';
+const KAIN_GUIDES_ROOT = 'src-kain/guides';
+const KAIN_FFI_EXAMPLES_ROOT = 'src-kain/ffi/examples';
+const KAIN_QUICKSTART_PATH = `${KAIN_GUIDES_ROOT}/quickstart.md`;
+const KAIN_GUIDES_README_PATH = `${KAIN_GUIDES_ROOT}/README.md`;
+const KAIN_DOCS_EXAMPLES_VALIDATOR_PATH = `${KAIN_GUIDES_ROOT}/examples/validate_examples.py`;
+const KAIN_DEFAULT_CLI_TIMEOUT_MS = 30_000;
+const KAIN_MAX_CLI_TIMEOUT_MS = 180_000;
+const KAIN_SEARCH_MAX_FILE_BYTES = 320_000;
+const KAIN_TEXT_EXTENSIONS = new Set([
+  '.md',
+  '.kn',
+  '.toml',
+  '.json',
+  '.rs',
+  '.py',
+  '.ts',
+  '.tsx',
+  '.mjs',
+  '.js',
+  '.c',
+  '.h',
+  '.bat',
+  '.ps1',
+  '.sh',
+]);
+const KAIN_CONTENT_ROOTS = {
+  guides: KAIN_GUIDES_ROOT,
+  ffi_examples: KAIN_FFI_EXAMPLES_ROOT,
+} as const;
+const KAIN_LONG_RUNNING_ARGS = new Set(['lsp', 'watch', '--watch', '-w', 'bridge']);
 
 const uiTargetSchema = z.object({
   selector: z.string().optional(),
@@ -168,11 +198,11 @@ function normalizeHostApiSchema(value: unknown): HostApiSchemaRecord | null {
 
 const compactToolCatalog = {
   gfs_how_to_use: {
-    commands: ['all', 'overview', 'quick_start', 'tool_map', 'recipes', 'payloads', 'host_methods', 'validation', 'troubleshooting'],
+    commands: ['all', 'overview', 'quick_start', 'tool_map', 'recipes', 'payloads', 'host_methods', 'kain', 'validation', 'troubleshooting'],
     summary: 'Read the markdown-backed agent manual for this compact MCP surface.',
   },
   gfs_help: {
-    commands: ['all', 'how_to_use', 'app', 'ui_snapshot', 'ui_act', 'ui_capture', 'host', 'events', 'code', 'validate', 'host_commands'],
+    commands: ['all', 'how_to_use', 'app', 'ui_snapshot', 'ui_act', 'ui_capture', 'host', 'events', 'code', 'kain', 'validate', 'host_commands'],
     summary: 'Show compact MCP command groups and, on demand, the rich host API method catalog.',
   },
   gfs_app: {
@@ -220,6 +250,10 @@ const compactToolCatalog = {
       'workspace_run',
     ],
     summary: 'Compact coding context, git, memory, architecture, and repo workspace operations.',
+  },
+  gfs_kain: {
+    commands: ['overview', 'guide', 'search', 'examples', 'cli', 'doctor', 'run', 'validate_examples'],
+    summary: 'Kain language guide, docs/examples search, FFI example discovery, and local .cargo/bin Kain CLI execution.',
   },
   gfs_validate: {
     commands: ['plan', 'run', 'typecheck', 'test_file', 'rust_test', 'smoke', 'smoke_screenshot', 'runtime_stack_quick', 'native_ring_benchmark'],
@@ -605,6 +639,10 @@ function textTailByLines(text: string, limitLines: number): string {
   return lines.slice(Math.max(0, lines.length - limitLines)).join('\n');
 }
 
+function textHeadByLines(text: string, limitLines: number): string {
+  return text.split(/\r?\n/).slice(0, limitLines).join('\n');
+}
+
 function searchTextLines(text: string, query: string, limit: number): Array<{ line: number; text: string }> {
   const normalizedQuery = query.toLowerCase();
   const matches: Array<{ line: number; text: string }> = [];
@@ -686,6 +724,8 @@ function markdownSectionTitleFromId(sectionId: string): string | null {
       return 'Payloads';
     case 'host_methods':
       return 'Host Methods';
+    case 'kain':
+      return 'Kain';
     case 'validation':
       return 'Validation';
     case 'troubleshooting':
@@ -759,6 +799,7 @@ function buildValidationPlan(files: string[]): Array<{ reason: string; command: 
   }
   if (normalizedFiles.some((file) => file.startsWith('src-kain/') || file.startsWith('toolchains/kain/'))) {
     pushCommand('Kain runtime/toolchain files changed.', 'node scripts/kain/stage-kain-toolchain.mjs --verify-only');
+    pushCommand('Kain CLI surface should resolve from the active local binary.', `${shellQuote(getKainBinaryPath('kain'))} doctor`);
   }
   if (commands.length === 0) {
     pushCommand('Default quick repo sanity.', 'git status --short --branch');
@@ -817,6 +858,432 @@ async function buildAgentContext(runtime: GreeblefsAutomationRuntime, limit: num
     architecturePointers,
     recommendedValidation: buildValidationPlan(changedFiles),
   };
+}
+
+type KainContentRootKey = keyof typeof KAIN_CONTENT_ROOTS;
+type KainBinaryName = 'kain' | 'kain-pro' | 'kn';
+
+interface KainListedFile {
+  path: string;
+  displayPath: string;
+  size: number;
+  modifiedAt: string | null;
+}
+
+function normalizeWorkspacePathText(pathLike: string): string {
+  return pathLike.replace(/\\/g, '/').replace(/^\/+/, '').replace(/^\.\//, '');
+}
+
+function assertNoParentTraversal(pathLike: string): void {
+  if (pathLike.split('/').some((segment) => segment === '..')) {
+    throw new Error(`Path is not allowed to traverse outside Kain roots: ${pathLike}`);
+  }
+}
+
+function normalizeKainContentPath(pathLike: string | undefined, defaultRoot: KainContentRootKey): string {
+  let normalized = normalizeWorkspacePathText(pathLike?.trim() || '');
+  const defaultRootPath = KAIN_CONTENT_ROOTS[defaultRoot];
+  if (!normalized) {
+    return defaultRootPath;
+  }
+  if (normalized === 'guides') {
+    normalized = KAIN_GUIDES_ROOT;
+  } else if (normalized === 'ffi_examples' || normalized === 'examples') {
+    normalized = KAIN_FFI_EXAMPLES_ROOT;
+  } else if (normalized.startsWith('guides/')) {
+    normalized = `${KAIN_GUIDES_ROOT}/${normalized.slice('guides/'.length)}`;
+  } else if (normalized.startsWith('ffi_examples/')) {
+    normalized = `${KAIN_FFI_EXAMPLES_ROOT}/${normalized.slice('ffi_examples/'.length)}`;
+  }
+  const allowedRoot = Object.values(KAIN_CONTENT_ROOTS)
+    .some((rootPath) => normalized === rootPath || normalized.startsWith(`${rootPath}/`));
+  if (!allowedRoot) {
+    normalized = `${defaultRootPath}/${normalized}`;
+  }
+  normalized = normalizeWorkspacePathText(normalized);
+  assertNoParentTraversal(normalized);
+  if (!Object.values(KAIN_CONTENT_ROOTS).some((rootPath) => normalized === rootPath || normalized.startsWith(`${rootPath}/`))) {
+    throw new Error(`Kain content path must stay under ${KAIN_GUIDES_ROOT} or ${KAIN_FFI_EXAMPLES_ROOT}.`);
+  }
+  return normalized;
+}
+
+function normalizeKainSourcePath(pathLike: string): string {
+  const normalized = normalizeWorkspacePathText(pathLike.trim());
+  if (!normalized) {
+    throw new Error('path is required.');
+  }
+  assertNoParentTraversal(normalized);
+  if (normalized.startsWith('src-kain/')) {
+    return normalized;
+  }
+  return `${KAIN_GUIDES_ROOT}/examples/${normalized}`;
+}
+
+function kainDisplayPath(pathLike: string): string {
+  const normalized = normalizeWorkspacePathText(pathLike);
+  if (normalized === KAIN_GUIDES_ROOT) {
+    return 'guides/';
+  }
+  if (normalized === KAIN_FFI_EXAMPLES_ROOT) {
+    return 'ffi_examples/';
+  }
+  if (normalized.startsWith(`${KAIN_GUIDES_ROOT}/`)) {
+    return `guides/${normalized.slice(KAIN_GUIDES_ROOT.length + 1)}`;
+  }
+  if (normalized.startsWith(`${KAIN_FFI_EXAMPLES_ROOT}/`)) {
+    return `ffi_examples/${normalized.slice(KAIN_FFI_EXAMPLES_ROOT.length + 1)}`;
+  }
+  return normalized;
+}
+
+function getKainFileExtension(pathLike: string): string {
+  const name = normalizeWorkspacePathText(pathLike).split('/').pop() ?? '';
+  const dotIndex = name.lastIndexOf('.');
+  return dotIndex >= 0 ? name.slice(dotIndex).toLowerCase() : '';
+}
+
+function shouldSkipKainTraversal(pathLike: string): boolean {
+  const segments = normalizeWorkspacePathText(pathLike).split('/');
+  return segments.some((segment) => (
+    segment === '.git'
+    || segment === 'node_modules'
+    || segment === 'target'
+    || segment === '.kain'
+    || segment === 'outputs'
+    || segment === 'generated_native_host'
+  ));
+}
+
+async function listKainTextFiles(
+  runtime: GreeblefsAutomationRuntime,
+  roots: KainContentRootKey[],
+  limit: number,
+): Promise<{ files: KainListedFile[]; truncated: boolean }> {
+  const files: KainListedFile[] = [];
+  const queue: string[] = roots.map((root) => KAIN_CONTENT_ROOTS[root]);
+  let truncated = false;
+
+  while (queue.length > 0) {
+    const currentPath = queue.shift() ?? '';
+    if (!currentPath || shouldSkipKainTraversal(currentPath)) {
+      continue;
+    }
+    const listing = await runtime.listWorkspaceDirectory(currentPath);
+    for (const entry of listing.entries) {
+      const relativePath = normalizeWorkspacePathText(entry.relativePath);
+      if (shouldSkipKainTraversal(relativePath)) {
+        continue;
+      }
+      if (entry.isDirectory) {
+        queue.push(relativePath);
+        continue;
+      }
+      if (!KAIN_TEXT_EXTENSIONS.has(getKainFileExtension(relativePath))) {
+        continue;
+      }
+      files.push({
+        path: relativePath,
+        displayPath: kainDisplayPath(relativePath),
+        size: entry.size,
+        modifiedAt: entry.modifiedAt,
+      });
+      if (files.length >= limit) {
+        truncated = true;
+        return { files, truncated };
+      }
+    }
+  }
+  files.sort((left, right) => left.path.localeCompare(right.path));
+  return { files, truncated };
+}
+
+async function readKainContent(
+  runtime: GreeblefsAutomationRuntime,
+  pathLike: string | undefined,
+  defaultRoot: KainContentRootKey,
+  limitLines: number,
+): Promise<Record<string, unknown>> {
+  const contentPath = normalizeKainContentPath(pathLike, defaultRoot);
+  const stat = await runtime.statWorkspacePath(contentPath);
+  if (!stat.exists) {
+    throw new Error(`Kain content path does not exist: ${contentPath}`);
+  }
+  if (stat.isDirectory) {
+    const listing = await runtime.listWorkspaceDirectory(contentPath);
+    const readmePath = `${contentPath}/README.md`;
+    const readme = await readWorkspaceTextIfAvailable(runtime, readmePath);
+    return {
+      requestedPath: pathLike ?? '',
+      resolvedPath: contentPath,
+      displayPath: kainDisplayPath(contentPath),
+      kind: 'directory',
+      entries: listing.entries.map((entry) => ({
+        name: entry.name,
+        path: kainDisplayPath(entry.relativePath),
+        isDirectory: entry.isDirectory,
+        size: entry.size,
+        modifiedAt: entry.modifiedAt,
+      })),
+      readme: readme.available ? textHeadByLines(readme.content, limitLines) : readme,
+    };
+  }
+  if (!KAIN_TEXT_EXTENSIONS.has(getKainFileExtension(contentPath))) {
+    throw new Error(`Kain content reader only returns text-like files: ${contentPath}`);
+  }
+  const result = await runtime.readWorkspaceText(contentPath);
+  return {
+    requestedPath: pathLike ?? '',
+    resolvedPath: result.resolvedPath,
+    displayPath: kainDisplayPath(contentPath),
+    kind: 'file',
+    content: textHeadByLines(result.content, limitLines),
+    totalLines: result.content.split(/\r?\n/).length,
+    truncated: result.content.split(/\r?\n/).length > limitLines,
+  };
+}
+
+async function searchKainContent(
+  runtime: GreeblefsAutomationRuntime,
+  query: string,
+  roots: KainContentRootKey[],
+  limit: number,
+): Promise<Record<string, unknown>> {
+  const files = await listKainTextFiles(runtime, roots, 1_200);
+  const matches: Array<{ path: string; line: number; text: string }> = [];
+  const skippedLargeFiles: string[] = [];
+  const normalizedQuery = query.toLowerCase();
+
+  for (const file of files.files) {
+    if (file.size > KAIN_SEARCH_MAX_FILE_BYTES) {
+      skippedLargeFiles.push(file.displayPath);
+      continue;
+    }
+    const content = await runtime.readWorkspaceText(file.path).catch(() => null);
+    if (!content) {
+      continue;
+    }
+    const lines = content.content.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+      if (!lines[index].toLowerCase().includes(normalizedQuery)) {
+        continue;
+      }
+      matches.push({
+        path: file.displayPath,
+        line: index + 1,
+        text: lines[index],
+      });
+      if (matches.length >= limit) {
+        return {
+          query,
+          roots,
+          matches,
+          searchedFileCount: files.files.length,
+          skippedLargeFiles,
+          truncated: true,
+        };
+      }
+    }
+  }
+  return {
+    query,
+    roots,
+    matches,
+    searchedFileCount: files.files.length,
+    skippedLargeFiles,
+    truncated: files.truncated,
+  };
+}
+
+async function buildKainExampleIndex(runtime: GreeblefsAutomationRuntime, limit: number): Promise<Record<string, unknown>> {
+  const summaries: Array<Record<string, unknown>> = [];
+  const queue = [KAIN_FFI_EXAMPLES_ROOT];
+  let visitedDirectoryCount = 0;
+
+  while (queue.length > 0 && summaries.length < limit) {
+    const currentPath = queue.shift() ?? '';
+    if (!currentPath || shouldSkipKainTraversal(currentPath)) {
+      continue;
+    }
+    visitedDirectoryCount += 1;
+    const listing = await runtime.listWorkspaceDirectory(currentPath).catch(() => null);
+    if (!listing) {
+      continue;
+    }
+    const files = listing.entries.filter((entry) => !entry.isDirectory);
+    const directories = listing.entries.filter((entry) => entry.isDirectory);
+    const readme = files.find((entry) => entry.name.toLowerCase() === 'readme.md');
+    const smokeFiles = files.filter((entry) => entry.name.endsWith('.kn') && entry.name.toLowerCase().includes('smoke'));
+    const runScripts = files.filter((entry) => /^run_|^build_|^launch_|^capture_|^refresh_|^generate_/i.test(entry.name));
+    const manifests = files.filter((entry) => /^KAIN/i.test(entry.name) || entry.name.endsWith('_manifest.json') || entry.name === 'pipeline_manifest.json');
+    if (currentPath !== KAIN_FFI_EXAMPLES_ROOT && (readme || smokeFiles.length > 0 || runScripts.length > 0 || manifests.length > 0)) {
+      summaries.push({
+        path: kainDisplayPath(currentPath),
+        readme: readme ? kainDisplayPath(readme.relativePath) : null,
+        smokeFiles: smokeFiles.map((entry) => kainDisplayPath(entry.relativePath)),
+        runScripts: runScripts.map((entry) => kainDisplayPath(entry.relativePath)),
+        manifests: manifests.map((entry) => kainDisplayPath(entry.relativePath)),
+      });
+    }
+    for (const directory of directories) {
+      queue.push(normalizeWorkspacePathText(directory.relativePath));
+    }
+  }
+
+  return {
+    root: kainDisplayPath(KAIN_FFI_EXAMPLES_ROOT),
+    visitedDirectoryCount,
+    examples: summaries,
+    truncated: summaries.length >= limit,
+  };
+}
+
+function getKainCargoBinDirectory(): string {
+  const override = process.env.GREEBLEFS_KAIN_CARGO_BIN_DIR?.trim();
+  if (override) {
+    return override;
+  }
+  const userProfile = process.env.USERPROFILE?.trim() || 'C:\\Users\\Admin';
+  return `${userProfile}\\.cargo\\bin`;
+}
+
+function getKainBinaryPath(binaryName: KainBinaryName = 'kain'): string {
+  const executable = binaryName === 'kain-pro'
+    ? 'kain-pro.exe'
+    : binaryName === 'kn'
+      ? 'kn.exe'
+      : 'kain.exe';
+  return `${getKainCargoBinDirectory()}\\${executable}`;
+}
+
+function normalizeKainCliArgs(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => String(item)).filter((item) => item.length > 0);
+}
+
+function assertKainCliArgsAllowed(args: string[], allowLongRunning: boolean): void {
+  if (allowLongRunning) {
+    return;
+  }
+  const blocked = args.find((arg) => KAIN_LONG_RUNNING_ARGS.has(arg.toLowerCase()));
+  if (blocked) {
+    throw new Error(`Kain CLI arg "${blocked}" can be long-running. Set allowLongRunning=true and timeoutMs explicitly if you really need it.`);
+  }
+}
+
+function buildKainCliCommand(binaryName: KainBinaryName, args: string[]): string {
+  const binaryPath = getKainBinaryPath(binaryName);
+  const executable = process.platform === 'win32'
+    ? `& ${shellQuote(binaryPath)}`
+    : shellQuote(binaryPath);
+  return [executable, ...args.map(shellQuote)].join(' ');
+}
+
+async function runKainCli(
+  runtime: GreeblefsAutomationRuntime,
+  binaryName: KainBinaryName,
+  args: string[],
+  options: { cwd?: string; timeoutMs?: number; allowLongRunning?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  assertKainCliArgsAllowed(args, options.allowLongRunning === true);
+  const timeoutMs = Math.min(
+    clampPositiveInt(options.timeoutMs, KAIN_DEFAULT_CLI_TIMEOUT_MS, KAIN_MAX_CLI_TIMEOUT_MS),
+    KAIN_MAX_CLI_TIMEOUT_MS,
+  );
+  const command = buildKainCliCommand(binaryName, args);
+  const result = await runtime.runWorkspaceCommand(command, {
+    cwd: options.cwd,
+    timeoutMs,
+  });
+  return {
+    binary: binaryName,
+    binaryPath: getKainBinaryPath(binaryName),
+    args,
+    timeoutMs,
+    result,
+  };
+}
+
+async function buildKainOverview(runtime: GreeblefsAutomationRuntime, limitLines: number): Promise<Record<string, unknown>> {
+  const [guideReadme, quickstart, cliHelp, doctor] = await Promise.all([
+    readWorkspaceTextIfAvailable(runtime, KAIN_GUIDES_README_PATH),
+    readWorkspaceTextIfAvailable(runtime, KAIN_QUICKSTART_PATH),
+    runKainCli(runtime, 'kain', ['--help'], { timeoutMs: 15_000 }).catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+    runKainCli(runtime, 'kain', ['doctor'], { timeoutMs: 20_000 }).catch((error) => ({
+      unavailable: true,
+      reason: error instanceof Error ? error.message : String(error),
+    })),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    purpose: 'Agent-facing Kain orientation for the private language surface embedded in GreebleFS.',
+    docRoots: [
+      {
+        id: 'guides',
+        path: KAIN_GUIDES_ROOT,
+        useFor: 'Canonical Kain language, CLI, runtime, target, and troubleshooting docs.',
+      },
+      {
+        id: 'ffi_examples',
+        path: KAIN_FFI_EXAMPLES_ROOT,
+        useFor: 'Current proof lanes for Python, Node, C, Rust crate, GPU, UI, Fabric, and 3D FFI workflows.',
+      },
+    ],
+    localCli: {
+      cargoBinDirectory: getKainCargoBinDirectory(),
+      defaultBinary: getKainBinaryPath('kain'),
+      proBinary: getKainBinaryPath('kain-pro'),
+      knLauncher: getKainBinaryPath('kn'),
+      cliHelp,
+      doctor,
+    },
+    quickstart: quickstart.available ? textHeadByLines(quickstart.content, limitLines) : quickstart,
+    guideMap: guideReadme.available ? textHeadByLines(guideReadme.content, limitLines) : guideReadme,
+    recommendedFlow: [
+      { tool: 'gfs_kain', payload: { command: 'overview' } },
+      { tool: 'gfs_kain', payload: { command: 'guide', path: 'quickstart.md' } },
+      { tool: 'gfs_kain', payload: { command: 'search', query: 'feature or error text', roots: ['guides', 'ffi_examples'] } },
+      { tool: 'gfs_kain', payload: { command: 'cli', args: ['doctor'] } },
+      { tool: 'gfs_kain', payload: { command: 'validate_examples', path: '00_hello_and_cli.kn' } },
+    ],
+  };
+}
+
+function normalizeKainRoots(value: unknown): KainContentRootKey[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return ['guides', 'ffi_examples'];
+  }
+  const roots = value.filter((item): item is KainContentRootKey => item === 'guides' || item === 'ffi_examples');
+  return roots.length > 0 ? Array.from(new Set(roots)) : ['guides', 'ffi_examples'];
+}
+
+function basenameFromPath(pathLike: string): string {
+  return normalizeWorkspacePathText(pathLike).split('/').filter(Boolean).pop() ?? pathLike;
+}
+
+function buildKainDocsExampleValidationCommand(pathLike: string | undefined, validationClass: string | undefined, keepOutput: boolean): string {
+  const args = [
+    shellQuote(KAIN_DOCS_EXAMPLES_VALIDATOR_PATH),
+    '--kain',
+    shellQuote(getKainBinaryPath('kain')),
+  ];
+  if (pathLike) {
+    args.push('--only', shellQuote(basenameFromPath(pathLike)));
+  }
+  if (validationClass) {
+    args.push('--class', shellQuote(validationClass));
+  }
+  if (keepOutput) {
+    args.push('--keep-output');
+  }
+  const pythonLauncher = process.platform === 'win32' ? 'py' : 'python3';
+  return [pythonLauncher, ...args].join(' ');
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1638,6 +2105,110 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
           });
         default:
           throw new Error(`Unknown gfs_code command: ${String(args.command)}`);
+      }
+    }),
+  );
+
+  server.registerTool(
+    'gfs_kain',
+    {
+      title: 'GreebleFS Kain',
+      description: 'Router for Kain language docs, FFI examples, local .cargo/bin CLI commands, run smokes, and docs-example validation.',
+      inputSchema: z.object({
+        command: z.enum(compactToolCatalog.gfs_kain.commands),
+        path: z.string().optional(),
+        query: z.string().optional(),
+        roots: z.array(z.enum(['guides', 'ffi_examples'])).optional(),
+        binary: z.enum(['kain', 'kain-pro', 'kn']).optional(),
+        args: z.array(z.string()).optional(),
+        cwd: z.string().optional(),
+        limit: z.number().int().positive().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+        allowLongRunning: z.boolean().optional(),
+        keepOutput: z.boolean().optional(),
+        filter: z.string().optional(),
+      }),
+      annotations: {
+        destructiveHint: true,
+        openWorldHint: true,
+        idempotentHint: false,
+      },
+    },
+    wrapToolHandler('gfs_kain', async (args) => {
+      const limit = clampPositiveInt(args.limit, 80, 600);
+      switch (args.command) {
+        case 'overview':
+          return buildJsonToolResult('Read Kain overview', {
+            kain: await buildKainOverview(runtime, limit),
+          });
+        case 'guide': {
+          const guide = await readKainContent(runtime, args.path ?? 'quickstart.md', 'guides', limit);
+          return buildJsonToolResult('Read Kain guide content', {
+            guide,
+          });
+        }
+        case 'search': {
+          const query = requireString(args.query, 'query');
+          return buildJsonToolResult('Searched Kain docs and examples', {
+            search: await searchKainContent(runtime, query, normalizeKainRoots(args.roots), limit),
+          });
+        }
+        case 'examples': {
+          if (args.path) {
+            return buildJsonToolResult('Read Kain FFI example content', {
+              example: await readKainContent(runtime, args.path, 'ffi_examples', limit),
+            });
+          }
+          const [rootReadme, examples] = await Promise.all([
+            readKainContent(runtime, undefined, 'ffi_examples', limit),
+            buildKainExampleIndex(runtime, limit),
+          ]);
+          return buildJsonToolResult('Listed Kain FFI examples', {
+            rootReadme,
+            examples,
+          });
+        }
+        case 'cli': {
+          const binary = args.binary ?? 'kain';
+          const cliArgs = normalizeKainCliArgs(args.args);
+          return buildJsonToolResult('Ran Kain CLI command', {
+            cli: await runKainCli(runtime, binary, cliArgs.length > 0 ? cliArgs : ['--help'], {
+              cwd: args.cwd,
+              timeoutMs: args.timeoutMs,
+              allowLongRunning: args.allowLongRunning,
+            }),
+          });
+        }
+        case 'doctor':
+          return buildJsonToolResult('Ran Kain doctor', {
+            cli: await runKainCli(runtime, args.binary ?? 'kain', ['doctor'], {
+              cwd: args.cwd,
+              timeoutMs: args.timeoutMs ?? 20_000,
+            }),
+          });
+        case 'run': {
+          const sourcePath = normalizeKainSourcePath(requireString(args.path, 'path'));
+          const extraArgs = normalizeKainCliArgs(args.args);
+          return buildJsonToolResult('Ran Kain source file', {
+            sourcePath,
+            cli: await runKainCli(runtime, args.binary ?? 'kain', ['run', sourcePath, ...extraArgs], {
+              cwd: args.cwd,
+              timeoutMs: args.timeoutMs ?? 60_000,
+              allowLongRunning: args.allowLongRunning,
+            }),
+          });
+        }
+        case 'validate_examples': {
+          const command = buildKainDocsExampleValidationCommand(args.path, args.filter, args.keepOutput === true);
+          return buildJsonToolResult('Ran Kain docs example validator', {
+            command,
+            result: await runtime.runWorkspaceCommand(command, {
+              timeoutMs: Math.min(clampPositiveInt(args.timeoutMs, 120_000, KAIN_MAX_CLI_TIMEOUT_MS), KAIN_MAX_CLI_TIMEOUT_MS),
+            }),
+          });
+        }
+        default:
+          throw new Error(`Unknown gfs_kain command: ${String(args.command)}`);
       }
     }),
   );

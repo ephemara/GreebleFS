@@ -1,0 +1,129 @@
+use c::image_converter_fx
+use rust::greeblefs_kain_image_tools
+use std::python::bridge
+use std::javascript::bridge
+use std::javascript::web
+use std::interop::bridge
+use std::c::bridge
+
+fn output_path(name: String) -> String:
+    return "outputs/" + name
+
+fn install_python_kernel():
+    py_bridge_exec("import numpy as np\n\ndef make_converter_rgba(width, height, phase):\n    xs = np.linspace(0, 255, width, dtype=np.uint8)\n    ys = np.linspace(20, 210, height, dtype=np.uint8)\n    image = np.zeros((height, width, 4), dtype=np.uint8)\n    image[:, :, 0] = xs[np.newaxis, :]\n    image[:, :, 1] = ys[:, np.newaxis]\n    image[:, :, 2] = ((xs[np.newaxis, :] // 3) + (ys[:, np.newaxis] // 2) + phase).astype(np.uint8)\n    image[:, :, 3] = 255\n    return image\n")
+
+fn paint_kain_cross(bytes: Any, width: Int, height: Int, phase: Int) -> Any:
+    let center_x = width / 2
+    let center_y = height / 2
+    let y = 0
+    while y < height:
+        let x = 0
+        while x < width:
+            let border_hit = x < 2 or y < 2 or x >= width - 2 or y >= height - 2
+            let cross_hit = x == center_x or y == center_y
+            let spark_hit = ((x + y + phase) % 31 == 0) and ((x * 5 + y * 3 + phase) % 11 == 0)
+            if border_hit or cross_hit or spark_hit:
+                let index = ((y * width) + x) * 4
+                bytes[index + 0] = 255
+                bytes[index + 1] = 220
+                bytes[index + 2] = 92
+                bytes[index + 3] = 255
+            x = x + 1
+        y = y + 1
+    return bytes
+
+test image_converter_full_stack_ffi:
+    install_python_kernel()
+    assert(py_bridge_module_available("numpy"), "numpy must be available for the Kain image converter FFI smoke")
+    assert(GREEBLEFS_KAIN_IMAGE_TOOLS_REVISION == 2, "expected cargo image helper revision")
+
+    let raw = py_bridge_call_raw("make_converter_rgba", [48, 32, 9])
+    let shared_image = py_bridge_shared_image(raw)
+    let info = interop_shared_image_info(shared_image)
+    let fit_w = fit_width(info.width, info.height, 24, 24, 0)
+    let fit_h = fit_height(info.width, info.height, 24, 24, 0)
+    let base_bytes = interop_shared_image_bytes(shared_image)
+    let base_checksum = image_checksum(base_bytes)
+    let overlay_bytes = paint_kain_cross(base_bytes, info.width, info.height, 9)
+    c_bridge_shared_image_replace_bytes(shared_image, overlay_bytes)
+    let c_before = image_converter_fx_checksum(shared_image, info.byte_length)
+    image_converter_fx_tint_rgba(shared_image, info.byte_length, 77)
+    let c_after = image_converter_fx_checksum(shared_image, info.byte_length)
+    let final_bytes = interop_shared_image_bytes(shared_image)
+    let final_checksum = image_checksum(final_bytes)
+    assert(info.contract == "kain.shared.image", "expected neutral shared image contract")
+    assert(info.source_runtime == "python", "expected Python source image")
+    assert(fit_w == 24 and fit_h == 16, "expected Cargo helper contain fit")
+    assert(base_checksum != final_checksum, "expected Kain and C mutations to change bytes")
+    assert(c_before != c_after, "expected C bridge to mutate shared image bytes")
+
+fn main() -> String:
+    install_python_kernel()
+    assert(py_bridge_module_available("numpy"), "numpy must be available for the Kain image converter FFI smoke")
+
+    let width = 160
+    let height = 96
+    let phase = 17
+    let raw = py_bridge_call_raw("make_converter_rgba", [width, height, phase])
+    let shared_image = py_bridge_shared_image(raw)
+    let info = interop_shared_image_info(shared_image)
+    let base_bytes = interop_shared_image_bytes(shared_image)
+    let cargo_base_checksum = image_checksum(base_bytes)
+    let fit_w = fit_width(info.width, info.height, 64, 64, 0)
+    let fit_h = fit_height(info.width, info.height, 64, 64, 0)
+
+    let overlay_bytes = paint_kain_cross(base_bytes, info.width, info.height, phase)
+    c_bridge_shared_image_replace_bytes(shared_image, overlay_bytes)
+    let c_before = image_converter_fx_checksum(shared_image, info.byte_length)
+    image_converter_fx_tint_rgba(shared_image, info.byte_length, 91)
+    let c_after = image_converter_fx_checksum(shared_image, info.byte_length)
+    let final_bytes = interop_shared_image_bytes(shared_image)
+    let cargo_final_checksum = image_checksum(final_bytes)
+    let signature = image_signature("kain-image-converter", info.width, info.height, cargo_final_checksum, c_after)
+    let c_signature = image_converter_fx_signature(info.width, info.height, c_after, 91)
+    let workspace = image_converter_fx_workspace_create(info.width, info.height)
+    let workspace_area = image_converter_fx_workspace_area(workspace)
+    image_converter_fx_workspace_destroy(workspace)
+
+    let helper = js_bridge_import("./helpers/image_converter_node_bridge.mjs")
+    let base_ppm = js_bridge_call_method_raw(helper, "makePpmPayload", ["kain_image_converter_base", info.width, info.height, base_bytes, "base"])
+    let final_ppm = js_bridge_call_method_raw(helper, "makePpmPayload", ["kain_image_converter_final", info.width, info.height, final_bytes, signature])
+    let html = js_bridge_call_method(helper, "makeConverterDocument", ["Kain Image Converter Full Stack FFI", info.width, info.height, base_bytes, final_bytes, signature, c_signature, fit_w, fit_h])
+    let node_shared = js_web_shared_image(final_ppm)
+    let node_info = interop_shared_image_info(node_shared)
+
+    let html_path = output_path("kain-image-converter-ffi.html")
+    let base_path = output_path("kain-image-converter-base.ppm")
+    let final_path = output_path("kain-image-converter-final.ppm")
+    let report_path = output_path("kain-image-converter-ffi-report.txt")
+
+    js_web_document_write(html_path, html)
+    js_web_image_write(base_path, base_ppm)
+    js_web_image_write(final_path, final_ppm)
+
+    let report = "Kain image converter full-stack FFI smoke\n"
+    let report = report + "revision: " + str(GREEBLEFS_KAIN_IMAGE_TOOLS_REVISION) + "\n"
+    let report = report + "dims: " + str(info.width) + "x" + str(info.height) + "\n"
+    let report = report + "contract: " + info.contract + "\n"
+    let report = report + "source_runtime: " + info.source_runtime + "\n"
+    let report = report + "cargo_fit: " + str(fit_w) + "x" + str(fit_h) + "\n"
+    let report = report + "cargo_base_checksum: " + str(cargo_base_checksum) + "\n"
+    let report = report + "cargo_final_checksum: " + str(cargo_final_checksum) + "\n"
+    let report = report + "c_checksum_before: " + str(c_before) + "\n"
+    let report = report + "c_checksum_after: " + str(c_after) + "\n"
+    let report = report + "signature: " + signature + "\n"
+    let report = report + "c_signature: " + c_signature + "\n"
+    let report = report + "workspace_area: " + str(workspace_area) + "\n"
+    let report = report + "node_roundtrip_runtime: " + node_info.source_runtime + "\n"
+    let report = report + "python_role: generated the RGBA source raster\n"
+    let report = report + "kain_role: painted bytes and authored the tool contract\n"
+    let report = report + "cargo_role: calculated fit dimensions and checksums\n"
+    let report = report + "c_role: mutated the shared image through native ABI\n"
+    let report = report + "node_role: emitted HTML plus PPM preview artifacts\n"
+    let report = report + "html_path: " + html_path + "\n"
+    let report = report + "base_path: " + base_path + "\n"
+    let report = report + "final_path: " + final_path + "\n"
+
+    write_file(report_path, report + "\n")
+    println(report)
+    return report

@@ -172,6 +172,52 @@ export interface KainPluginGeneratedArtifact {
   status: string;
 }
 
+export interface KainPluginAuthoringFeature {
+  id: string;
+  label: string;
+  status: string;
+  sourcePath: string;
+  summary: string;
+}
+
+export interface KainPluginAuthoringExample {
+  id: string;
+  label: string;
+  path: string;
+  kind: string;
+  proof: string;
+  features: string[];
+}
+
+export interface KainPluginAuthoringReference {
+  id: string;
+  summary: string;
+  entry: string;
+  languageFeatures: KainPluginAuthoringFeature[];
+  examples: KainPluginAuthoringExample[];
+  designRules: string[];
+  smokeCommands: string[];
+}
+
+export interface KainPluginContract {
+  id: string;
+  kind: string;
+  symbol: string;
+  sourcePath: string;
+  status: string;
+  summary: string;
+}
+
+export interface KainPluginPipelineStage {
+  id: string;
+  label: string;
+  runtime: string;
+  entry: string;
+  status: string;
+  summary: string;
+  outputs: string[];
+}
+
 export interface KainPluginDefinition {
   id: string;
   name: string;
@@ -193,6 +239,9 @@ export interface KainPluginDefinition {
   wasmTargets: KainPluginWasmTarget[];
   cargoFfiTargets: KainPluginCargoFfiTarget[];
   generatedArtifacts: KainPluginGeneratedArtifact[];
+  authoring: KainPluginAuthoringReference | null;
+  contracts: KainPluginContract[];
+  pipelineStages: KainPluginPipelineStage[];
 }
 
 export interface KainPluginCatalog {
@@ -302,6 +351,49 @@ function normalizePreviewChrome(value: unknown): KainPluginPreviewWorkbenchChrom
     includePreviewTab: typeof source.includePreviewTab === "boolean" ? source.includePreviewTab : undefined,
     includeEditTab: typeof source.includeEditTab === "boolean" ? source.includeEditTab : undefined,
     topBarDensity: stringValue(source.topBarDensity),
+  };
+}
+
+function normalizeAuthoringReference(value: unknown): KainPluginAuthoringReference | null {
+  const source = asObject(value);
+  const id = stringValue(source?.id);
+  if (!source || !id) {
+    return null;
+  }
+
+  return {
+    id,
+    summary: stringValue(source.summary) ?? "",
+    entry: stringValue(source.entry) ?? "",
+    languageFeatures: normalizeList(source.languageFeatures, (featureSource) => {
+      const featureId = stringValue(featureSource.id);
+      if (!featureId) {
+        return null;
+      }
+      return {
+        id: featureId,
+        label: stringValue(featureSource.label) ?? featureId,
+        status: stringValue(featureSource.status) ?? "declared",
+        sourcePath: stringValue(featureSource.sourcePath) ?? "",
+        summary: stringValue(featureSource.summary) ?? "",
+      };
+    }),
+    examples: normalizeList(source.examples, (exampleSource) => {
+      const exampleId = stringValue(exampleSource.id);
+      if (!exampleId) {
+        return null;
+      }
+      return {
+        id: exampleId,
+        label: stringValue(exampleSource.label) ?? exampleId,
+        path: stringValue(exampleSource.path) ?? "",
+        kind: stringValue(exampleSource.kind) ?? "run",
+        proof: stringValue(exampleSource.proof) ?? "",
+        features: stringList(exampleSource.features),
+      };
+    }),
+    designRules: stringList(source.designRules),
+    smokeCommands: stringList(source.smokeCommands),
   };
 }
 
@@ -562,6 +654,36 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             source: stringValue(artifactSource.source) ?? "",
             target: stringValue(artifactSource.target) ?? "",
             status: stringValue(artifactSource.status) ?? "declared",
+          };
+        }),
+        authoring: normalizeAuthoringReference(pluginSource.authoring),
+        contracts: normalizeList(pluginSource.contracts, (contractSource) => {
+          const contractId = stringValue(contractSource.id);
+          if (!contractId) {
+            return null;
+          }
+          return {
+            id: contractId,
+            kind: stringValue(contractSource.kind) ?? "contract",
+            symbol: stringValue(contractSource.symbol) ?? "",
+            sourcePath: stringValue(contractSource.sourcePath) ?? "",
+            status: stringValue(contractSource.status) ?? "declared",
+            summary: stringValue(contractSource.summary) ?? "",
+          };
+        }),
+        pipelineStages: normalizeList(pluginSource.pipelineStages, (stageSource) => {
+          const stageId = stringValue(stageSource.id);
+          if (!stageId) {
+            return null;
+          }
+          return {
+            id: stageId,
+            label: stringValue(stageSource.label) ?? stageId,
+            runtime: stringValue(stageSource.runtime) ?? "kain",
+            entry: stringValue(stageSource.entry) ?? "",
+            status: stringValue(stageSource.status) ?? "declared",
+            summary: stringValue(stageSource.summary) ?? "",
+            outputs: stringList(stageSource.outputs),
           };
         }),
       };

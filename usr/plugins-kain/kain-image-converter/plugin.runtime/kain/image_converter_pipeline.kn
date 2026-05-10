@@ -11,13 +11,32 @@ fn append_action(actions, id: String, sidecar_action_id: String, lane: String):
     json_object_set(item, "lane", lane)
     json_array_push(actions, item)
 
+fn append_lane(lanes, id: String, status: String, source: String, role: String):
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "status", status)
+    json_object_set(item, "source", source)
+    json_object_set(item, "role", role)
+    json_array_push(lanes, item)
+
 fn main() -> Any:
     let actions = json_array_new()
+    let lanes = json_array_new()
+    let examples = json_array_new()
     let manifest = json_object_new()
     create_dir_all(output_path(""))
     append_action(actions, "kain.image.inspect", "kain.plugin.image_converter.inspect", "python")
     append_action(actions, "kain.image.plan-conversion", "kain.plugin.image_converter.plan", "python")
     append_action(actions, "kain.image.convert", "kain.plugin.image_converter.convert", "python")
+    append_lane(lanes, "python", "live", "src-python/greeblefs_sidecar/image_converter_runtime.py", "trusted byte IO")
+    append_lane(lanes, "node", "declared", "plugin.runtime/node/image_converter_node_bridge.kn", "fast raster/vector optimization")
+    append_lane(lanes, "cargo-ffi", "compiled-helper", "plugin.runtime/cargo/greeblefs-kain-image-tools", "native image math")
+    append_lane(lanes, "c-runtime", "available-in-kain", "plugin.runtime/c-runtime/image_converter_c_runtime_bridge.kn", "SDK/DLL/native codec bridge")
+    append_lane(lanes, "wasm", "declared", "plugin.runtime/wasm/image_converter_preview_worker.kn", "portable preview worker")
+    json_array_push(examples, "../kain-plugin-authoring-examples/00_minimal_plugin.kn")
+    json_array_push(examples, "../kain-plugin-authoring-examples/01_contracts_and_laws.kn")
+    json_array_push(examples, "../kain-plugin-authoring-examples/02_orchestrated_ffi_pipeline.kn")
+    json_array_push(examples, "../kain-plugin-authoring-examples/03_component_world_reference.kn")
 
     let report = "Kain image converter pipeline smoke\n"
     let report = report + "kain_role: authored the workbench/tool/action contract\n"
@@ -35,5 +54,7 @@ fn main() -> Any:
     json_object_set(manifest, "plugin", "usr/plugins-kain/kain-image-converter/plugin.kn")
     json_object_set(manifest, "report", output_path("kain-image-converter-report.txt"))
     json_object_set(manifest, "actions", actions)
+    json_object_set(manifest, "lanes", lanes)
+    json_object_set(manifest, "examples", examples)
     json_object_set(manifest, "summary", "Kain owns the image converter workflow contract; trusted host lanes execute Python now and Node/Cargo/C/WASM as they graduate.")
     return manifest

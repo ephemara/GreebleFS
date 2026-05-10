@@ -1,3 +1,14 @@
+# 2026-05-10 - Settings Fast-Entry CPU Guard
+
+- Fixed the Settings launch spike caused by restoring directly into deep Settings tabs after the monolith split.
+  - `src/components/SettingsPage.tsx` is now the fast overview entry and keeps `SettingsPageLegacy.tsx` lazy until the user explicitly selects a deep section or plugin settings path.
+  - A cold-start guard resets stale persisted `activeRailPath`, `activePluginSettingsSlotId`, and `activeSection` back to `Settings > Overview` while legacy loading is still disallowed, so opening Settings no longer immediately imports the 700KB legacy bundle.
+- Durable rule:
+  - Do not put heavy section imports, catalog rendering, or deep-tab bodies back into `SettingsPage.tsx`. Keep it as the compact entry shell, migrate real sections into `src/components/settings/sections/**`, and leave legacy loading behind explicit navigation only.
+- Validation:
+  - Focused Settings rail/panel Vitest coverage was run during the CPU pass.
+  - Touched-file TypeScript filtering reported no Settings diagnostics. Vite/Babel no longer reports the old oversized `SettingsPage.tsx` deopt; a separate native shell CPU loop may still need investigation if `greeblefs.exe` stays busy while Settings is closed.
+
 # 2026-05-10 - Kain Image Converter Workbench
 
 - Added the first real Kain-native tool plugin under `usr/plugins-kain/kain-image-converter/`.

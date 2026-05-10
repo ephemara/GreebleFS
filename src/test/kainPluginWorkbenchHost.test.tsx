@@ -146,6 +146,53 @@ const imagePlugin: KainPluginDefinition = {
   wasmTargets: [],
   cargoFfiTargets: [],
   generatedArtifacts: [],
+  authoring: {
+    id: 'kain-image-converter.reference',
+    summary: 'Reference Kain plugin.',
+    entry: 'usr/plugins-kain/kain-image-converter/plugin.kn',
+    languageFeatures: [
+      {
+        id: 'typed-domain-model',
+        label: 'Typed domain model',
+        status: 'live',
+        sourcePath: 'plugin.kn',
+        summary: 'Typed plugin source.',
+      },
+    ],
+    examples: [
+      {
+        id: 'minimal',
+        label: 'Minimal',
+        path: 'plugin.examples/00_minimal_plugin.kn',
+        kind: 'run',
+        proof: 'kain run',
+        features: ['workbench'],
+      },
+    ],
+    designRules: ['Kain owns intent'],
+    smokeCommands: ['kain run plugin.kn'],
+  },
+  contracts: [
+    {
+      id: 'tool.image-converter',
+      kind: 'tool',
+      symbol: 'build_image_converter_tool',
+      sourcePath: 'plugin.kn',
+      status: 'live',
+      summary: 'Tool contract.',
+    },
+  ],
+  pipelineStages: [
+    {
+      id: 'python-bytes',
+      label: 'Python',
+      runtime: 'python',
+      entry: 'worker.py',
+      status: 'live',
+      summary: 'Python sidecar.',
+      outputs: ['output-file'],
+    },
+  ],
 };
 
 describe('KainPluginWorkbenchHost', () => {
@@ -205,6 +252,11 @@ describe('KainPluginWorkbenchHost', () => {
       'data-kain-image-converter-tool',
       'kain-image-converter.tool',
     );
+    expect(container.querySelector('[data-kain-plugin-workbench-host]')).toHaveAttribute(
+      'data-kain-plugin-authoring-examples',
+      '1',
+    );
+    expect(container.querySelector('[data-kain-plugin-reference-strip]')).toBeTruthy();
     expect(screen.getByDisplayValue('D:/art/source.png')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Convert' }));

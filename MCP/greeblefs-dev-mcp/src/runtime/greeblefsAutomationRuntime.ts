@@ -240,6 +240,7 @@ export interface GreeblefsWorkspaceCommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  timedOut?: boolean;
 }
 
 export interface GreeblefsNativeWindowScreenshotResult {
@@ -1347,7 +1348,7 @@ export class GreeblefsAutomationRuntime {
     };
   }
 
-  async runWorkspaceCommand(command: string, options: { cwd?: string } = {}): Promise<GreeblefsWorkspaceCommandResult> {
+  async runWorkspaceCommand(command: string, options: { cwd?: string; timeoutMs?: number } = {}): Promise<GreeblefsWorkspaceCommandResult> {
     const cwd = options.cwd ? resolvePathInsideRepo(options.cwd) : repoRoot;
     const shellCommand = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
     const shellArgs = process.platform === 'win32'
@@ -1367,14 +1368,28 @@ export class GreeblefsAutomationRuntime {
       child.stderr?.on('data', (chunk) => {
         stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
+      let timedOut = false;
+      const timeoutMs = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+        ? Math.trunc(options.timeoutMs)
+        : null;
+      const timeoutHandle = timeoutMs
+        ? setTimeout(() => {
+          timedOut = true;
+          child.kill(process.platform === 'win32' ? undefined : 'SIGTERM');
+        }, timeoutMs)
+        : null;
       child.on('error', reject);
       child.on('exit', (code) => {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
         resolve({
           command,
           cwd: normalizeWindowsPathForJson(cwd),
-          exitCode: code ?? 0,
+          exitCode: timedOut ? 124 : code ?? 0,
           stdout: Buffer.concat(stdoutChunks).toString('utf8'),
-          stderr: Buffer.concat(stderrChunks).toString('utf8'),
+          stderr: `${Buffer.concat(stderrChunks).toString('utf8')}${timedOut ? `\nCommand timed out after ${timeoutMs}ms.` : ''}`,
+          timedOut: timedOut || undefined,
         });
       });
     });

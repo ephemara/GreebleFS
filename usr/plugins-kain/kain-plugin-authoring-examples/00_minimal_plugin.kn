@@ -1,0 +1,27 @@
+fn string_array_2(a: String, b: String) -> Array<String>:
+    let items = json_array_new()
+    json_array_push(items, a)
+    json_array_push(items, b)
+    return items
+
+fn main() -> Any:
+    let plugin = json_object_new()
+    let workbench = json_object_new()
+    let workbenches = json_array_new()
+    let actions = json_array_new()
+
+    json_object_set(workbench, "id", "example-image-tool.main")
+    json_object_set(workbench, "title", "Example Image Tool")
+    json_object_set(workbench, "rendererKind", "kain-host")
+    json_object_set(workbench, "actions", string_array_2("example.inspect", "example.convert"))
+    json_array_push(workbenches, workbench)
+    json_array_push(actions, "example.inspect")
+    json_array_push(actions, "example.convert")
+
+    json_object_set(plugin, "schemaVersion", 1)
+    json_object_set(plugin, "kind", "greeblefs.kain.plugin.example")
+    json_object_set(plugin, "id", "example-image-tool")
+    json_object_set(plugin, "source", "usr/plugins-kain/kain-plugin-authoring-examples/00_minimal_plugin.kn")
+    json_object_set(plugin, "workbenches", workbenches)
+    json_object_set(plugin, "actions", actions)
+    return plugin

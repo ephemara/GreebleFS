@@ -1,0 +1,25 @@
+component ImageConverterReferenceApp():
+    render <slot layout="column" gap={10} padding={12}>
+        <panel title="Kain Image Converter" scope="plugin-reference" variant="tool" layout="column" gap={5}>
+            <text role="hero">Kain plugin source owns the contract.</text>
+            <text role="caption">GreebleFS renders trusted primitives and routes host actions.</text>
+        </panel>
+        <slot layout="row" gap={8}>
+            <panel title="Live">
+                <text role="caption">Python Pillow writes current output bytes.</text>
+            </panel>
+            <panel title="Next">
+                <text role="caption">Node Cargo C and WASM lanes can graduate behind permissions.</text>
+            </panel>
+        </slot>
+    </slot>
+
+world ImageConverterReferenceWorld:
+    state revision: Int = 1
+    surface native_ui => ImageConverterReferenceApp
+    surface web => ImageConverterReferenceApp
+    surface viewport3d => "ImageConverterPreviewSpace"
+
+fn main() -> Int:
+    return 0
+

@@ -1,0 +1,31 @@
+fn main() -> Any:
+    let manifest = json_object_new()
+    let libraries = json_array_new()
+    let actions = json_array_new()
+    let formats = json_array_new()
+
+    json_array_push(libraries, "stb_image")
+    json_array_push(libraries, "stb_image_write")
+    json_array_push(libraries, "vendor-sdk-codecs")
+
+    json_array_push(actions, "decode-native")
+    json_array_push(actions, "encode-native")
+    json_array_push(actions, "probe-codec-capabilities")
+    json_array_push(actions, "bridge-vendor-sdk")
+
+    json_array_push(formats, "dds")
+    json_array_push(formats, "tga")
+    json_array_push(formats, "exr")
+    json_array_push(formats, "vendor-native")
+
+    json_object_set(manifest, "id", "kain-image-converter.c-runtime-bridge")
+    json_object_set(manifest, "kind", "c-runtime-bridge")
+    json_object_set(manifest, "status", "available-in-kain")
+    json_object_set(manifest, "source", "usr/plugins-kain/kain-image-converter/plugin.runtime/c-runtime/image_converter_c_runtime_bridge.kn")
+    json_object_set(manifest, "bridge", "Kain C runtime")
+    json_object_set(manifest, "libraries", libraries)
+    json_object_set(manifest, "actions", actions)
+    json_object_set(manifest, "futureFormats", formats)
+    json_object_set(manifest, "currentRole", "declared native codec lane; Python sidecar remains the live encoder path")
+    json_object_set(manifest, "promotionRule", "Promote only stable trusted codec boundaries into Rust after the Kain lane proves value.")
+    return manifest

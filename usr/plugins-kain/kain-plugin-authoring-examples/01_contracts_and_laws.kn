@@ -1,0 +1,46 @@
+type ImagePath = String
+
+enum ConversionLane:
+    Kain
+    Python
+    Node
+    Cargo
+
+struct ConversionJob:
+    source_path: ImagePath
+    output_format: String
+    width: Int
+    height: Int
+    lane: ConversionLane
+
+trait SummaryLine:
+    fn summary_line(_self: Self_) -> String:
+        let __trait_placeholder = none
+
+fn lane_name(lane: ConversionLane) -> String:
+    match lane:
+        ConversionLane::Kain => "kain"
+        ConversionLane::Python => "python"
+        ConversionLane::Node => "node"
+        ConversionLane::Cargo => "cargo-ffi"
+        _ => "unknown"
+
+impl SummaryLine for ConversionJob:
+    fn summary_line(_self: Self_) -> String:
+        return f"{_self.source_path}->{_self.output_format}:{_self.width}x{_self.height}:{lane_name(_self.lane)}"
+
+fn conversion_job_summary(job: ConversionJob) -> String:
+    return f"{job.source_path}->{job.output_format}:{job.width}x{job.height}:python"
+
+law supported_output_format(format: String) -> Bool:
+    return format == "png" or format == "jpg" or format == "webp" or format == "ico" or format == "svg"
+
+law safe_dimensions(width: Int, height: Int) -> Bool:
+    return width >= 0 and height >= 0
+
+fn main() -> Int:
+    let job = ConversionJob { source_path: "D:/art/source.png", output_format: "png", width: 256, height: 256, lane: ConversionLane::Python }
+    println(conversion_job_summary(job))
+    if supported_output_format(job.output_format) and safe_dimensions(job.width, job.height):
+        return 0
+    return 1

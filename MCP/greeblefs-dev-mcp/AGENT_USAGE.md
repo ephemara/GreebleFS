@@ -17,6 +17,7 @@ Default tools:
 - `gfs_host`: read/call extension-host methods.
 - `gfs_events`: inspect, subscribe to, and publish host events.
 - `gfs_code`: gather coding context, git state, memory, architecture, and workspace file data.
+- `gfs_kain`: read Kain docs/examples and run the active local Kain CLI.
 - `gfs_validate`: plan and run focused validation plus native performance probes.
 
 ## Quick Start
@@ -58,6 +59,8 @@ Use that with `gfs_app`. If the app is reachable, attach with `gfs_app command=a
   - `describe`, `snapshot`, `subscribe`, `read`, `unsubscribe`, `publish`.
 - `gfs_code`
   - `agent_context`, `git_status`, `git_branch`, `git_recent_commits`, `git_changed_files`, `git_diff`, `git_show`, `memory_recent`, `memory_search`, `architecture`, `lessons`, `workspace_read`, `workspace_write`, `workspace_list`, `workspace_stat`, `workspace_delete`, `workspace_run`.
+- `gfs_kain`
+  - `overview`, `guide`, `search`, `examples`, `cli`, `doctor`, `run`, `validate_examples`.
 - `gfs_validate`
   - `plan`, `run`, `typecheck`, `test_file`, `rust_test`, `smoke`, `smoke_screenshot`, `runtime_stack_quick`, `native_ring_benchmark`.
 
@@ -114,6 +117,48 @@ Probe WebView2 native ring throughput:
 ```
 
 Use that with `gfs_validate`. It posts a benchmark-scoped native ring to the target WebView and returns packet/byte/drop/timing telemetry.
+
+Get current Kain guidance:
+
+```json
+{ "command": "overview" }
+```
+
+Use that with `gfs_kain`. It returns the canonical doc roots, quickstart/guide-map excerpts, and live `.cargo/bin/kain.exe` help/doctor output.
+
+Read a Kain guide:
+
+```json
+{ "command": "guide", "path": "syntax-and-semantics/types.md" }
+```
+
+Search the Kain docs and FFI examples:
+
+```json
+{ "command": "search", "query": "import-crate", "roots": ["guides", "ffi_examples"], "limit": 40 }
+```
+
+List or inspect FFI examples:
+
+```json
+{ "command": "examples" }
+```
+
+```json
+{ "command": "examples", "path": "c_ffi/beacon_math/README.md" }
+```
+
+Run the active local Kain CLI:
+
+```json
+{ "command": "cli", "args": ["build", "src-kain/guides/examples/00_hello_and_cli.kn", "-t", "rust", "-o", "generated/kain-proof/hello"] }
+```
+
+Validate the docs example ladder through the canonical validator:
+
+```json
+{ "command": "validate_examples", "path": "00_hello_and_cli.kn" }
+```
 
 Discover host methods:
 
@@ -184,6 +229,20 @@ Then call:
 ```
 
 with `gfs_host`.
+
+## Kain
+
+Kain is private and not part of model pretraining. Treat `gfs_kain` as the first stop before editing or judging `.kn` code.
+
+Truth order:
+
+- live CLI output from `C:\Users\Admin\.cargo\bin\kain.exe`
+- `src-kain/guides/quickstart.md`
+- `src-kain/guides/README.md`
+- focused guide files under `src-kain/guides/**`
+- current smoke/proof lanes under `src-kain/ffi/examples/**`
+
+Prefer `gfs_kain command=overview` before making assumptions. Use `guide` for one doc, `search` for concepts/errors, `examples` for FFI smoke surfaces, `doctor` for active binary truth, `cli` for explicit compiler commands, `run` for `.kn` files, and `validate_examples` for the canonical docs example validator.
 
 ## Validation
 

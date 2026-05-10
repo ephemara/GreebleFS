@@ -12,6 +12,8 @@ pub struct FitDimensions {
     pub height: u32,
 }
 
+pub const GREEBLEFS_KAIN_IMAGE_TOOLS_REVISION: i64 = 2;
+
 pub fn plan_fit_dimensions(
     source_width: u32,
     source_height: u32,
@@ -53,6 +55,59 @@ pub fn plan_fit_dimensions(
         width: ((source_width as f64 * scale).round() as u32).max(1),
         height: ((source_height as f64 * scale).round() as u32).max(1),
     }
+}
+
+pub fn fit_width(
+    source_width: i64,
+    source_height: i64,
+    target_width: i64,
+    target_height: i64,
+    mode: i64,
+) -> i64 {
+    plan_fit_dimensions(
+        source_width.max(1) as u32,
+        source_height.max(1) as u32,
+        target_width.max(1) as u32,
+        target_height.max(1) as u32,
+        ffi_mode(mode.max(0) as u32),
+    )
+    .width as i64
+}
+
+pub fn fit_height(
+    source_width: i64,
+    source_height: i64,
+    target_width: i64,
+    target_height: i64,
+    mode: i64,
+) -> i64 {
+    plan_fit_dimensions(
+        source_width.max(1) as u32,
+        source_height.max(1) as u32,
+        target_width.max(1) as u32,
+        target_height.max(1) as u32,
+        ffi_mode(mode.max(0) as u32),
+    )
+    .height as i64
+}
+
+pub fn image_checksum(bytes: Vec<i64>) -> i64 {
+    let mut total = 0i64;
+    for (index, value) in bytes.iter().enumerate() {
+        let weight = ((index as i64) % 37) + 11;
+        total = (total + value * weight + ((index as i64) % 101)) % 1_000_000_007;
+    }
+    total
+}
+
+pub fn image_signature(
+    label: String,
+    width: i64,
+    height: i64,
+    cargo_checksum: i64,
+    c_checksum: i64,
+) -> String {
+    format!("{label}:{width}x{height}:cargo{cargo_checksum}:c{c_checksum}")
 }
 
 fn ffi_mode(mode: u32) -> FitMode {

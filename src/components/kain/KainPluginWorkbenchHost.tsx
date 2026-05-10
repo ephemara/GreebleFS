@@ -60,6 +60,10 @@ export function KainPluginWorkbenchHost({
     : kainPlugin.ffiCapabilities.map((capability) => capability.lane);
   const uniqueFfiLanes = [...new Set(surfaceFfiLanes)].slice(0, 8);
   const summary = surface?.summary || kainPlugin.description;
+  const authoringFeatureCount = kainPlugin.authoring?.languageFeatures.length ?? 0;
+  const authoringExampleCount = kainPlugin.authoring?.examples.length ?? 0;
+  const contractCount = kainPlugin.contracts.length;
+  const pipelineStageCount = kainPlugin.pipelineStages.length;
 
   const runAction = async (
     action: KainPluginAction,
@@ -107,6 +111,10 @@ export function KainPluginWorkbenchHost({
       data-kain-plugin-mode={mode}
       data-kain-plugin-surface={surface?.id ?? "none"}
       data-kain-plugin-ffi-lanes={uniqueFfiLanes.join("|")}
+      data-kain-plugin-authoring-features={authoringFeatureCount}
+      data-kain-plugin-authoring-examples={authoringExampleCount}
+      data-kain-plugin-contracts={contractCount}
+      data-kain-plugin-pipeline-stages={pipelineStageCount}
       style={{
         width: "100%",
         height: "100%",
@@ -140,6 +148,18 @@ export function KainPluginWorkbenchHost({
         <Metric label="cargo" value={String(kainPlugin.cargoFfiTargets.length)} />
         <Metric label="actions" value={String(kainPlugin.actions.length)} />
       </div>
+
+      {authoringFeatureCount || authoringExampleCount || contractCount || pipelineStageCount ? (
+        <div
+          data-kain-plugin-reference-strip="true"
+          style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}
+        >
+          <Metric label="features" value={String(authoringFeatureCount)} />
+          <Metric label="examples" value={String(authoringExampleCount)} />
+          <Metric label="contracts" value={String(contractCount)} />
+          <Metric label="stages" value={String(pipelineStageCount)} />
+        </div>
+      ) : null}
 
       {file ? (
         <div

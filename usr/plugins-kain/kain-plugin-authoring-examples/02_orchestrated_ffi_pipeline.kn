@@ -1,0 +1,55 @@
+struct ImagePipelineState:
+    revision: Int
+    active_jobs: Int
+
+component ImageConverterPipelineApp():
+    render <panel title="Image Converter Pipeline">
+        <text role="caption">Kain selects lanes while host runtimes execute trusted work.</text>
+    </panel>
+
+world ImageConverterWorld:
+    state revision: Int = 1
+    state active_jobs: Int = 0
+    surface native_ui => ImageConverterPipelineApp
+    surface web => ImageConverterPipelineApp
+    surface viewport3d => "ImageConverterPreviewSpace"
+
+patch mark_job(studio: ImageConverterWorld, next_revision: Int) -> Int:
+    studio.active_jobs = studio.active_jobs + 1
+    studio.revision = next_revision
+    return studio.active_jobs
+
+law format_is_convertible(format: String) -> Bool:
+    return format == "png" or format == "webp" or format == "svg" or format == "ico"
+
+converge select_conversion_lane(format: String) -> String:
+    spec reference:
+        if format == "svg":
+            return "python"
+        if format == "ico":
+            return "python"
+        return "python"
+    fast node_optimizer when capability("ffi.node"):
+        if format == "svg":
+            return "node"
+        return "python"
+    fast cargo_helper when capability("ffi.cargo"):
+        if format == "ico":
+            return "cargo-ffi"
+        return "python"
+
+fn stage_label(value: String) -> String:
+    return value
+
+orchestrate convert_pipeline(format: String) -> String:
+    let selected: String = kain select_conversion_lane(format)
+    let inspected: String = python stage_label(selected)
+    let optimized: String = node stage_label(inspected)
+    return optimized
+
+fn main() -> Int:
+    let studio = ImageConverterWorld
+    let count = mark_job(studio, 2)
+    if count == 1 and format_is_convertible("png"):
+        return 0
+    return 1

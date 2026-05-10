@@ -1,0 +1,27 @@
+[package]
+name = "kain_plugin_ffi_full_stack_example"
+version = "0.2.0"
+
+[build]
+entry = "smoke.kn"
+output = "outputs"
+targets = ["run", "test"]
+
+[node_ffi]
+command = "node"
+args = []
+cwd = "."
+
+[rust_ffi]
+manifest_path = "../kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools/Cargo.toml"
+
+[[rust_ffi.path_crates]]
+name = "greeblefs_kain_image_tools"
+path = "../kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools"
+
+[c_ffi]
+
+[[c_ffi.libraries]]
+name = "image_converter_fx"
+header = "native/image_converter_fx.h"
+shared_lib = "native/${kain_dynlib:image_converter_fx}"

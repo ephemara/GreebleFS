@@ -7,7 +7,7 @@
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "doors",
+    "activeThemeId": "catppuccin",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1,
+    "appZoom": 0.7499999999999998,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -2406,7 +2406,7 @@
         }
       }
     },
-    "collectionPreviewMode": "overview",
+    "collectionPreviewMode": "list",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
     "contextMenuLayoutOverridesByContext": {
