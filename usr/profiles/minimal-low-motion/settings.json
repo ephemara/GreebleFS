@@ -7,7 +7,7 @@
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "catppuccin",
+    "activeThemeId": "doors",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -546,6 +546,307 @@
     "activeMenuPackId": "greeblefs-default-explorer-menu",
     "activityRailOpenMode": "single",
     "chromeLayoutOverridesByThemeId": {
+      "catppuccin": {
+        "default": {
+          "entries": [
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "toggleSources",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateBack",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 38,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateForward",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 76,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "navigateUp",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryStart"
+            },
+            {
+              "anchorX": 116,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "addressBar",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": false,
+              "showLabel": true,
+              "surfaceId": "explorerToolbar",
+              "widthPx": 720,
+              "zone": "primaryCenter"
+            },
+            {
+              "anchorX": 840,
+              "anchorY": 0,
+              "bandId": "primary",
+              "controlId": "focusAddressBar",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "showIcon": true,
+              "showLabel": false,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "togglePreview",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "selectionModeToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "toggleHiddenFiles",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "controlId": "refresh",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 50,
+              "surfaceId": "explorerToolbar",
+              "zone": "primaryEnd"
+            },
+            {
+              "anchorX": 0,
+              "anchorY": 0,
+              "bandId": "secondary",
+              "controlId": "recentLocations",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "anchorX": 160,
+              "anchorY": 0,
+              "bandId": "secondary",
+              "controlId": "pinnedLocations",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "controlId": "selectionSizeSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "controlId": "actionsPaneToggle",
+              "hidden": false,
+              "offsetPx": 166,
+              "order": 40,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryStart"
+            },
+            {
+              "controlId": "pinLocation",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "toggleSearchContent",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "semanticIndexBuild",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "saveSearch",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "batchRename",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 50,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "tagSelection",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 60,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "duplicateScan",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 70,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "undoTrash",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 80,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "newFolder",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 90,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "newFile",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 100,
+              "surfaceId": "explorerToolbar",
+              "zone": "secondaryEnd"
+            },
+            {
+              "controlId": "statusItemCount",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusModeProfile",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusViewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "zone": "start"
+            },
+            {
+              "controlId": "statusPreviewSummary",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "center"
+            },
+            {
+              "controlId": "statusTaskBadge",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 10,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            },
+            {
+              "controlId": "terminalDrawerToggle",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 20,
+              "surfaceId": "explorerStatusBar",
+              "zone": "end"
+            },
+            {
+              "controlId": "statusViewSize",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 30,
+              "surfaceId": "explorerStatusBar",
+              "widthPx": 220,
+              "zone": "end"
+            },
+            {
+              "controlId": "statusViewToggles",
+              "hidden": false,
+              "offsetPx": 0,
+              "order": 40,
+              "surfaceId": "explorerStatusBar",
+              "widthPx": 292,
+              "zone": "end"
+            }
+          ]
+        }
+      },
       "dracula": {
         "default": {
           "entries": [
@@ -2105,7 +2406,7 @@
         }
       }
     },
-    "collectionPreviewMode": "list",
+    "collectionPreviewMode": "overview",
     "confirmDelete": true,
     "contextMenuItemOverrides": {},
     "contextMenuLayoutOverridesByContext": {
@@ -2327,7 +2628,7 @@
       "timeline-surface": 0
     },
     "explorerWidgetStateByInstanceId": {},
-    "folderClickMode": "double",
+    "folderClickMode": "single",
     "folderIconRules": [
       {
         "icon": "folder_ai",
@@ -2523,7 +2824,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.28,
+    "gridZoom": 0.5,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2551,7 +2852,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "details"
+    "viewMode": "icons-m"
   },
   "home": {
     "activePackId": null,
@@ -2674,7 +2975,7 @@
         ]
       },
       "overlay-classic": {
-        "activePanelId": "git",
+        "activePanelId": "explorer",
         "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",
@@ -2684,7 +2985,10 @@
           "plugins",
           "terminal",
           "go-sample-panel",
-          "notes"
+          "notes",
+          "kain-workbench-smoke",
+          "greeblefs-index-photo-gallery",
+          "greeblefs-workbench-sqlite"
         ]
       }
     },
@@ -2926,7 +3230,7 @@
         "version": 3
       }
     },
-    "zenFocusMode": false
+    "zenFocusMode": true
   },
   "plugins": {
     "enablementByPluginId": {},
@@ -2956,6 +3260,6 @@
     "showSidebar": false,
     "windowMode": "windowed",
     "windowedHeight": 936,
-    "windowedWidth": 846
+    "windowedWidth": 1683
   }
 }

@@ -1,0 +1,478 @@
+# Kain Architecture
+
+This file is the durable repo overview for the current Kain checkout.
+It is the fast way for future agents to understand what Kain is, where the important code lives, and which architectural rules matter enough to preserve.
+
+## Documentation System
+
+The repo's documentation is deliberately split by trust level and reader intent:
+
+- `guides/` is the canonical long-form guide tree for the live checkout.
+- `guides/reference/legacy-crosswalk.md` translates stale prose and old folder names into the current guide tree.
+- `guides/pipelines/` holds the conceptual Omni and Fabric orchestration pages.
+- `guides/ue5/` holds the conceptual Unreal-facing authoring and packaging pages.
+- `docs/` is legacy support material and may lag behind the code; do not promote it back to the source of truth.
+- `docs/examples/` is the deliberate exception inside `docs/`: it is now a runnable, manifest-driven Kain source suite with real `.kn` files plus a validator, and it exists to give agents a locally proven authoring ladder.
+- `smoketest/`, `apps/`, `unreal_plugins/`, and `kn_library/` are workflow, proof, and corpus surfaces that support the guide tree rather than replace it.
+
+When the docs and code disagree, treat the mismatch as a signal to update the canonical guide tree from source rather than to copy the stale wording forward.
+
+## What Kain Is
+
+Kain is a compiled multi-target language toolchain, an executable semantic runtime, and an embeddable host stack.
+
+It is not only a `KAIN.toml`/materialization language or an orchestration shell over Rust, C, Python, Node, and GPU targets. `crates/kain-core` already owns real language execution for substantial parts of Kain itself: parsing, `comptime`, executable-body typechecking, direct interpretation of functions and blocks, closures, control flow, `match`, async/await, actor semantics, JSX/UI expression evaluation, and runtime execution of compiler-owned declarations such as `patch`, `converge`, `world`, and `orchestrate`.
+
+The build, packaging, and adapter crates matter because Kain is meant to ship into multiple targets, not because the language is limited to manifests and glue. The durable architecture rule is: keep authored logic in Kain when it belongs to Kain semantics, and use host bridges when the capability is genuinely platform-, ABI-, or ecosystem-owned.
+
+The repo currently spans five connected layers:
+
+1. `crates/kain-core`
+Language semantics, parsing, typing, effects, comptime, interpreter lanes, runtime-contract emission, shader metadata, and other compiler-owned truth.
+
+2. Materialization, import, and build orchestration
+`crates/kain-driver`, `crates/kain-omni`, `crates/kain-selfhost`, `crates/kain-build`, and importer crates turn Kain semantic truth into emitted bundles, packaged artifacts, imported surfaces, and multi-runtime workflows.
+
+3. Runtime and host bridges
+`runtime/native` is the canonical ABI floor and C runtime substrate. `crates/kain-host`, `crates/kain-sdk`, `crates/kain-reflect`, `crates/kain-c-ffi`, `crates/kain-crate-ffi`, `crates/kain-python`, `crates/kain-node`, and `crates/kain-interop` provide host/runtime integration.
+
+4. UI, native desktop, and 3D
+`crates/kain-ui`, `crates/kain-ui-native`, and `crates/kain-3D` are the semantic UI and accelerated native presentation stack.
+
+5. Target adapters
+`crates/web`, `crates/gpu`, `crates/kain-gpu-runtime`, and the `crates/ue5*` family consume compiler-owned contracts for specific runtime environments.
+
+## Non-Negotiable Ownership
+
+- `crates/kain-core` owns language meaning, typed metadata, executable semantics, capability requirements, and shader/compute-plan semantics.
+- `crates/kain-driver` owns emitted bundle truth and app/runtime materialization.
+- `runtime/native` owns the stable ABI floor, startup, service contracts, and low-level host/runtime substrate.
+- Host bridges and adapters extend Kain into external ecosystems; they do not downgrade Kain source into "configuration only."
+- Accelerated Rust lanes may optimize execution, but they must consume the same compiler-owned bundles rather than inventing a second semantic model.
+- Web, UE5, selfhost, and future lanes are adapters, not alternate definitions of what Kain source means.
+
+## Main Folders
+
+- [README.md](/M:/Code/Kain/README.md): repo-level operating brief
+- [repomap.md](/M:/Code/Kain/repomap.md): top-level folder map
+- [MEMORY.md](/M:/Code/Kain/MEMORY.md): durable architectural task memory
+- [scripts](/M:/Code/Kain/scripts): directory-only operational tree. `scripts/docs/` holds the indexes and guide docs; `scripts/kain/` holds executable KAIN filesystem automation built on real runtime helpers like `read_dir`, `path_*`, `create_dir_all`, `copy_file`, `remove_file`, `read_file`, `write_file`, `file_exists`, and `env`; `scripts/kain/actor/` adds real actor-system demos for supervisor/worker fan-out and extension bucketing; `scripts/linux/`, `scripts/windows/`, `scripts/python/`, `scripts/rust/`, and `scripts/tests/` hold the other executable helpers and fixtures.
+- [guides](/M:/Code/Kain/guides): canonical long-form guide tree for the live language, runtime, CLI, and example lanes
+- [guides/reference/legacy-crosswalk.md](/M:/Code/Kain/guides/reference/legacy-crosswalk.md): bridge from stale prose to the current canonical docs
+- [docs/kainplan/ui_slate_x100](/M:/Code/Kain/docs/kainplan/ui_slate_x100): legacy UI overhaul docs, acceptance criteria, regression notes, and Gamma operator guidance
+- [docs/kainplan/08_COMPILER_OWNED_INTENT_QUARTET.md](/M:/Code/Kain/docs/kainplan/08_COMPILER_OWNED_INTENT_QUARTET.md): legacy syntax, lowering, bundle contracts, and validation notes for the compiler-owned intent suite: `law`, `patch`, `converge`, `world`, and `orchestrate`
+- [crates](/M:/Code/Kain/crates): workspace crates
+- [runtime](/M:/Code/Kain/runtime): native runtime substrate, conformance, fixtures, and companion lanes
+- [smoketest](/M:/Code/Kain/smoketest): capability proof matrix for bridges, UI, 3D, and mixed runtimes
+- [smoketest/compiler_owned_intent](/M:/Code/Kain/smoketest/compiler_owned_intent): compiler-owned intent suite smoke covering `kain run` plus LLVM runtime-contract / realtime-bundle staging
+- [smoketest/UI](/M:/Code/Kain/smoketest/UI): UI proof surface for authored shells, dense operator layouts, shader-canvas proofs, and packaged native launches
+- [smoketest/allinone](/M:/Code/Kain/smoketest/allinone): broad regression harness that replays importers, standalone FFI bridges, GPU artifacts, Omni, Fabric, and UE5 codegen into per-lane output folders
+- [docs](/M:/Code/Kain/docs): legacy doctrine, plans, pipeline notes, validation notes, and research
+- [docs/examples](/M:/Code/Kain/docs/examples): runnable example ladder built from real `.kn` files, with `examples_manifest.json` and `validate_examples.py` as the durable validation surface for future agents
+- [guides](/M:/Code/Kain/guides): canonical long-form language, runtime, CLI, and reference guides
+- [apps](/M:/Code/Kain/apps): first-class applications and prototypes
+- [website](/M:/Code/Kain/website): the official KAIN public site, data-driven launch surface, and browser playground; this is now the canonical website dogfood for the public-site archetype
+- [tools/kain-flight-control](tools/kain-flight-control): repo-native Go MCP sidecar for lane resolution, context packing, validation planning, allowlisted command execution, artifact inspection, failure triage, and paired-surface drift checks; the root `mcp.json` and `codex.config.toml` templates both launch it through `KAIN_REPO_ROOT`
+- [apps/kain-fabric-modeler](/M:/Code/Kain/apps/kain-fabric-modeler): Fabric-first native 3D modeling app scaffold that converges Python, Kain, C ABI, Rust crate, GPU compute, Node, and native-ui packaging
+- [apps/kain-fabric-dcc-suite](/M:/Code/Kain/apps/kain-fabric-dcc-suite): broader flagship Fabric-first DCC suite scaffold with scene, ingest, sculpt, material, rig, animation, sim, render, compositor, publish, automation, and tensor planning lanes
+- [apps/kain-canvas-forge](/M:/Code/Kain/apps/kain-canvas-forge): Node-first desktop-ready painting and Three.js composition studio prototype that proves a browser and `.exe` app lane can live under `apps/`
+- [docs/reference/dcc-parity-matrix.md](/M:/Code/Kain/docs/reference/dcc-parity-matrix.md): flagship KSculpt and KPainter parity inventory, baseline rules, and validation entrypoint
+- [scripts/python/validate_dcc_parity_matrix.py](/M:/Code/Kain/scripts/python/validate_dcc_parity_matrix.py): strict validator for the machine-readable parity inventory owned by `apps/kain-fabric-dcc-suite/config/dcc_parity_matrix.json`
+- [scripts/python/run_dcc_parity_harness.py](/M:/Code/Kain/scripts/python/run_dcc_parity_harness.py): executable scenario harness for the highest-priority shared, sculpt, and painter parity hooks
+- [stdlib](/M:/Code/Kain/stdlib): runtime support and standard library data, including the root `gen_server.kn` helper that layers `gen_server_start`, `gen_server_call`, `gen_server_cast`, and `gen_server_info` on top of raw actor primitives; `start_link` is currently naming-only until real link semantics land
+- [testing](/M:/Code/Kain/testing): test infrastructure and fixtures
+- [src](src): owned selfhost root; keep only `src/core`, source docs, `src/.legacy`, and `src/.rustimport` at the top level
+- [src/core](src/core): canonical owned Kain core surface; this is the active hand-authored selfhost language tree
+- [src/.rustimport](src/.rustimport): reference-only donor and phase2 mirror root; `reference/` holds the moved Rust import corpus and `phase2/` is the canonical live selfhost mirror root
+- [src/.legacy](src/.legacy): archival donor tree kept for historical reference only
+- [ouroboros](ouroboros): selfhost control-plane manifests, repair tooling, inventories, reports, and pipeline automation
+
+## Docs And Example Ownership
+
+- `guides/README.md` is the top-level reader map for the canonical guide tree.
+- `guides/quickstart.md` should stay short and point outward to the deeper pages, not become a second manual.
+- `docs/examples/README.md` is the operator-facing entrypoint for the runnable example ladder, and `docs/examples/examples_manifest.json` is the machine-readable source of truth for validation commands and coverage tags.
+- `docs/examples/validate_examples.py` is the canonical way to prove the local example ladder. Keep per-example validation metadata in the manifest rather than scattering it across prose pages.
+- `docs/reference/dcc-parity-matrix.md` is the canonical operator page for flagship KSculpt and KPainter parity, while `apps/kain-fabric-dcc-suite/config/dcc_parity_matrix.json` is the machine-readable source of truth and `scripts/python/validate_dcc_parity_matrix.py` is the validator.
+- `scripts/python/run_dcc_parity_harness.py` is the executable scenario layer for the DCC parity program. Keep structural/shared scenario checks there instead of inventing ad-hoc one-off validation snippets.
+- `guides/pipelines/*` and `guides/ue5/*` are conceptual deep-dive pages for orchestration and Unreal-facing authoring. Keep the CLI pages focused on command syntax and keep the conceptual pages focused on data models, validation, and outputs.
+- `guides/syntax-and-semantics/functions-traits-and-impls.md` is the canonical chapter for function signatures, traits, and impl blocks.
+- `guides/syntax-and-semantics/low-level-memory.md` is the canonical memory/provenance chapter, and `guides/runtime/compiler-owned-intents.md` is the canonical runtime-intent chapter for `patch`, `law`, `converge`, `world`, and `orchestrate`.
+- `guides/reference/troubleshooting.md` is for recurring operator failures and should point readers to the live code, the current CLI, and the legacy crosswalk when old terminology shows up.
+- `guides/reference/legacy-crosswalk.md` is the bridge from stale prose to current docs; update it whenever old terminology or historical topics surface again.
+
+## Key Crates
+
+- [kain-core](/M:/Code/Kain/crates/kain-core): parser, AST, executable-body semantic typechecker, shared filesystem module resolution (`module_resolution.rs`), compiler-owned source formatter, `comptime`, interpreter/runtime execution for real Kain logic, runtime contract emission, realtime bundle metadata, and the compiler-owned intent suite (`law`, `patch`, `converge`, `world`, `orchestrate`)
+- [kain-driver](/M:/Code/Kain/crates/kain-driver): target orchestration, shader bundles, hybrid JS/WASM artifact emission, native app materialization, packaged launcher snapshots, compute residency sidecars, and thin embeddable frontend helpers such as `format_source`
+- [cli](/M:/Code/Kain/crates/cli): `kain` command surface, including `kain format` / `kain fmt` for canonical source formatting plus multi-file target writers such as real hybrid `.hybrid` + `.js` + `.ts` + `.wasm` bundle emission
+- [kain-sys-codegen](/M:/Code/Kain/crates/kain-sys-codegen): native backend emitters, now including LLVM, Rust, C++, and an experimental direct C backend under `src/codegen_c.rs`
+- [kain-repair](/M:/Code/Kain/crates/kain-repair): profile-driven deterministic source repair engine consumed by the doctor/CLI repair lane; now split into a declarative rule registry plus a per-rule execution engine so repair policy stays visible and mode-aware; includes header normalization for parser-hostile `enum_` / `struct_` / `trait_` / `impl_` declaration forms
+- [kain-host](/M:/Code/Kain/crates/kain-host): Rust embedding and native function registration
+- [kain-reflect](/M:/Code/Kain/crates/kain-reflect): reflection schemas and type identity
+- [kain-sdk](/M:/Code/Kain/crates/kain-sdk): high-level embedding facade
+- [kain-interop](/M:/Code/Kain/crates/kain-interop): shared buffer/image payload contracts
+- [kain-gpu-runtime](/M:/Code/Kain/crates/kain-gpu-runtime): Vulkan compute executor consuming emitted shader bundles and residency metadata
+- [kain-ui](/M:/Code/Kain/crates/kain-ui): semantic UI graph and patch-oriented UI meaning
+- [kain-ui-native](/M:/Code/Kain/crates/kain-ui-native): native desktop host/runtime lane
+- [kain-ui-tauri](/M:/Code/Kain/crates/kain-ui-tauri): Tauri 2 desktop adapter generator, reflective bridge manifest builder, capability/permission preset catalog, and generated host/frontend scaffold for the webview desktop lane
+- [kain-3D](/M:/Code/Kain/crates/kain-3D): native 3D renderer and viewport runtime
+
+## Primary Data Flows
+
+### Semantic execution flow
+
+`Kain source -> lexer/parser -> comptime -> executable-body typecheck -> kain-core runtime/interpreter executes authored Kain logic`
+
+This repo does not only compile source outward into foreign runtimes. `kain-core` is already an execution engine for meaningful language behavior:
+
+- direct evaluation of functions, blocks, loops, assignment, field/index mutation, closures, and pattern matching
+- async/await and future/poll semantics in the in-language runtime lane
+- actor state initialization, message handling, and runtime-side actor behavior
+- JSX/UI expression evaluation and signal-driven UI contract execution
+- runtime execution of `law`, `patch`, `converge`, and `orchestrate`, including law calls, converge verification, and patch transaction recording
+
+When `kain run` succeeds, Kain is not merely validating authored source before handing work to another backend. In many cases it is executing the language's own semantic model directly. Treat that lane as a first-class truth source for what Kain code means.
+
+### Compile and runtime bundle flow
+
+`Kain source -> kain-core semantic analysis -> runtime contract / realtime app bundle / shader bundle metadata -> kain-driver materialization -> runtime/native and accelerated lanes consume the same bundle family`
+
+The semantic-analysis part of that pipeline now includes real executable-body checks in `kain-core`, not only declaration registration. The compiler validates return values, call arguments, `match` arm type agreement, duplicate boolean arms, and `await` / `async` future typing before downstream codegen and bundle emission consume the typed program. That typechecked program also feeds the runtime/interpreter lane; bundle/codegen flows are downstream consumers of the same semantic truth, not a replacement for it.
+
+That same frontend lane now owns five compiler-owned intent declarations:
+
+- `law` lowers to callable invariant metadata through explicit `laws[]` contract sections.
+- `patch` lowers to transactional mutation metadata with inferred undo mode plus explicit `patches[]` contract sections.
+- `converge` lowers to dispatcher-plus-lane metadata with deterministic selection and executable `verify random(n)` verification through `converges[]`.
+- `world` lowers to shared state/surface projection metadata through sparse `worlds[]` entries and compiler-owned active-world selection.
+- `orchestrate` lowers to strict typed stage metadata through `orchestrations[]`.
+
+The runtime-contract and realtime-bundle families now both carry these explicit sections, and downstream adapters should consume them directly instead of reverse-engineering equivalent intent from local conventions.
+
+### LLVM Native Actor ABI
+
+`crates/kain-sys-codegen` now lowers actors against the canonical native runtime actor header instead of the legacy `KAIN_spawn` / `mq_*` lane.
+
+- LLVM actor entrypoints use the canonical `(actor_id, mailbox, user_data)` signature and talk to `kain_actor_spawn_config_init`, `kain_actor_spawn`, `kain_actor_send`, and `kain_actor_receive`.
+- The LLVM actor message and spawn-config layouts are emitted as explicit ABI types, so any change to `runtime/native/include/kain_runtime_actor.h` must be reflected in codegen and fixture validation together.
+- Actor state ownership in the LLVM lane follows the native runtime contract: compiler-owned actor state is passed as `user_data`, and received message payload buffers are freed after dispatch.
+
+### Formatting flow
+
+`Kain source -> kain-core lexer/parser -> compiler-owned AST printer -> kain-driver helper -> cli format command`
+
+The formatter now lives in `crates/kain-core/src/formatter.rs` and is intentionally compiler-owned. The rule is the same as the rest of the toolchain: editors, CLIs, and future LLM workflows should reuse the compiler printer instead of growing lane-local pretty-printers that drift from the actual grammar.
+
+### Host bridge flow
+
+`.kn source -> compiler/runtime contracts -> host bridge crates (Python, Node, C ABI, Rust crate FFI) -> shared payload contracts via kain-interop`
+
+Bridges exist to expose external capabilities cleanly. They should not become the default place to hide logic that Kain can already express and execute itself. Prefer Kain-owned logic for domain behavior, control flow, state transitions, and semantic contracts; use bridge crates for foreign APIs, packaged dependencies, and target-native runtime services.
+
+Current native-ui packaging rule for C ABI imports:
+
+- `kain-c-ffi` is no longer only an `Interpret`/`Test` lane concern. The Rust/native-ui packaging lane now emits packaged bridge manifests, copies bridge/shared-library sidecars into the app artifact set, and has the generated native app launcher load those packaged bridges before boot.
+- This does not mean the current native UI host is a full general-purpose Kain interpreter. The lane is still bundle-driven; the packaging change makes foreign bridge dependencies explicit and shippable rather than hidden behind cache-local host-backed behavior.
+
+### Selfhost lanes
+
+The repo now has two explicit selfhost lanes under the same `kain selfhost` control plane:
+
+- the Rust mirror/reference lane
+- the hand-written owned bootstrap/native lane
+
+The hand-written lane is the promotion target. The Rust mirror lane is reference and oracle infrastructure.
+
+#### Rust mirror/reference lane
+
+- The active owned language surface still lives under `src/core`, but the mirror lane materializes reference output under `src/.rustimport/phase2`.
+- `src/.rustimport/reference` is the moved donor corpus from the earlier Rust import lane; do not hand-edit it.
+- `crates/kain-import` imports Rust selfhost crates per source file/module and exposes per-file typed `Program` results.
+- `crates/cli/src/selfhost.rs` consumes those file-level imports through a data-driven `SelfHostSourceProfile`.
+- The default profile lives at `ouroboros/docs/selfhost/metadata/selfhost_source_profile.json`.
+- The current mirror priority is still executable-first: the default phase2 profile keeps `cli` ahead of `kain-sys-codegen` so executable parity is proven before backend expansion.
+- Phase output emits three aligned artifact families:
+  - canonical Kain mirrors under `src/.rustimport/phase2/<crate>/...` or the profile-configured canonical root
+  - output-local mirror copies under `<phase-output>/mirror/src/<crate>/...`
+  - a `source_correspondence_manifest.json` that records exact Rust-to-Kain path correspondence per file
+- Phase2 still writes aggregate `<crate>.kn` and `<crate>.roundtrip.rs` compatibility artifacts because the active frontend/codegen path is still single-source-string oriented.
+- `kain selfhost phase1|phase2 --force` keeps emitting mirrors, manifests, aggregate bundles, and any later-crate artifacts even when earlier crates fail. The command still reports `hard_fail`, but it no longer discards the partial artifact graph.
+
+#### Hand-written bootstrap/native lane
+
+- `src/core` is the canonical owned compiler surface.  
+- `src/KAIN.toml` is the canonical hand-written selfhost contract.  
+- `runtime/native_runtime.toml` is the canonical native runtime contract.  
+- `kain selfhost bootstrap` is the owned lane entrypoint, and `src/build_selfhost.sh` is only a thin wrapper around that CLI path.  
+- `src/.selfhost/` is the canonical artifact/report root for the owned lane.  
+- The owned lane may temporarily assemble an aggregate bootstrap source from ordered `src/core` files, but that aggregate source is a compatibility bridge, not the end-state module system.  
+- Current state on 2026-04-15: `kain selfhost bootstrap --combine-only` succeeds and emits the combined owned source plus reports, but `--emit-llvm-only` still fails with parser errors in the current owned `src/core` source set, concentrated in `runtime.kn` and `types.kn`. That is the present blocker for a native self-build.  
+- The architectural boundary is strict:
+  - Rust is allowed to own manifest loading, filesystem/path/env/process helpers, report emission, and runtime artifact discovery during bootstrap.  
+  - Rust must not remain the permanent owner of parser, typechecker, lowering, or backend/codegen logic on the real compile path.  
+  - The native C runtime is not optional in this lane. The produced native `kainc` is expected to link against the real runtime bundle defined by `runtime/native_runtime.toml`, not a guessed `-lkain_runtime` string or a Rust-host substitute.  
+
+The important rule is: the mirror lane proves reference and repair behavior, while the owned lane proves real selfhost direction. Keep the Rust mirror lane available for comparison, but promote the manifest-first hand-written lane as the compiler that is supposed to survive once bootstrap is over.
+
+### Compute pipeline flow
+
+The current compute direction is:
+
+- authored compute truth starts in shader `comptime` metadata in `kain-core`
+- `kain-core` emits workgroup, dispatch, tensor, stream, and neural metadata into realtime/shader-facing bundle structures
+- `kain-driver` materializes compute residency sidecars and native app packaging data
+- `runtime/native` validates and surfaces `primary_compute`
+- `kain-gpu-runtime` is the real Vulkan dispatch bridge that consumes emitted shader/residency artifacts
+
+The architecture rule here is important: runtimes may execute the compute plan, but they must not become the source of truth for what that plan is.
+
+### Shader Canvas Lane
+
+The native shader-canvas UI lane now follows this contract:
+
+- `kain-ui` owns authored semantic surfaces and shader-canvas intent on canvas-like nodes
+- `kain-core` emits explicit `shader_canvases` entries in `RealtimeAppBundle` so hosts do not have to rediscover shader-canvas bindings by guessing from local UI props
+- `kain-core` also emits first-class shader-canvas text resources per surface: font atlas descriptors, text runs, declared runtime resource bindings, and optional asset-backed font references through the shared realtime asset catalog
+- `kain-driver` materializes shader bundles and native app sidecars that keep shader-canvas metadata, shader refs, native UI bundles, and packaged realtime font assets aligned, resolving relative realtime asset sources against the authored source root instead of the materialization working directory
+- `kain-ui-native` resolves shader canvases from realtime bundle metadata first and only falls back to surface-local shader refs when metadata is missing
+- `kain-ui-native` now turns the shader-canvas text contract into real GPU inputs by serializing atlas/text metadata into the surface storage buffer and synthesizing a host-provisioned packed atlas texture, preferring packaged realtime font assets first, then `ab_glyph` rasterization from data-driven system-font aliases, with bitmap fallback and cache reuse across repeated surfaces that share atlas content
+- `smoketest/UI/spv_ui_surface_probe` is the canonical native proof for this lane: it authors a real `<canvas>` node, packages a relative font asset, emits SPIR-V, and shows a fragment shader sampling the runtime-provided packed atlas texture
+- canonical native shader payload remains SPIR-V, while the current WGPU native host may consume derived WGSL or runtime-transpiled WGSL from the same bundle family
+
+The architecture rule here is the same as the viewport and compute lanes: shader-canvas execution can optimize presentation, but it must stay subordinate to compiler-owned bundle truth rather than inventing a renderer-local UI shader dialect.
+
+### UI Vendor Runtime Lane
+
+The native runtime now has a first real UI vendor slice instead of only a future-host wish list:
+
+- `runtime/native` owns the service families and startup contract bits for `ui.layout.yoga`, `ui.backend.imgui`, and `ui.devtools`; `ui.render.skia`, `ui.backend.rmlui`, `ui.backend.slint`, `ui.backend.qt`, `ui.surface.browser.cef`, `gfx.backend.filament`, `gfx.backend.diligent`, `gfx.backend.forge`, and `wasm.runtime.full` / `wasm.wasi` now activate through bridge-backed or external-runtime probes instead of staying staged
+- `runtime/3rdparty/imgui` and `runtime/3rdparty/yoga` are the first compile-backed UI vendor trees in the manifest-driven native bundle; the heavier UI stacks now use probe-backed bridge identities rather than permanent staged placeholders
+- `crates/kain-ui` now emits explicit backend-role truth in runtime metadata and per-surface preferences through `UiHostBackendKind`, `UiLayoutEngineKind`, and `UiRenderEngineKind`
+- `crates/kain-ui-native` now defaults to a no-`egui` Qt Quick host. The old 9k-line host survives in `src/legacy_egui.rs`, but only behind the explicit Cargo feature `legacy-egui`; default builds keep the bundle/build API, materialize a Qt session manifest plus generated `Main.qml`, and launch the external `qml` / `qmlscene` runtime when it is available on the host
+- The current non-`egui` host is still compatibility-first, but it no longer drops every packaged app into one fixed Qt workstation frame. Generic packaged apps now render the compiled authored layout through `UiNativeProjection`, with a fallback projection synthesized directly from `output.tree` when the bundle does not carry the sidecar explicitly.
+- The generated Qt shell skin is a smoke/demo presentation, not the authored UI contract. Kain UI meaning still lives in `UiStyleSpec`, `UiThemeRegistry`, surface roles, and bundle metadata; the host should consume those inputs rather than become the source of a fixed look.
+- The Qt host now supports deterministic smoke artifacts through `KAIN_UI_NATIVE_QT_ARTIFACT_DIR` and `KAIN_UI_NATIVE_QT_SCREENSHOT_PATH`; this lets repo-local smokes render the real generated shell offscreen, save `Main.qml` plus `session.json`, capture a PNG, and exit without operator interaction
+- `smoketest/UI/qt_plasma_runtime_lounge` is the current proof surface for that contract: a curated runtime bundle with document, viewport, devtools, and browser panes that exercises the live Qt host and produces `outputs/qt_plasma_runtime_lounge.png`
+- `crates/kain-ui` and `crates/kain-core` now also recognize `UiHostBackendKind::Tauri`, including authored `host_backend="tauri"` and `host_backend="webview"` aliases. Shell/document/devtools surfaces use browser/webview semantics while viewport and shader surfaces stay on the existing canvas/GPU path.
+- `crates/kain-ui-tauri` is now the data-driven Tauri 2 adapter crate. It owns plugin/capability/permission preset enums, bridge-manifest construction, reflection merge logic, hybrid frontend bridge JS, and generated `src-tauri/*` scaffolding instead of pushing that policy into the CLI.
+
+### Semantic Tab Workspace Lane
+
+Semantic authored tabs now follow the same ownership rule:
+
+- `kain-ui` and `kain-core` own tab intent through authored node metadata such as `tab_group_id`, `tab_label`, `tab_order`, `tab_default_active`, and `persistent_layout_id`
+- `kain-ui-native` may render that intent as native clickable tab chrome, but it should resolve and persist the active selection through `output.systems.workspace_layout.active_tabs`
+- host-side tab rendering is allowed to optimize presentation, but it must not invent a second tab schema or bypass the emitted UI/runtime bundle truth
+
+`smoketest/UI/kinetic_ui_atlas` is now the durable repo-local proof for this lane: a fresh four-page native executable that uses semantic top tabs, docked shells, shader canvases, and a real viewport workspace without reusing the older smoketest compositions.
+
+### Reload-Safe UI Contract Lane
+
+UI reload and derived-value semantics now follow an explicit compiler-to-runtime contract:
+
+- `kain-core` emits stable signal ids, computed lowering (`writes_signal`, runtime `expr`, invalidation targets, scheduler phase), and event-route metadata including route ids, command routes, and transaction labels
+- `kain-ui` owns runtime execution of those contracts, including derived recompute, exact invalidation, hot-reload state transfer, reload patch reporting, and bounded reconciliation
+- `realtime_app_bundle.ui_contracts` now exposes computed, event-route, reload, focus, selection, overlay, motion, and workspace payloads so downstream native hosts can inspect semantic truth without rediscovering it from local widget state
+
+The architectural rule is the same as every other lane: reload behavior may be optimized by hosts, but the host must not become the source of truth for identity transfer, derived state, focus/selection state, or transaction semantics.
+
+`UiRuntimeBundle.native_projection` is now a compatibility-only sidecar rather than a normal bundle contract surface. Canonical serialization keeps `output.tree` and `output.systems` authoritative and omits the projection when it is empty; legacy raw-native consumers should opt into the explicit projection helper when they still need the flat view.
+
+### Native Packaging And Operator Loop
+
+The native packaging lane is the operator-facing loop for UI iteration:
+
+- `kain-driver` materializes native apps as a package set, writing the runtime bundle, runtime contract, realtime bundle, `app_manifest.json`, `runtime_snapshot.json`, and any required sidecars into the app artifact tree.
+- Generated launchers resolve those packaged sidecars beside the executable so the app boots from authored bundle truth instead of a debug-host template.
+- The runtime snapshot is the reload/control surface, not hidden launcher state. It carries explicit provider, session, workspace, command, and capability records, including the `runtime.reload` command already emitted by the packaging path.
+- `crates/cli/src/native_ui_dev.rs` is the canonical desktop dev loop for this lane. `kain native-ui dev <file.kn>` materializes once, launches the child app, watches the input file's parent directory recursively, ignores generated/project artifact trees plus common temp files, and debounces save bursts before rebuilding.
+- The native packaging lane is now host-selectable instead of Qt-only. `NativeUiHostKind` currently supports `qt` and `tauri`, with Qt remaining the default and Tauri selected through `--host tauri` or config.
+- The Tauri host path is package-first, not a new compile target. `kain-driver` compiles the existing native/runtime-contract truth plus hybrid JS/TS/WASM artifacts, then materializes a node-free `src-tauri/` project, static frontend payload, bridge manifest, permissions, capabilities, `app_manifest.json`, and `runtime_snapshot.json` under one generated app root.
+- Tauri dev launches from a Cargo manifest instead of a prebuilt executable. `native_ui_dev` now abstracts launch targets as either `Executable(...)` or `CargoManifest(...)`, which lets the same watcher/reload classifier drive both Qt and Tauri without forking the whole loop.
+- Reload behavior is now explicit instead of host-local. The dev loop classifies each rebuild as `Noop`, `HotReloadInProcess`, or `RestartProcess` from emitted runtime compatibility metadata plus changed artifact roles such as runtime bundle, runtime contract, realtime bundle, shader sidecars, app manifest, and runtime snapshot.
+- Compatible rebuilds preserve live UI/workspace/session state through the existing runtime reload contract. Incompatible rebuilds restart the packaged child and restore only from the persisted manifest/snapshot boundary.
+- Devtools and inspectors must stay opt-in and remain represented in packaged truth, not injected as default product chrome.
+- When a packaged launch stops reflecting a change, check the materialized manifest and snapshot sidecars first. That is the stable operator boundary before assuming the host itself is wrong.
+- target-aware world selection now resolves native desktop targets against `native_ui`, web targets against `web`, and UE5 targets against `ue5`; ambiguous multi-world cases must use an explicit `--root` selection.
+
+### Viewport Contract Lane
+
+Viewport startup intent now follows the same compiler-owned pattern:
+
+- `kain-core` emits `render.scenes` bindings with authored scene ids plus optional camera and presentation metadata
+- `kain-ui-native` and `runtime/native` consume those bundle defaults first and only fall back to local scene/profile defaults when the bundle leaves a field unspecified
+- scene ids, shader refs, camera presets, and presentation presets should travel together through the realtime bundle instead of being re-guessed independently by each host
+- the Win32 raw-native viewport now boots a `KainRuntimeRendererSession` from the runtime graphics bundle and the `KAIN_RUNTIME_RENDERER_BACKEND` env var, then surfaces requested backend, active backend, service key, vendor runtime/version, and compatibility-executor diagnostics directly in the viewport overlay
+- renderer-session ownership currently means backend identity and diagnostics are real even when scene execution still routes through a compatibility executor; do not claim native direct vendor rendering until the host path actually hands viewport execution to the vendor bridge
+- `kain-3D` now owns the reusable manipulator drag contract as well: screen drag, axis/plane constraints, snap application, and local-vs-world transform math live in `crates/kain-3D/src/interaction.rs`, while `kain-ui-native` should stay a host/input forwarder instead of carrying a second copy of viewport-edit math
+- `kain-3D` now also owns the authored primitive mesh pipeline in `crates/kain-3D/src/primitive.rs`: stable primitive ids and `mesh://primitives/authored/*` resource URIs, high-fidelity box / plane / uv-sphere / quad-sphere / cylinder / cone / capsule / torus builders, and a `PrimitiveLibrary` that can register those shapes into authoring scenes without inventing a second primitive catalog in the host
+- authored `.kn` code reaches that same primitive seam through the `zen3d` prelude and runtime-native `__zen3d_*` bindings, so primitive authoring stays consistent across Rust scene setup, Kain host sessions, and viewport/runtime consumption
+
+## Important Folders By Intent
+
+- [runtime/native](/M:/Code/Kain/runtime/native): canonical C runtime and ABI/service floor; manifest-driven vendor incorporation stays Kain-owned here even when implementation comes from `runtime/3rdparty`
+- [runtime/3rdparty](/M:/Code/Kain/runtime/3rdparty): curated vendor bundle for Kainized runtime incorporation; upstream engines live here, but Kain-owned wrappers, service keys, and contracts stay under `runtime/native`
+- [runtime/conformance](/M:/Code/Kain/runtime/conformance): lane-level conformance harnesses
+- [runtime/parallel](/M:/Code/Kain/runtime/parallel): Rust/Zig companion runtime work that must stay aligned with the native runtime doctrine
+- [docs/kainplan](/M:/Code/Kain/docs/kainplan): legacy design and execution docs
+- [docs/pipeline](/M:/Code/Kain/docs/pipeline): legacy pipeline notes and operational docs
+- [labs](/M:/Code/Kain/labs): focused validation labs
+- [labs/playground/piano](/M:/Code/Kain/labs/playground/piano): Linux-native 2D piano lab that drives the semantic UI surface through a C audio bridge, note playback, and loop recording
+- [labs/llvm_world_dogfood_lab](/M:/Code/Kain/labs/llvm_world_dogfood_lab): canonical LLVM dogfood lab that exercises world, patch, converge, orchestrate, actor mailbox traffic, and native UI + viewport rendering from one authored entrypoint
+- [labs/llvmzone](/M:/Code/Kain/labs/llvmzone): five-app LLVM utility lane that keeps separate executables for enum/match, world/patch/orchestrate, actor mailbox, float/bitwise, and native UI/viewport coverage
+- [labs/chronos_native](/M:/Code/Kain/labs/chronos_native): first native Chronos proof app for the `kain native-ui dev` loop, combining compiler-owned world state, native UI shells, viewport3d authoring, and packaged shader sidecars from one Kain source file
+- [labs/threejs_node_ffi_space_lab](/M:/Code/Kain/labs/threejs_node_ffi_space_lab): Node-first localhost sculpt-suite proof that now dogfoods Kain hybrid codegen too, layering manifest-driven Three.js viewport modes, a Kain-authored JS + WASM motion bundle, and a Rust-built WASM brush core behind the `std::javascript::bridge` orchestration seam
+- [generated](/M:/Code/Kain/generated): disposable generated outputs
+
+## Common Commands
+
+Prefer the live CLI and source over stale docs when they disagree.
+
+Typical commands:
+
+- `python3 install_kain.py`
+- `py install_kain.py`
+- `kain doctor`
+- `kain doctor --repair <file>`
+- `kain doctor --repair-tree <dir>`
+- `kain build`
+- `kain build native-ui <file.kn>`
+- `kain build native-ui <file.kn> --host tauri`
+- `kain native-ui dev <file.kn>`
+- `kain native-ui dev <file.kn> --host tauri`
+- `kain run <file.kn>`
+- `kain format <file.kn>`
+- `kain fmt --check <file.kn>`
+- `kain gpu-artifacts <file.kn> --output <dir>`
+- `kain selfhost phase1`
+- `kain selfhost phase2` for the bounded self-host repair lane
+- `kain selfhost phase2 --emit-roundtrip-rust false --assemble-stage2 false --build-stage2 false` for mirror-only validation without forcing the roundtrip/build lane
+- `kain selfhost phase2 --force` to keep partial selfhost artifacts even when one crate trips the current phase2 blockers
+- `kain selfhost phase2 --all-crates --emit-roundtrip-rust false --assemble-stage2 false --build-stage2 false --force` to mirror every discovered `crates/*/Cargo.toml` workspace crate into `src/.rustimport/phase2/` and preserve the full forced artifact graph
+- `kain selfhost bootstrap --combine-only` to validate `src/KAIN.toml` resolution and ordered `src/core` source assembly
+- `kain selfhost bootstrap --emit-llvm-only` to validate the owned lane through LLVM plus native sidecar staging without linking
+- `kain selfhost bootstrap --backend c --emit-llvm-only` currently means "emit selected backend only" and exercises the parallel experimental C lane without native link or ouroboros verification
+- `kain selfhost bootstrap --link-native` to drive the owned lane through native runtime resolution and final link
+- `kain selfhost bootstrap --verify-ouroboros` to run the first native self-recompile/parity check
+- `kain omni build`
+- `kain fabric init --template polyglot`
+- `kain fabric validate`
+- `kain fabric run`
+- `python3 scripts/python/validate_dcc_parity_matrix.py`
+- `kain import-c`, `kain import-rust`, `kain import-ts`, `kain import-asm`, `kain import-crate`
+- `python tools\typescript_import\extract_ambient_manifest.py` to regenerate the embedded TypeScript ambient manifest from `reference/TypeScript-main/src/lib` plus `tools/typescript_import/typescript_ambient_overrides.json`
+- `kain --strict import-ts <input>` to fail on degraded generated Kain output while still writing the structured import report JSON
+- `./runtime/fixtures/validate_all.sh`
+- `./runtime/conformance/run_all.sh`
+- `./runtime/validate_native_runtime.sh`
+- `python3 tools/kain-flight-control/launcher.py`
+- `cd tools/kain-flight-control && go test ./...`
+- `powershell -ExecutionPolicy Bypass -File smoketest/allinone/run_all.ps1`
+
+Runtime validation meaning:
+
+- `cargo test -p kain-sys-codegen --test llvm_codegen_test -- --nocapture` is the backend IR/codegen proof lane.
+- `PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 cargo check -p kain-core -p kain-c-ffi -p kain-sys-codegen -p kain-driver -p cli` is the current fastest end-to-end validation path for new backend plumbing on this machine because local Python 3.14 is newer than the repo's pinned PyO3 support window.
+- `./runtime/fixtures/validate_all.sh` is the generated LLVM/native executable proof lane. It now compiles, links, and executes dedicated heap, actor, and world fixtures.
+- `./runtime/conformance/run_all.sh` is the runtime-native harness lane. Its `--backend llvm` flag is not a substitute for executable LLVM proof.
+- `./runtime/validate_native_runtime.sh` is the aggregate command that runs the CLI build, native runtime build, fixture suite, and conformance suite together.
+
+If the debug CLI is missing:
+
+- `cargo build -p cli`
+- `target/debug/kain --help`
+
+## Architectural Guardrails
+
+- Do not split semantic truth across runtime lanes.
+- Do not describe Kain as "only orchestration" when `kain-core` already executes real authored logic.
+- Do not let hosts re-parse source as the normal execution path.
+- Do not push Kain-expressible business/domain logic into host bridges by default. Bridge when a capability is genuinely external, not because the language/runtime lane was ignored.
+- Do not invent lane-specific shader, UI, or compute metadata when compiler-owned bundles already exist.
+- Prefer data-driven capabilities, manifests, registries, and bundle metadata over scattered string checks and host-local assumptions.
+- Keep the interpreter/runtime lane and emitted bundle/codegen lanes semantically aligned. A packaged target may optimize or lower behavior, but it should not silently define different language meaning than `kain-core`.
+- Preserve the distinction between authored language semantics, importer behavior, and backend/runtime support.
+- TypeScript import ambient globals must stay data-driven: generated data lives at `crates/kain-import/src/typescript/data/typescript_ambient_manifest.json`, Kain-specific aliases/helpers live in `tools/typescript_import/typescript_ambient_overrides.json`, and `crates/cli/src/import_typescript.rs` should consume that manifest instead of reintroducing hardcoded DOM/JS prelude arrays.
+- Vendor runtimes may strengthen `runtime/native`, but they must land behind Kain-owned service families, startup contracts, diagnostics, and scheduler policy instead of becoming the public contract themselves.
+- UI vendors follow that same rule more aggressively: Qt, ImGui, Yoga, RmlUi, Slint, CEF, Skia, and future backends are adapters or substrates behind Kain-owned semantic trees, layout intent, runtime metadata, and service contracts. Do not let a host UI stack become the source of authored truth.
+- Do not confuse the Qt smoke shell skin with the Kain UI contract. The smoke host may use a fixed look to prove the lane quickly, but app-authored UI should continue to flow through theme data, style tokens, and Kain-owned surface metadata rather than hardcoded host visuals.
+- Platform- or console-specific render-command experiments should start as isolated adapter lanes under `smoketest/` or another dedicated adapter crate before any shared `kain-3D` contract is widened. The new `smoketest/3D/sm64_fast3d_smoke` is the pattern: it owns its own manifest, segment registry, display-list interpreter, and combiner logic instead of baking N64-specific assumptions into the common scene/material API too early.
+- The SM64 import refresh workflow for that lane is now profile-driven and lives beside the smoke under `smoketest/3D/sm64_fast3d_smoke`. Use `refresh_sm64_import.bat` and `sm64_import_profile.render_us.json` instead of reconstructing long one-off `import-c` commands from memory.
+- The same smoke now has a title-face extraction lane. `extract_sm64_title_face.bat`, `launch_title_face_visual_exe.bat`, and `capture_title_face_snapshot.bat` are the quickest path to a compiled proof that uses real extracted Mario face geometry while keeping N64-specific semantics inside the adapter.
+- The adapter is no longer only a smoke-local runtime. The reusable host surface now lives in `crates/kain-fast3d-runtime`, while the smoke folder acts as a consumer that provides manifests, scripts, and validation assets.
+- Keep the Fast3D lane data-driven. Its host startup now flows through crate-owned config files and env hooks (`KAIN_FAST3D_CONFIG`, `KAIN_FAST3D_MANIFEST`, `KAIN_FAST3D_SM64_ROOT`) rather than widening Kain language semantics or shared runtime contracts for one experimental console adapter.
+- Native app launcher materialization now also supports generic host-sidecar packaging in `kain-driver`: generated launchers can copy arbitrary sidecars into the artifact/executable set, optionally export them as env vars, and switch between the default `run_bundled_app_json(...)` launcher path and a crate-owned no-arg entrypoint like `kain-fast3d-runtime::run_fast3d_cli()`. Preserve that mechanism as a generic host adapter capability, not a Fast3D-specific special case.
+- The Bob-omb Battlefield proof now uses the same host-sidecar path with three data files: the extracted scene manifest, a gameplay animation document, and a display-list shader-override document. Keep live actor binding and material experiments in these sidecars instead of adding SM64-specific semantics to `kain-core` or the shared runtime.
+
+## Common Errors
+
+- The root `README.md` is useful, but live source and the built CLI are the real source of truth.
+- The PATH `kain` launcher can drift from the repo-local binary. Before trusting the docs example suite, run `./target/debug/kain doctor` or call `python3 docs/examples/validate_examples.py --kain ./target/debug/kain`.
+- `docs/examples/09_ue5_authoring_gallery.kn` is intentionally validated on the Rust backend in this checkout. Direct `kain build -t ue5 ...` still fails during `stdlib/ue5` loading because `max` does not resolve there yet.
+- Filesystem imports now share lookup through `crates/kain-core/src/module_resolution.rs`. `use module::item` can fall back from `module/item.kn` to `module.kn` or `src/module.kn` and register the requested top-level item, while `use module::*` exposes top-level module items to best-effort typechecking. Lookup is still rooted in the process current directory, so launch nested scripts from the intended project/runtime root until source-file-relative module roots are added.
+- Fresh Linux and macOS clones should start with the root `install_kain.py` bootstrapper. It is now the cross-platform entrypoint that resolves or installs LLVM, repopulates `toolchain/llvm/bin`, builds `kain`, installs `kain` and `kn`, and emits shell activation scripts under `generated/`.
+- Fresh clones may not include a populated `toolchain/llvm/bin/clang.exe` even though older docs and helper scripts reference it. When that happens, install LLVM separately and point `KAIN_CLANG_PATH` at the external `clang.exe`; `scripts/windows/sync-kain-source-of-truth.ps1` now falls back to PATH and `C:\Program Files\LLVM\bin\clang.exe` before assuming the vendored drop exists.
+- The `cli` suite no longer depends on the external self-hosting fixture under `M:\Code\Other\kainselfhosting\...`; the repo-local import-c fixture under `crates/cli/tests/fixtures/import_c` is the durable regression source now.
+- The repair lane is profile-driven. If a file is being "fixed" in a way that changes meaning, that is a bug in the caller or profile selection, not a feature.
+- Large Windows test binaries can hit linker OOM pressure.
+- The workspace still pins `pyo3 0.20.x`, so a machine-default Python 3.13+ or 3.14 can break builds. Prefer Python 3.12, set `PYO3_PYTHON` explicitly when needed, and keep the Python 3.12 install directory on PATH so the built `kain.exe` can resolve `python312.dll` at runtime.
+- `generated/`, `target/`, `.kain`, runtime sidecars, and compiled smoke outputs are disposable unless explicitly archived in a repo-owned archive path and cross-linked from `guides/reference/troubleshooting.md`.
+- The root `mcp.json` and `codex.config.toml` templates are intentionally portable. They assume only `KAIN_REPO_ROOT`; do not replace that with checkout-specific absolute paths when updating the Flight Control MCP lane.
+- The live SM64 decomp root currently sits at `M:\Code\Other\Research\sm64-master\sm64-master`, not the outer `sm64-master` folder. The older stale import reports pointed at the outer folder, which hid a real pathing mistake.
+- Linux now validates the core raw-native lane end-to-end: `cargo build -p cli`, `kain build -t llvm`, `./runtime/fixtures/validate_all.sh`, `./runtime/conformance/run_all.sh`, and `./runtime/validate_native_runtime.sh` all pass on a Linux host. The Win32 app-host, input, and viewport host services are still Windows-specific until a non-Win32 native host lands.
+- Runtime conformance harnesses that compile `kain_runtime_services.c` or `kain_runtime_contract.c` in isolation must also compile `runtime/native/src/vendor/kain_runtime_vendor_lane.c` or define `KAIN_RUNTIME_VENDOR_STUBS_ONLY=1`; the service catalog now has real vendor-backed function-table references.
+- The native runtime now has two companion metadata surfaces: `runtime/native_runtime.toml` is the manifest/build truth, and `runtime/native_runtime_metadata.json` is the tooling-facing reflection of that truth. When services, platforms, defines, sources, or link dependencies change, update both together.
+- The owned selfhost lane has the same split-contract rule: `src/KAIN.toml` is the hand-written compiler manifest, and `runtime/native_runtime.toml` is the native runtime manifest. Do not hide compiler source ordering, artifact paths, or runtime linkage behind hardcoded CLI assumptions once the manifest exists.
+- The owned bootstrap lane should never report success just because an earlier artifact still exists on disk. If `kain selfhost bootstrap` emits compile, runtime, or link errors and the expected artifact set was not freshly produced, that is a hard failure even if stale `.ll`, `.json`, or native binary files remain under `src/.selfhost/`.
+- The aggregate bootstrap source under `src/.selfhost/phase0/combined/` is an explicit temporary bridge. Future work should widen `src/KAIN.toml` and the frontend toward a real multi-file module graph instead of treating the combined source file as the permanent compiler shape.
+- `tools/kain-flight-control/config/server.toml` is the deterministic registry for repo-aware MCP behavior. Add new lanes, commands, artifact families, and pairing rules there first; keep the Go server generic and avoid smuggling repo paths into code.
+- Platform-specific vendor support should be expressed explicitly in the manifest rather than implied by global defines. The native runtime manifest now carries shared `defines` plus per-platform `windows_defines`, `linux_defines`, and `macos_defines`; prefer those over leaking POSIX-only flags into Windows builds.
+- The native runtime now supports mixed C/C++ source bundles in the manifest-driven build path. Use that for Kain-owned wrapper and bridge layers, but keep the public runtime/service surface C/Kain-owned even when vendor implementation lives in C++.
+- `kain build ... -t llvm` now reuses native runtime objects incrementally under `generated/native_runtime/cache/<host>/<runtime-name>/objects` using per-object depfiles and compile fingerprints, and it can prebuild manifest-declared static archives under the sibling `archives/` cache. The current runtime manifest packs the heavy `3rdparty/` surface into a cached `vendor-runtime` archive so warm LLVM/native builds can relink one vendor library instead of recompiling every third-party translation unit. If a warm LLVM/native build starts recompiling the whole runtime again, suspect a changed compile fingerprint, missing depfiles/fingerprints, a different cache root, or a newer source/header dependency before blaming LLVM itself.
+- The raw-native lane is no longer LLVM-only. `CompileTarget::C` now shares the runtime contract, realtime bundle staging, and native link path with LLVM, but the actual C emitter is still an experimental subset and will currently stop on unsupported stdlib/selfhost constructs with explicit backend errors instead of silently falling back.
+- Graphics vendor doctrine is split by role. `bgfx` is the baseline backend candidate, `bx`/`bimg` are support infrastructure for that lane, `filament`, `diligent`, and `the-forge` are bridge-backed renderer lanes that activate through runtime probes when an external runtime is present, and `gfx.compute` is the active compute seam. Keep those lanes separate from `gfx.viewport`; `gfx.shader` and `gfx.material` remain future contract surfaces and should not be faked as active peers.
+- The first durable smoke for this renderer seam now lives under `smoketest/3D/material_atrium_showcase`. The launcher embeds `smoke.kn` directly, the top bar and runtime-owner messaging are authored in Kain source, and the smoke treats `material_atrium` as a first-class runtime scene instead of a bundle example.
+- The smoke now also compiles through the LLVM/native executable lane into `smoketest/3D/material_atrium_showcase/llvm-native/material-atrium-showcase`, but Linux still uses the Qt presentation shell. Treat the standalone binary as the native compile proof, not as the full presenter yet.
+- The Qt launcher still packages `material_atrium_visual_example.png` as a host sidecar and forwards it through `KAIN_UI_NATIVE_QT_VIEWPORT_IMAGE_PATH`, but that image is now an optional compatibility fallback rather than the source of truth for the smoke.
+- The Windows native viewport now has a dedicated `material_atrium` profile and geometry branch, so the scene can be exercised from the runtime-owned side without relying only on the older demo profiles. The deterministic artifact generator still exists for comparison, but the authored smoke source is the real entrypoint.
+- LLVM/native actor proof depends on mailbox initialization happening in LLVM `spawn` lowering. Actor structs reserve field 0 for `__mailbox`, and the backend must allocate it with `mq_new()` before `KAIN_spawn` or the produced executable will crash when `send` lowers to `mq_push`.
+- The compute pipeline is mid-transition from heuristic metadata to compiler-owned truth. When touching it, prefer extending bundle contracts over adding new runtime-only inference.
+- Multiple authored `world` roots are now treated as an explicit-selection problem, not a guessing problem. If build/run flows see more than one world, require a caller-provided selection instead of silently picking one.
+- Frontend bridge registration must be target-scoped. Host/runtime extensions that are valid for `Interpret` or `Test` must not leak into shader artifact compilation or other non-host targets, or Fabric and direct driver paths will diverge.
+- The formatter is AST-based in v1, and the lexer still drops comments. `kain format` is canonical for code structure today, but it will currently discard authored comments until trivia becomes part of the frontend contract.
+- The formatter deliberately errors on a few parser-hostile or non-round-trippable shapes instead of emitting lossy source. Current notable cases are empty executable blocks, `shader surface` emission, and standalone block/comptime expressions that do not map cleanly back to authored statement form.
+- The native shader-canvas lane is SPIR-V-canonical at the bundle level, but the current WGPU host still resolves WGSL for execution. Do not mistake that compatibility bridge for permission to move shader-canvas truth out of the emitted bundles.
+- The native packaging loop is file-backed. If hot reload or packaged state looks stale, verify the generated `app_manifest.json`, `runtime_snapshot.json`, and launcher env vars before blaming the runtime.
+- If different native-ui apps still appear to share the same Qt presentation, inspect the generated `session.json` or bundled `native_projection` first. A healthy generic Qt launch should now carry authored projection nodes and render them; identical chrome without projection data usually means the host fell back to the older compatibility summary path.
+- `kain native-ui dev` can be healthy even when the launched child immediately dies. In this checkout the Chronos proof materializes, launches, and keeps the watch loop alive, but the child currently aborts through `/usr/local/bin/qmlscene` with exit status `134` in this environment. Treat that as a Qt/GUI-session runtime-host failure before assuming the dev loop or reload classifier is broken.
+- Native desktop launchers that do not inherit a GUI session can still boot if the wrapper resolves the live compositor socket. `labs/playground/piano/run.sh` now auto-detects the current Wayland/X11 runtime and exports the minimum env needed to attach on Linux; if a native app starts but no window appears, check `WAYLAND_DISPLAY`, `DISPLAY`, `XDG_RUNTIME_DIR`, and `XAUTHORITY` before blaming Kain UI.
+- The LLVM dogfood lab in `labs/llvm_world_dogfood_lab` uses named payloads for both `spawn` and `send`. If an actor message stops parsing, check `Pulse(amount = ...)` / `spawn Actor(...)` syntax before assuming the LLVM backend regressed.
+- The native Chronos proof under `labs/chronos_native` currently packages realtime and compute sidecars successfully, but the native-ui packaging/typecheck lane is still stricter than the direct GPU artifact lane for at least some compute expressions. If a shader proof works under `kain gpu-artifacts` but not under `kain build native-ui`, inspect dispatch-index access and bundle-lane differences before widening the language surface.
+- Node-backed browser labs such as `labs/threejs_node_ffi_space_lab` depend on a local package install inside the lab root. If bundling fails, check the lab-local `node_modules` state before assuming the browser app regressed; if the Rust sculpt lane fails, verify `rustup target add wasm32-unknown-unknown` in the local environment before blaming the app code; if Kain execution itself fails with unknown `js_import` / `js_bridge_import` identifiers, treat that as host-backed bridge registration drift in the current checkout.
+- `kain build -t hybrid` is now expected to materialize four aligned artifacts at once: a `.hybrid` descriptor plus `.js`, `.ts`, and `.wasm` sidecars. If a browser proof emits only JS text or the generated JS starts fetching its sidecar relative to the page root instead of the script URL, treat that as a CLI/driver regression rather than app-local config drift.
+- General named-argument `TypeName(field = value)` construction is not live KAIN syntax. Use a struct literal like `TypeName { field: value }` or construct the value empty and assign fields explicitly.
+- Function-valued actor state is not callable through `self.field(...)` because that parses as a method call. Load the state field into a local first, then call the local closure value.
+- Fabric Python execution should stay behind `kain-python` helpers. Do not make `kain-host` reach directly into `pyo3` imports or `PythonScopeState` internals when the Python lane can expose a narrower execution API.
+- Fabric runtime ownership is now split cleanly: `kain-omni` owns `KAIN.fabric.toml` schema/validation/report types, while `kain-host` owns local execution, dependency plumbing, and runtime adapter behavior.
+- Fabric step inputs now flow through raw `fabric_inputs` for every runtime adapter. Kain/C/Rust glue consumes canonical host objects directly, while the Python and Node bridge crates project shared buffer/image payloads into language-native contract objects with `bytearray` and `Uint8Array` bytes views.
+- Fabric Python and Node steps now support mixed named outputs when they return a dict/object whose fields match the manifest's declared output names. Shared outputs round-trip through the canonical host-owned interop contract family instead of falling back to string-only placeholders.
+- Missing declared Python/Node output fields now fail with structured Fabric errors keyed as `missing_output_field`, with `output_name` recorded in failure details. Preserve that contract surface when touching adapter execution or bridge helpers.
+- The durable end-to-end Fabric proof lives under `smoketest/fabric/polyglot_local`. It is the quickest repo-local example of Python -> Kain -> C ABI -> Rust crate -> Node execution with typed shared image/shared buffer flow.
+- The durable GPU Fabric proof lives under `smoketest/fabric/gpu_compute_convergence`. If a Fabric GPU step succeeds through `kain gpu-artifacts` but fails through `kain fabric run`, compare `kain-driver` target registration/augmentation behavior first, then inspect Fabric residency metadata and shared-buffer shape/access inference before blaming Vulkan.
+- `kain fabric init --template polyglot` now emits a runnable local smoke-grade scaffold, including its local Rust crate manifest and native C fixture, instead of a validation-only placeholder.
+- Fabric host smoketests now use deterministic roots under `target/fab-init` and `target/fab-smoke`, preserving `.kain/cache` across separate `cargo test` invocations. If a rerun is still slow, the remaining wall time is usually Cargo recompilation rather than bridge cache misses inside the test body.
+- The generated polyglot scaffold also writes `FABRIC.README.md`; treat that file as the first-stop quickstart for the smoke-grade local pipeline shape.
+- `smoketest/allinone` is the broad regression umbrella for major CLI and bridge surfaces. Its runner is manifest-driven and clears each lane's generated outputs before rerun, so stale artifacts should not be treated as proof that a current codegen path still works.
+- For SM64/Fast3D research, Fabric should stay an optional post-extraction simulation lane that feeds buffers or textures into the adapter. Do not make display-list extraction or the base render loop depend on Fabric before the geometry and segment path is stable.
+
+## Template Packs
+
+`templates/Web` now serves as a reusable web starter/reference pack, but the canonical public-facing example is `website/`.
+
+Key rules for this lane:
+
+- Kain owns the page semantics, the compiled preview subtree, and the site content model.
+- Browser and Node glue should stay thin: bundling, local serving, and browser compiler bootstrapping only.
+- themes, content, sections, and examples should be registry-driven data, not scattered starter literals.
+- Avoid reintroducing a helper-owned site runtime or fake enterprise metadata shell around the website surface.
