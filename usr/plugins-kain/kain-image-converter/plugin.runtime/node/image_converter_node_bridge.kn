@@ -1,0 +1,21 @@
+fn node_image_converter_bridge_manifest() -> Any:
+    let manifest = json_object_new()
+    let packages = json_array_new()
+    let actions = json_array_new()
+    json_array_push(packages, "sharp")
+    json_array_push(packages, "svgo")
+    json_array_push(actions, "optimize-svg")
+    json_array_push(actions, "fast-raster-convert")
+    json_array_push(actions, "metadata-probe")
+    json_object_set(manifest, "id", "kain-image-converter.node-bridge")
+    json_object_set(manifest, "kind", "node-ffi-bridge")
+    json_object_set(manifest, "status", "declared")
+    json_object_set(manifest, "packages", packages)
+    json_object_set(manifest, "actions", actions)
+    json_object_set(manifest, "bridge", "Kain Node FFI")
+    json_object_set(manifest, "currentRole", "declared optimizer lane; Python sidecar is the live encoder path")
+    json_object_set(manifest, "source", "usr/plugins-kain/kain-image-converter/plugin.runtime/node/image_converter_node_bridge.kn")
+    return manifest
+
+fn main() -> Any:
+    return node_image_converter_bridge_manifest()

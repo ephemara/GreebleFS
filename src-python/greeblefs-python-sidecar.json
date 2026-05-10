@@ -128,6 +128,24 @@
       "payloadExampleJson": "{\"sessionId\":\"image-cutout-1\"}"
     },
     {
+      "id": "kain.plugin.image_converter.inspect",
+      "label": "Kain Image Converter Inspect",
+      "description": "Reads image dimensions, mode, format, alpha, and supported output format metadata for the Kain-authored image converter workbench.",
+      "payloadExampleJson": "{\"sourcePath\":\"/tmp/photo.png\"}"
+    },
+    {
+      "id": "kain.plugin.image_converter.plan",
+      "label": "Kain Image Converter Plan",
+      "description": "Builds a safe conversion output plan for the Kain-authored image converter without writing files.",
+      "payloadExampleJson": "{\"sourcePath\":\"/tmp/photo.png\",\"outputFormat\":\"webp\",\"width\":1024,\"height\":1024,\"fitMode\":\"contain\",\"quality\":92}"
+    },
+    {
+      "id": "kain.plugin.image_converter.convert",
+      "label": "Kain Image Converter Convert",
+      "description": "Converts or resizes an image through the trusted Python Pillow backend declared by a Kain plugin action.",
+      "payloadExampleJson": "{\"sourcePath\":\"/tmp/photo.png\",\"outputFormat\":\"ico\",\"width\":256,\"height\":256,\"fitMode\":\"contain\",\"quality\":92,\"overwrite\":false}"
+    },
+    {
       "id": "files.scan_directory",
       "label": "Scan Directory",
       "description": "Lists a directory with lightweight metadata from Python.",

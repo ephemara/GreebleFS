@@ -1,0 +1,39 @@
+fn plugin_root() -> String:
+    return "D:/GreebleFS/usr/plugins-kain/kain-image-converter"
+
+fn output_path(name: String) -> String:
+    return plugin_root() + "/plugin.runtime/outputs/" + name
+
+fn append_action(actions, id: String, sidecar_action_id: String, lane: String):
+    let item = json_object_new()
+    json_object_set(item, "id", id)
+    json_object_set(item, "sidecarActionId", sidecar_action_id)
+    json_object_set(item, "lane", lane)
+    json_array_push(actions, item)
+
+fn main() -> Any:
+    let actions = json_array_new()
+    let manifest = json_object_new()
+    create_dir_all(output_path(""))
+    append_action(actions, "kain.image.inspect", "kain.plugin.image_converter.inspect", "python")
+    append_action(actions, "kain.image.plan-conversion", "kain.plugin.image_converter.plan", "python")
+    append_action(actions, "kain.image.convert", "kain.plugin.image_converter.convert", "python")
+
+    let report = "Kain image converter pipeline smoke\n"
+    let report = report + "kain_role: authored the workbench/tool/action contract\n"
+    let report = report + "python_role: trusted GreebleFS sidecar action writes PNG/JPG/WebP/BMP/TIFF/GIF/ICO/SVG/PDF\n"
+    let report = report + "node_role: declared Kain Node FFI optimization lane\n"
+    let report = report + "cargo_role: compiled plugin-owned Rust helper crate\n"
+    let report = report + "c_role: declared native codec lane\n"
+    let report = report + "wasm_role: declared portable preview worker lane"
+    write_file(output_path("kain-image-converter-report.txt"), report + "\n")
+
+    json_object_set(manifest, "id", "kain-image-converter.pipeline")
+    json_object_set(manifest, "kind", "kain-plugin-pipeline")
+    json_object_set(manifest, "status", "compiled-smoke")
+    json_object_set(manifest, "source", "usr/plugins-kain/kain-image-converter/plugin.runtime/kain/image_converter_pipeline.kn")
+    json_object_set(manifest, "plugin", "usr/plugins-kain/kain-image-converter/plugin.kn")
+    json_object_set(manifest, "report", output_path("kain-image-converter-report.txt"))
+    json_object_set(manifest, "actions", actions)
+    json_object_set(manifest, "summary", "Kain owns the image converter workflow contract; trusted host lanes execute Python now and Node/Cargo/C/WASM as they graduate.")
+    return manifest

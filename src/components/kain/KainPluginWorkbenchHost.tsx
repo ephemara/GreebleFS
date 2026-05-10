@@ -1,12 +1,20 @@
-import { type CSSProperties, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 
 import {
   runKainPluginAction,
   type KainPluginAction,
+  type KainPluginActionResult,
   type KainPluginDefinition,
   type KainPluginPreviewWorkbench,
+  type KainPluginTool,
   type KainPluginWorkbench,
 } from "@/runtime/kainPluginCatalog";
+import {
+  convertKainImage,
+  inspectKainImageConverterSource,
+  planKainImageConversion,
+  type KainImageConverterResult,
+} from "@/runtime/kainImageConverterBackend";
 
 interface KainPluginHostFile {
   name: string;
@@ -33,6 +41,13 @@ export function KainPluginWorkbenchHost({
   const [lastActionResult, setLastActionResult] = useState<string | null>(null);
   const [lastActionError, setLastActionError] = useState<string | null>(null);
   const surface = workbench ?? previewWorkbench;
+  const surfaceToolId = workbench?.toolId ?? previewWorkbench?.toolId;
+  const surfaceTool = useMemo(
+    () => surfaceToolId
+      ? kainPlugin.tools.find((tool) => tool.id === surfaceToolId) ?? null
+      : kainPlugin.tools[0] ?? null,
+    [kainPlugin.tools, surfaceToolId],
+  );
   const surfaceActionIds = surface?.actions ?? [];
   const visibleActions = useMemo(
     () => surfaceActionIds
@@ -46,7 +61,10 @@ export function KainPluginWorkbenchHost({
   const uniqueFfiLanes = [...new Set(surfaceFfiLanes)].slice(0, 8);
   const summary = surface?.summary || kainPlugin.description;
 
-  const runAction = async (action: KainPluginAction) => {
+  const runAction = async (
+    action: KainPluginAction,
+    actionContext: Record<string, unknown> = {},
+  ): Promise<KainPluginActionResult> => {
     setRunningActionId(action.id);
     setLastActionError(null);
     try {
@@ -65,13 +83,18 @@ export function KainPluginWorkbenchHost({
                 isDirectory: file.isDirectory === true,
               }
             : null,
+          toolId: surfaceTool?.id ?? null,
+          toolKind: surfaceTool?.kind ?? null,
+          ...actionContext,
         },
       });
       setLastActionResult(
         `${result.label}: ${result.summary || (result.ok ? "ok" : "failed")}`,
       );
+      return result;
     } catch (error) {
       setLastActionError(error instanceof Error ? error.message : String(error));
+      throw error;
     } finally {
       setRunningActionId(null);
     }
@@ -146,11 +169,23 @@ export function KainPluginWorkbenchHost({
         ))}
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", opacity: 0.76, lineHeight: 1.45 }}>
-        {summary}
-      </div>
+      {surfaceTool?.kind === "image-converter" ? (
+        <KainImageConverterWorkbench
+          tool={surfaceTool}
+          file={file}
+          actions={visibleActions}
+          busyActionId={runningActionId}
+          onRunKainAction={runAction}
+          onStatus={setLastActionResult}
+          onError={setLastActionError}
+        />
+      ) : (
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto", opacity: 0.76, lineHeight: 1.45 }}>
+          {summary}
+        </div>
+      )}
 
-      {visibleActions.length > 0 ? (
+      {surfaceTool?.kind !== "image-converter" && visibleActions.length > 0 ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {visibleActions.map((action) => (
             <button
@@ -197,6 +232,229 @@ export function KainPluginWorkbenchHost({
   );
 }
 
+function KainImageConverterWorkbench({
+  tool,
+  file,
+  actions,
+  busyActionId,
+  onRunKainAction,
+  onStatus,
+  onError,
+}: {
+  tool: KainPluginTool;
+  file: KainPluginHostFile | null;
+  actions: KainPluginAction[];
+  busyActionId: string | null;
+  onRunKainAction: (
+    action: KainPluginAction,
+    actionContext?: Record<string, unknown>,
+  ) => Promise<KainPluginActionResult>;
+  onStatus: (message: string | null) => void;
+  onError: (message: string | null) => void;
+}) {
+  const defaultPreset = tool.resizePresets[0] ?? null;
+  const [sourcePath, setSourcePath] = useState(file?.resolvedPath ?? "");
+  const [outputPath, setOutputPath] = useState("");
+  const [outputFormat, setOutputFormat] = useState(
+    tool.defaultOutputFormat ?? tool.formats.find((format) => format.write)?.id ?? "png",
+  );
+  const [fitMode, setFitMode] = useState(defaultPreset?.fitMode ?? tool.resizeModes[0] ?? "contain");
+  const [width, setWidth] = useState(defaultPreset?.width ? String(defaultPreset.width) : "");
+  const [height, setHeight] = useState(defaultPreset?.height ? String(defaultPreset.height) : "");
+  const [quality, setQuality] = useState("92");
+  const [background, setBackground] = useState("#000000");
+  const [lastConversion, setLastConversion] = useState<KainImageConverterResult | null>(null);
+  const [pythonBusy, setPythonBusy] = useState(false);
+  const supportedFormats = tool.formats.filter((format) => format.write);
+  const inspectAction = findToolAction(actions, "inspect");
+  const planAction = findToolAction(actions, "plan");
+  const convertAction = findToolAction(actions, "convert") ?? actions.find((action) => action.id === tool.primaryActionId) ?? null;
+  const busy = Boolean(busyActionId || pythonBusy);
+  const backendSummary = tool.pipelineBackends
+    .map((backend) => `${backend.lane}:${backend.status}`)
+    .join("|");
+
+  const buildPayload = () => ({
+    sourcePath: sourcePath.trim(),
+    outputPath: outputPath.trim() || null,
+    outputFormat,
+    width: parseOptionalPositiveInt(width),
+    height: parseOptionalPositiveInt(height),
+    fitMode,
+    quality: parseOptionalPositiveInt(quality) ?? 92,
+    background,
+  });
+
+  const runImageAction = async (
+    action: KainPluginAction | null,
+    phase: "inspect" | "plan" | "convert",
+  ) => {
+    const payload = buildPayload();
+    onError(null);
+    setLastConversion(null);
+    if (!payload.sourcePath) {
+      onError("Choose an image path first.");
+      return;
+    }
+
+    try {
+      if (action) {
+        await onRunKainAction(action, { imageConverter: payload, phase });
+      }
+      setPythonBusy(true);
+      const response = phase === "inspect"
+        ? await inspectKainImageConverterSource({ sourcePath: payload.sourcePath })
+        : phase === "plan"
+          ? await planKainImageConversion(payload)
+          : await convertKainImage({ ...payload, overwrite: false });
+      setLastConversion(response.result);
+      onStatus(
+        `${phase}: ${response.result.outputPath ?? response.result.source?.path ?? "ready"}`,
+      );
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPythonBusy(false);
+    }
+  };
+
+  return (
+    <div
+      data-kain-image-converter-workbench="true"
+      data-kain-image-converter-tool={tool.id}
+      data-kain-image-converter-source={sourcePath}
+      data-kain-image-converter-format={outputFormat}
+      data-kain-image-converter-backends={backendSummary}
+      data-kain-image-converter-result={lastConversion?.outputPath ?? ""}
+      style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)", gap: 8 }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(120px, 0.22fr)", gap: 6 }}>
+        <Field label="source">
+          <input
+            value={sourcePath}
+            onChange={(event) => setSourcePath(event.currentTarget.value)}
+            placeholder={file?.resolvedPath ?? "D:/path/image.png"}
+            style={inputStyle()}
+          />
+        </Field>
+        <Field label="format">
+          <select
+            value={outputFormat}
+            onChange={(event) => setOutputFormat(event.currentTarget.value)}
+            style={inputStyle()}
+          >
+            {supportedFormats.map((format) => (
+              <option key={format.id} value={format.id}>
+                {format.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
+        <Field label="w">
+          <input value={width} onChange={(event) => setWidth(event.currentTarget.value)} inputMode="numeric" style={inputStyle()} />
+        </Field>
+        <Field label="h">
+          <input value={height} onChange={(event) => setHeight(event.currentTarget.value)} inputMode="numeric" style={inputStyle()} />
+        </Field>
+        <Field label="fit">
+          <select value={fitMode} onChange={(event) => setFitMode(event.currentTarget.value)} style={inputStyle()}>
+            {tool.resizeModes.map((mode) => <option key={mode} value={mode}>{mode}</option>)}
+          </select>
+        </Field>
+        <Field label="q">
+          <input value={quality} onChange={(event) => setQuality(event.currentTarget.value)} inputMode="numeric" style={inputStyle()} />
+        </Field>
+        <Field label="bg">
+          <input value={background} onChange={(event) => setBackground(event.currentTarget.value)} style={inputStyle()} />
+        </Field>
+      </div>
+
+      <div style={{ minHeight: 0, display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)", gap: 8 }}>
+        <Field label="output">
+          <input
+            value={outputPath}
+            onChange={(event) => setOutputPath(event.currentTarget.value)}
+            placeholder="auto"
+            style={inputStyle()}
+          />
+        </Field>
+
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {tool.resizePresets.slice(0, 5).map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => {
+                setWidth(String(preset.width));
+                setHeight(String(preset.height));
+                setFitMode(preset.fitMode);
+              }}
+              style={smallButtonStyle(false, false)}
+            >
+              {preset.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={busy}
+            data-kain-image-converter-command="inspect"
+            onClick={() => void runImageAction(inspectAction, "inspect")}
+            style={smallButtonStyle(busyActionId === inspectAction?.id, busy)}
+          >
+            Inspect
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            data-kain-image-converter-command="plan"
+            onClick={() => void runImageAction(planAction, "plan")}
+            style={smallButtonStyle(busyActionId === planAction?.id, busy)}
+          >
+            Plan
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            data-kain-image-converter-command="convert"
+            onClick={() => void runImageAction(convertAction, "convert")}
+            style={smallButtonStyle(busyActionId === convertAction?.id || pythonBusy, busy)}
+          >
+            Convert
+          </button>
+        </div>
+
+        <div style={{ minHeight: 0, overflow: "auto", display: "grid", alignContent: "start", gap: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>
+            <Metric label="formats" value={String(supportedFormats.length)} />
+            <Metric label="modes" value={String(tool.resizeModes.length)} />
+            <Metric label="backends" value={String(tool.pipelineBackends.length)} />
+            <Metric label="image" value={lastConversion?.source ? `${lastConversion.source.width}x${lastConversion.source.height}` : "idle"} />
+          </div>
+          {lastConversion ? (
+            <div style={resultPanelStyle()}>
+              <div style={{ fontSize: 10, opacity: 0.56 }}>{lastConversion.backend}</div>
+              <div style={{ fontSize: 12, fontWeight: 750, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {lastConversion.outputPath ?? lastConversion.source?.path}
+              </div>
+              {lastConversion.warnings.length ? (
+                <div style={{ fontSize: 10, opacity: 0.65 }}>{lastConversion.warnings.join(" | ")}</div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={resultPanelStyle()}>
+              <div style={{ fontSize: 10, opacity: 0.56 }}>{tool.label}</div>
+              <div style={{ fontSize: 12, opacity: 0.78 }}>{tool.summary}</div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div
@@ -211,6 +469,72 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 13, fontWeight: 750, lineHeight: 1.1 }}>{value}</div>
     </div>
   );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label style={{ display: "grid", gap: 3, minWidth: 0, fontSize: 9, fontWeight: 750, opacity: 0.72 }}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function findToolAction(actions: KainPluginAction[], effect: string): KainPluginAction | null {
+  return actions.find((action) => action.effect === effect)
+    ?? actions.find((action) => action.id.toLowerCase().includes(effect))
+    ?? null;
+}
+
+function parseOptionalPositiveInt(value: string): number | null {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function inputStyle(): CSSProperties {
+  return {
+    width: "100%",
+    minWidth: 0,
+    minHeight: 24,
+    boxSizing: "border-box",
+    border: "1px solid var(--overlay-border, rgba(255,255,255,0.12))",
+    borderRadius: 5,
+    background: "var(--overlay-control-bg, rgba(255,255,255,0.07))",
+    color: "inherit",
+    fontSize: 11,
+    padding: "4px 6px",
+    outline: "none",
+  };
+}
+
+function smallButtonStyle(active: boolean, busy: boolean): CSSProperties {
+  return {
+    border: 0,
+    borderRadius: 5,
+    padding: "5px 8px",
+    minHeight: 24,
+    background: active
+      ? "var(--overlay-accent-soft, rgba(125,211,252,0.18))"
+      : "var(--overlay-control-bg, rgba(255,255,255,0.08))",
+    color: "inherit",
+    fontSize: 10,
+    fontWeight: 750,
+    cursor: busy ? "wait" : "pointer",
+    opacity: busy && !active ? 0.55 : 1,
+    whiteSpace: "nowrap",
+  };
+}
+
+function resultPanelStyle(): CSSProperties {
+  return {
+    minWidth: 0,
+    display: "grid",
+    gap: 4,
+    padding: 8,
+    borderRadius: 5,
+    background: "var(--overlay-muted-bg, rgba(255,255,255,0.05))",
+    overflow: "hidden",
+  };
 }
 
 function pillStyle(active: boolean): CSSProperties {

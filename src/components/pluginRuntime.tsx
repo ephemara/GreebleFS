@@ -514,6 +514,7 @@ export interface OverlayPluginCapabilitySummary {
   vscodeExtensions?: number;
   kainWorkbenches?: number;
   kainPreviewWorkbenches?: number;
+  kainTools?: number;
   kainFfiCapabilities?: number;
   kainWasmTargets?: number;
   kainCargoFfiTargets?: number;

@@ -87,6 +87,7 @@ Settings > Kain UI publishes smoke-test DOM hooks so MCP automation can prove th
 - `data-kain-plugin-ffi-capabilities`
 - `data-kain-plugin-wasm-targets`
 - `data-kain-plugin-cargo-ffi-targets`
+- `data-kain-plugin-tools`
 
 The workbench top bar also exposes the compact applet strip through:
 
@@ -192,6 +193,8 @@ Current first pass:
 
 - `usr/plugins-kain/kain-workbench-smoke/plugin.kn`
   First Kain-native plugin source. It declares a workbench, a `.kn`/`.ks` preview workbench, trusted bridge actions, FFI capabilities, a WASM target, and a Cargo FFI target.
+- `usr/plugins-kain/kain-image-converter/plugin.kn`
+  First real Kain-native workbench plugin. Kain owns the tool/workbench/preview/action contract for image inspect, resize, conversion, SVG emit, and ICO emit. The live byte path is the managed Python sidecar action set `kain.plugin.image_converter.inspect`, `kain.plugin.image_converter.plan`, and `kain.plugin.image_converter.convert`; Node, C runtime, Cargo FFI, and WASM lanes are declared for optimizer/native/portable growth.
 - `src-kain/plugins/registry.kn`
   Kain-side catalog proof for `greeblefs.plugins.catalog`.
 - `src-kain/plugins/stdlib/greeblefs/plugin.kn`
@@ -214,6 +217,18 @@ usr/plugins-kain/<plugin>/plugin.kn
 ```
 
 Kain owns plugin intent and heavy runtime orchestration. GreebleFS owns install/discovery, permissions, renderer safety, preview/workbench lifecycle, and host actions. Kain FFI lanes such as Python, Node, C runtime, Cargo FFI, WASM, Rust reflection, Tauron view, and SPIR-V are privileged plugin capabilities, not browser-level React APIs.
+
+For tool-shaped plugins, keep the source of truth in Kain and expose a `tools` array from `plugin.kn`. `src/runtime/kainPluginCatalog.ts` normalizes the `toolId` references on workbenches, preview workbenches, and actions. `KainPluginWorkbenchHost` should render known trusted tool kinds, starting with `image-converter`, and route byte-writing actions through host-owned bridges rather than letting Kain-rendered DOM write files directly.
+
+The image converter validation lane is:
+
+```powershell
+D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.kn
+D:\GreebleFS\toolchains\kain\payload\bin\kain.exe run D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.runtime\kain\image_converter_pipeline.kn
+D:\GreebleFS\toolchains\kain\payload\bin\kain.exe build D:\GreebleFS\usr\plugins-kain\kain-image-converter\plugin.kn -t ts -o D:\GreebleFS\target\kain-image-converter-plugin-build\plugin.ts
+cargo check --manifest-path usr/plugins-kain/kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools/Cargo.toml
+python -m py_compile src-python\greeblefs_sidecar\actions.py src-python\greeblefs_sidecar\image_converter_runtime.py
+```
 
 ## What Is Possible Now
 

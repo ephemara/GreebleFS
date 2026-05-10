@@ -1,3 +1,20 @@
+# 2026-05-10 - Kain Image Converter Workbench
+
+- Added the first real Kain-native tool plugin under `usr/plugins-kain/kain-image-converter/`.
+  - `plugin.kn` owns the image converter workbench, image preview workbench, tool metadata, formats, resize presets, trusted actions, Python/Node/C/Cargo/WASM lane declarations, WASM target metadata, and a plugin-owned Cargo FFI helper target.
+  - `src/runtime/kainPluginCatalog.ts` now normalizes `tools`, `toolId`, action sidecar ids, and action effects; `src/components/kain/KainPluginWorkbenchHost.tsx` renders the first trusted tool host for `image-converter` with source/output/format/resize controls.
+  - `src-python/greeblefs_sidecar/image_converter_runtime.py` plus `kain.plugin.image_converter.inspect|plan|convert` provide the live Python/Pillow byte path for resize/convert, including SVG raster embed and ICO output.
+- Durable rules:
+  - Keep Kain plugin tools authored in `plugin.kn`; TypeScript should normalize and host trusted tool kinds, not become the source of truth for tool vocabulary.
+  - File-writing conversion stays host-owned through the Python sidecar until a deeper Kain plugin sandbox exists. Kain actions approve/describe the operation; the trusted sidecar writes bytes.
+  - Keep plugin-owned Cargo crates isolated with an empty `[workspace]`, and avoid committing generated `target/` or plugin runtime output artifacts.
+- Validation:
+  - Passed: Kain run/build smokes for the image converter plugin and runtime descriptors.
+  - Passed: `greeblefs.plugins.catalog` and `greeblefs.plugins.action` bridge smokes for `kain-image-converter`.
+  - Passed: Python sidecar compile plus direct inspect/plan/convert proof writing real ICO and SVG outputs under `target/kain-image-converter-proof`.
+  - Passed: `cargo check --manifest-path usr/plugins-kain/kain-image-converter/plugin.runtime/cargo/greeblefs-kain-image-tools/Cargo.toml`.
+  - Passed: focused Vitest coverage for Kain plugin catalog, Kain workbench host, Settings Kain UI proof, plugin package merger, Python runtime backend, and Python sidecar config.
+
 # 2026-05-10 - Dev MCP Compact Tool Surface
 
 - Collapsed the default GreebleFS dev MCP tool surface from 81 visible tools to 9 compact router tools.

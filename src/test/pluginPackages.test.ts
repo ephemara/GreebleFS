@@ -1616,6 +1616,20 @@ describe('plugin package discovery', () => {
               },
             ],
             runtimes: [],
+            tools: [
+              {
+                id: 'image-tool',
+                kind: 'image-converter',
+                label: 'Image Tool',
+                summary: 'Image conversion.',
+                supportedInputExtensions: ['png'],
+                resizeModes: ['contain'],
+                formats: [],
+                resizePresets: [],
+                pipelineBackends: [],
+                ui: {},
+              },
+            ],
             workbenches: [
               {
                 id: 'kain-workbench-smoke.main',
@@ -1625,6 +1639,7 @@ describe('plugin package discovery', () => {
                 mountSlot: 'workbench.panels',
                 order: 20,
                 rendererKind: 'kain-host',
+                toolId: 'image-tool',
                 defaultOpen: false,
                 hostModels: ['host.plugins'],
                 actions: ['kain.plugin.inspect'],
@@ -1715,6 +1730,7 @@ describe('plugin package discovery', () => {
           actions: 1,
           kainWorkbenches: 1,
           kainPreviewWorkbenches: 1,
+          kainTools: 1,
           kainFfiCapabilities: 1,
           kainWasmTargets: 1,
           kainCargoFfiTargets: 1,

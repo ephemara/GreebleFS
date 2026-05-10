@@ -89,6 +89,7 @@ export function KainUiSettingsSection({
   const kainPluginCount = pluginCatalog?.plugins.length ?? 0;
   const kainPluginWorkbenchCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.workbenches.length, 0) ?? 0;
   const kainPluginPreviewWorkbenchCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.previewWorkbenches.length, 0) ?? 0;
+  const kainPluginToolCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.tools.length, 0) ?? 0;
   const kainPluginFfiCapabilityCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.ffiCapabilities.length, 0) ?? 0;
   const kainPluginWasmTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.wasmTargets.length, 0) ?? 0;
   const kainPluginCargoFfiTargetCount = pluginCatalog?.plugins.reduce((count, plugin) => count + plugin.cargoFfiTargets.length, 0) ?? 0;
@@ -130,6 +131,7 @@ export function KainUiSettingsSection({
       data-kain-plugin-catalog-proof={pluginStatus}
       data-kain-plugin-count={kainPluginCount}
       data-kain-plugin-preview-workbenches={kainPluginPreviewWorkbenchCount}
+      data-kain-plugin-tools={kainPluginToolCount}
       data-kain-plugin-ffi-capabilities={kainPluginFfiCapabilityCount}
       data-kain-plugin-wasm-targets={kainPluginWasmTargetCount}
       data-kain-plugin-cargo-ffi-targets={kainPluginCargoFfiTargetCount}
@@ -361,7 +363,7 @@ export function KainUiSettingsSection({
           />
           <SettingsRow
             title="Surfaces"
-            description={`${kainPluginWorkbenchCount} workbenches | ${kainPluginPreviewWorkbenchCount} preview workbenches`}
+            description={`${kainPluginWorkbenchCount} workbenches | ${kainPluginPreviewWorkbenchCount} preview workbenches | ${kainPluginToolCount} tools`}
             control={<SettingsStatusPill active={kainPluginPreviewWorkbenchCount > 0}>{kainPluginPreviewWorkbenchCount}</SettingsStatusPill>}
           />
           <SettingsRow

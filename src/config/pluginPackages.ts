@@ -1826,6 +1826,7 @@ function estimateKainPluginCapabilities(
     settingsSlots: 0,
     kainWorkbenches: plugin.workbenches.length,
     kainPreviewWorkbenches: plugin.previewWorkbenches.length,
+    kainTools: plugin.tools.length,
     kainFfiCapabilities: plugin.ffiCapabilities.length,
     kainWasmTargets: plugin.wasmTargets.length,
     kainCargoFfiTargets: plugin.cargoFfiTargets.length,

@@ -1,0 +1,8 @@
+fn main() -> Any:
+    let worker = json_object_new()
+    json_object_set(worker, "id", "kain-image-converter-preview-worker")
+    json_object_set(worker, "kind", "wasm-worker")
+    json_object_set(worker, "status", "declared")
+    json_object_set(worker, "source", "usr/plugins-kain/kain-image-converter/plugin.runtime/wasm/image_converter_preview_worker.kn")
+    json_object_set(worker, "summary", "Future Kain-compiled portable preview worker for image metadata and thumbnail transforms.")
+    return worker

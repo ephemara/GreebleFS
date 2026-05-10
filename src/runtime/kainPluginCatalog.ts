@@ -30,6 +30,51 @@ export interface KainPluginRuntime {
   ffiLanes: string[];
 }
 
+export interface KainPluginToolFormat {
+  id: string;
+  label: string;
+  extension: string;
+  mimeType: string;
+  encoder: string;
+  status: string;
+  read: boolean;
+  write: boolean;
+}
+
+export interface KainPluginToolResizePreset {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  fitMode: string;
+}
+
+export interface KainPluginToolPipelineBackend {
+  id: string;
+  label: string;
+  lane: string;
+  role: string;
+  status: string;
+  required: boolean;
+  packages: string[];
+  sourcePath?: string;
+}
+
+export interface KainPluginTool {
+  id: string;
+  kind: string;
+  label: string;
+  summary: string;
+  primaryActionId?: string;
+  defaultOutputFormat?: string;
+  supportedInputExtensions: string[];
+  resizeModes: string[];
+  formats: KainPluginToolFormat[];
+  resizePresets: KainPluginToolResizePreset[];
+  pipelineBackends: KainPluginToolPipelineBackend[];
+  ui: Record<string, unknown>;
+}
+
 export interface KainPluginWorkbench {
   id: string;
   title: string;
@@ -39,6 +84,7 @@ export interface KainPluginWorkbench {
   order: number;
   rendererKind: KainPluginRendererKind;
   componentId?: string;
+  toolId?: string;
   defaultOpen: boolean;
   hostModels: string[];
   actions: string[];
@@ -77,6 +123,7 @@ export interface KainPluginPreviewWorkbench {
   runtimeId?: string;
   runtimeSurfaceId?: string;
   buildTarget?: string;
+  toolId?: string;
   match: KainPluginPreviewWorkbenchMatch;
   capabilities: KainPluginPreviewWorkbenchCapabilities;
   workbenchChrome: KainPluginPreviewWorkbenchChrome;
@@ -93,6 +140,10 @@ export interface KainPluginAction {
   status: string;
   requiresTrust: boolean;
   ffiLanes: string[];
+  toolId?: string;
+  runtimeActionId?: string;
+  sidecarActionId?: string;
+  effect?: string;
 }
 
 export interface KainPluginWasmTarget {
@@ -135,6 +186,7 @@ export interface KainPluginDefinition {
   permissions: KainPluginPermission[];
   ffiCapabilities: KainPluginFfiCapability[];
   runtimes: KainPluginRuntime[];
+  tools: KainPluginTool[];
   workbenches: KainPluginWorkbench[];
   previewWorkbenches: KainPluginPreviewWorkbench[];
   actions: KainPluginAction[];
@@ -299,6 +351,10 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
           status: stringValue(actionSource.status) ?? "declared",
           requiresTrust: booleanValue(actionSource.requiresTrust, true),
           ffiLanes: stringList(actionSource.ffiLanes),
+          toolId: stringValue(actionSource.toolId),
+          runtimeActionId: stringValue(actionSource.runtimeActionId),
+          sidecarActionId: stringValue(actionSource.sidecarActionId),
+          effect: stringValue(actionSource.effect),
         };
       });
 
@@ -342,6 +398,70 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             hostPath: stringValue(capabilitySource.hostPath),
           };
         }),
+        tools: normalizeList(pluginSource.tools, (toolSource) => {
+          const toolId = stringValue(toolSource.id);
+          if (!toolId) {
+            return null;
+          }
+
+          return {
+            id: toolId,
+            kind: stringValue(toolSource.kind) ?? "tool",
+            label: stringValue(toolSource.label) ?? toolId,
+            summary: stringValue(toolSource.summary) ?? "",
+            primaryActionId: stringValue(toolSource.primaryActionId),
+            defaultOutputFormat: stringValue(toolSource.defaultOutputFormat),
+            supportedInputExtensions: stringList(toolSource.supportedInputExtensions)
+              .map((item) => item.toLowerCase()),
+            resizeModes: stringList(toolSource.resizeModes),
+            formats: normalizeList(toolSource.formats, (formatSource) => {
+              const formatId = stringValue(formatSource.id);
+              if (!formatId) {
+                return null;
+              }
+              return {
+                id: formatId,
+                label: stringValue(formatSource.label) ?? formatId.toUpperCase(),
+                extension: stringValue(formatSource.extension) ?? formatId,
+                mimeType: stringValue(formatSource.mimeType) ?? "application/octet-stream",
+                encoder: stringValue(formatSource.encoder) ?? formatId.toUpperCase(),
+                status: stringValue(formatSource.status) ?? "declared",
+                read: booleanValue(formatSource.read, true),
+                write: booleanValue(formatSource.write, true),
+              };
+            }),
+            resizePresets: normalizeList(toolSource.resizePresets, (presetSource) => {
+              const presetId = stringValue(presetSource.id);
+              if (!presetId) {
+                return null;
+              }
+              return {
+                id: presetId,
+                label: stringValue(presetSource.label) ?? presetId,
+                width: numberValue(presetSource.width) ?? 0,
+                height: numberValue(presetSource.height) ?? 0,
+                fitMode: stringValue(presetSource.fitMode) ?? "contain",
+              };
+            }),
+            pipelineBackends: normalizeList(toolSource.pipelineBackends, (backendSource) => {
+              const backendId = stringValue(backendSource.id);
+              if (!backendId) {
+                return null;
+              }
+              return {
+                id: backendId,
+                label: stringValue(backendSource.label) ?? backendId,
+                lane: stringValue(backendSource.lane) ?? "kain",
+                role: stringValue(backendSource.role) ?? "helper",
+                status: stringValue(backendSource.status) ?? "declared",
+                required: booleanValue(backendSource.required),
+                packages: stringList(backendSource.packages),
+                sourcePath: stringValue(backendSource.sourcePath),
+              };
+            }),
+            ui: asObject(toolSource.ui) ?? {},
+          };
+        }),
         runtimes: normalizeList(pluginSource.runtimes, (runtimeSource) => {
           const runtimeId = stringValue(runtimeSource.id);
           if (!runtimeId) {
@@ -372,6 +492,7 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             order: numberValue(workbenchSource.order) ?? 0,
             rendererKind: normalizeRendererKind(workbenchSource.rendererKind),
             componentId: stringValue(workbenchSource.componentId),
+            toolId: stringValue(workbenchSource.toolId),
             defaultOpen: booleanValue(workbenchSource.defaultOpen),
             hostModels: stringList(workbenchSource.hostModels),
             actions: stringList(workbenchSource.actions),
@@ -393,6 +514,7 @@ export function normalizeKainPluginCatalog(value: unknown): KainPluginCatalog | 
             runtimeId: stringValue(previewSource.runtimeId),
             runtimeSurfaceId: stringValue(previewSource.runtimeSurfaceId),
             buildTarget: stringValue(previewSource.buildTarget),
+            toolId: stringValue(previewSource.toolId),
             match: normalizePreviewMatch(previewSource.match),
             capabilities: normalizePreviewCapabilities(previewSource.capabilities),
             workbenchChrome: normalizePreviewChrome(previewSource.workbenchChrome),

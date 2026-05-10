@@ -22,6 +22,11 @@ from .cutout_runtime import (
     image_cutout_reset_session_action,
     image_cutout_stage_export_action,
 )
+from .image_converter_runtime import (
+    convert_image_with_python,
+    inspect_image_converter_source,
+    plan_image_converter_output,
+)
 from .semantic_search_runtime import (
     semantic_delete_index_action,
     semantic_find_similar_file_action,
@@ -443,6 +448,33 @@ def image_cutout_close_session_registered_action(
     context: PythonActionContext,
 ) -> dict[str, Any]:
     return image_cutout_close_session_action(payload, context)
+
+
+@python_action("kain.plugin.image_converter.inspect")
+def kain_image_converter_inspect_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    _ = context
+    return inspect_image_converter_source(payload)
+
+
+@python_action("kain.plugin.image_converter.plan")
+def kain_image_converter_plan_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    _ = context
+    return plan_image_converter_output(payload)
+
+
+@python_action("kain.plugin.image_converter.convert")
+def kain_image_converter_convert_action(
+    payload: Any,
+    context: PythonActionContext,
+) -> dict[str, Any]:
+    _ = context
+    return convert_image_with_python(payload)
 
 
 @python_action("files.scan_directory")

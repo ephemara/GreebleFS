@@ -366,6 +366,7 @@ const pluginCatalog: KainPluginCatalog = {
         },
       ],
       runtimes: [],
+      tools: [],
       workbenches: [
         {
           id: 'kain-workbench-smoke.main',
@@ -488,6 +489,7 @@ describe('KainUiSettingsSection', () => {
     expect(proof).toHaveAttribute('data-kain-plugin-catalog-proof', 'live');
     expect(proof).toHaveAttribute('data-kain-plugin-count', '1');
     expect(proof).toHaveAttribute('data-kain-plugin-preview-workbenches', '1');
+    expect(proof).toHaveAttribute('data-kain-plugin-tools', '0');
     expect(proof).toHaveAttribute('data-kain-plugin-ffi-capabilities', '2');
     expect(proof).toHaveAttribute('data-kain-plugin-wasm-targets', '1');
     expect(proof).toHaveAttribute('data-kain-plugin-cargo-ffi-targets', '1');
