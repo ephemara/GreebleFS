@@ -8712,6 +8712,22 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - not run: a full live install/uninstall smoke pass on this host, because the local Windows helper intentionally tears down the current per-user install/state roots and is safer to prove on a disposable profile or VM
 - Recommended next step:
   - Run `.\simulate-new-user-flow.bat` on a disposable Windows user profile or VM and confirm the interactive page writes the expected external `/usr` root into `greeblefs-install-profile.toml`, then smoke-launch the installed app against that external managed-content tree.
+# 2026-05-10 - Explorer Context Menus Honor Shell Zoom
+
+- Fixed the Explorer context-menu DPI mismatch where fixed portaled menus stayed at full viewport scale while the shell was visually transformed by `appearance.appZoom`.
+  - `src/components/explorer/ExplorerContextMenu.tsx` now reads the nearest `data-gfs-shell-zoom` host and applies that scale to each menu panel with a top-left transform, preserving viewport click coordinates while making the menu match the compact workbench.
+  - Explorer local context menus now default to compact rows with descriptions hidden; the shipped classic menu pack also defaults to compact/no-description entry, background, multi-select, and search-result menus.
+- Durable rule:
+  - Fixed/floating explorer menus must remain app-zoom aware. If a future popup is portaled under Explorer but positioned with viewport coordinates, either use `ExplorerContextMenu` or copy its shell-zoom compensation instead of relying on ancestor transforms.
+  - Context menus are command surfaces, not help panels. Keep descriptions opt-in through authored menu layout data rather than restoring them as the mouse/default presentation.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerContextMenuRenderer.test.tsx --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/explorerSideRail.test.tsx -t "rail context menu" --reporter=dot --testTimeout=30000`
+  - Passed: `bunx vitest run src/test/explorerMenuRuntime.test.ts -t "preview" --reporter=dot --testTimeout=30000`
+  - Passed: JSON parse for `usr/profiles/default/menu-packs/greeblefs-classic/menu-pack.json` and `usr/profiles/minimal-low-motion/menu-packs/greeblefs-classic/menu-pack.json`
+  - Live WebView/CDP proof at `appearance.appZoom=0.7`: rail context menu rendered at `145.6px` screen width, rows around `20px`, `transform=matrix(0.7, 0, 0, 0.7, 0, 0)`, and no description text. Screenshot: `MCP/.state/screenshots/context-menu-dpi-compact-proof.png`
+  - Not clean: repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` remains red from existing baseline diagnostics outside the touched context-menu files.
+
 # 2026-05-07 - Explorer Status-Bar View Size Slider
 
 - Added a shared explorer chrome size slider instead of hardcoding thumbnail sizing into the footer view-switcher cluster.

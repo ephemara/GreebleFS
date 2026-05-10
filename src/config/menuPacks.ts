@@ -474,7 +474,7 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       shapeLanguage: 'rectangular',
       motionStyle: 'minimal',
       materialStyle: 'glass',
-      density: 'balanced',
+      density: 'compact',
       submenuBehavior: 'sidecar',
       focusStyle: 'line',
       backdropStyle: 'none',
@@ -486,10 +486,10 @@ export function createBuiltInExplorerMenuPack(): LoadedExplorerMenuPack {
       ],
     },
     contexts: {
-      entry: { renderer: 'classic', entries: entryLayout },
-      background: { renderer: 'classic', entries: backgroundLayout },
-      'multi-select': { renderer: 'classic', entries: multiSelectLayout },
-      'search-result': { renderer: 'classic', entries: searchResultLayout },
+      entry: { renderer: 'classic', showDescriptions: false, entries: entryLayout },
+      background: { renderer: 'classic', showDescriptions: false, entries: backgroundLayout },
+      'multi-select': { renderer: 'classic', showDescriptions: false, entries: multiSelectLayout },
+      'search-result': { renderer: 'classic', showDescriptions: false, entries: searchResultLayout },
       'preview-pane': {
         renderer: 'classic',
         density: 'compact',

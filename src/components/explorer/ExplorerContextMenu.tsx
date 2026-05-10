@@ -31,6 +31,7 @@ interface MenuPanelProps {
   nodes: OverlayContextMenuNode[];
   path: string[];
   density: 'compact' | 'balanced' | 'touch';
+  visualScale: number;
   showDescriptions: boolean;
   desiredPosition: {
     left: number;
@@ -119,9 +120,34 @@ const contextMenuShortcutFontSize =
   'var(--overlay-explorer-context-menu-shortcut-font-size, 0.625rem)';
 const contextMenuSubmenuInactiveOpacity =
   'var(--overlay-explorer-context-menu-submenu-indicator-opacity, 0.7)';
+const DEFAULT_CONTEXT_MENU_VISUAL_SCALE = 1;
+const MIN_CONTEXT_MENU_VISUAL_SCALE = 0.5;
+const MAX_CONTEXT_MENU_VISUAL_SCALE = 1.75;
 
 function getPathKey(path: string[]): string {
   return path.length > 0 ? path.join('/') : 'root';
+}
+
+function clampContextMenuVisualScale(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return DEFAULT_CONTEXT_MENU_VISUAL_SCALE;
+  }
+  return Math.min(
+    MAX_CONTEXT_MENU_VISUAL_SCALE,
+    Math.max(MIN_CONTEXT_MENU_VISUAL_SCALE, value),
+  );
+}
+
+function readContextMenuVisualScale(portalRoot: HTMLElement | null): number {
+  if (typeof document === 'undefined') {
+    return DEFAULT_CONTEXT_MENU_VISUAL_SCALE;
+  }
+
+  const shellZoomElement =
+    portalRoot?.closest<HTMLElement>('[data-gfs-shell-zoom]')
+    ?? document.querySelector<HTMLElement>('[data-gfs-shell-zoom]');
+  const shellZoom = Number(shellZoomElement?.dataset.gfsShellZoom);
+  return clampContextMenuVisualScale(shellZoom);
 }
 
 function findFirstSelectableIndex(nodes: OverlayContextMenuNode[]): number {
@@ -186,6 +212,7 @@ function MenuPanel({
   nodes,
   path,
   density,
+  visualScale,
   showDescriptions,
   desiredPosition,
   presentation,
@@ -214,7 +241,7 @@ function MenuPanel({
 
     const rect = panelRef.current.getBoundingClientRect();
     setPosition(clampPanelPosition(rect.width, rect.height, desiredPosition));
-  }, [desiredPosition, nodes.length]);
+  }, [desiredPosition, nodes.length, visualScale]);
 
   const openSubmenuId = openSubmenuPath[path.length];
   const openSubmenuNode =
@@ -249,6 +276,11 @@ function MenuPanel({
           top: position.top,
           zIndex: 10000 + path.length,
           boxShadow: contextMenuShadow,
+          transform:
+            Math.abs(visualScale - DEFAULT_CONTEXT_MENU_VISUAL_SCALE) > 0.001
+              ? `scale(${visualScale})`
+              : undefined,
+          transformOrigin: 'top left',
         }}
       >
         {nodes.map((node, index) => {
@@ -415,6 +447,7 @@ function MenuPanel({
             anchorRect: openSubmenuAnchor,
           }}
           density={density}
+          visualScale={visualScale}
           showDescriptions={showDescriptions}
           presentation={presentation}
           openSubmenuPath={openSubmenuPath}
@@ -588,6 +621,7 @@ export function ExplorerContextMenu({
   if (!resolvedPortalRoot) {
     return null;
   }
+  const visualScale = readContextMenuVisualScale(resolvedPortalRoot);
 
   return createPortal(
     <div
@@ -621,6 +655,7 @@ export function ExplorerContextMenu({
         nodes={rootNodes}
         path={[]}
         density={resolvedDensity}
+        visualScale={visualScale}
         showDescriptions={resolvedShowDescriptions}
         desiredPosition={{ left: x, top: y }}
         presentation={resolvedPresentation}

@@ -334,6 +334,10 @@ describe('ExplorerSideRail', () => {
     );
 
     fireEvent.contextMenu(screen.getByRole('tree', { name: 'Quick access tree' }));
+    expect(onContextMenuRequest.mock.calls[0][0].presentation).toMatchObject({
+      density: 'compact',
+      showDescriptions: false,
+    });
     selectRailContextCommand(onContextMenuRequest.mock.calls[0][0], 'Close Sources');
     expect(onCloseSources).toHaveBeenCalledTimes(1);
   });

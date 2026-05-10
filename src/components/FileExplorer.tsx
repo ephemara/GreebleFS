@@ -1275,7 +1275,10 @@ function resolveThemedLocalContextMenuPresentation(
       "classic",
     density:
       localPresentation?.density ?? themePresentation.density ?? "balanced",
-    showDescriptions: localPresentation?.showDescriptions ?? true,
+    showDescriptions:
+      localPresentation?.showDescriptions
+      ?? themePresentation.showDescriptions
+      ?? false,
     shapeLanguage:
       localPresentation?.shapeLanguage ?? themePresentation.shapeLanguage,
     motionStyle: localPresentation?.motionStyle ?? themePresentation.motionStyle,
@@ -33886,8 +33889,8 @@ export function FileExplorer({
         event: request.event,
         nodes,
         presentation: {
-          density: "balanced",
-          showDescriptions: true,
+          density: "compact",
+          showDescriptions: false,
         },
       });
     },
@@ -33949,8 +33952,8 @@ export function FileExplorer({
             }),
           ],
           presentation: {
-            density: "balanced",
-            showDescriptions: true,
+            density: "compact",
+            showDescriptions: false,
           },
         });
         return;
@@ -34006,8 +34009,8 @@ export function FileExplorer({
           }),
         ],
         presentation: {
-          density: "balanced",
-          showDescriptions: true,
+          density: "compact",
+          showDescriptions: false,
         },
       });
     },
@@ -34031,8 +34034,8 @@ export function FileExplorer({
           event: request.event,
           nodes: request.nodes,
           presentation: request.presentation ?? {
-            density: "balanced",
-            showDescriptions: true,
+            density: "compact",
+            showDescriptions: false,
           },
         });
         return;
@@ -34057,8 +34060,8 @@ export function FileExplorer({
             }),
           ],
           presentation: {
-            density: "balanced",
-            showDescriptions: true,
+            density: "compact",
+            showDescriptions: false,
           },
         });
         return;
@@ -34127,8 +34130,8 @@ export function FileExplorer({
           }),
         ],
         presentation: {
-          density: "balanced",
-          showDescriptions: true,
+          density: "compact",
+          showDescriptions: false,
         },
       });
     },

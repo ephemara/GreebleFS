@@ -569,7 +569,7 @@ function resolvePresentationRenderer(
       presentation.fallbackRenderer ??
       'classic',
     density: layout.density ?? themePresentation.density ?? presentation.density ?? 'balanced',
-    showDescriptions: layout.showDescriptions ?? true,
+    showDescriptions: layout.showDescriptions ?? false,
     shapeLanguage: themePresentation.shapeLanguage ?? presentation.shapeLanguage,
     motionStyle: themePresentation.motionStyle ?? presentation.motionStyle,
     materialStyle: themePresentation.materialStyle ?? presentation.materialStyle,

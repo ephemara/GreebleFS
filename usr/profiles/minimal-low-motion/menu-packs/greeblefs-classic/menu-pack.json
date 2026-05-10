@@ -14,7 +14,7 @@
     "shapeLanguage": "rectangular",
     "motionStyle": "minimal",
     "materialStyle": "glass",
-    "density": "balanced",
+    "density": "compact",
     "submenuBehavior": "sidecar",
     "focusStyle": "line",
     "backdropStyle": "none",
@@ -40,6 +40,7 @@
   "contexts": {
     "entry": {
       "renderer": "classic",
+      "showDescriptions": false,
       "entries": [
         {
           "id": "entry.open",
@@ -244,6 +245,7 @@
     },
     "background": {
       "renderer": "classic",
+      "showDescriptions": false,
       "entries": [
         {
           "id": "background.create.slot",
@@ -333,6 +335,7 @@
     },
     "multi-select": {
       "renderer": "classic",
+      "showDescriptions": false,
       "entries": [
         {
           "id": "multi.copy-path",
@@ -443,6 +446,7 @@
     },
     "search-result": {
       "renderer": "classic",
+      "showDescriptions": false,
       "entries": [
         {
           "id": "search.open",

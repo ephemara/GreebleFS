@@ -990,8 +990,8 @@ export function ExplorerSideRail({
         event,
         nodes,
         presentation: {
-          density: "balanced",
-          showDescriptions: true,
+          density: "compact",
+          showDescriptions: false,
         },
       });
     },

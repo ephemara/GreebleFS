@@ -245,6 +245,35 @@ describe('ExplorerContextMenu', () => {
     );
   });
 
+  it('matches the transformed shell zoom for fixed floating panels', () => {
+    const shellRoot = document.createElement('div');
+    shellRoot.dataset.gfsShellZoom = '0.7';
+    const portalRoot = document.createElement('div');
+    shellRoot.appendChild(portalRoot);
+    document.body.appendChild(shellRoot);
+
+    render(
+      <ExplorerContextMenu
+        visible
+        x={24}
+        y={24}
+        nodes={[createCommandNode()]}
+        portalRoot={portalRoot}
+        presentation={{ density: 'compact', showDescriptions: false }}
+        onClose={() => {}}
+        renderIcon={() => null}
+      />,
+    );
+
+    const rootPanel = portalRoot.querySelector<HTMLElement>(
+      '[data-overlay-explorer-context-menu-panel="root"]',
+    );
+
+    expect(rootPanel?.style.transform).toBe('scale(0.7)');
+    expect(rootPanel?.style.transformOrigin).toBe('top left');
+    shellRoot.remove();
+  });
+
   it('keeps Pilot Dark fallback color and compact width when theme vars do not inherit', () => {
     render(
       <ExplorerContextMenu
