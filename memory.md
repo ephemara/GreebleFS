@@ -1,3 +1,17 @@
+# 2026-05-10 - Debloated Explorer Rail Header Controls
+
+- Removed the visible Explorer side-rail header strip so the sources rail starts directly on its compact section stack instead of spending vertical space on `GreebleFS`, pin count, `Close`, `Manage`, and view-mode pills.
+  - `ExplorerSideRail.tsx` now routes rail-local commands through a side-rail context menu: Close Sources, Manage Bookmarks, rail view modes, and Auto Expand.
+  - `FileExplorer.tsx` opens the new `rail-controls` side-rail context-menu request through the existing local context-menu host, keeping the rail controls off the visible pane chrome.
+  - Auto Expand now tracks the open path without forcing folders permanently open: manually collapsing an auto-expanded folder records a local collapse override until the user expands it again.
+  - Drives are sorted by drive letter for the rail display, so backend inventory order such as `F:, D:, C:, E:` renders as `C:, D:, E:, F:`.
+- Durable design rule:
+  - Do not reintroduce a persistent rail header for identity, pin counts, Manage/Close, or view-mode controls. Rail-local management belongs in the rail context menu; static quick-access roots belong in the `explorerRailTrees` manifest lane; local drive expansion must remain lazy and manually collapsible.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerSideRail.test.tsx`.
+  - Full `bunx tsc -p tsconfig.json --noEmit --pretty false` still exits nonzero on existing repo-wide baseline errors outside this rail pass.
+  - Live MCP/native-CDP proof saved `MCP/.state/screenshots/rail-header-debloated-proof.png` and `rail-context-menu-controls-proof.png`; console proof `RAIL_DEBLOAT_PROOF` showed no visible side-rail view-mode group/pin pill/Manage button and drive text ordered `windows C:, Dev2 D:, E:, Dev Drive F:`, while `RAIL_CONTEXT_MENU_PROOF` showed Close, Manage, view modes, and Auto Expand in the context menu.
+
 # 2026-05-10 - Compact Explorer Home Magnum Opus
 
 - Reworked Explorer Home into a compact, panel-aware cockpit instead of a verbose explanatory dashboard.
