@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 
 
-EXAMPLE_NAME_PATTERN = re.compile(r"\b\d{2}_[a-z0-9_]+\.kn\b")
+EXAMPLE_NAME_PATTERN = re.compile(r"\b\d{2}_[A-Za-z0-9_]+\.kn\b")
 
 
 def load_manifest(manifest_path: Path) -> dict:

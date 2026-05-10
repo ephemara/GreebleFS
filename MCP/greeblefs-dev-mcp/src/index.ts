@@ -1156,6 +1156,40 @@ function getKainBinaryPath(binaryName: KainBinaryName = 'kain'): string {
   return `${getKainCargoBinDirectory()}\\${executable}`;
 }
 
+function buildKainCommandEnvironment(): Record<string, string> {
+  const userProfile = process.env.USERPROFILE?.trim() || 'C:\\Users\\Admin';
+  const cargoBinDirectory = getKainCargoBinDirectory();
+  const pythonDirectory = `${userProfile}\\AppData\\Local\\Programs\\Python\\Python311`;
+  const pathValue = process.env.PATH ?? process.env.Path ?? '';
+  const pathSegments = [cargoBinDirectory, pythonDirectory, `${pythonDirectory}\\Scripts`, pathValue]
+    .filter((segment) => segment.length > 0);
+  const pathWithTooling = Array.from(new Map(
+    pathSegments.map((segment) => [segment.toLowerCase(), segment] as const),
+  ).values()).join(';');
+  return {
+    USERPROFILE: userProfile,
+    HOME: process.env.HOME?.trim() || userProfile,
+    HOMEDRIVE: process.env.HOMEDRIVE?.trim() || 'C:',
+    HOMEPATH: process.env.HOMEPATH?.trim() || '\\Users\\Admin',
+    APPDATA: process.env.APPDATA?.trim() || `${userProfile}\\AppData\\Roaming`,
+    LOCALAPPDATA: process.env.LOCALAPPDATA?.trim() || `${userProfile}\\AppData\\Local`,
+    TEMP: process.env.TEMP?.trim() || `${userProfile}\\AppData\\Local\\Temp`,
+    TMP: process.env.TMP?.trim() || `${userProfile}\\AppData\\Local\\Temp`,
+    CARGO_HOME: process.env.CARGO_HOME?.trim() || `${userProfile}\\.cargo`,
+    KAIN_ROOT: process.env.KAIN_ROOT?.trim() || 'M:\\Kain-Lang\\kain-private\\kain',
+    KAIN_STDLIB_PATH: process.env.KAIN_STDLIB_PATH?.trim() || 'M:\\Code\\Kain\\stdlib',
+    KAIN_RUNTIME_C_PATH: process.env.KAIN_RUNTIME_C_PATH?.trim() || 'M:\\Code\\Kain\\runtime\\kain_runtime.c',
+    KAIN_RUNTIME_MANIFEST_PATH: process.env.KAIN_RUNTIME_MANIFEST_PATH?.trim() || 'M:\\Code\\Kain\\runtime\\native_runtime.toml',
+    KAIN_CLANG_PATH: process.env.KAIN_CLANG_PATH?.trim() || 'M:\\Code\\Kain\\toolchain\\llvm\\bin\\clang.exe',
+    COMSPEC: process.env.COMSPEC?.trim() || 'C:\\Windows\\System32\\cmd.exe',
+    SystemRoot: process.env.SystemRoot?.trim() || 'C:\\Windows',
+    WINDIR: process.env.WINDIR?.trim() || 'C:\\Windows',
+    PATHEXT: process.env.PATHEXT?.trim() || '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL',
+    PATH: pathWithTooling,
+    Path: pathWithTooling,
+  };
+}
+
 function normalizeKainCliArgs(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1195,6 +1229,7 @@ async function runKainCli(
   const command = buildKainCliCommand(binaryName, args);
   const result = await runtime.runWorkspaceCommand(command, {
     cwd: options.cwd,
+    env: buildKainCommandEnvironment(),
     timeoutMs,
   });
   return {
@@ -1282,7 +1317,9 @@ function buildKainDocsExampleValidationCommand(pathLike: string | undefined, val
   if (keepOutput) {
     args.push('--keep-output');
   }
-  const pythonLauncher = process.platform === 'win32' ? 'py' : 'python3';
+  const pythonExecutable = process.env.GREEBLEFS_KAIN_PYTHON?.trim()
+    || `${process.env.USERPROFILE?.trim() || 'C:\\Users\\Admin'}\\AppData\\Local\\Programs\\Python\\Python311\\python.exe`;
+  const pythonLauncher = process.platform === 'win32' ? `& ${shellQuote(pythonExecutable)}` : 'python3';
   return [pythonLauncher, ...args].join(' ');
 }
 
@@ -2203,6 +2240,7 @@ function registerCompactTools(server: McpServer, runtime: GreeblefsAutomationRun
           return buildJsonToolResult('Ran Kain docs example validator', {
             command,
             result: await runtime.runWorkspaceCommand(command, {
+              env: buildKainCommandEnvironment(),
               timeoutMs: Math.min(clampPositiveInt(args.timeoutMs, 120_000, KAIN_MAX_CLI_TIMEOUT_MS), KAIN_MAX_CLI_TIMEOUT_MS),
             }),
           });

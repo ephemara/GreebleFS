@@ -40,7 +40,8 @@ python3 docs/examples/validate_examples.py --only 11_ultimate_kain_pipeline.kn -
 | `08_world_patch_law_converge_and_local_orchestrate.kn` | Locally runnable `world`, `patch`, `law`, `converge`, and `orchestrate` | `run`, `build -t rust/js/ts` | `09_ue5_authoring_gallery.kn` |
 | `09_ue5_authoring_gallery.kn` | Current UE5-authored item surface that still proves on the Rust backend | `build -t rust` | `10_polyglot_bridge_pipeline.kn` |
 | `10_polyglot_bridge_pipeline.kn` | Cross-runtime orchestration shape for `rust`, `python`, and `node` stages | `build -t rust/js/ts` | `11_ultimate_kain_pipeline.kn` |
-| `11_ultimate_kain_pipeline.kn` | Capstone pipeline: data model, trait impl, actor, filesystem, UI, `world`, `patch`, `law`, `converge`, `orchestrate` | `run`, `build -t rust/js/ts` | `done` |
+| `11_ultimate_kain_pipeline.kn` | Capstone pipeline: data model, trait impl, actor, filesystem, UI, `world`, `patch`, `law`, `converge`, `orchestrate` | `run`, `build -t rust/js/ts` | `12_SPIRV.kn` |
+| `12_SPIRV.kn` | SPIR-V compute shader stress surface for storage buffers and mograph transform streams | gated; indexed only until shader helper `fract` resolves | `done` |
 
 ## Practical Rules
 
@@ -62,3 +63,6 @@ python3 docs/examples/validate_examples.py --only 11_ultimate_kain_pipeline.kn -
 - Polyglot `orchestrate` stages compile into Rust, JS, and TS outputs, but
   foreign runtime stages are not executed by the local interpreter during
   `kain run`. That is why `10_polyglot_bridge_pipeline.kn` is build-first.
+- `12_SPIRV.kn` is indexed for SPIR-V agents but is not in the must-pass local
+  lane yet because the current compiler reports unresolved shader helper
+  `fract`.

@@ -9093,3 +9093,17 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bun run mcp:doctor`, showing native automation `performance: true`.
   - Passed direct native RPC smoke: `performance.get_flow_snapshot` returned native task graph, host-event rings, native buffer pool, native byte-stream, and native-ring metadata.
   - Passed direct native ring probe with `packets=4`, `packetBytes=1024`, `capacity=65536`, returning `4096` bytes posted and `0` dropped bytes.
+
+# 2026-05-10 - Dev MCP Kain Agent Router
+
+- Added an agent-facing `gfs_kain` MCP router for the private Kain language surface.
+  - Commands: `overview`, `guide`, `search`, `examples`, `cli`, `doctor`, `run`, and `validate_examples`.
+  - The router reads `src-kain/guides/**`, searches `src-kain/guides/**` plus `src-kain/ffi/examples/**`, lists/reads FFI smoke folders, and invokes the active local `C:\Users\Admin\.cargo\bin\kain.exe` binary with a Kain-safe Windows environment.
+  - `MCP/greeblefs-dev-mcp/src/runtime/greeblefsAutomationRuntime.ts` now supports optional command timeouts/env overrides so CLI-backed MCP tools do not hang on accidental long-running commands.
+  - The docs example validator now indexes `12_SPIRV.kn` as a gated SPIR-V example, and its filename regex accepts uppercase example names.
+- Durable rule:
+  - Future agents should call `gfs_kain command=overview` before making Kain language assumptions. Use `guide`/`search` for docs, `examples` for FFI proof surfaces, `doctor` for binary truth, `run` for `.kn` smokes, and `validate_examples` for the canonical docs example validator.
+- Validation:
+  - Passed: `bun run --cwd MCP/greeblefs-dev-mcp typecheck`
+  - Passed MCP stdio client proof: `gfs_kain` appears in the tool list, `doctor` returns `KAIN Doctor`, `run 00_hello_and_cli.kn` returns `hello from kain`, and docs search returns matches.
+  - Passed MCP stdio client proof: `gfs_kain validate_examples path=00_hello_and_cli.kn` validated one docs example.

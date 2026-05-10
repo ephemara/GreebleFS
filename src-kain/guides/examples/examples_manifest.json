@@ -153,12 +153,23 @@
       "title": "Ultimate Kain Pipeline",
       "validation_class": "must_pass_local",
       "coverage": ["data model", "trait impl", "actor coordination", "filesystem staging", "component", "world", "patch", "law", "converge", "orchestrate"],
-      "next_example": "done",
+      "next_example": "12_SPIRV.kn",
       "operations": [
         { "kind": "run" },
         { "kind": "build", "target": "rust" },
         { "kind": "build", "target": "js" },
         { "kind": "build", "target": "ts" }
+      ]
+    },
+    {
+      "path": "12_SPIRV.kn",
+      "title": "SPIR-V Mograph Supermotion",
+      "validation_class": "gated_local",
+      "coverage": ["SPIR-V", "compute shader", "storage buffers", "motion command streams", "mograph transforms"],
+      "next_example": "done",
+      "operations": [],
+      "known_limitations": [
+        "This file is indexed for agents and future SPIR-V validation, but it is not in the must-pass local lane yet because the current compiler reports unresolved shader helper `fract`."
       ]
     }
   ]

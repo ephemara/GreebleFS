@@ -1348,7 +1348,7 @@ export class GreeblefsAutomationRuntime {
     };
   }
 
-  async runWorkspaceCommand(command: string, options: { cwd?: string; timeoutMs?: number } = {}): Promise<GreeblefsWorkspaceCommandResult> {
+  async runWorkspaceCommand(command: string, options: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } = {}): Promise<GreeblefsWorkspaceCommandResult> {
     const cwd = options.cwd ? resolvePathInsideRepo(options.cwd) : repoRoot;
     const shellCommand = process.platform === 'win32' ? 'powershell.exe' : '/bin/sh';
     const shellArgs = process.platform === 'win32'
@@ -1357,7 +1357,10 @@ export class GreeblefsAutomationRuntime {
     return new Promise((resolve, reject) => {
       const child = spawn(shellCommand, shellArgs, {
         cwd,
-        env: process.env,
+        env: {
+          ...process.env,
+          ...options.env,
+        },
         shell: false,
       });
       const stdoutChunks: Buffer[] = [];
