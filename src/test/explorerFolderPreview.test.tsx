@@ -92,6 +92,15 @@ describe("ExplorerFolderPreview", () => {
 
     expect(folderIcon).toBeInstanceOf(HTMLImageElement);
     expect(fileIcon).toBeInstanceOf(HTMLImageElement);
+    expect(folderRow).toHaveAttribute(
+      "data-overlay-preview-entry-layout",
+      "compact-list",
+    );
+    expect(folderRow.style.borderStyle).toBe("none");
+    expect(folderRow.style.padding).toBe("3px 8px");
+    expect(
+      fileRow.querySelector('[data-overlay-preview-entry-compact-meta="true"]'),
+    ).toHaveTextContent("MD 1.0 KB");
     expect((folderIcon as HTMLImageElement).getAttribute("src")).toBe(
       getFolderIconSrc(`${folderPath}\\shots`, false, { iconTheme }),
     );
@@ -265,6 +274,11 @@ describe("ExplorerFolderPreview", () => {
     expect(
       screen.getByRole("button", { name: /jump to folder/i }),
     ).toHaveTextContent("Jump Off");
+    const notesThumbnailFrame = notesTile.querySelector(
+      '[data-overlay-collection-preview-thumbnail-frame="true"]',
+    ) as HTMLElement | null;
+    expect(notesTile.style.borderStyle).toBe("none");
+    expect(notesThumbnailFrame?.style.borderStyle).toBe("none");
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(screen.getByText("readme.md")).toBeInTheDocument();
 

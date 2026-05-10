@@ -2325,6 +2325,68 @@ function reconcileExplorerThumbnailMap(args: {
   };
 }
 
+const compactExplorerToolbarCommandControlIds = new Set<ExplorerChromeControlId>([
+  "actionsPaneToggle",
+  "archiveActions",
+  "batchRename",
+  "customizeHome",
+  "duplicateScan",
+  "focusAddressBar",
+  "newFile",
+  "newFolder",
+  "openPropertiesPanel",
+  "openUserHome",
+  "pasteClipboard",
+  "pinLocation",
+  "refreshHome",
+  "saveSearch",
+  "selectionModeToggle",
+  "semanticIndexBuild",
+  "semanticIndexClear",
+  "semanticIndexRebuild",
+  "tagSelection",
+  "togglePreview",
+  "toggleSearchContent",
+  "undoTrash",
+]);
+
+function isCompactExplorerToolbarCommandPlacement(
+  placement: ExplorerChromeResolvedControlPlacement | null | undefined,
+): boolean {
+  return (
+    (placement?.surfaceId === "explorerToolbar" ||
+      placement?.surfaceId === "explorerTopbar") &&
+    (compactExplorerToolbarCommandControlIds.has(placement.controlId) ||
+      placement.controlId.startsWith("action:"))
+  );
+}
+
+function shouldRenderExplorerToolbarCommandLabel(
+  placement: ExplorerChromeResolvedControlPlacement | null | undefined,
+  globalLabelVisible: boolean,
+): boolean {
+  if (!globalLabelVisible || placement?.showLabel === false) {
+    return false;
+  }
+  return !isCompactExplorerToolbarCommandPlacement(placement);
+}
+
+function getExplorerToolbarCommandRestBackground(active = false): string {
+  return active
+    ? "var(--overlay-explorer-command-active-bg)"
+    : "var(--overlay-explorer-command-bg)";
+}
+
+function getExplorerToolbarCommandTextColor(
+  active: boolean,
+  disabled: boolean,
+): string {
+  if (disabled) {
+    return EXP.muted2;
+  }
+  return active ? "var(--overlay-explorer-command-active-text)" : EXP.muted;
+}
+
 function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
   return toolbarChipButtonStyleForVariant(disabled, "regular");
 }
@@ -2334,23 +2396,23 @@ function toolbarChipButtonStyleForVariant(
   sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
   const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
+  const compactMinHeight = Math.max(metrics.minHeight - 6, 22);
   return {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: metrics.gap,
-    background: disabled
-      ? "var(--overlay-explorer-chip-bg)"
-      : "var(--overlay-explorer-chip-active-bg)",
-    border: `1px solid ${disabled ? "var(--overlay-explorer-chip-border)" : "var(--overlay-explorer-chip-active-border)"}`,
+    background: getExplorerToolbarCommandRestBackground(false),
+    border: "1px solid transparent",
     cursor: disabled ? "default" : "pointer",
-    color: disabled ? EXP.muted2 : "var(--overlay-explorer-chip-active-text)",
-    padding: `${metrics.blockPadding}px ${metrics.inlinePadding}px`,
+    color: getExplorerToolbarCommandTextColor(false, disabled),
+    padding: `${Math.max(metrics.blockPadding - 1, 2)}px ${Math.max(metrics.inlinePadding - 3, 5)}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
     fontSize: metrics.fontSize,
     fontWeight: 700,
     opacity: disabled ? 0.55 : 1,
     flexShrink: 0,
-    minHeight: metrics.minHeight,
+    minHeight: compactMinHeight,
+    lineHeight: 1,
   };
 }
 
@@ -2360,28 +2422,24 @@ function toolbarToggleButtonStyle(
   sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
   const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
+  const compactMinHeight = Math.max(metrics.minHeight - 6, 22);
   return {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: metrics.gap,
-    background: active
-      ? "var(--overlay-explorer-chip-active-bg)"
-      : "var(--overlay-explorer-chip-bg)",
-    border: `1px solid ${active ? "var(--overlay-explorer-chip-active-border)" : "var(--overlay-explorer-chip-border)"}`,
+    background: getExplorerToolbarCommandRestBackground(active),
+    border: "1px solid transparent",
     cursor: disabled ? "default" : "pointer",
-    color: disabled
-      ? EXP.muted2
-      : active
-        ? "var(--overlay-explorer-chip-active-text)"
-        : EXP.muted,
-    padding: `${metrics.blockPadding}px ${metrics.inlinePadding}px`,
+    color: getExplorerToolbarCommandTextColor(active, disabled),
+    padding: `${Math.max(metrics.blockPadding - 1, 2)}px ${Math.max(metrics.inlinePadding - 3, 5)}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
     fontSize: metrics.fontSize,
     fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
     opacity: disabled ? 0.55 : 1,
-    minHeight: metrics.minHeight,
+    minHeight: compactMinHeight,
+    lineHeight: 1,
   };
 }
 
@@ -2390,17 +2448,21 @@ function toolbarIconButtonStyle(
   sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
   const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
+  const compactMinHeight = Math.max(metrics.minHeight - 6, 22);
   return {
-    background: "var(--overlay-explorer-chip-bg)",
+    background: getExplorerToolbarCommandRestBackground(false),
     border: "1px solid transparent",
     cursor: disabled ? "default" : "pointer",
     color: disabled ? EXP.muted2 : EXP.muted,
-    padding: metrics.iconPadding,
+    padding: Math.max(metrics.iconPadding - 2, 3),
     borderRadius: "var(--overlay-explorer-control-radius)",
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
+    justifyContent: "center",
     flexShrink: 0,
-    minHeight: metrics.minHeight,
+    minWidth: compactMinHeight,
+    minHeight: compactMinHeight,
+    lineHeight: 1,
   };
 }
 
@@ -2408,22 +2470,24 @@ function toolbarActionButtonStyle(
   sizeVariant: ExplorerChromeSizeVariant = "regular",
 ): CSSProperties {
   const metrics = resolveExplorerChromeControlMetrics(sizeVariant);
+  const compactMinHeight = Math.max(metrics.minHeight - 6, 22);
   return {
-    display: "flex",
+    display: "inline-flex",
     alignItems: "center",
     gap: metrics.gap,
-    background: "var(--overlay-explorer-chip-bg)",
+    background: getExplorerToolbarCommandRestBackground(false),
     border: "1px solid transparent",
     cursor: "pointer",
     color: EXP.muted,
-    padding: `${metrics.blockPadding}px ${Math.max(
-      metrics.inlinePadding - 1,
+    padding: `${Math.max(metrics.blockPadding - 1, 2)}px ${Math.max(
+      metrics.inlinePadding - 3,
       5,
     )}px`,
     borderRadius: "var(--overlay-explorer-control-radius)",
     fontSize: metrics.fontSize,
     flexShrink: 0,
-    minHeight: metrics.minHeight,
+    minHeight: compactMinHeight,
+    lineHeight: 1,
   };
 }
 
@@ -23271,6 +23335,14 @@ export function FileExplorer({
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceDenseChrome;
+  const shouldShowToolbarCommandLabel = useCallback(
+    (placement: ExplorerChromeResolvedControlPlacement | null | undefined) =>
+      shouldRenderExplorerToolbarCommandLabel(
+        placement,
+        showToolbarTextLabels,
+      ),
+    [showToolbarTextLabels],
+  );
   const usesConstellationCanvas =
     effectiveExperimentalViewMode === "constellation";
 
@@ -25375,17 +25447,19 @@ export function FileExplorer({
     ) => {
       const sizeVariant = placement.sizeVariant ?? "regular";
       const wantsIcon = placement.showIcon ?? true;
-      const wantsLabel = placement.showLabel ?? true;
+      const wantsLabel =
+        placement.showLabel ??
+        !isCompactExplorerToolbarCommandPlacement(placement);
       const showIcon = wantsIcon || !wantsLabel;
       const showLabel = wantsLabel || !wantsIcon;
       const iconSize =
         sizeVariant === "wide" ? 15 : sizeVariant === "compact" ? 11 : 13;
       const padding =
         sizeVariant === "wide"
-          ? "6px 12px"
+          ? "4px 8px"
           : sizeVariant === "compact"
-            ? "3px 6px"
-            : "4px 9px";
+            ? "2px 5px"
+            : "3px 6px";
       const fontSize = sizeVariant === "compact" ? 10 : 11;
       const minWidth = sizeVariant === "wide" ? 132 : undefined;
       const isMissing = catalogEntry.source === "missing-action";
@@ -25420,6 +25494,19 @@ export function FileExplorer({
               "mouse",
             );
           }}
+          onMouseEnter={(event) => {
+            if (!disabled) {
+              event.currentTarget.style.background =
+                "var(--overlay-explorer-command-hover-bg)";
+              event.currentTarget.style.color = EXP.text;
+            }
+          }}
+          onMouseLeave={(event) => {
+            event.currentTarget.style.background = isMissing
+              ? "color-mix(in srgb, #f59e0b 12%, transparent)"
+              : getExplorerToolbarCommandRestBackground(false);
+            event.currentTarget.style.color = disabled ? EXP.muted2 : EXP.muted;
+          }}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -25433,18 +25520,20 @@ export function FileExplorer({
             border: `1px solid ${
               isMissing
                 ? "color-mix(in srgb, #f59e0b 62%, transparent)"
-                : "var(--overlay-explorer-chip-border)"
+                : "transparent"
             }`,
             background: isMissing
               ? "color-mix(in srgb, #f59e0b 12%, transparent)"
-              : "var(--overlay-explorer-chip-bg)",
-            color: disabled ? EXP.muted2 : EXP.text,
+              : getExplorerToolbarCommandRestBackground(false),
+            color: disabled ? EXP.muted2 : EXP.muted,
             cursor: disabled ? "default" : "pointer",
             opacity: disabled ? 0.72 : 1,
             fontSize,
             fontWeight: 600,
             flexShrink: 0,
             overflow: "hidden",
+            minHeight: 22,
+            lineHeight: 1,
           }}
         >
           {iconNode}
@@ -25506,13 +25595,13 @@ export function FileExplorer({
         onMouseEnter={(event) => {
           if (!input.disabled) {
             event.currentTarget.style.background =
-              "var(--overlay-explorer-chip-active-bg)";
+              "var(--overlay-explorer-command-hover-bg)";
             event.currentTarget.style.color = EXP.text;
           }
         }}
         onMouseLeave={(event) => {
           event.currentTarget.style.background =
-            "var(--overlay-explorer-chip-bg)";
+            getExplorerToolbarCommandRestBackground(false);
           event.currentTarget.style.color = input.disabled
             ? EXP.muted2
             : EXP.muted;
@@ -25959,7 +26048,7 @@ export function FileExplorer({
         surfaces: ["explorerToolbar"],
         isVisible: () =>
           currentPathIsArchiveVirtual && !usesWorkspaceCompactChrome,
-        render: () => (
+        render: (placement) => (
           <div
             ref={archiveActionsMenuAnchorRef}
             style={{ position: "relative" }}
@@ -26000,7 +26089,7 @@ export function FileExplorer({
                 >
                   Extract
                 </span>
-                {showToolbarTextLabels ? (
+                {shouldShowToolbarCommandLabel(placement) ? (
                   <span
                     style={{
                       fontSize: 10,
@@ -26218,7 +26307,7 @@ export function FileExplorer({
         label: "Selection Mode",
         surfaces: ["explorerToolbar", "explorerTopbar"],
         isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
-        render: () => {
+        render: (placement) => {
           const selectionModeShortcut = keybindings.copySelection || "Ctrl+C";
           const selectionModeTitle = selectionModeActive
             ? `Selection mode is active. Single-click toggles files and folders. Press ${selectionModeShortcut} to copy the current selection, or Escape to exit.`
@@ -26237,17 +26326,20 @@ export function FileExplorer({
               style={toolbarToggleButtonStyle(selectionModeActive)}
               onMouseEnter={(event) =>
                 (event.currentTarget.style.background =
-                  "var(--overlay-explorer-chip-active-bg)")
+                  "var(--overlay-explorer-command-hover-bg)")
               }
               onMouseLeave={(event) =>
-                (event.currentTarget.style.background = selectionModeActive
-                  ? "var(--overlay-explorer-chip-active-bg)"
-                  : "var(--overlay-explorer-chip-bg)")
+                (event.currentTarget.style.background =
+                  getExplorerToolbarCommandRestBackground(selectionModeActive))
               }
             >
               <CopyPlus size={11} />
               <span
-                style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+                style={{
+                  display: shouldShowToolbarCommandLabel(placement)
+                    ? "inline"
+                    : "none",
+                }}
               >
                 Select
               </span>
@@ -26260,7 +26352,7 @@ export function FileExplorer({
         label: "Customize Home",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentPathIsHome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => onOpenSettingsSection("home")}
@@ -26269,7 +26361,11 @@ export function FileExplorer({
           >
             <Settings2 size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Customize
             </span>
@@ -26281,7 +26377,7 @@ export function FileExplorer({
         label: "Refresh Home",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentPathIsHome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void refresh()}
@@ -26290,7 +26386,11 @@ export function FileExplorer({
           >
             <RefreshCw size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Refresh
             </span>
@@ -26302,7 +26402,7 @@ export function FileExplorer({
         label: "Open User Home",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentPathIsHome && Boolean(userHomePath),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void navigate(userHomePath)}
@@ -26311,7 +26411,11 @@ export function FileExplorer({
           >
             <FolderOpen size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               User Home
             </span>
@@ -26327,7 +26431,7 @@ export function FileExplorer({
           !currentPathIsCloud &&
           !currentPathIsHome &&
           !usesWorkspaceCompactChrome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -26338,7 +26442,11 @@ export function FileExplorer({
           >
             <Star size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Pin
             </span>
@@ -26350,7 +26458,7 @@ export function FileExplorer({
         label: "Cycle Search Mode",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => {
@@ -26378,15 +26486,15 @@ export function FileExplorer({
             onMouseEnter={(e) => {
               if (!currentPathIsCloud && !currentPathIsHome) {
                 e.currentTarget.style.background =
-                  "var(--overlay-explorer-chip-active-bg)";
+                  "var(--overlay-explorer-command-hover-bg)";
               }
             }}
             onMouseLeave={(e) => {
               if (!currentPathIsCloud && !currentPathIsHome) {
                 e.currentTarget.style.background =
-                  searchMode !== "name"
-                    ? "var(--overlay-explorer-chip-active-bg)"
-                    : "var(--overlay-explorer-chip-bg)";
+                  getExplorerToolbarCommandRestBackground(
+                    searchMode !== "name",
+                  );
               }
             }}
           >
@@ -26398,7 +26506,11 @@ export function FileExplorer({
                   : "NM"}
             </span>
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               {searchModeLabel}
             </span>
@@ -26413,7 +26525,7 @@ export function FileExplorer({
           !currentPathIsCloud &&
           !currentPathIsHome &&
           !usesWorkspaceCompactChrome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void requestSemanticIndexBuild("build")}
@@ -26424,7 +26536,11 @@ export function FileExplorer({
           >
             <span style={{ fontWeight: 700 }}>IDX</span>
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Build
             </span>
@@ -26440,7 +26556,7 @@ export function FileExplorer({
           !currentPathIsHome &&
           !usesWorkspaceCompactChrome &&
           Boolean(semanticIndexSummary?.indexed),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void requestSemanticIndexBuild("rebuild")}
@@ -26449,7 +26565,11 @@ export function FileExplorer({
           >
             <RotateCcw size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Rebuild
             </span>
@@ -26465,7 +26585,7 @@ export function FileExplorer({
           !currentPathIsHome &&
           !usesWorkspaceCompactChrome &&
           Boolean(semanticIndexSummary?.indexed),
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void requestSemanticIndexBuild("clear")}
@@ -26474,7 +26594,11 @@ export function FileExplorer({
           >
             <Trash2 size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Clear AI
             </span>
@@ -26489,7 +26613,7 @@ export function FileExplorer({
           !currentPathIsCloud &&
           !currentPathIsHome &&
           !usesWorkspaceDenseChrome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -26504,7 +26628,11 @@ export function FileExplorer({
           >
             <Save size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Save Search
             </span>
@@ -26516,7 +26644,7 @@ export function FileExplorer({
         label: "Batch Rename",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentLocationSupportsMutation,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -26533,7 +26661,11 @@ export function FileExplorer({
           >
             <Edit3 size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Batch Rename
             </span>
@@ -26546,7 +26678,7 @@ export function FileExplorer({
         surfaces: ["explorerToolbar"],
         isVisible: () =>
           currentLocationSupportsMutation && !usesWorkspaceDenseChrome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -26565,7 +26697,11 @@ export function FileExplorer({
           >
             <Tags size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Tag
             </span>
@@ -26578,7 +26714,7 @@ export function FileExplorer({
         surfaces: ["explorerToolbar"],
         isVisible: () =>
           currentLocationSupportsMutation && !usesWorkspaceDenseChrome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() =>
@@ -26595,7 +26731,11 @@ export function FileExplorer({
           >
             <Sparkles size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Duplicates
             </span>
@@ -26607,7 +26747,7 @@ export function FileExplorer({
         label: "Open Properties",
         surfaces: ["explorerToolbar"],
         isVisible: () => Boolean(currentPath) && !currentPathIsHome,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={openExplorerPropertiesForSelection}
@@ -26616,7 +26756,11 @@ export function FileExplorer({
           >
             <Info size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               {propertiesLabel}
             </span>
@@ -26628,7 +26772,7 @@ export function FileExplorer({
         label: "Undo Trash",
         surfaces: ["explorerToolbar"],
         isVisible: () => currentLocationSupportsMutation,
-        render: () => (
+        render: (placement) => (
           <button
             type="button"
             onClick={() => void undoTrash()}
@@ -26637,7 +26781,11 @@ export function FileExplorer({
           >
             <Undo2 size={11} />
             <span
-              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+              style={{
+                display: shouldShowToolbarCommandLabel(placement)
+                  ? "inline"
+                  : "none",
+              }}
             >
               Undo Trash
             </span>
@@ -26665,22 +26813,16 @@ export function FileExplorer({
             }
             style={{
               ...toolbarIconButtonStyle(false, placement.sizeVariant),
-              background: shouldRenderRail
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)",
-              border: `1px solid ${shouldRenderRail ? "var(--overlay-explorer-chip-active-border)" : "var(--overlay-explorer-chip-border)"}`,
-              color: shouldRenderRail
-                ? "var(--overlay-explorer-chip-active-text)"
-                : EXP.muted,
+              background: getExplorerToolbarCommandRestBackground(shouldRenderRail),
+              color: getExplorerToolbarCommandTextColor(shouldRenderRail, false),
             }}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)")
+                "var(--overlay-explorer-command-hover-bg)")
             }
             onMouseLeave={(e) =>
-              (e.currentTarget.style.background = shouldRenderRail
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)")
+              (e.currentTarget.style.background =
+                getExplorerToolbarCommandRestBackground(shouldRenderRail))
             }
           >
             <FolderTree
@@ -26718,12 +26860,11 @@ export function FileExplorer({
             )}
             onMouseEnter={(event) => {
               event.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)";
+                "var(--overlay-explorer-command-hover-bg)";
             }}
             onMouseLeave={(event) => {
-              event.currentTarget.style.background = actionsPaneVisible
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)";
+              event.currentTarget.style.background =
+                getExplorerToolbarCommandRestBackground(actionsPaneVisible);
             }}
           >
             <Sparkles
@@ -26732,7 +26873,7 @@ export function FileExplorer({
                   .iconSize
               }
             />
-            {showToolbarTextLabels ? "Actions" : "A"}
+            {shouldShowToolbarCommandLabel(placement) ? "Actions" : null}
           </button>
         ),
       },
@@ -26756,12 +26897,11 @@ export function FileExplorer({
               )}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.background =
-                  "var(--overlay-explorer-chip-active-bg)")
+                  "var(--overlay-explorer-command-hover-bg)")
               }
               onMouseLeave={(e) =>
-                (e.currentTarget.style.background = active
-                  ? "var(--overlay-explorer-chip-active-bg)"
-                  : "var(--overlay-explorer-chip-bg)")
+                (e.currentTarget.style.background =
+                  getExplorerToolbarCommandRestBackground(active))
               }
             >
               <Search
@@ -26770,7 +26910,7 @@ export function FileExplorer({
                     .iconSize
                 }
               />
-              Search
+              {shouldShowToolbarCommandLabel(placement) ? "Search" : null}
             </button>
           );
         },
@@ -27189,12 +27329,11 @@ export function FileExplorer({
             )}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)")
+                "var(--overlay-explorer-command-hover-bg)")
             }
             onMouseLeave={(e) =>
-              (e.currentTarget.style.background = previewEnabled
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)")
+              (e.currentTarget.style.background =
+                getExplorerToolbarCommandRestBackground(previewEnabled))
             }
           >
             <Eye
@@ -27203,7 +27342,7 @@ export function FileExplorer({
                   .iconSize
               }
             />
-            {showToolbarTextLabels ? "Preview" : "P"}
+            {shouldShowToolbarCommandLabel(placement) ? "Preview" : null}
           </button>
         ),
       },
@@ -27221,21 +27360,16 @@ export function FileExplorer({
             title="Toggle hidden files"
             style={{
               ...toolbarIconButtonStyle(false, placement.sizeVariant),
-              background: showHidden
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)",
-              color: showHidden
-                ? "var(--overlay-explorer-chip-active-text)"
-                : EXP.muted,
+              background: getExplorerToolbarCommandRestBackground(showHidden),
+              color: getExplorerToolbarCommandTextColor(showHidden, false),
             }}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)")
+                "var(--overlay-explorer-command-hover-bg)")
             }
             onMouseLeave={(e) =>
-              (e.currentTarget.style.background = showHidden
-                ? "var(--overlay-explorer-chip-active-bg)"
-                : "var(--overlay-explorer-chip-bg)")
+              (e.currentTarget.style.background =
+                getExplorerToolbarCommandRestBackground(showHidden))
             }
           >
             <Eye
@@ -27260,12 +27394,12 @@ export function FileExplorer({
             style={toolbarIconButtonStyle(false, placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)";
+                "var(--overlay-explorer-command-hover-bg)";
               e.currentTarget.style.color = EXP.text;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-bg)";
+                getExplorerToolbarCommandRestBackground(false);
               e.currentTarget.style.color = EXP.muted;
             }}
           >
@@ -27293,12 +27427,12 @@ export function FileExplorer({
             style={toolbarActionButtonStyle(placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)";
+                "var(--overlay-explorer-command-hover-bg)";
               e.currentTarget.style.color = EXP.text;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-bg)";
+                getExplorerToolbarCommandRestBackground(false);
               e.currentTarget.style.color = EXP.muted;
             }}
           >
@@ -27308,7 +27442,7 @@ export function FileExplorer({
                   .iconSize
               }
             />
-            Folder
+            {shouldShowToolbarCommandLabel(placement) ? "Folder" : null}
           </button>
         ),
       },
@@ -27325,12 +27459,12 @@ export function FileExplorer({
             style={toolbarActionButtonStyle(placement.sizeVariant)}
             onMouseEnter={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-active-bg)";
+                "var(--overlay-explorer-command-hover-bg)";
               e.currentTarget.style.color = EXP.text;
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background =
-                "var(--overlay-explorer-chip-bg)";
+                getExplorerToolbarCommandRestBackground(false);
               e.currentTarget.style.color = EXP.muted;
             }}
           >
@@ -27340,7 +27474,7 @@ export function FileExplorer({
                   .iconSize
               }
             />
-            File
+            {shouldShowToolbarCommandLabel(placement) ? "File" : null}
           </button>
         ),
       },
@@ -27369,8 +27503,11 @@ export function FileExplorer({
                     .iconSize
                 }
               />
-              Paste{" "}
-              {clipboard.entries.length > 1 ? clipboard.entries.length : ""}
+              {shouldShowToolbarCommandLabel(placement)
+                ? `Paste${clipboard.entries.length > 1 ? ` ${clipboard.entries.length}` : ""}`
+                : clipboard.entries.length > 1
+                  ? clipboard.entries.length
+                  : null}
             </button>
           ) : null,
       },
@@ -27710,7 +27847,7 @@ export function FileExplorer({
       showArchiveActionsMenu,
       showModeProfileMenu,
       showToolbarLocationStrips,
-      showToolbarTextLabels,
+      shouldShowToolbarCommandLabel,
       showZoomHud,
       statusViewSwitcherModeMenuRequestKey,
       statusViewSwitcherDensityButton,

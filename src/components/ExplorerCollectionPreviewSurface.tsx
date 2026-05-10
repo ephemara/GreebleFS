@@ -22,7 +22,6 @@ import {
 
 import {
   getExplorerArchiveDescriptor,
-  parseExplorerArchiveVirtualPath,
 } from "../config/explorerArchives";
 import {
   explorerCollectionPreviewModes,
@@ -321,15 +320,14 @@ export function ExplorerCollectionPreviewSurface({
     >
       <div
         style={{
-          padding: "8px 10px",
-          borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+          padding: "5px 8px 6px",
+          border: "none",
           fontSize: 10,
           fontWeight: 700,
           color: "var(--overlay-text-muted)",
           textTransform: "uppercase",
           letterSpacing: "0.05em",
-          background:
-            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-panel) 92%, var(--overlay-accent) 8%), var(--overlay-bg-panel))",
+          background: "var(--overlay-bg-panel)",
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) auto auto",
           alignItems: "center",
@@ -359,9 +357,7 @@ export function ExplorerCollectionPreviewSurface({
                 gap: 5,
                 padding: "3px 7px",
                 borderRadius: 999,
-                border: jumpToFolderEnabled
-                  ? "1px solid var(--overlay-explorer-chip-active-border)"
-                  : "1px solid var(--overlay-explorer-chip-border)",
+                border: "none",
                 background: jumpToFolderEnabled
                   ? "var(--overlay-explorer-chip-active-bg)"
                   : "var(--overlay-explorer-chip-bg)",
@@ -387,10 +383,10 @@ export function ExplorerCollectionPreviewSurface({
             display: "inline-flex",
             alignItems: "center",
             gap: 4,
-            padding: 3,
+            padding: 2,
             borderRadius: 999,
-            border: "1px solid var(--overlay-explorer-chip-border)",
             background: "var(--overlay-explorer-chip-bg)",
+            border: "none",
             justifySelf: "end",
           }}
         >
@@ -411,12 +407,10 @@ export function ExplorerCollectionPreviewSurface({
                   })
                 }
                 style={{
-                  width: 26,
-                  height: 26,
+                  width: 23,
+                  height: 23,
                   borderRadius: 999,
-                  border: isActive
-                    ? "1px solid var(--overlay-explorer-chip-active-border)"
-                    : "1px solid transparent",
+                  border: "none",
                   background: isActive
                     ? "var(--overlay-explorer-chip-active-bg)"
                     : "transparent",
@@ -427,7 +421,7 @@ export function ExplorerCollectionPreviewSurface({
                   placeItems: "center",
                   cursor: "pointer",
                   transition:
-                    "transform 140ms ease, background 140ms ease, border-color 140ms ease",
+                    "transform 140ms ease, background 140ms ease, color 140ms ease",
                 }}
               >
                 <Icon size={13} strokeWidth={1.8} />
@@ -438,9 +432,9 @@ export function ExplorerCollectionPreviewSurface({
         <div
           style={{
             justifySelf: "end",
-            padding: "2px 7px",
+            padding: "1px 7px",
             borderRadius: 999,
-            border: "1px solid var(--overlay-explorer-chip-border)",
+            border: "none",
             background: "var(--overlay-explorer-chip-bg)",
             color: "var(--overlay-text-muted)",
             lineHeight: 1.2,
@@ -523,32 +517,30 @@ export function ExplorerCollectionPreviewSurface({
                 const previewEntryDragBindings = bindPreviewEntryDirectDrag(entry);
                 const isSelected = isPreviewEntrySelected(entry.path);
                 const isHovered = hoveredEntryPath === entry.path;
-                const modifiedLabel = formatModifiedLabel(entry.modified);
-                const parentLabel =
-                  collectionKind === "folder"
-                    ? getCollectionEntryParentLabel(entry.path)
-                    : null;
+                const compactMetaLabel = entry.is_dir
+                  ? "Folder"
+                  : `${getCollectionEntryBadgeLabel(entry)} ${formatSize(entry.size)}`;
                 return (
                   <button
                     type="button"
                     key={entry.path}
                     data-overlay-preview-entry-path={entry.path}
                     data-overlay-preview-entry-kind={entry.is_dir ? "folder" : "file"}
+                    data-overlay-preview-entry-layout="compact-list"
                     data-overlay-preview-entry-selected={String(isSelected)}
                     aria-label={buildCollectionEntryActionLabel(collectionKind, entry)}
                     title={buildCollectionEntryActionLabel(collectionKind, entry)}
                     aria-pressed={isSelected}
                     style={{
-                      display: "flex",
+                      display: "grid",
+                      gridTemplateColumns: "18px minmax(0, 1fr) auto",
                       alignItems: "center",
-                      gap: 10,
-                      padding: "8px 16px",
-                      borderBottom: "1px solid var(--overlay-border)",
-                      fontSize: 12,
+                      gap: 8,
+                      minHeight: 26,
+                      padding: "3px 8px",
+                      border: "none",
+                      fontSize: 11,
                       width: "100%",
-                      borderLeft: "none",
-                      borderRight: "none",
-                      borderTop: "none",
                       background: resolveEntryBackground({
                         isSelected,
                         isHovered,
@@ -557,7 +549,7 @@ export function ExplorerCollectionPreviewSurface({
                       cursor: "pointer",
                       textAlign: "left",
                       boxShadow: isSelected
-                        ? "inset 0 0 0 1px var(--overlay-explorer-chip-active-border)"
+                        ? "inset 3px 0 0 var(--overlay-accent)"
                         : "none",
                     }}
                     onMouseEnter={() => setHoveredEntryPath(entry.path)}
@@ -571,20 +563,18 @@ export function ExplorerCollectionPreviewSurface({
                         entry,
                         previewIconOptions,
                       )}
-                      size={18}
+                      size={16}
                     />
                     <div
                       style={{
                         minWidth: 0,
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 2,
+                        display: "block",
                       }}
                     >
                       <div
                         style={{
-                          fontWeight: 500,
+                          fontWeight: 650,
+                          color: "var(--overlay-text-primary)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -593,50 +583,19 @@ export function ExplorerCollectionPreviewSurface({
                       >
                         {entry.name}
                       </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          minWidth: 0,
-                          flexWrap: "wrap",
-                          color: "var(--overlay-text-dim)",
-                          fontSize: 10,
-                        }}
-                      >
-                        {parentLabel ? (
-                          <span
-                            title={parentLabel}
-                            style={{
-                              maxWidth: 180,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {parentLabel}
-                          </span>
-                        ) : null}
-                        {parentLabel && modifiedLabel ? <span>·</span> : null}
-                        {modifiedLabel ? <span>{modifiedLabel}</span> : null}
-                      </div>
                     </div>
                     <div
+                      data-overlay-preview-entry-compact-meta="true"
                       style={{
                         flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
+                        minWidth: 0,
                         color: "var(--overlay-text-dim)",
-                        fontSize: 10,
+                        fontSize: 9.5,
+                        lineHeight: 1,
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {!entry.is_dir && entry.extension ? (
-                        <span style={entryPillStyle()}>
-                          {entry.extension}
-                        </span>
-                      ) : null}
-                      <span>{entry.is_dir ? "Folder" : formatSize(entry.size)}</span>
+                      {compactMetaLabel}
                     </div>
                   </button>
                 );
@@ -646,13 +605,13 @@ export function ExplorerCollectionPreviewSurface({
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 14 }}
+              viewportStyle={{ padding: 8 }}
             >
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))",
-                  gap: 10,
+                  gridTemplateColumns: "repeat(auto-fill, minmax(82px, 1fr))",
+                  gap: 7,
                 }}
               >
                 {renderEntries.map((entry) =>
@@ -678,21 +637,20 @@ export function ExplorerCollectionPreviewSurface({
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 14 }}
+              viewportStyle={{ padding: 8 }}
             >
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 8 }}>
                 {categorizedEntries.map((group) => (
                   <section
                     key={group.id}
                     style={{
                       display: "grid",
-                      gap: 10,
-                      padding: 12,
-                      borderRadius: 16,
-                      border:
-                        "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 78%, transparent)",
+                      gap: 8,
+                      padding: "8px 8px 9px",
+                      borderRadius: 8,
+                      border: "none",
                       background:
-                        "linear-gradient(135deg, color-mix(in srgb, var(--overlay-bg-card) 88%, var(--overlay-accent) 12%), color-mix(in srgb, var(--overlay-bg-panel) 94%, transparent))",
+                        "color-mix(in srgb, var(--overlay-bg-card) 34%, transparent)",
                     }}
                   >
                     <div
@@ -725,7 +683,7 @@ export function ExplorerCollectionPreviewSurface({
                         display: "grid",
                         gridTemplateColumns:
                           "repeat(auto-fill, minmax(48px, max-content))",
-                        gap: 8,
+                        gap: 6,
                       }}
                     >
                       {group.entries.map((entry) =>
@@ -752,16 +710,16 @@ export function ExplorerCollectionPreviewSurface({
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 14 }}
+              viewportStyle={{ padding: 8 }}
             >
-              <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 10 }}>
                 {recencyBuckets.map((bucket) => (
                   <section
                     key={bucket.id}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "72px minmax(0, 1fr)",
-                      gap: 12,
+                      gridTemplateColumns: "58px minmax(0, 1fr)",
+                      gap: 8,
                       alignItems: "stretch",
                     }}
                   >
@@ -797,13 +755,12 @@ export function ExplorerCollectionPreviewSurface({
                       style={{
                         position: "relative",
                         display: "grid",
-                        gap: 10,
-                        padding: "12px 12px 12px 18px",
-                        borderRadius: 16,
-                        border:
-                          "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 78%, transparent)",
+                        gap: 7,
+                        padding: "8px 8px 8px 14px",
+                        borderRadius: 8,
+                        border: "none",
                         background:
-                          "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 90%, transparent), color-mix(in srgb, var(--overlay-bg-panel) 94%, transparent))",
+                          "color-mix(in srgb, var(--overlay-bg-card) 30%, transparent)",
                       }}
                     >
                       <div
@@ -823,8 +780,8 @@ export function ExplorerCollectionPreviewSurface({
                         style={{
                           display: "grid",
                           gridTemplateColumns:
-                            "repeat(auto-fill, minmax(42px, max-content))",
-                          gap: 8,
+                          "repeat(auto-fill, minmax(42px, max-content))",
+                          gap: 6,
                         }}
                       >
                         {bucket.entries.map((entry) =>
@@ -852,13 +809,13 @@ export function ExplorerCollectionPreviewSurface({
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 14 }}
+              viewportStyle={{ padding: 8 }}
             >
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                  gap: 12,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: 8,
                 }}
               >
                 {categorizedEntries.map((group) => {
@@ -873,12 +830,11 @@ export function ExplorerCollectionPreviewSurface({
                       key={group.id}
                       style={{
                         position: "relative",
-                        minHeight: 144,
-                        borderRadius: 18,
-                        border:
-                          "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 78%, transparent)",
+                        minHeight: 118,
+                        borderRadius: 10,
+                        border: "none",
                         background:
-                          "radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--overlay-accent) 10%, transparent) 0%, transparent 38%), linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 92%, transparent), color-mix(in srgb, var(--overlay-bg-panel) 95%, transparent))",
+                          "radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--overlay-accent) 8%, transparent) 0%, transparent 36%), color-mix(in srgb, var(--overlay-bg-card) 34%, transparent)",
                         overflow: "hidden",
                       }}
                     >
@@ -888,8 +844,8 @@ export function ExplorerCollectionPreviewSurface({
                           inset: 0,
                           pointerEvents: "none",
                           background:
-                            "radial-gradient(circle at center, transparent 28%, color-mix(in srgb, var(--overlay-border) 20%, transparent) 29%, transparent 30%), radial-gradient(circle at center, transparent 47%, color-mix(in srgb, var(--overlay-border) 14%, transparent) 48%, transparent 49%)",
-                          opacity: 0.58,
+                            "radial-gradient(circle at center, color-mix(in srgb, var(--overlay-accent) 7%, transparent), transparent 48%)",
+                          opacity: 0.44,
                         }}
                       />
                       <div
@@ -901,8 +857,7 @@ export function ExplorerCollectionPreviewSurface({
                           width: 42,
                           height: 42,
                           borderRadius: 999,
-                          border:
-                            "1px solid color-mix(in srgb, var(--overlay-accent) 28%, var(--overlay-explorer-chip-border))",
+                          border: "none",
                           background:
                             "color-mix(in srgb, var(--overlay-explorer-chip-active-bg) 58%, var(--overlay-bg-card))",
                           display: "grid",
@@ -940,8 +895,7 @@ export function ExplorerCollectionPreviewSurface({
                           top: 12,
                           padding: "4px 8px",
                           borderRadius: 999,
-                          border:
-                            "1px solid color-mix(in srgb, var(--overlay-explorer-chip-border) 88%, transparent)",
+                          border: "none",
                           background:
                             "color-mix(in srgb, var(--overlay-explorer-chip-bg) 92%, transparent)",
                           color: "var(--overlay-text-muted)",
@@ -976,7 +930,7 @@ export function ExplorerCollectionPreviewSurface({
                             bottom: 12,
                             padding: "4px 8px",
                             borderRadius: 999,
-                            border: "1px solid var(--overlay-explorer-chip-border)",
+                            border: "none",
                             background: "var(--overlay-explorer-chip-bg)",
                             color: "var(--overlay-text-muted)",
                             fontSize: 10,
@@ -1000,7 +954,7 @@ export function ExplorerCollectionPreviewSurface({
                 color: "var(--overlay-text-dim)",
                 fontSize: 11,
                 fontStyle: "italic",
-                borderTop: "1px solid var(--overlay-border)",
+                borderTop: "none",
                 background: "var(--overlay-bg-panel)",
               }}
             >
@@ -1050,10 +1004,10 @@ function renderOverviewEntryCard(args: {
       aria-pressed={isSelected}
       style={{
         display: "grid",
-        gap: 8,
-        padding: 8,
-        borderRadius: 16,
-        border: resolveCardBorder(isSelected),
+        gap: 5,
+        padding: 5,
+        borderRadius: 8,
+        border: "none",
         background: resolveEntryBackground({
           isSelected,
           isHovered,
@@ -1072,15 +1026,15 @@ function renderOverviewEntryCard(args: {
         style={{
           position: "relative",
           aspectRatio: "1 / 1",
-          borderRadius: 14,
+          borderRadius: 8,
           overflow: "hidden",
-          border:
-            "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 82%, transparent)",
+          border: "none",
           background:
-            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 85%, var(--overlay-accent) 15%), color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent))",
+            "color-mix(in srgb, var(--overlay-bg-card) 64%, transparent)",
           display: "grid",
           placeItems: "center",
         }}
+        data-overlay-collection-preview-thumbnail-frame="true"
       >
         {thumbnail?.posterDataUrl ? (
           <img
@@ -1194,10 +1148,10 @@ function renderIconNode(args: {
       style={{
         width: shellWidth,
         minHeight: variant === "timeline" ? 66 : 78,
-        padding: variant === "timeline" ? "8px 8px 6px" : "10px 8px 8px",
+        padding: variant === "timeline" ? "6px 6px 5px" : "7px 6px 6px",
         position: "relative",
-        borderRadius: variant === "timeline" ? 18 : 16,
-        border: resolveCardBorder(isSelected),
+        borderRadius: variant === "timeline" ? 10 : 8,
+        border: "none",
         background: resolveEntryBackground({
           isSelected,
           isHovered,
@@ -1221,11 +1175,10 @@ function renderIconNode(args: {
           position: "relative",
           width: iconFrameSize,
           height: iconFrameSize,
-          borderRadius: variant === "timeline" ? 999 : 12,
-          border:
-            "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 82%, transparent)",
+          borderRadius: variant === "timeline" ? 999 : 8,
+          border: "none",
           background:
-            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 84%, var(--overlay-accent) 16%), color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent))",
+            "color-mix(in srgb, var(--overlay-bg-card) 58%, transparent)",
           display: "grid",
           placeItems: "center",
         }}
@@ -1311,7 +1264,7 @@ function renderOrbitEntry(args: {
         height: shellHeight,
         padding: "4px 8px 4px 6px",
         borderRadius: 999,
-        border: resolveCardBorder(isSelected),
+        border: "none",
         background: resolveEntryBackground({
           isSelected,
           isHovered,
@@ -1334,10 +1287,9 @@ function renderOrbitEntry(args: {
           width: 20,
           height: 20,
           borderRadius: 999,
-          border:
-            "1px solid color-mix(in srgb, var(--overlay-explorer-preview-border) 82%, transparent)",
+          border: "none",
           background:
-            "linear-gradient(180deg, color-mix(in srgb, var(--overlay-bg-card) 84%, var(--overlay-accent) 16%), color-mix(in srgb, var(--overlay-bg-panel) 96%, transparent))",
+            "color-mix(in srgb, var(--overlay-bg-card) 58%, transparent)",
           display: "grid",
           placeItems: "center",
           flexShrink: 0,
@@ -1475,16 +1427,6 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
 }
 
-function formatModifiedLabel(timestampMs: number): string | null {
-  if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
-    return null;
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(timestampMs));
-}
-
 function normalizeEntryExtension(entry: ExplorerFileEntry): string {
   return entry.extension.trim().toLowerCase().replace(/^\./, "");
 }
@@ -1505,26 +1447,6 @@ function resolveCollectionEntrySecondaryLabel(entry: ExplorerFileEntry): string 
     return "Folder";
   }
   return formatSize(entry.size);
-}
-
-function getCollectionEntryParentLabel(path: string): string | null {
-  const archiveLocation = parseExplorerArchiveVirtualPath(path);
-  if (archiveLocation) {
-    const segments = archiveLocation.entryPath.split("/").filter(Boolean);
-    if (segments.length <= 1) {
-      return null;
-    }
-    segments.pop();
-    return segments.join("/");
-  }
-
-  const trimmedPath = path.replace(/[/\\]+$/, "");
-  const segments = trimmedPath.split(/[/\\]/).filter(Boolean);
-  if (segments.length <= 1) {
-    return null;
-  }
-  segments.pop();
-  return segments.join("/");
 }
 
 function buildCollectionEntryActionLabel(
@@ -1578,17 +1500,11 @@ function resolveEntryBackground(args: {
   return "transparent";
 }
 
-function resolveCardBorder(isSelected: boolean): string {
-  return isSelected
-    ? "1px solid var(--overlay-explorer-chip-active-border)"
-    : "1px solid var(--overlay-explorer-chip-border)";
-}
-
 function entryPillStyle(): CSSProperties {
   return {
     padding: "2px 6px",
     borderRadius: 999,
-    border: "1px solid var(--overlay-explorer-chip-border)",
+    border: "none",
     background: "var(--overlay-explorer-chip-bg)",
     color: "var(--overlay-text-muted)",
     textTransform: "uppercase",

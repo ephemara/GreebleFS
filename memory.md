@@ -1,3 +1,17 @@
+# 2026-05-10 - Borderless Compact Collection Preview
+
+- Tightened the shared folder/archive preview surface so it reads like a folder preview instead of a task list or card wall.
+  - `ExplorerCollectionPreviewSurface.tsx` list mode is now a single-line compact row: 16px icon, name, and a small right-side type/size meta chip with no date/path second line.
+  - Removed default borders from collection preview headers, mode controls, count pills, list rows, overview cards, thumbnail frames, strata/timeline groups, and orbit shells.
+  - Selection now relies on fill/left inset/accent state instead of outline boxes, preserving drag/select behavior through `useExplorerPreviewEntryDirectDrag.ts`.
+  - The adjacent compact toolbar debloat had one stale `placement` reference in the archive-actions control; `FileExplorer.tsx` now passes the placement into that render path so the Explorer surface mounts again.
+- Durable design rule:
+  - Keep folder/archive collection previews borderless and compact by default. New modes should use density, iconography, fill, and small accent affordances before adding row/card borders, large paddings, or second-line metadata.
+- Validation:
+  - Passed: `bunx vitest run src/test/explorerFolderPreview.test.tsx src/test/explorerArchivePreview.test.tsx src/test/explorerCollectionPreviewThumbnails.test.ts --reporter=dot`.
+  - Full `bunx tsc -p tsconfig.json --noEmit --pretty false` still exits nonzero on existing repo-wide baseline errors; after the toolbar fix, no remaining touched-file diagnostics were left for the compact preview/toolbar surface in the narrowed sweep.
+  - MCP console proof confirmed the `placement is not defined` Explorer crash cleared. Live collection-preview DOM proof was blocked by the current dev attach path falling back to the browser URL, where Tauron API `invoke` is unavailable outside the native WebView.
+
 # 2026-05-10 - Debloated Explorer Rail Header Controls
 
 - Removed the visible Explorer side-rail header strip so the sources rail starts directly on its compact section stack instead of spending vertical space on `GreebleFS`, pin count, `Close`, `Manage`, and view-mode pills.
