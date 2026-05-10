@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering as CmpOrdering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -80,15 +79,15 @@ pub enum NativeTaskPriority {
 }
 
 impl NativeTaskPriority {
-    fn rank(self) -> u8 {
-        match self {
-            Self::Interactive => 0,
-            Self::Visible => 1,
-            Self::UserInitiated => 2,
-            Self::Prefetch => 3,
-            Self::Background => 4,
-            Self::Maintenance => 5,
-        }
+    fn all() -> &'static [Self] {
+        &[
+            Self::Interactive,
+            Self::Visible,
+            Self::UserInitiated,
+            Self::Prefetch,
+            Self::Background,
+            Self::Maintenance,
+        ]
     }
 }
 
@@ -452,21 +451,7 @@ impl NativeTaskGraphManager {
                 }
             }
 
-            let mut retained = Vec::with_capacity(state.queue.len());
-            let mut cancelled_queued_records = Vec::new();
-            for task in state.queue.drain(..) {
-                if task.token.is_cancelled() {
-                    cancelled_queued_records.push((task.id.clone(), task.lane));
-                    queued_to_cancel.push(task);
-                } else {
-                    retained.push(task);
-                }
-            }
-            state.queue = retained;
-            for (task_id, lane) in cancelled_queued_records {
-                state.finish_queued_cancelled_by_id(&task_id, lane);
-            }
-            state.refresh_queue_depth();
+            queued_to_cancel.extend(state.remove_cancelled_queued_tasks());
         }
 
         for task in queued_to_cancel {
@@ -483,40 +468,18 @@ impl NativeTaskGraphManager {
 
         {
             let mut state = self.inner.state.lock().unwrap();
-            let related_ids: Vec<NativeTaskId> = state
-                .records
-                .iter()
-                .filter_map(|(task_id, record)| {
-                    if record.work_key.as_ref() == Some(work_key) {
-                        Some(task_id.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let related_ids = state.task_ids_for_work_key(work_key);
 
             for task_id in related_ids {
                 if let Some(record) = state.records.get(&task_id) {
-                    record.token.cancel();
-                    cancelled_count += 1;
+                    if !record.token.is_cancelled() {
+                        record.token.cancel();
+                        cancelled_count += 1;
+                    }
                 }
             }
 
-            let mut retained = Vec::with_capacity(state.queue.len());
-            let mut cancelled_queued_records = Vec::new();
-            for task in state.queue.drain(..) {
-                if task.token.is_cancelled() {
-                    cancelled_queued_records.push((task.id.clone(), task.lane));
-                    queued_to_cancel.push(task);
-                } else {
-                    retained.push(task);
-                }
-            }
-            state.queue = retained;
-            for (task_id, lane) in cancelled_queued_records {
-                state.finish_queued_cancelled_by_id(&task_id, lane);
-            }
-            state.refresh_queue_depth();
+            queued_to_cancel.extend(state.remove_cancelled_queued_tasks());
         }
 
         for task in queued_to_cancel {
@@ -660,12 +623,12 @@ impl NativeTaskGraphManager {
 
             overflow_queued_tasks.extend(state.remove_cancelled_queued_tasks());
 
-            if self.inner.policy.enabled && state.queue.len() >= self.inner.policy.max_queued_tasks
+            if self.inner.policy.enabled && state.queue_len() >= self.inner.policy.max_queued_tasks
             {
                 state.telemetry.rejected_tasks += 1;
                 return Err(format!(
                     "Native task graph queue is full ({} queued, max {}). Try again after current Explorer work settles.",
-                    state.queue.len(),
+                    state.queue_len(),
                     self.inner.policy.max_queued_tasks
                 ));
             }
@@ -676,7 +639,7 @@ impl NativeTaskGraphManager {
             queued_task.sequence = sequence;
             let ancestor_task_ids = state.ancestors_for(&queued_task.parent_task_id);
 
-            state.records.insert(
+            state.insert_record(
                 task_id.clone(),
                 NativeTaskRecord {
                     lane: queued_task.lane,
@@ -698,7 +661,7 @@ impl NativeTaskGraphManager {
             state.lane_mut(queued_task.lane).queued += 1;
 
             if self.inner.policy.enabled {
-                state.queue.push(queued_task);
+                state.push_queued_task(queued_task);
                 state.refresh_queue_depth();
             } else {
                 state.mark_task_running(&queued_task.id);
@@ -720,11 +683,10 @@ impl NativeTaskGraphManager {
         loop {
             let next_task = {
                 let mut state = self.inner.state.lock().unwrap();
-                let Some(next_index) = state.select_next_ready_index(&self.inner.policy) else {
+                let Some(task) = state.pop_next_ready_task(&self.inner.policy) else {
                     state.refresh_queue_depth();
                     return;
                 };
-                let task = state.queue.remove(next_index);
                 state.mark_task_running(&task.id);
                 state.refresh_queue_depth();
                 task
@@ -748,8 +710,10 @@ struct NativeTaskGraphInner {
 }
 
 struct NativeTaskGraphState {
-    queue: Vec<NativeQueuedTask>,
+    queue: NativeTaskPriorityQueues,
     records: HashMap<NativeTaskId, NativeTaskRecord>,
+    task_ids_by_work_key: HashMap<NativeTaskWorkKey, HashSet<NativeTaskId>>,
+    latest_generation_by_work_key: HashMap<NativeTaskWorkKey, NativeTaskGeneration>,
     active_by_lane: HashMap<NativeTaskLane, usize>,
     next_sequence: u64,
     telemetry: NativeTaskGraphTelemetryAccumulator,
@@ -762,8 +726,10 @@ impl NativeTaskGraphState {
             active_by_lane.insert(*lane, 0);
         }
         Self {
-            queue: Vec::new(),
+            queue: NativeTaskPriorityQueues::new(),
             records: HashMap::new(),
+            task_ids_by_work_key: HashMap::new(),
+            latest_generation_by_work_key: HashMap::new(),
             active_by_lane,
             next_sequence: 0,
             telemetry: NativeTaskGraphTelemetryAccumulator::default(),
@@ -782,6 +748,70 @@ impl NativeTaskGraphState {
         ancestors
     }
 
+    fn insert_record(&mut self, task_id: NativeTaskId, record: NativeTaskRecord) {
+        if self.records.contains_key(&task_id) {
+            self.remove_record(&task_id);
+        }
+
+        if let Some(work_key) = record.work_key.clone() {
+            self.task_ids_by_work_key
+                .entry(work_key.clone())
+                .or_default()
+                .insert(task_id.clone());
+
+            if let Some(generation) = record.generation {
+                self.latest_generation_by_work_key
+                    .entry(work_key)
+                    .and_modify(|latest_generation| {
+                        *latest_generation = (*latest_generation).max(generation);
+                    })
+                    .or_insert(generation);
+            }
+        }
+
+        self.records.insert(task_id, record);
+    }
+
+    fn remove_record(&mut self, task_id: &str) -> Option<NativeTaskRecord> {
+        let record = self.records.remove(task_id)?;
+
+        if let Some(work_key) = record.work_key.clone() {
+            let should_remove_work_key =
+                if let Some(task_ids) = self.task_ids_by_work_key.get_mut(&work_key) {
+                    task_ids.remove(task_id);
+                    task_ids.is_empty()
+                } else {
+                    false
+                };
+
+            if should_remove_work_key {
+                self.task_ids_by_work_key.remove(&work_key);
+                self.latest_generation_by_work_key.remove(&work_key);
+            }
+        }
+
+        Some(record)
+    }
+
+    fn task_ids_for_work_key(&self, work_key: &NativeTaskWorkKey) -> Vec<NativeTaskId> {
+        self.task_ids_by_work_key
+            .get(work_key)
+            .map(|task_ids| task_ids.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn queue_len(&self) -> usize {
+        self.queue.len()
+    }
+
+    fn push_queued_task(&mut self, task: NativeQueuedTask) {
+        self.queue.push_back(task);
+    }
+
+    fn pop_next_ready_task(&mut self, policy: &NativeTaskGraphPolicy) -> Option<NativeQueuedTask> {
+        self.queue.pop_next_ready(&self.active_by_lane, policy)
+    }
+
     fn cancel_stale_tasks_for_request(
         &mut self,
         request: &NativeTaskRequest,
@@ -793,28 +823,32 @@ impl NativeTaskGraphState {
             return Vec::new();
         };
 
-        let stale_task_ids = self
-            .records
-            .iter()
-            .filter_map(|(task_id, record)| {
-                if record.work_key.as_ref() == Some(work_key)
-                    && record.generation.unwrap_or(0) < new_generation
+        let previous_latest_generation = self.latest_generation_by_work_key.get(work_key).copied();
+        self.latest_generation_by_work_key
+            .entry(work_key.clone())
+            .and_modify(|latest_generation| {
+                *latest_generation = (*latest_generation).max(new_generation);
+            })
+            .or_insert(new_generation);
+
+        if previous_latest_generation.is_some_and(|latest| new_generation <= latest) {
+            return Vec::new();
+        }
+
+        let stale_task_ids = self.task_ids_for_work_key(work_key);
+
+        for task_id in stale_task_ids {
+            if let Some(record) = self.records.get(&task_id) {
+                if record.generation.unwrap_or(0) < new_generation
                     && matches!(
                         record.status,
                         NativeTaskStatus::Queued | NativeTaskStatus::Running
                     )
+                    && !record.token.is_cancelled()
                 {
-                    Some(task_id.clone())
-                } else {
-                    None
+                    record.token.cancel();
+                    self.telemetry.stale_cancelled_tasks += 1;
                 }
-            })
-            .collect::<Vec<_>>();
-
-        for task_id in stale_task_ids {
-            if let Some(record) = self.records.get(&task_id) {
-                record.token.cancel();
-                self.telemetry.stale_cancelled_tasks += 1;
             }
         }
 
@@ -822,20 +856,11 @@ impl NativeTaskGraphState {
     }
 
     fn remove_cancelled_queued_tasks(&mut self) -> Vec<NativeQueuedTask> {
-        let mut cancelled = Vec::new();
-        let mut retained = Vec::with_capacity(self.queue.len());
-
-        let mut cancelled_queued_records = Vec::new();
-        for task in self.queue.drain(..) {
-            if task.token.is_cancelled() {
-                cancelled_queued_records.push((task.id.clone(), task.lane));
-                cancelled.push(task);
-            } else {
-                retained.push(task);
-            }
-        }
-
-        self.queue = retained;
+        let cancelled = self.queue.remove_cancelled();
+        let cancelled_queued_records = cancelled
+            .iter()
+            .map(|task| (task.id.clone(), task.lane))
+            .collect::<Vec<_>>();
         for (task_id, lane) in cancelled_queued_records {
             self.finish_queued_cancelled_by_id(&task_id, lane);
         }
@@ -845,10 +870,8 @@ impl NativeTaskGraphState {
 
     fn finish_queued_cancelled_by_id(&mut self, task_id: &str, lane: NativeTaskLane) {
         let mut marked = false;
-        if let Some(record) = self.records.get_mut(task_id) {
+        if let Some(record) = self.remove_record(task_id) {
             if matches!(record.status, NativeTaskStatus::Queued) {
-                record.status = NativeTaskStatus::Cancelled;
-                record.finished_at = Some(Instant::now());
                 marked = true;
             }
         }
@@ -883,43 +906,15 @@ impl NativeTaskGraphState {
             *active = active.saturating_sub(1);
         }
 
-        if let Some(record) = self.records.get_mut(task_id) {
-            record.status = match status {
-                NativeTaskRunStatus::Succeeded => NativeTaskStatus::Completed,
-                NativeTaskRunStatus::Failed => NativeTaskStatus::Failed,
-                NativeTaskRunStatus::Cancelled => NativeTaskStatus::Cancelled,
-            };
-            record.finished_at = Some(Instant::now());
-        }
+        self.remove_record(task_id);
 
         self.telemetry.record_finished(lane, status, wait, run);
     }
 
-    fn select_next_ready_index(&self, policy: &NativeTaskGraphPolicy) -> Option<usize> {
-        self.queue
-            .iter()
-            .enumerate()
-            .filter(|(_, task)| {
-                policy.lane_concurrency.cap_for(task.lane) > 0
-                    && self
-                        .active_by_lane
-                        .get(&task.lane)
-                        .copied()
-                        .unwrap_or_default()
-                        < policy.lane_concurrency.cap_for(task.lane)
-            })
-            .min_by(|(_, left), (_, right)| {
-                match left.priority.rank().cmp(&right.priority.rank()) {
-                    CmpOrdering::Equal => left.sequence.cmp(&right.sequence),
-                    ordering => ordering,
-                }
-            })
-            .map(|(index, _)| index)
-    }
-
     fn refresh_queue_depth(&mut self) {
-        self.telemetry.queue_depth = self.queue.len();
-        self.telemetry.max_queue_depth = self.telemetry.max_queue_depth.max(self.queue.len());
+        let queue_depth = self.queue_len();
+        self.telemetry.queue_depth = queue_depth;
+        self.telemetry.max_queue_depth = self.telemetry.max_queue_depth.max(queue_depth);
     }
 
     fn lane_mut(&mut self, lane: NativeTaskLane) -> &mut NativeTaskLaneTelemetryAccumulator {
@@ -927,6 +922,103 @@ impl NativeTaskGraphState {
             .lane_counts
             .entry(lane)
             .or_insert_with(NativeTaskLaneTelemetryAccumulator::default)
+    }
+}
+
+struct NativeTaskPriorityQueues {
+    buckets: HashMap<NativeTaskPriority, HashMap<NativeTaskLane, VecDeque<NativeQueuedTask>>>,
+}
+
+impl NativeTaskPriorityQueues {
+    fn new() -> Self {
+        let mut buckets = HashMap::new();
+        for priority in NativeTaskPriority::all() {
+            let mut lane_buckets = HashMap::new();
+            for lane in NativeTaskLane::all() {
+                lane_buckets.insert(*lane, VecDeque::new());
+            }
+            buckets.insert(*priority, lane_buckets);
+        }
+        Self { buckets }
+    }
+
+    fn push_back(&mut self, task: NativeQueuedTask) {
+        self.buckets
+            .entry(task.priority)
+            .or_default()
+            .entry(task.lane)
+            .or_default()
+            .push_back(task);
+    }
+
+    fn pop_next_ready(
+        &mut self,
+        active_by_lane: &HashMap<NativeTaskLane, usize>,
+        policy: &NativeTaskGraphPolicy,
+    ) -> Option<NativeQueuedTask> {
+        for priority in NativeTaskPriority::all() {
+            let best_lane = {
+                let Some(lane_buckets) = self.buckets.get(priority) else {
+                    continue;
+                };
+
+                NativeTaskLane::all()
+                    .iter()
+                    .filter_map(|lane| {
+                        let lane_cap = policy.lane_concurrency.cap_for(*lane);
+                        if lane_cap == 0
+                            || active_by_lane.get(lane).copied().unwrap_or_default() >= lane_cap
+                        {
+                            return None;
+                        }
+
+                        lane_buckets
+                            .get(lane)
+                            .and_then(|queue| queue.front())
+                            .map(|task| (*lane, task.sequence))
+                    })
+                    .min_by_key(|(_, sequence)| *sequence)
+                    .map(|(lane, _)| lane)
+            };
+
+            if let Some(lane) = best_lane {
+                return self
+                    .buckets
+                    .get_mut(priority)
+                    .and_then(|lane_buckets| lane_buckets.get_mut(&lane))
+                    .and_then(VecDeque::pop_front);
+            }
+        }
+
+        None
+    }
+
+    fn remove_cancelled(&mut self) -> Vec<NativeQueuedTask> {
+        let mut cancelled = Vec::new();
+
+        for lane_buckets in self.buckets.values_mut() {
+            for queue in lane_buckets.values_mut() {
+                let mut retained = VecDeque::with_capacity(queue.len());
+                while let Some(task) = queue.pop_front() {
+                    if task.token.is_cancelled() {
+                        cancelled.push(task);
+                    } else {
+                        retained.push_back(task);
+                    }
+                }
+                *queue = retained;
+            }
+        }
+
+        cancelled
+    }
+
+    fn len(&self) -> usize {
+        self.buckets
+            .values()
+            .flat_map(|lane_buckets| lane_buckets.values())
+            .map(VecDeque::len)
+            .sum()
     }
 }
 
@@ -973,9 +1065,6 @@ struct NativeTaskRecord {
 enum NativeTaskStatus {
     Queued,
     Running,
-    Completed,
-    Failed,
-    Cancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1328,6 +1417,34 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn finished_tasks_leave_only_telemetry_not_live_records() {
+        let manager = NativeTaskGraphManager::new(policy_with_caps(1, 1, 1));
+        let work_key = NativeTaskWorkKey::new("thumbnail:C:/demo/image.png");
+        let submission = manager
+            .submit_blocking(
+                NativeTaskRequest::new(
+                    NativeTaskLane::ThumbnailDecode,
+                    NativeTaskPriority::Visible,
+                    "one thumbnail",
+                )
+                .with_work_key(work_key.clone())
+                .with_generation(7),
+                |_| Ok("done"),
+            )
+            .unwrap();
+        let task_id = submission.task_id().to_string();
+
+        assert_eq!(submission.wait().await.unwrap(), "done");
+
+        let state = manager.inner.state.lock().unwrap();
+        assert!(!state.records.contains_key(&task_id));
+        assert!(!state.task_ids_by_work_key.contains_key(&work_key));
+        assert!(!state.latest_generation_by_work_key.contains_key(&work_key));
+        assert_eq!(state.queue_len(), 0);
+        assert_eq!(state.telemetry.completed_tasks, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn bounded_queue_rejects_when_capacity_is_exhausted() {
         let manager = NativeTaskGraphManager::new(NativeTaskGraphPolicy {
             max_queued_tasks: 1,
@@ -1435,6 +1552,13 @@ mod tests {
         let result = submission.wait().await;
         assert!(result.is_err());
         assert_eq!(manager.telemetry_snapshot().cancelled_tasks, 1);
+        assert!(!manager
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .records
+            .contains_key(&task_id));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

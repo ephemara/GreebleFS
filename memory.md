@@ -9218,3 +9218,17 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bun run mcp:doctor` in light mode; the first run exposed missing HTTP timeouts, the fixed run completed in about five seconds while native automation/CDP were unavailable.
   - Passed MCP stdio proof from the patched source: tool count stayed 11, `gfs_app status` and `gfs_app doctor` returned without errors, `attachMode` stayed `null`, and doctor reported the light/no-bridge path.
   - Cleaned stale runtime debris from the old behavior: 12 old `node --import tsx src/index.ts --transport stdio` MCP processes and fallback Chrome trees whose command lines matched `D:\GreebleFS\MCP\.state\fallback-browser-profile`. Final scans found none remaining.
+
+# 2026-05-10 - Native Task Graph Live-State Queue Hardening
+
+- Fixed the native task graph's unbounded live-state growth path in `src-tauri/src/native_task_graph.rs`.
+  - `NativeTaskGraphState.records` is now live queued/running state only. Completed, failed, running-cancelled, and queued-cancelled tasks are removed immediately while cumulative counts remain in telemetry.
+  - The queued work structure is now priority/lane bucketed with fixed `VecDeque` buckets. Dispatch checks priority order, then chooses the oldest ready lane-front task, preserving FIFO ties without scanning every queued task under the graph mutex.
+  - Work-key stale cancellation now uses active `task_ids_by_work_key` and `latest_generation_by_work_key` indexes, and those indexes are pruned when the last live task for a key finishes.
+- Durable rule:
+  - Do not reintroduce a flat task queue or historical `NativeTaskRecord` retention. History belongs in telemetry; cancellation/routing indexes should describe only live work.
+- Validation:
+  - Passed: `cargo fmt --manifest-path .\src-tauri\Cargo.toml`
+  - Passed: `cargo check --manifest-path .\src-tauri\Cargo.toml --lib`
+  - Passed compile-only: `CARGO_TARGET_DIR=D:\GreebleFS\target-codex-native-task-graph cargo test --manifest-path .\src-tauri\Cargo.toml --lib native_task_graph --no-run`
+  - Blocked at runtime: both normal and isolated-target `cargo test --manifest-path .\src-tauri\Cargo.toml --lib native_task_graph` compiled the test binary, then the Windows test executable exited before running tests with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`.
