@@ -1,3 +1,17 @@
+# 2026-05-10 - Icon-Only Explorer Action Toolbar
+
+- Debloated the Explorer topbar/toolbar action command strip so command controls read as one unified row instead of separate bordered buttons.
+  - Compact command placements now hide their text labels and use icon-only controls for search mode, semantic index build, save search, batch rename, tagging, duplicate scan, undo trash, new folder, and new file.
+  - `toggleSearchContent` now uses search/file-text/sparkles glyphs instead of `NM`/`TXT`/`AI`; `semanticIndexBuild` uses the database glyph instead of `IDX`.
+  - The shared command style keeps idle borders transparent and relies on tiny hover/active fill via `--overlay-explorer-command-*` tokens.
+- Durable design rule:
+  - Explorer action controls mounted in the topbar or toolbar should default to icon-only, transparent-border commands. Keep precise wording in `title`/ARIA labels and action menus, not in visible toolbar pills.
+- Validation:
+  - Passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "topbar action controls as compact borderless commands" --reporter=dot --testTimeout=30000`.
+  - Passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot --testTimeout=30000`.
+  - Filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` reported no touched-file diagnostics for `FileExplorer.tsx`, `explorerTheme.ts`, or `fileExplorer.viewModes.test.tsx`; repo-wide typecheck still exits nonzero on existing baseline failures.
+  - Live MCP/native-CDP proof on `C:\Users\Admin\Desktop` measured topbar action commands at roughly 16px wide with no visible text and transparent borders; post-HMR console buffer was clean.
+
 # 2026-05-10 - Borderless Compact Collection Preview
 
 - Tightened the shared folder/archive preview surface so it reads like a folder preview instead of a task list or card wall.

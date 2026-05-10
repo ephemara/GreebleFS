@@ -64,6 +64,7 @@ import {
   Pencil,
   Puzzle,
   Sparkles,
+  FileText,
   FilePlus,
   FolderPlus,
   HardDriveDownload,
@@ -26498,13 +26499,13 @@ export function FileExplorer({
               }
             }}
           >
-            <span style={{ fontWeight: 700, letterSpacing: "0.02em" }}>
-              {searchMode === "semantic"
-                ? "AI"
-                : searchMode === "content"
-                  ? "TXT"
-                  : "NM"}
-            </span>
+            {searchMode === "semantic" ? (
+              <Sparkles size={11} />
+            ) : searchMode === "content" ? (
+              <FileText size={11} />
+            ) : (
+              <Search size={11} />
+            )}
             <span
               style={{
                 display: shouldShowToolbarCommandLabel(placement)
@@ -26534,7 +26535,7 @@ export function FileExplorer({
               Boolean(semanticIndexSummary?.indexed),
             )}
           >
-            <span style={{ fontWeight: 700 }}>IDX</span>
+            <Database size={11} />
             <span
               style={{
                 display: shouldShowToolbarCommandLabel(placement)

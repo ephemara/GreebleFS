@@ -2428,6 +2428,33 @@ describe("FileExplorer view modes", () => {
     ).toBeNull();
   });
 
+  it("renders topbar action controls as compact borderless commands", async () => {
+    renderExplorer({ chromeControlSurface: "topbar" });
+    await screen.findByText("alpha");
+
+    const compactControls = [
+      ["focusAddressBar", "Search"],
+      ["actionsPaneToggle", "Actions"],
+      ["togglePreview", "Preview"],
+      ["selectionModeToggle", "Select"],
+      ["toggleSearchContent", "Name"],
+      ["semanticIndexBuild", "Build"],
+    ] as const;
+
+    for (const [controlId, visibleLabel] of compactControls) {
+      const control = getChromeControl(controlId);
+      expect(control).not.toBeNull();
+      const button = within(control as HTMLElement).getByRole("button");
+      const labelNode = within(control as HTMLElement).queryByText(
+        visibleLabel,
+      ) as HTMLElement | null;
+      expect(labelNode?.style.display ?? "none").toBe("none");
+      const inlineStyle = button.getAttribute("style") ?? "";
+      expect(inlineStyle).toContain("border: 1px solid transparent");
+      expect(inlineStyle).not.toContain("var(--overlay-explorer-chip-border)");
+    }
+  });
+
   it("reads customize saves from the same chrome override lane the explorer writes", async () => {
     useExplorerStore.getState().updateSession({
       shellLayoutId: "focus",
