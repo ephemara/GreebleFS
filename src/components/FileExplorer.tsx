@@ -33927,6 +33927,18 @@ export function FileExplorer({
   );
   const handleExplorerSideRailContextMenuRequest = useCallback(
     (request: ExplorerSideRailContextMenuRequest) => {
+      if (request.kind === "rail-controls") {
+        openLocalContextMenu({
+          event: request.event,
+          nodes: request.nodes,
+          presentation: request.presentation ?? {
+            density: "balanced",
+            showDescriptions: true,
+          },
+        });
+        return;
+      }
+
       if (request.kind !== "tag-filter") {
         return;
       }

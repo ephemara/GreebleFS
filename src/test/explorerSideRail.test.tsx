@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { listExplorerLocation } from '../runtime/explorerBackend';
+import { listExplorerLocation, type ExplorerDriveInfo } from '../runtime/explorerBackend';
 import { invalidateExplorerDirectoryResultCaches } from '../components/explorer/explorerDirectoryCache';
 import { getExplorerRailWidthBounds } from '../config/explorerRail';
 
@@ -12,8 +12,13 @@ vi.mock('../runtime/explorerBackend', () => {
   };
 });
 
-import { ExplorerSideRail } from '../components/explorer/ExplorerSideRail';
-import { createDefaultExplorerRailSnapshot, normalizeExplorerRailSnapshot } from '../components/explorer/explorerRailState';
+import { ExplorerSideRail as ExplorerSideRailComponent } from '../components/explorer/ExplorerSideRail';
+import {
+  createDefaultExplorerRailSnapshot,
+  normalizeExplorerRailSnapshot,
+  setExplorerRailAutoExpandToOpenFolder,
+  setExplorerRailViewMode,
+} from '../components/explorer/explorerRailState';
 import { useExplorerStore } from '../store/explorerStore';
 import {
   createTestExplorerFileEntry,
@@ -29,7 +34,31 @@ function createDataTransfer(payloads: Record<string, string>) {
 }
 
 function enableAutoExpandToOpenFolder() {
-  fireEvent.click(screen.getByRole('button', { name: 'Toggle expand to open folder' }));
+  act(() => {
+    useExplorerStore.getState().updateRail((snapshot) =>
+      setExplorerRailAutoExpandToOpenFolder(snapshot, true),
+    );
+  });
+}
+
+function setRailViewModeForTest(viewMode: 'default' | 'compact' | 'tree') {
+  act(() => {
+    useExplorerStore.getState().updateRail((snapshot) =>
+      setExplorerRailViewMode(snapshot, viewMode),
+    );
+  });
+}
+
+function selectRailContextCommand(
+  request: unknown,
+  label: string,
+) {
+  const nodes = (request as { nodes?: Array<{ kind: string; label?: string; onSelect?: () => void }> }).nodes ?? [];
+  const command = nodes.find((node) => node.kind === 'command' && node.label === label);
+  expect(command).toBeTruthy();
+  act(() => {
+    command?.onSelect?.();
+  });
 }
 
 function createFolderEntry(name: string, path: string) {
@@ -43,6 +72,56 @@ function createFolderEntry(name: string, path: string) {
     is_hidden: false,
     is_symlink: false,
   });
+}
+
+type ExplorerSideRailTestProps = Omit<
+  Parameters<typeof ExplorerSideRailComponent>[0],
+  'drives'
+> & {
+  drives?: unknown[];
+};
+
+function ExplorerSideRail({ drives = [], ...props }: ExplorerSideRailTestProps) {
+  return (
+    <ExplorerSideRailComponent
+      {...props}
+      drives={drives as ExplorerDriveInfo[]}
+    />
+  );
+}
+
+function createLocalDrive(input: {
+  id: string;
+  path: string;
+  label: string;
+  totalBytes?: number;
+  freeBytes?: number;
+  classification?: 'system' | 'home' | 'external' | 'network' | 'optical' | 'virtual' | 'unknown';
+  isRemovable?: boolean;
+}): ExplorerDriveInfo {
+  return {
+    kind: 'local',
+    id: input.id,
+    path: input.path,
+    label: input.label,
+    totalBytes: input.totalBytes ?? 1000,
+    freeBytes: input.freeBytes ?? 400,
+    classification: input.classification ?? (input.isRemovable ? 'external' : 'system'),
+    volumeId: input.id,
+    fileSystemType: 'NTFS',
+    isRemovable: input.isRemovable ?? false,
+    isNetwork: false,
+    isReadOnly: false,
+    supportsScan: true,
+    capabilities: {
+      supportsGeneratedThumbnails: true,
+      supportsNativeDragOut: true,
+      supportsNativeIntegration: true,
+      supportsScan: true,
+      supportsSearch: true,
+      supportsSemanticIndexing: true,
+    },
+  };
 }
 
 beforeEach(() => {
@@ -68,7 +147,8 @@ describe('ExplorerSideRail', () => {
     });
   });
 
-  it('creates bookmark folders from the compact header action', () => {
+  it('creates bookmark folders from the rail context menu manage action', () => {
+    const onContextMenuRequest = vi.fn();
     render(
       <ExplorerSideRail
         accent="#7c3aed"
@@ -84,10 +164,12 @@ describe('ExplorerSideRail', () => {
         onGoHome={vi.fn()}
         onBookmarkCreated={vi.fn()}
         resolveDroppedSources={() => []}
+        onContextMenuRequest={onContextMenuRequest}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    fireEvent.contextMenu(screen.getByRole('tree', { name: 'Quick access tree' }));
+    selectRailContextCommand(onContextMenuRequest.mock.calls[0][0], 'Manage Bookmarks');
     fireEvent.click(screen.getByLabelText(/create bookmark folder/i));
     fireEvent.change(screen.getByLabelText(/new bookmark folder name/i), { target: { value: 'Work' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
@@ -182,6 +264,7 @@ describe('ExplorerSideRail', () => {
   });
 
   it('keeps bookmark row management controls hidden until manage mode is enabled', () => {
+    const onContextMenuRequest = vi.fn();
     const timestamp = Date.now();
     useExplorerStore.getState().replaceRail({
       ...createDefaultExplorerRailSnapshot(),
@@ -216,16 +299,19 @@ describe('ExplorerSideRail', () => {
         onGoHome={vi.fn()}
         onBookmarkCreated={vi.fn()}
         resolveDroppedSources={() => []}
+        onContextMenuRequest={onContextMenuRequest}
       />,
     );
 
     expect(screen.queryByLabelText(/remove bookmark node/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    fireEvent.contextMenu(screen.getByRole('tree', { name: 'Quick access tree' }));
+    selectRailContextCommand(onContextMenuRequest.mock.calls[0][0], 'Manage Bookmarks');
     expect(screen.getByLabelText(/remove bookmark node/i)).toBeInTheDocument();
   }, 20000);
 
-  it('exposes a close action in the rail header when the explorer supplies one', () => {
+  it('exposes a close action in the rail context menu when the explorer supplies one', () => {
     const onCloseSources = vi.fn();
+    const onContextMenuRequest = vi.fn();
 
     render(
       <ExplorerSideRail
@@ -243,14 +329,17 @@ describe('ExplorerSideRail', () => {
         onCloseSources={onCloseSources}
         onBookmarkCreated={vi.fn()}
         resolveDroppedSources={() => []}
+        onContextMenuRequest={onContextMenuRequest}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    fireEvent.contextMenu(screen.getByRole('tree', { name: 'Quick access tree' }));
+    selectRailContextCommand(onContextMenuRequest.mock.calls[0][0], 'Close Sources');
     expect(onCloseSources).toHaveBeenCalledTimes(1);
   });
 
-  it('defaults to manual expansion and lets the header toggle turn on auto-follow', () => {
+  it('defaults to manual expansion and lets the rail context menu turn on auto-follow', () => {
+    const onContextMenuRequest = vi.fn();
     render(
       <ExplorerSideRail
         accent="#7c3aed"
@@ -266,16 +355,15 @@ describe('ExplorerSideRail', () => {
         onGoHome={vi.fn()}
         onBookmarkCreated={vi.fn()}
         resolveDroppedSources={() => []}
+        onContextMenuRequest={onContextMenuRequest}
       />,
     );
 
-    const autoToggle = screen.getByRole('button', { name: 'Toggle expand to open folder' });
-    expect(autoToggle).toHaveAttribute('aria-pressed', 'false');
     expect(useExplorerStore.getState().rail.autoExpandToOpenFolder).toBe(false);
 
-    fireEvent.click(autoToggle);
+    fireEvent.contextMenu(screen.getByRole('tree', { name: 'Quick access tree' }));
+    selectRailContextCommand(onContextMenuRequest.mock.calls[0][0], 'Enable Auto Expand');
 
-    expect(autoToggle).toHaveAttribute('aria-pressed', 'true');
     expect(useExplorerStore.getState().rail.autoExpandToOpenFolder).toBe(true);
   });
 
@@ -288,7 +376,7 @@ describe('ExplorerSideRail', () => {
     ).toBe(false);
   });
 
-  it('only shows the verbose drag guide when the rail is wide enough for it', () => {
+  it('keeps rail-local header metadata out of the visible side rail', () => {
     const baseProps = {
       accent: '#7c3aed',
       brandLabel: 'Explorer',
@@ -310,8 +398,9 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
-    expect(screen.getByText('0 pinned')).toBeInTheDocument();
+    expect(screen.queryByText('0 pinned')).not.toBeInTheDocument();
     expect(screen.queryByText(/hold alt to drag files out/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Side rail view mode' })).not.toBeInTheDocument();
 
     rerender(
       <ExplorerSideRail
@@ -320,7 +409,8 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
-    expect(screen.getByText(/plain drag stays inside the explorer/i)).toBeInTheDocument();
+    expect(screen.queryByText(/plain drag stays inside the explorer/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Manage' })).not.toBeInTheDocument();
   }, 20000);
 
   it('stores collapsed section state when sections are toggled', () => {
@@ -424,16 +514,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Users"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -447,9 +528,8 @@ describe('ExplorerSideRail', () => {
 
     enableAutoExpandToOpenFolder();
 
-    expect(screen.getAllByText('Users').length).toBeGreaterThan(0);
-
     await waitFor(() => {
+      expect(screen.getAllByText('Users').length).toBeGreaterThan(0);
       expect(screen.getByText('alice')).toBeInTheDocument();
     });
 
@@ -512,16 +592,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Users"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -549,16 +620,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Projects"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -630,16 +692,7 @@ describe('ExplorerSideRail', () => {
       chromeLayoutId: 'default' as const,
       sidebarWidth: 260,
       drives: [
-        {
-          kind: 'local' as const,
-          id: 'C:',
-          path: 'C:\\',
-          letter: 'C:\\',
-          label: 'System',
-          total_bytes: 1000,
-          free_bytes: 400,
-          drive_type: 'fixed',
-        },
+        createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
       ],
       drivesLoading: false,
       showHiddenFiles: false,
@@ -683,6 +736,70 @@ describe('ExplorerSideRail', () => {
     });
   });
 
+  it('lets manual collapse override auto-follow expanded branches', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string, _showHidden: boolean) => {
+      if (path === 'C:\\') {
+        return createTestExplorerLocationListing({
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
+          entries: [createFolderEntry('Users', 'C:\\Users')],
+        });
+      }
+      if (path === 'C:\\Users') {
+        return createTestExplorerLocationListing({
+          path,
+          parentPath: 'C:\\',
+          breadcrumbs: [
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Users', path: 'C:\\Users' },
+          ],
+          entries: [createFolderEntry('alice', 'C:\\Users\\alice')],
+        });
+      }
+      return createTestExplorerLocationListing({
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      });
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\Users\\alice"
+        drives={[
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    enableAutoExpandToOpenFolder();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Collapse Users' })).toBeInTheDocument();
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Users' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Expand Users' })).toBeInTheDocument();
+    });
+    expect(screen.queryByText('alice')).not.toBeInTheDocument();
+  });
+
   it('reloads the active local tree branch when the explorer bumps the tree refresh revision', async () => {
     let usersChildren = [
       createFolderEntry('alpha', 'C:\\Users\\alpha'),
@@ -724,16 +841,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Users"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -769,16 +877,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Users"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -828,16 +927,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={320}
         currentPath="C:\\"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -856,7 +946,7 @@ describe('ExplorerSideRail', () => {
       expect(screen.getByText('C:\\Users')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Compact side rail view' }));
+    setRailViewModeForTest('compact');
 
     expect(useExplorerStore.getState().rail.viewMode).toBe('compact');
     expect(screen.queryByText('C:\\Users')).not.toBeInTheDocument();
@@ -871,16 +961,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={320}
         currentPath="C:\\"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -895,11 +976,45 @@ describe('ExplorerSideRail', () => {
     expect(screen.getByText('600 B used')).toBeInTheDocument();
     expect(screen.getByText('1000 B total')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tree side rail view' }));
+    setRailViewModeForTest('tree');
 
     expect(useExplorerStore.getState().rail.viewMode).toBe('tree');
     expect(screen.queryByText('600 B used')).not.toBeInTheDocument();
     expect(screen.queryByText('1000 B total')).not.toBeInTheDocument();
+  });
+
+  it('sorts local drives by drive letter in the rail', () => {
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={320}
+        currentPath="C:\\"
+        drives={[
+          createLocalDrive({ id: 'F:', path: 'F:', label: 'Dev Drive' }),
+          createLocalDrive({ id: 'D:', path: 'D:', label: 'Dev2' }),
+          createLocalDrive({ id: 'C:', path: 'C:', label: 'windows' }),
+          createLocalDrive({
+            id: 'E:',
+            path: 'E:',
+            label: 'E:',
+            classification: 'external',
+            isRemovable: true,
+          }),
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    const drivesSection = document.querySelector('[data-rail-section-id="drives"]');
+    expect(drivesSection?.textContent).toMatch(/windows[\s\S]*Dev2[\s\S]*E:[\s\S]*Dev Drive/);
   });
 
   it('keeps navigation manual until the user expands a branch with the chevron', async () => {
@@ -928,16 +1043,7 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="C:\\Users"
         drives={[
-          {
-            kind: 'local',
-            id: 'C:',
-            path: 'C:\\',
-            letter: 'C:\\',
-            label: 'System',
-            total_bytes: 1000,
-            free_bytes: 400,
-            drive_type: 'fixed',
-          },
+          createLocalDrive({ id: 'C:', path: 'C:\\', label: 'System' }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}
@@ -1055,26 +1161,22 @@ describe('ExplorerSideRail', () => {
         sidebarWidth={260}
         currentPath="/home/alice/Projects/demo"
         drives={[
-          {
-            kind: 'local',
+          createLocalDrive({
             id: 'home',
             path: '/home/alice',
-            letter: '/home/alice',
             label: 'Home',
-            total_bytes: 0,
-            free_bytes: 0,
-            drive_type: 'home',
-          },
-          {
-            kind: 'local',
+            totalBytes: 0,
+            freeBytes: 0,
+            classification: 'home',
+          }),
+          createLocalDrive({
             id: 'root',
             path: '/',
-            letter: '/',
             label: 'Root',
-            total_bytes: 0,
-            free_bytes: 0,
-            drive_type: 'fixed',
-          },
+            totalBytes: 0,
+            freeBytes: 0,
+            classification: 'system',
+          }),
         ]}
         drivesLoading={false}
         showHiddenFiles={false}

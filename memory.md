@@ -1,3 +1,20 @@
+# 2026-05-10 - Compact Explorer Home Magnum Opus
+
+- Reworked Explorer Home into a compact, panel-aware cockpit instead of a verbose explanatory dashboard.
+  - `src/components/home/ExplorerHomeSurface.tsx` now measures its own rendered width and passes `host.viewport` density into Home packs, with `minWidth: 0`, `overflowX: hidden`, and container-aware grids so sources/actions/preview panes cannot cut the Home surface off horizontally.
+  - `src/components/home/homePackRuntime.tsx` now exposes Home actions/widgets through `ExplorerHomeActionItem`, `ExplorerHomeWidgetItem`, `host.runAction(...)`, and `host.renderWidget(...)`.
+  - `FileExplorer.tsx` adapts the live explorer chrome action catalog and widget catalog into that Home host contract, including isolated widget instance ids for Home slots.
+  - `src/components/home/builtInHomePacks.tsx` now ships `magnum-opus` as the default compact built-in, while `command-center` and `favorites-deck` reuse the compact renderer instead of bespoke marketing-style pages.
+  - Shipped `home.json` manifests under default/minimal profiles and the Toon theme now use compact preset modules (`quick-access`, `launchpad`, `saved-searches`, `drives`, `tasks`, `actions`, `widgets`) instead of loading older verbose custom renderers.
+- Durable design rule:
+  - Do not put explanatory feature copy, hero panels, or fixed-width card dashboards back into Explorer Home. Treat Home as a dense shell surface that must survive being squeezed by sources/actions/preview panels. New Home affordances should be data modules, host actions, or host widgets first.
+  - If a pack needs custom rendering, still consume `host.viewport` and keep all grids based on `minmax(min(100%, ...), 1fr)` or equivalent panel-safe constraints.
+- Validation:
+  - Passed: `bunx vitest run src/test/toonThemeBundle.test.ts --reporter=dot --testTimeout=30000`.
+  - Passed: `bunx vitest run src/test/explorerSideRail.test.tsx --reporter=dot --testTimeout=30000` after the adjacent compact side-rail/context-menu cleanup.
+  - Filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` reported no diagnostics for Home, FileExplorer, SettingsPage, or ExplorerSideRail; repo-wide typecheck still exits nonzero on existing baseline errors outside this work.
+  - MCP status/host calls confirmed the app was running at `greeblefs://home`, but the current dev WebView attach path still reports the known Tauron API `metadata`/`invoke` initialization errors after reload, so screenshot proof was limited.
+
 # 2026-05-10 - Borderless Explorer Rail Rows
 
 - Removed the per-row/button border treatment from the Explorer side rail so Quick Access, Drives, bookmarks, saved searches, and local tree rows no longer render as stacked pill cards.
