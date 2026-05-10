@@ -7,6 +7,12 @@ import {
   type ResolvedExplorerDragEngine,
 } from "../../config/explorerDragEngines";
 import {
+  EXPLORER_DRAG_CANCEL_BURST_DURATION_MS,
+  EXPLORER_DRAG_DROP_BURST_DURATION_MS,
+  EXPLORER_DRAG_OVERLAY_POINTER_OFFSET,
+  EXPLORER_SHARED_DRAG_SESSION_LINGER_MS,
+} from "../../config/explorerDragInteractions";
+import {
   recordExplorerPerformanceSample,
   type ExplorerPerformanceMetadata,
   type ExplorerPerformanceMetricId,

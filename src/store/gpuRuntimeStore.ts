@@ -38,6 +38,19 @@ let subscriptionPromise: Promise<void> | null = null;
 let subscriptionReady = false;
 let lastConfiguredMode: GpuTierMode | null = null;
 
+function formatGpuRuntimeStoreError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isGpuRuntimeBridgeUnavailableError(error: unknown): boolean {
+  const message = formatGpuRuntimeStoreError(error);
+  return (
+    message.includes("Cannot read properties of undefined (reading 'invoke')") ||
+    message.includes("Cannot read properties of undefined (reading 'listen')") ||
+    message.includes("Cannot read properties of undefined (reading 'metadata')")
+  );
+}
+
 export const useGpuRuntimeStore = create<GpuRuntimeStoreState>((set) => ({
   snapshot: DEFAULT_GPU_RUNTIME_SNAPSHOT,
   hydrationState: 'idle',
@@ -76,9 +89,13 @@ async function hydrateGpuRuntimeStatus(): Promise<void> {
       useGpuRuntimeStore.getState().setHydrationState('ready');
     })
     .catch((error) => {
-      useGpuRuntimeStore
-        .getState()
-        .setHydrationError(error instanceof Error ? error.message : String(error));
+      const state = useGpuRuntimeStore.getState();
+      if (isGpuRuntimeBridgeUnavailableError(error)) {
+        state.setHydrationError(null);
+        state.setHydrationState('ready');
+        return;
+      }
+      state.setHydrationError(formatGpuRuntimeStoreError(error));
     })
     .finally(() => {
       hydrationPromise = null;
@@ -108,9 +125,14 @@ async function ensureGpuRuntimeSubscription(): Promise<void> {
       useGpuRuntimeStore.getState().setSubscriptionState('ready');
     })
     .catch((error) => {
-      useGpuRuntimeStore
-        .getState()
-        .setSubscriptionError(error instanceof Error ? error.message : String(error));
+      const state = useGpuRuntimeStore.getState();
+      if (isGpuRuntimeBridgeUnavailableError(error)) {
+        subscriptionReady = true;
+        state.setSubscriptionError(null);
+        state.setSubscriptionState('ready');
+        return;
+      }
+      state.setSubscriptionError(formatGpuRuntimeStoreError(error));
     })
     .finally(() => {
       subscriptionPromise = null;
@@ -142,7 +164,14 @@ async function ensureGpuRuntimeFeed(mode: GpuTierMode): Promise<void> {
 export function useGpuRuntimeFeed(mode: GpuTierMode): void {
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      void ensureGpuRuntimeFeed(mode);
+      void ensureGpuRuntimeFeed(mode).catch((error) => {
+        if (isGpuRuntimeBridgeUnavailableError(error)) {
+          useGpuRuntimeStore.getState().setHydrationError(null);
+          useGpuRuntimeStore.getState().setHydrationState('ready');
+          return;
+        }
+        useGpuRuntimeStore.getState().setHydrationError(formatGpuRuntimeStoreError(error));
+      });
     }
   }, [mode]);
 }

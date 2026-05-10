@@ -24,6 +24,9 @@ export const explorerAutoOpenDelayMsByRole: Partial<
 export const EXPLORER_TAB_AUTO_OPEN_DELAY_MS =
   defaultExplorerDragEngine.dropTargets.tabAutoOpenDelayMs;
 
+export const EXPLORER_SHARED_DRAG_SESSION_LINGER_MS =
+  defaultExplorerDragEngine.pointer.sharedSessionLingerMs;
+
 export const EXPLORER_DRAG_OVERLAY_POINTER_OFFSET =
   defaultExplorerDragEngine.presentation.pointerOffset;
 

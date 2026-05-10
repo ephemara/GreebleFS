@@ -20,8 +20,10 @@ import {
 import { commands, unwrapTauriResult } from "./tauriClient";
 
 const failedIndexedListingCooldownMs = 2500;
+const failedIndexStartCooldownMs = 30_000;
 const requestedIndexRoots = new Set<string>();
 const failedIndexedListingUntil = new Map<string, number>();
+const failedIndexStartUntil = new Map<string, number>();
 
 function shouldUsePathIndexNativeControl(): boolean {
   return (
@@ -85,7 +87,12 @@ export async function searchExplorerPathIndex(
 
 export function warmExplorerPathIndexForPath(path: string): void {
   const key = normalizeIndexRequestKey(path);
+  const failureKey = normalizeIndexFailureCooldownKey(path);
+  const now = Date.now();
   if (requestedIndexRoots.has(key)) {
+    return;
+  }
+  if ((failedIndexStartUntil.get(failureKey) ?? 0) > now) {
     return;
   }
   requestedIndexRoots.add(key);
@@ -95,6 +102,7 @@ export function warmExplorerPathIndexForPath(path: string): void {
     recursiveFallback: true,
   }).catch(() => {
     requestedIndexRoots.delete(key);
+    failedIndexStartUntil.set(failureKey, Date.now() + failedIndexStartCooldownMs);
   });
 }
 
@@ -124,4 +132,10 @@ export async function tryListExplorerPathIndexDirectory(args: {
 
 function normalizeIndexRequestKey(path: string): string {
   return path.trim().replace(/\//g, "\\").replace(/\\+$/g, "").toLowerCase();
+}
+
+function normalizeIndexFailureCooldownKey(path: string): string {
+  const normalized = normalizeIndexRequestKey(path);
+  const driveRootMatch = normalized.match(/^[a-z]:/);
+  return driveRootMatch ? driveRootMatch[0] : normalized;
 }

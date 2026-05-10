@@ -9167,7 +9167,7 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - `src/components/AppSelect.tsx` is now the app-level select/dropdown primitive. It uses React Aria/Stately select behavior, emits native-compatible `onChange` events for existing handlers, keeps a hidden native select for form compatibility, and renders compact themed trigger/listbox/option chrome through GreebleFS CSS vars.
   - `SettingsSelect` in `src/components/settings/SettingsPrimitives.tsx` wraps `AppSelect`, so Settings rows can stay on the old ergonomic API while using the global themed dropdown system.
   - `usr/packages/greeblefs-ui/src/GreebleSelect.tsx` is the package/plugin-safe dropdown primitive exported by `@greeblefs/ui`; first-party package/plugin code should import it rather than rendering visible native selects.
-  - `AppSelect` portals into the nearest `.overlay-window-host` when available so scoped `--overlay-*` variables survive React Aria overlay rendering. Font preview options may supply `fontFamily`, `fontStyle`, or `fontWeight`, but option-provided `fontSize` is intentionally ignored so menus stay compact.
+  - `AppSelect` uses a body-level Floating UI portal and copies scoped `--overlay-*` variables from the active host so menus avoid nested overlay containers while staying themed. Font preview options may supply `fontFamily`, `fontStyle`, or `fontWeight`, but option-provided `fontSize` is intentionally ignored so menus stay compact.
 - Durable rule:
   - Do not ship visible raw `<select>` UI in `src/**` or `usr/**`. Use `AppSelect`, `SettingsSelect`, or `GreebleSelect`; raw `<option>` children are allowed only as compatibility children under those wrappers.
 - Validation:
@@ -9189,3 +9189,16 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `bunx vitest run src/test/explorerBackend.nativePool.test.ts src/test/nativeLaneMigration.test.ts --reporter=dot --testTimeout=30000`
   - Passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/themePackages.test.ts src/test/pluginIndexApi.test.ts --reporter=dot --testTimeout=30000`
   - Touched-file TypeScript filter returned no diagnostics for the path-index frontend routing files. Full repo `tsc` remains baseline-red.
+
+# 2026-05-10 - Settings Select Overlay Crash And Bridge Guard
+
+- Fixed the Settings dropdown crash caused by nesting React Aria `OverlayContainer` inside the app overlay host.
+  - `src/components/AppSelect.tsx` now keeps React Aria/Stately select behavior but uses Floating UI for anchored geometry and a direct `document.body` portal. The popover copies active `--overlay-*` variables from the trigger host so body-portaled menus stay compact and themed.
+  - Do not reintroduce React Aria `OverlayContainer` or custom `portalContainer` ownership in `AppSelect`; Settings already lives inside an overlay container.
+- Fixed the System tab's noisy GPU bridge degradation.
+  - `src/store/gpuRuntimeStore.ts` now treats missing/late Tauri `invoke`, `listen`, and `metadata` bridge pieces as degraded bridge state instead of writing a giant Settings warning.
+  - `src/runtime/explorerPathIndex.ts` now cools down failed path-index starts per drive for 30 seconds, preventing repeated Windows USN permission-denied retries from spamming logs while Settings/catalog scans run.
+- Validation:
+  - Passed: `bunx vitest run src/test/appSelect.test.tsx src/test/gpuRuntimeStore.test.ts --reporter=dot`
+  - Touched-file TypeScript filter returned no diagnostics for `AppSelect`, `gpuRuntimeStore`, `explorerDragAndDrop`, `explorerDragInteractions`, or `explorerPathIndex`.
+  - Live WebView proof: System GPU select opens with options `Auto`, `Safe`, `Integrated`, `Discrete`; popover parent is `BODY`, nested overlay container count is `0`, computed popover/option font size is `8px`, and no `GPU runtime event subscription failed` text is visible.

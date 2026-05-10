@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { OverlayProvider } from 'react-aria';
 import { describe, expect, it, vi } from 'vitest';
 import { AppSelect } from '../components/AppSelect';
 
@@ -32,5 +33,27 @@ describe('AppSelect', () => {
 
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0].target.value).toBe('geist');
+  });
+
+  it('opens inside an existing overlay provider without nesting an overlay container', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <OverlayProvider>
+        <div data-gfs-shell-scene-container="true">
+          <AppSelect aria-label="Runtime lane" value="balanced">
+            <option value="lean">Lean</option>
+            <option value="balanced">Balanced</option>
+            <option value="full">Full</option>
+          </AppSelect>
+        </div>
+      </OverlayProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: /runtime lane/i }));
+
+    const listbox = await screen.findByRole('listbox');
+    expect(listbox.closest('[data-gfs-app-select="popover"]')).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Full' })).toBeInTheDocument();
   });
 });
