@@ -2,10 +2,12 @@ use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{self, BufReader, Read};
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tar::Archive;
 use xz2::read::XzDecoder;
 use zip::read::ZipArchive;
@@ -82,6 +84,12 @@ struct ArchiveEntryRecord {
     modified: u64,
 }
 
+#[derive(Debug, Clone)]
+struct CachedArchiveEntryRecords {
+    records: Vec<ArchiveEntryRecord>,
+    cached_at: Instant,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ArchiveFormat {
     Zip,
@@ -109,6 +117,15 @@ const ARCHIVE_SUFFIXES: &[(ArchiveFormat, &[&str])] = &[
     (ArchiveFormat::Bzip2, &[".bz2"]),
     (ArchiveFormat::Xz, &[".xz"]),
 ];
+const ARCHIVE_ENTRY_RECORD_CACHE_MAX_ENTRIES_ENV: &str =
+    "GREEBLEFS_ARCHIVE_ENTRY_RECORD_CACHE_MAX_ENTRIES";
+const ARCHIVE_EXTRACT_CACHE_MAX_BYTES_ENV: &str = "GREEBLEFS_ARCHIVE_EXTRACT_CACHE_MAX_BYTES";
+const ARCHIVE_EXTRACT_CACHE_MAX_AGE_MS_ENV: &str = "GREEBLEFS_ARCHIVE_EXTRACT_CACHE_MAX_AGE_MS";
+const ARCHIVE_ENTRY_RECORD_CACHE_MAX_ENTRIES_DEFAULT: usize = 64;
+const ARCHIVE_EXTRACT_CACHE_MAX_BYTES_DEFAULT: u64 = 4 * 1024 * 1024 * 1024;
+const ARCHIVE_EXTRACT_CACHE_MAX_AGE_MS_DEFAULT: u64 = 7 * 24 * 60 * 60 * 1_000;
+static ARCHIVE_ENTRY_RECORD_CACHE: OnceLock<Mutex<HashMap<String, CachedArchiveEntryRecords>>> =
+    OnceLock::new();
 
 pub fn is_supported_archive_path(path: &Path) -> bool {
     detect_archive_format(path).is_some()
@@ -119,6 +136,7 @@ pub fn open_archive_cached(path: &Path) -> Result<FsArchiveExtractionResult, Str
     let format = detect_archive_format(path).ok_or_else(|| unsupported_archive_error(path))?;
 
     let cache_root = archive_cache_root()?;
+    prune_archive_extraction_cache(&cache_root);
     let cache_base = cache_root.join(cache_key_for_archive(path)?);
     let cached_output_dir = cache_base.join("contents");
     if cached_output_dir.exists() {
@@ -291,7 +309,7 @@ pub fn list_archive_dir(
     };
 
     let mut visible_children = BTreeMap::<String, FsArchiveEntryListingEntry>::new();
-    for record in collect_archive_entry_records(path, format)? {
+    for record in collect_archive_entry_records_cached(path, format)? {
         if !normalized_directory_path.is_empty()
             && record.relative_path == normalized_directory_path
         {
@@ -629,6 +647,83 @@ fn collect_archive_entry_records(
                 .unwrap_or(0),
             modified: 0,
         }]),
+    }
+}
+
+fn archive_entry_record_cache() -> &'static Mutex<HashMap<String, CachedArchiveEntryRecords>> {
+    ARCHIVE_ENTRY_RECORD_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn archive_entry_record_cache_limit() -> usize {
+    std::env::var(ARCHIVE_ENTRY_RECORD_CACHE_MAX_ENTRIES_ENV)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(ARCHIVE_ENTRY_RECORD_CACHE_MAX_ENTRIES_DEFAULT)
+        .max(1)
+}
+
+fn archive_identity_key(archive_path: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(archive_path).map_err(|error| {
+        format!(
+            "Failed to inspect archive {} for cache identity: {error}",
+            archive_path.display()
+        )
+    })?;
+    let modified_ms = metadata
+        .modified()
+        .ok()
+        .and_then(system_time_to_unix_ms)
+        .unwrap_or(0);
+    Ok(format!(
+        "{}::{}::{}",
+        archive_path.to_string_lossy(),
+        metadata.len(),
+        modified_ms
+    ))
+}
+
+fn system_time_to_unix_ms(time: SystemTime) -> Option<u64> {
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+}
+
+fn collect_archive_entry_records_cached(
+    archive_path: &Path,
+    format: ArchiveFormat,
+) -> Result<Vec<ArchiveEntryRecord>, String> {
+    let cache_key = archive_identity_key(archive_path)?;
+    if let Ok(cache) = archive_entry_record_cache().lock() {
+        if let Some(cached) = cache.get(&cache_key) {
+            return Ok(cached.records.clone());
+        }
+    }
+
+    let records = collect_archive_entry_records(archive_path, format)?;
+    if let Ok(mut cache) = archive_entry_record_cache().lock() {
+        cache.insert(
+            cache_key,
+            CachedArchiveEntryRecords {
+                records: records.clone(),
+                cached_at: Instant::now(),
+            },
+        );
+        prune_archive_entry_record_cache(&mut cache);
+    }
+    Ok(records)
+}
+
+fn prune_archive_entry_record_cache(cache: &mut HashMap<String, CachedArchiveEntryRecords>) {
+    let max_entries = archive_entry_record_cache_limit();
+    while cache.len() > max_entries {
+        let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.cached_at)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        cache.remove(&oldest_key);
     }
 }
 
@@ -2007,6 +2102,85 @@ fn archive_cache_root() -> Result<PathBuf, String> {
         )
     })?;
     Ok(root)
+}
+
+fn archive_cache_env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn prune_archive_extraction_cache(cache_root: &Path) {
+    let max_bytes = archive_cache_env_u64(
+        ARCHIVE_EXTRACT_CACHE_MAX_BYTES_ENV,
+        ARCHIVE_EXTRACT_CACHE_MAX_BYTES_DEFAULT,
+    );
+    let max_age = Duration::from_millis(archive_cache_env_u64(
+        ARCHIVE_EXTRACT_CACHE_MAX_AGE_MS_ENV,
+        ARCHIVE_EXTRACT_CACHE_MAX_AGE_MS_DEFAULT,
+    ));
+
+    let Ok(entries) = fs::read_dir(cache_root) else {
+        return;
+    };
+    let now = SystemTime::now();
+    let mut cache_entries = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .unwrap_or(UNIX_EPOCH);
+        if max_age.is_zero()
+            || now
+                .duration_since(modified)
+                .map(|age| age > max_age)
+                .unwrap_or(false)
+        {
+            let _ = fs::remove_dir_all(&path);
+            continue;
+        }
+        let size = directory_size_bytes(&path);
+        cache_entries.push((path, modified, size));
+    }
+
+    let mut total_size = cache_entries
+        .iter()
+        .fold(0u64, |total, (_, _, size)| total.saturating_add(*size));
+    if max_bytes == 0 {
+        for (path, _, _) in cache_entries {
+            let _ = fs::remove_dir_all(path);
+        }
+        return;
+    }
+    cache_entries.sort_by_key(|(_, modified, _)| *modified);
+    for (path, _, size) in cache_entries {
+        if total_size <= max_bytes {
+            break;
+        }
+        if fs::remove_dir_all(&path).is_ok() {
+            total_size = total_size.saturating_sub(size);
+        }
+    }
+}
+
+fn directory_size_bytes(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries.flatten().fold(0u64, |total, entry| {
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            total.saturating_add(directory_size_bytes(&entry_path))
+        } else {
+            total.saturating_add(entry.metadata().map(|metadata| metadata.len()).unwrap_or(0))
+        }
+    })
 }
 
 fn archive_temp_root() -> Result<PathBuf, String> {

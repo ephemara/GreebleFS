@@ -128,6 +128,7 @@ async function queryPathIndexAsGlobalSearchResults(args: {
       query: args.query,
       limit: args.limit,
       includeHidden: false,
+      matchMode: "prefix",
     });
     return entries
       .filter((entry) => {

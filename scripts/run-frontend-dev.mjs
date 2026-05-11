@@ -128,8 +128,18 @@ async function warmDesktopEntrypoints(server) {
     }
   }
   const idleStartedAt = performance.now();
-  await server.waitForRequestsIdle();
-  console.log(`Desktop frontend dependency crawl idle after ${Math.round(performance.now() - idleStartedAt)}ms.`);
+  const idleTimeoutMs = Number.parseInt(process.env.GREEBLEFS_VITE_DEV_IDLE_TIMEOUT_MS || "10000", 10);
+  const idleResult = await Promise.race([
+    server.waitForRequestsIdle().then(() => "idle"),
+    new Promise((resolve) => {
+      setTimeout(() => resolve("timeout"), Number.isFinite(idleTimeoutMs) ? idleTimeoutMs : 10000);
+    }),
+  ]);
+  console.log(
+    idleResult === "idle"
+      ? `Desktop frontend dependency crawl idle after ${Math.round(performance.now() - idleStartedAt)}ms.`
+      : `Desktop frontend dependency crawl idle wait capped after ${Math.round(performance.now() - idleStartedAt)}ms.`,
+  );
   console.log(`Desktop frontend warmup complete in ${Math.round(performance.now() - startedAt)}ms.`);
 }
 
@@ -157,10 +167,11 @@ async function runWarmViteDevServer(forwardedArgs) {
     },
   });
 
-  await warmDesktopEntrypoints(server);
   await server.listen();
   server.printUrls();
-  console.log("Desktop frontend dev server is warm and ready.");
+  console.log("Desktop frontend dev server is listening.");
+  await warmDesktopEntrypoints(server);
+  console.log("Desktop frontend dev server is warm.");
 
   try {
     await waitForShutdownSignal();

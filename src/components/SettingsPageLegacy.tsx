@@ -435,6 +435,7 @@ import type { PathIndexAccelerationStatus } from "../generated/tauri";
 import {
   enablePathIndexAcceleration,
   getPathIndexAccelerationStatus,
+  installPathIndexAccelerationService,
   rebuildPathIndexAcceleration,
 } from "../runtime/pathIndexAcceleration";
 import {
@@ -3486,7 +3487,7 @@ export function SettingsPage({
   const [
     pathIndexAccelerationActionPending,
     setPathIndexAccelerationActionPending,
-  ] = useState<"enable" | "rebuild" | null>(null);
+  ] = useState<"install" | "enable" | "rebuild" | null>(null);
   const [pathIndexAccelerationNotice, setPathIndexAccelerationNotice] =
     useState<string | null>(null);
   const [pathIndexAccelerationError, setPathIndexAccelerationError] =
@@ -3901,6 +3902,27 @@ export function SettingsPage({
 
   useEffect(() => {
     void refreshPathIndexAccelerationStatus();
+  }, [refreshPathIndexAccelerationStatus]);
+
+  const handleInstallPathIndexAccelerationService = useCallback(async () => {
+    setPathIndexAccelerationActionPending("install");
+    setPathIndexAccelerationNotice(null);
+    setPathIndexAccelerationError(null);
+    try {
+      const response = await installPathIndexAccelerationService();
+      setPathIndexAccelerationNotice(
+        `${response.serviceName} install/repair launched from ${response.daemonPath}.`,
+      );
+      window.setTimeout(() => {
+        void refreshPathIndexAccelerationStatus();
+      }, 1800);
+    } catch (error) {
+      setPathIndexAccelerationError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setPathIndexAccelerationActionPending(null);
+    }
   }, [refreshPathIndexAccelerationStatus]);
 
   const handleEnablePathIndexAcceleration = useCallback(async () => {
@@ -14153,6 +14175,7 @@ export function SettingsPage({
             onSetShowInTaskbar={setShowInTaskbar}
             onProbeAccelerationPipeline={handleProbeAccelerationPipeline}
             onQueueAccelerationInstall={handleQueueAccelerationInstall}
+            onInstallPathIndexAccelerationService={handleInstallPathIndexAccelerationService}
             onRefreshPathIndexAccelerationStatus={refreshPathIndexAccelerationStatus}
             onEnablePathIndexAcceleration={handleEnablePathIndexAcceleration}
             onRebuildPathIndexAcceleration={handleRebuildPathIndexAcceleration}

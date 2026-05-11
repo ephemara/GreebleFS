@@ -4,8 +4,10 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tauri::AppHandle;
+use tokio::sync::Semaphore;
 
 use super::handlers::{build_ftp_router, build_stream_dir_router, build_stream_router};
 use super::mdns::{register_mdns, unregister_mdns};
@@ -17,7 +19,7 @@ use super::streaming::canonicalize_hub_paths;
 use super::tls::generate_self_signed_tls;
 use super::types::{
     ActiveServer, LanShareResult, ShareState, ACTIVE_SERVER, HTTPS_DEFAULT_PORT, HTTP_DEFAULT_PORT,
-    MDNS_DOMAIN,
+    MDNS_DOMAIN, MOBILE_BROWSE_MAX_CONCURRENT_BLOCKING_JOBS, MOBILE_THUMBNAIL_MAX_CONCURRENT_JOBS,
 };
 use crate::tailscale_commands::get_tailscale_share_target;
 
@@ -83,6 +85,8 @@ pub async fn start_lan_share(
             app_handle: app_handle.clone(),
             share_path,
             file_hub: Some(canonical),
+            browse_permits: Arc::new(Semaphore::new(MOBILE_BROWSE_MAX_CONCURRENT_BLOCKING_JOBS)),
+            thumbnail_permits: Arc::new(Semaphore::new(MOBILE_THUMBNAIL_MAX_CONCURRENT_JOBS)),
         }
     } else {
         let share_path = PathBuf::from(&path);
@@ -93,6 +97,8 @@ pub async fn start_lan_share(
             app_handle: app_handle.clone(),
             share_path,
             file_hub: None,
+            browse_permits: Arc::new(Semaphore::new(MOBILE_BROWSE_MAX_CONCURRENT_BLOCKING_JOBS)),
+            thumbnail_permits: Arc::new(Semaphore::new(MOBILE_THUMBNAIL_MAX_CONCURRENT_JOBS)),
         }
     };
 

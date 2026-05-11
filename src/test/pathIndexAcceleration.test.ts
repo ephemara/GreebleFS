@@ -21,6 +21,16 @@ const accelerationMocks = vi.hoisted(() => {
         data: response,
       })),
       pathIndexAccelerationRebuild: vi.fn(),
+      pathIndexAccelerationInstallService: vi.fn(async () => ({
+        status: "ok",
+        data: {
+          serviceName: "GreebleFSUsnIndexer",
+          serviceUrl: "http://127.0.0.1:12462",
+          daemonPath: "D:/GreebleFS/target/release/greeblefs-usn-daemon.exe",
+          launchedElevated: true,
+          state: "installLaunched",
+        },
+      })),
     },
   };
 });
@@ -46,7 +56,10 @@ vi.mock("../runtime/tauriClient", () => ({
   },
 }));
 
-import { enablePathIndexAcceleration } from "../runtime/pathIndexAcceleration";
+import {
+  enablePathIndexAcceleration,
+  installPathIndexAccelerationService,
+} from "../runtime/pathIndexAcceleration";
 
 describe("path index acceleration runtime", () => {
   beforeEach(() => {
@@ -81,5 +94,13 @@ describe("path index acceleration runtime", () => {
       },
       expect.any(Function),
     );
+  });
+
+  it("normalizes the service install request for generated invoke", async () => {
+    await installPathIndexAccelerationService();
+
+    expect(accelerationMocks.commands.pathIndexAccelerationInstallService).toHaveBeenCalledWith({
+      daemonPath: null,
+    });
   });
 });

@@ -59,7 +59,9 @@ use crate::runtime_pipeline::host_events::{
     builtin_host_topic_catalog, HostContextSyncRequest, HostEventBusState, HostEventScope,
     HostPublishEventRequest, HostSubscriptionRequest,
 };
-use crate::runtime_pipeline::manifest::{RuntimeCompiler, RuntimeKind, RuntimePackagePermissions};
+use crate::runtime_pipeline::manifest::{
+    RuntimeCompiler, RuntimeKind, RuntimeManifest, RuntimePackagePermissions,
+};
 use crate::runtime_pipeline::registry::RuntimeRegistry;
 use crate::runtime_pipeline::sidecar::{
     ExternalRuntimeSidecarCallResponse, ExternalRuntimeSidecarStatus, ExternalSidecarManager,
@@ -1443,7 +1445,13 @@ async fn dispatch_extension_host_call(
             )?;
             let payload: GlobalSearchScanSettings =
                 decode_runtime_host_bridge_payload(&request.method_id, request.payload_json)?;
-            crate::global_search::global_search_start_scan(app.clone(), payload).await?;
+            let native_task_graph = app.state::<NativeTaskGraphManager>();
+            crate::global_search::global_search_start_scan_with_task_graph(
+                app.clone(),
+                native_task_graph.inner().clone(),
+                payload,
+            )
+            .await?;
             Ok("null".to_string())
         }
         "index.cancel_scan" => {
@@ -2240,8 +2248,20 @@ pub async fn runtime_prepare_package(
     request: RuntimePreparePackageRequest,
 ) -> Result<RuntimePreparePackageResponse, String> {
     let package = require_package(&registry, &app, &request.runtime_id)?;
-    let manifest = &package.manifest;
+    let manifest = package.manifest.clone();
 
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime_prepare_package_blocking(app, manifest, request)
+    })
+    .await
+    .map_err(|error| format!("Runtime package preparation task failed to join: {error}"))?
+}
+
+fn runtime_prepare_package_blocking(
+    app: AppHandle,
+    manifest: RuntimeManifest,
+    request: RuntimePreparePackageRequest,
+) -> Result<RuntimePreparePackageResponse, String> {
     let target = request
         .target
         .clone()
@@ -2276,14 +2296,19 @@ pub async fn runtime_prepare_package(
     let mut stdout = String::new();
     let mut stderr = String::new();
     if !cache_hit {
-        let build_result =
-            invoke_build_script(manifest, &artifact_path, &target, &mode, &toolchain_context)?;
+        let build_result = invoke_build_script(
+            &manifest,
+            &artifact_path,
+            &target,
+            &mode,
+            &toolchain_context,
+        )?;
         stdout = build_result.stdout;
         stderr = build_result.stderr;
     }
 
     Ok(RuntimePreparePackageResponse {
-        runtime_id: manifest.id.clone(),
+        runtime_id: manifest.id,
         artifact_path: artifact_path.to_string_lossy().to_string(),
         artifact_kind: artifact_name,
         cache_key,
@@ -2291,7 +2316,7 @@ pub async fn runtime_prepare_package(
         toolchain_version,
         mode,
         target,
-        source_signature: manifest.source_signature.clone(),
+        source_signature: manifest.source_signature,
         stdout,
         stderr,
     })

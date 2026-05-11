@@ -564,6 +564,12 @@ const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV: &str =
     "OVERLAYTERM_SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET";
 const MAX_SEARCH_CONTENT_BYTES_ENV: &str = "OVERLAYTERM_SEARCH_MAX_CONTENT_FILE_BYTES";
 const SEARCH_MAX_INDEXED_ENTRIES_ENV: &str = "OVERLAYTERM_SEARCH_MAX_INDEXED_ENTRIES";
+const DIR_LIST_CACHE_MAX_KEYS_ENV: &str = "GREEBLEFS_DIR_LIST_CACHE_MAX_KEYS";
+const SEARCH_INDEX_CACHE_MAX_KEYS_ENV: &str = "GREEBLEFS_SEARCH_INDEX_CACHE_MAX_KEYS";
+const ENTRY_SIZE_CACHE_MAX_KEYS_ENV: &str = "GREEBLEFS_ENTRY_SIZE_CACHE_MAX_KEYS";
+const SEARCH_REQUEST_SCOPE_MAX_KEYS_ENV: &str = "GREEBLEFS_SEARCH_REQUEST_SCOPE_MAX_KEYS";
+const EXPLORER_TASK_HISTORY_MAX_ENTRIES_ENV: &str = "GREEBLEFS_EXPLORER_TASK_HISTORY_MAX_ENTRIES";
+const DRIVE_LIST_CACHE_TTL_ENV: &str = "GREEBLEFS_DRIVE_LIST_CACHE_TTL_MS";
 
 const DIR_LIST_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
 const SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
@@ -573,6 +579,14 @@ const ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT: u64 = 900;
 const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT: u64 = 12 * 1024 * 1024;
 const MAX_SEARCH_CONTENT_BYTES_DEFAULT: u64 = 8 * 1024 * 1024;
 const SEARCH_MAX_INDEXED_ENTRIES_DEFAULT: u64 = 25_000;
+const DIR_LIST_CACHE_MAX_KEYS_DEFAULT: u64 = 512;
+const SEARCH_INDEX_CACHE_MAX_KEYS_DEFAULT: u64 = 128;
+const ENTRY_SIZE_CACHE_MAX_KEYS_DEFAULT: u64 = 10_000;
+const SEARCH_REQUEST_SCOPE_MAX_KEYS_DEFAULT: u64 = 256;
+const EXPLORER_TASK_HISTORY_MAX_ENTRIES_DEFAULT: u64 = 512;
+const DRIVE_LIST_CACHE_TTL_MS_DEFAULT: u64 = 2_500;
+const FUZZY_FILTER_DEFAULT_LIMIT: usize = 256;
+const FUZZY_FILTER_MAX_LIMIT: usize = 2_048;
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -585,6 +599,12 @@ pub struct FsRuntimeCachePolicy {
     pub search_content_index_total_bytes_budget: u64,
     pub max_search_content_file_bytes: u64,
     pub search_max_indexed_entries: u64,
+    pub dir_list_cache_max_keys: u64,
+    pub search_index_cache_max_keys: u64,
+    pub entry_size_cache_max_keys: u64,
+    pub search_request_scope_max_keys: u64,
+    pub explorer_task_history_max_entries: u64,
+    pub drive_list_cache_ttl_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -597,6 +617,12 @@ struct FsCachePolicy {
     search_content_index_total_bytes_budget: u64,
     max_search_content_file_bytes: u64,
     search_max_indexed_entries: usize,
+    dir_list_cache_max_keys: usize,
+    search_index_cache_max_keys: usize,
+    entry_size_cache_max_keys: usize,
+    search_request_scope_max_keys: usize,
+    explorer_task_history_max_entries: usize,
+    drive_list_cache_ttl: Duration,
 }
 
 impl FsCachePolicy {
@@ -611,6 +637,12 @@ impl FsCachePolicy {
             search_content_index_total_bytes_budget: self.search_content_index_total_bytes_budget,
             max_search_content_file_bytes: self.max_search_content_file_bytes,
             search_max_indexed_entries: self.search_max_indexed_entries as u64,
+            dir_list_cache_max_keys: self.dir_list_cache_max_keys as u64,
+            search_index_cache_max_keys: self.search_index_cache_max_keys as u64,
+            entry_size_cache_max_keys: self.entry_size_cache_max_keys as u64,
+            search_request_scope_max_keys: self.search_request_scope_max_keys as u64,
+            explorer_task_history_max_entries: self.explorer_task_history_max_entries as u64,
+            drive_list_cache_ttl_ms: self.drive_list_cache_ttl.as_millis() as u64,
         }
     }
 }
@@ -626,10 +658,17 @@ static SEARCH_CONTENT_INDEX_CACHE: OnceLock<
 > = OnceLock::new();
 static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
 static SEARCH_REQUESTS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+static DRIVE_LIST_CACHE: OnceLock<Mutex<Option<CachedDriveList>>> = OnceLock::new();
 static FS_COMMAND_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static FS_COMMAND_YAZI_RUNTIME: OnceLock<Result<(), String>> = OnceLock::new();
 static FS_COMMAND_YAZI_SCHEDULER: OnceLock<Arc<YaziScheduler>> = OnceLock::new();
 static EXPLORER_TASK_REGISTRY: OnceLock<Mutex<ExplorerTaskRegistry>> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct CachedDriveList {
+    drives: Vec<DriveInfo>,
+    cached_at: Instant,
+}
 
 #[cfg(test)]
 static SEARCH_ENTRY_TEST_DELAY_MS: AtomicU64 = AtomicU64::new(0);
@@ -682,6 +721,35 @@ fn resolve_fs_cache_policy_from_lookup(
             SEARCH_MAX_INDEXED_ENTRIES_DEFAULT,
         )
         .clamp(1, usize::MAX as u64) as usize,
+        dir_list_cache_max_keys: parse_fs_cache_policy_u64(
+            lookup(DIR_LIST_CACHE_MAX_KEYS_ENV).as_deref(),
+            DIR_LIST_CACHE_MAX_KEYS_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
+        search_index_cache_max_keys: parse_fs_cache_policy_u64(
+            lookup(SEARCH_INDEX_CACHE_MAX_KEYS_ENV).as_deref(),
+            SEARCH_INDEX_CACHE_MAX_KEYS_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
+        entry_size_cache_max_keys: parse_fs_cache_policy_u64(
+            lookup(ENTRY_SIZE_CACHE_MAX_KEYS_ENV).as_deref(),
+            ENTRY_SIZE_CACHE_MAX_KEYS_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
+        search_request_scope_max_keys: parse_fs_cache_policy_u64(
+            lookup(SEARCH_REQUEST_SCOPE_MAX_KEYS_ENV).as_deref(),
+            SEARCH_REQUEST_SCOPE_MAX_KEYS_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
+        explorer_task_history_max_entries: parse_fs_cache_policy_u64(
+            lookup(EXPLORER_TASK_HISTORY_MAX_ENTRIES_ENV).as_deref(),
+            EXPLORER_TASK_HISTORY_MAX_ENTRIES_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
+        drive_list_cache_ttl: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(DRIVE_LIST_CACHE_TTL_ENV).as_deref(),
+            DRIVE_LIST_CACHE_TTL_MS_DEFAULT,
+        )),
     }
 }
 
@@ -709,6 +777,10 @@ fn search_content_index_cache(
 
 fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
     ENTRY_SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn drive_list_cache() -> &'static Mutex<Option<CachedDriveList>> {
+    DRIVE_LIST_CACHE.get_or_init(|| Mutex::new(None))
 }
 
 fn search_requests() -> &'static Mutex<HashMap<String, u64>> {
@@ -739,6 +811,7 @@ fn store_dir_listing_cache(
                 cached_at: Instant::now(),
             },
         );
+        prune_dir_list_cache_to_capacity(&mut cache);
     }
 }
 
@@ -1028,9 +1101,53 @@ fn register_explorer_task(
     }
     let record = entry.record.clone();
     registry.entries.insert(task_id, entry);
+    prune_explorer_task_registry(&mut registry);
     drop(registry);
     emit_explorer_task_progress(&record);
     record
+}
+
+fn prune_explorer_task_registry(registry: &mut ExplorerTaskRegistry) {
+    let max_entries = fs_cache_policy().explorer_task_history_max_entries;
+    if registry.entries.len() <= max_entries {
+        return;
+    }
+
+    let mut removable = registry
+        .order
+        .iter()
+        .filter(|task_id| {
+            registry
+                .entries
+                .get(*task_id)
+                .map(|entry| entry.record.status != ExplorerTaskStatus::Running)
+                .unwrap_or(true)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    removable.sort_by(|left, right| {
+        let left_time = registry
+            .entries
+            .get(left)
+            .and_then(|entry| entry.record.finished_at)
+            .unwrap_or(0);
+        let right_time = registry
+            .entries
+            .get(right)
+            .and_then(|entry| entry.record.finished_at)
+            .unwrap_or(0);
+        left_time.cmp(&right_time)
+    });
+
+    for task_id in removable {
+        if registry.entries.len() <= max_entries {
+            break;
+        }
+        registry.entries.remove(&task_id);
+    }
+    registry
+        .order
+        .retain(|task_id| registry.entries.contains_key(task_id));
 }
 
 fn mutate_explorer_task(
@@ -2037,6 +2154,109 @@ fn prune_expired_search_content_index_cache(
         .retain(|_, variants| variants.visible_only.is_some() || variants.include_hidden.is_some());
 }
 
+fn cached_dir_variants_timestamp(variants: &CachedDirListingVariants) -> Option<Instant> {
+    [
+        variants.visible_only.as_ref(),
+        variants.include_hidden.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|listing| listing.cached_at)
+    .min()
+}
+
+fn cached_search_variants_timestamp(variants: &CachedSearchIndexVariants) -> Option<Instant> {
+    [
+        variants.visible_only.as_ref(),
+        variants.include_hidden.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|index| index.cached_at)
+    .min()
+}
+
+fn cached_content_variants_timestamp(
+    variants: &CachedSearchContentIndexVariants,
+) -> Option<Instant> {
+    [
+        variants.visible_only.as_ref(),
+        variants.include_hidden.as_ref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|index| index.cached_at)
+    .min()
+}
+
+fn prune_dir_list_cache_to_capacity(
+    cache: &mut HashMap<ExplorerPathKey, CachedDirListingVariants>,
+) {
+    let max_keys = fs_cache_policy().dir_list_cache_max_keys;
+    while cache.len() > max_keys {
+        let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, variants)| cached_dir_variants_timestamp(variants))
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        cache.remove(&oldest_key);
+    }
+}
+
+fn prune_search_name_index_cache_to_capacity(
+    cache: &mut HashMap<ExplorerPathKey, CachedSearchIndexVariants>,
+) {
+    let max_keys = fs_cache_policy().search_index_cache_max_keys;
+    while cache.len() > max_keys {
+        let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, variants)| cached_search_variants_timestamp(variants))
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        cache.remove(&oldest_key);
+    }
+}
+
+fn prune_search_content_index_cache_to_capacity(
+    cache: &mut HashMap<ExplorerPathKey, CachedSearchContentIndexVariants>,
+) {
+    let max_keys = fs_cache_policy().search_index_cache_max_keys;
+    while cache.len() > max_keys {
+        let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, variants)| cached_content_variants_timestamp(variants))
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        cache.remove(&oldest_key);
+    }
+}
+
+fn prune_entry_size_cache(cache: &mut HashMap<String, CachedEntrySize>) {
+    let ttl = fs_cache_policy().entry_size_cache_ttl;
+    if ttl.is_zero() {
+        cache.clear();
+        return;
+    }
+    cache.retain(|_, entry| entry.measured_at.elapsed() <= ttl);
+    let max_keys = fs_cache_policy().entry_size_cache_max_keys;
+    while cache.len() > max_keys {
+        let Some(oldest_key) = cache
+            .iter()
+            .min_by_key(|(_, entry)| entry.measured_at)
+            .map(|(key, _)| key.clone())
+        else {
+            break;
+        };
+        cache.remove(&oldest_key);
+    }
+}
+
 fn search_request_scope(path: &str, request_scope: Option<String>) -> String {
     request_scope
         .map(|scope| scope.trim().to_string())
@@ -2054,13 +2274,29 @@ fn register_search_request(scope: &str, request_id: Option<u64>) -> u64 {
             // active value lets a remounted frontend restart its counter without
             // inheriting a stale larger id from an older search session.
             active.insert(scope.to_string(), id);
+            prune_search_request_scopes(&mut active);
             id
         }
         None => {
             let next_request_id = active.get(scope).copied().unwrap_or(0).saturating_add(1);
             active.insert(scope.to_string(), next_request_id);
+            prune_search_request_scopes(&mut active);
             next_request_id
         }
+    }
+}
+
+fn prune_search_request_scopes(active: &mut HashMap<String, u64>) {
+    let max_keys = fs_cache_policy().search_request_scope_max_keys;
+    while active.len() > max_keys {
+        let Some(oldest_key) = active
+            .iter()
+            .min_by_key(|(_, request_id)| **request_id)
+            .map(|(scope, _)| scope.clone())
+        else {
+            break;
+        };
+        active.remove(&oldest_key);
     }
 }
 
@@ -2717,9 +2953,11 @@ fn measure_entry_sizes_blocking_with_cancel(
 
     if let Ok(mut cache) = entry_size_cache().lock() {
         if !entry_size_cache_ttl.is_zero() {
+            prune_entry_size_cache(&mut cache);
             for (key, entry) in cache_updates {
                 cache.insert(key, entry);
             }
+            prune_entry_size_cache(&mut cache);
         }
     }
 
@@ -3978,40 +4216,82 @@ pub async fn fs_get_item_properties(path: String) -> Result<FsItemPropertiesInfo
 pub async fn fs_fuzzy_filter_entries(
     request: FsJumpFilterRequest,
 ) -> Result<Vec<FsJumpFilterMatch>, String> {
-    let limit = request.limit.unwrap_or(usize::MAX);
-    let mut matches = request
-        .entries
-        .into_iter()
-        .filter_map(|entry| {
-            fuzzy_score_entry(&request.query, &entry).map(|(score, matched_indices)| {
-                FsJumpFilterMatch {
-                    path: entry.path,
-                    name: entry.name,
-                    is_dir: entry.is_dir,
-                    sort_order: entry.sort_order,
-                    score,
-                    matched_indices,
-                }
-            })
-        })
-        .collect::<Vec<_>>();
+    let limit = request
+        .limit
+        .unwrap_or(FUZZY_FILTER_DEFAULT_LIMIT)
+        .clamp(1, FUZZY_FILTER_MAX_LIMIT);
+    let mut matches = Vec::<FsJumpFilterMatch>::with_capacity(limit);
+    for entry in request.entries {
+        let Some((score, matched_indices)) = fuzzy_score_entry(&request.query, &entry) else {
+            continue;
+        };
+        let candidate = FsJumpFilterMatch {
+            path: entry.path,
+            name: entry.name,
+            is_dir: entry.is_dir,
+            sort_order: entry.sort_order,
+            score,
+            matched_indices,
+        };
+        if matches.len() < limit {
+            matches.push(candidate);
+            continue;
+        }
+        let Some((worst_index, worst_match)) = matches
+            .iter()
+            .enumerate()
+            .max_by(|(_, left), (_, right)| compare_fuzzy_filter_matches(left, right))
+        else {
+            continue;
+        };
+        if compare_fuzzy_filter_matches(&candidate, worst_match).is_lt() {
+            matches[worst_index] = candidate;
+        }
+    }
 
-    matches.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| left.sort_order.cmp(&right.sort_order))
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-            .then_with(|| left.path.cmp(&right.path))
-    });
-    matches.truncate(limit);
+    matches.sort_by(compare_fuzzy_filter_matches);
     Ok(matches)
+}
+
+fn compare_fuzzy_filter_matches(
+    left: &FsJumpFilterMatch,
+    right: &FsJumpFilterMatch,
+) -> std::cmp::Ordering {
+    right
+        .score
+        .cmp(&left.score)
+        .then_with(|| left.sort_order.cmp(&right.sort_order))
+        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+        .then_with(|| left.path.cmp(&right.path))
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_get_drives() -> Result<Vec<DriveInfo>, String> {
-    crate::volume_inventory::list_local_volumes()
+    let ttl = fs_cache_policy().drive_list_cache_ttl;
+    if !ttl.is_zero() {
+        if let Ok(cache) = drive_list_cache().lock() {
+            if let Some(cached) = cache
+                .as_ref()
+                .filter(|entry| entry.cached_at.elapsed() <= ttl)
+            {
+                return Ok(cached.drives.clone());
+            }
+        }
+    }
+
+    let drives = tauri::async_runtime::spawn_blocking(crate::volume_inventory::list_local_volumes)
+        .await
+        .map_err(|error| format!("Drive inventory task failed to join: {error}"))??;
+    if !ttl.is_zero() {
+        if let Ok(mut cache) = drive_list_cache().lock() {
+            *cache = Some(CachedDriveList {
+                drives: drives.clone(),
+                cached_at: Instant::now(),
+            });
+        }
+    }
+    Ok(drives)
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -4267,6 +4547,7 @@ fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSe
             cached_at: Instant::now(),
         },
     );
+    prune_search_name_index_cache_to_capacity(&mut cache);
 }
 
 fn lookup_cached_content_search_results(
@@ -4388,6 +4669,7 @@ fn store_search_content_index(
             cached_at: Instant::now(),
         },
     );
+    prune_search_content_index_cache_to_capacity(&mut cache);
 }
 
 fn empty_search_response(

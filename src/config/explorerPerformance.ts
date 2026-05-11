@@ -197,13 +197,13 @@ const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy =
     maxCandidateQueueDepth: 96,
     queueOverflowStrategy: "drop-lowest-priority",
     previewPrefetch: Object.freeze({
-      enabled: true,
-      batchSize: 3,
+      enabled: false,
+      batchSize: 1,
       maxConcurrentPreviewReads: 1,
-      forwardPrefetchViewports: 0.25,
+      forwardPrefetchViewports: 0,
       backwardPrefetchViewports: 0,
-      maxPreviewBytesPerEntry: 512 * 1024,
-      maxBatchBytes: 1024 * 1024,
+      maxPreviewBytesPerEntry: 128 * 1024,
+      maxBatchBytes: 128 * 1024,
       imagePrefetchMode: "disabled",
     }),
   });

@@ -98,6 +98,14 @@ pub struct PathIndexSearchRequest {
     pub query: String,
     pub limit: Option<u32>,
     pub include_hidden: Option<bool>,
+    pub match_mode: Option<PathIndexSearchMatchMode>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PathIndexSearchMatchMode {
+    Prefix,
+    Contains,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -512,6 +520,9 @@ impl PathIndexManager {
             &query,
             limit,
             include_hidden,
+            request
+                .match_mode
+                .unwrap_or(PathIndexSearchMatchMode::Prefix),
         )?;
         Ok(records
             .into_iter()
@@ -1574,10 +1585,16 @@ fn search_entries(
     query: &str,
     limit: u32,
     include_hidden: bool,
+    match_mode: PathIndexSearchMatchMode,
 ) -> Result<Vec<IndexedPathRecord>, String> {
     let connection = open_path_index_connection(db_path)?;
+    let name_predicate = match match_mode {
+        PathIndexSearchMatchMode::Prefix => "entry.name_lower >= ?3 AND entry.name_lower < ?6",
+        PathIndexSearchMatchMode::Contains => "entry.name_lower LIKE ?6",
+    };
     let sql = if root_key.is_some() {
-        r#"
+        format!(
+            r#"
         SELECT entry.file_ref, entry.parent_file_ref, entry.path, entry.path_key, entry.parent_path,
                entry.parent_key, entry.name, entry.name_lower, entry.extension, entry.size,
                entry.modified_ms, entry.is_dir, entry.is_hidden, entry.is_symlink
@@ -1585,42 +1602,64 @@ fn search_entries(
         JOIN path_index_roots root ON root.root_id = entry.root_id
         WHERE root.state = 'ready'
           AND (?1 IS NULL OR root.root_key = ?1 OR entry.path_key LIKE ?1 || ?2)
-          AND entry.name_lower LIKE ?3
+          AND {name_predicate}
           AND (?4 OR entry.is_hidden = 0)
         ORDER BY entry.is_dir DESC, entry.name_lower ASC
         LIMIT ?5
         "#
+        )
     } else {
-        r#"
+        format!(
+            r#"
         SELECT entry.file_ref, entry.parent_file_ref, entry.path, entry.path_key, entry.parent_path,
                entry.parent_key, entry.name, entry.name_lower, entry.extension, entry.size,
                entry.modified_ms, entry.is_dir, entry.is_hidden, entry.is_symlink
         FROM path_index_entries entry
         JOIN path_index_roots root ON root.root_id = entry.root_id
         WHERE root.state = 'ready'
-          AND entry.name_lower LIKE ?3
+          AND {name_predicate}
           AND (?4 OR entry.is_hidden = 0)
         ORDER BY entry.is_dir DESC, entry.name_lower ASC
         LIMIT ?5
         "#
+        )
+    };
+    let name_bound = match match_mode {
+        PathIndexSearchMatchMode::Prefix => {
+            path_index_prefix_upper_bound(query).unwrap_or_else(|| format!("{query}\u{10ffff}"))
+        }
+        PathIndexSearchMatchMode::Contains => format!("%{query}%"),
     };
     let mut statement = connection
-        .prepare(sql)
+        .prepare(&sql)
         .map_err(|error| format!("Failed to prepare path index search: {error}"))?;
     let rows = statement
         .query_map(
             params![
                 root_key,
                 format!("{}{}", path_separator(), "%"),
-                format!("%{query}%"),
+                query,
                 include_hidden,
-                limit as i64
+                limit as i64,
+                name_bound,
             ],
             row_to_index_record,
         )
         .map_err(|error| format!("Failed to query path index search: {error}"))?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("Failed to read path index search row: {error}"))
+}
+
+fn path_index_prefix_upper_bound(prefix: &str) -> Option<String> {
+    let mut bytes = prefix.as_bytes().to_vec();
+    for index in (0..bytes.len()).rev() {
+        if bytes[index] < 0xff {
+            bytes[index] += 1;
+            bytes.truncate(index + 1);
+            return String::from_utf8(bytes).ok();
+        }
+    }
+    None
 }
 
 fn row_to_root_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<PathIndexRootStatus> {

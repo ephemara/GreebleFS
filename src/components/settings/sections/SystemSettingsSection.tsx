@@ -134,6 +134,7 @@ export function SystemSettingsSection({
   onSetShowInTaskbar,
   onProbeAccelerationPipeline,
   onQueueAccelerationInstall,
+  onInstallPathIndexAccelerationService,
   onRefreshPathIndexAccelerationStatus,
   onEnablePathIndexAcceleration,
   onRebuildPathIndexAcceleration,
@@ -205,7 +206,7 @@ export function SystemSettingsSection({
   accelerationWorkloadRoutes: AccelerationWorkloadRouteView[];
   pathIndexAccelerationStatus: PathIndexAccelerationStatus | null;
   pathIndexAccelerationPending: boolean;
-  pathIndexAccelerationActionPending: 'enable' | 'rebuild' | null;
+  pathIndexAccelerationActionPending: 'install' | 'enable' | 'rebuild' | null;
   pathIndexAccelerationNotice: string | null;
   pathIndexAccelerationError: string | null;
   semanticSearchProof: SemanticSearchProofView | null;
@@ -215,6 +216,7 @@ export function SystemSettingsSection({
   onSetShowInTaskbar: (enabled: boolean) => void;
   onProbeAccelerationPipeline: () => Promise<void> | void;
   onQueueAccelerationInstall: () => Promise<void> | void;
+  onInstallPathIndexAccelerationService: () => Promise<void> | void;
   onRefreshPathIndexAccelerationStatus: () => Promise<void> | void;
   onEnablePathIndexAcceleration: () => Promise<void> | void;
   onRebuildPathIndexAcceleration: () => Promise<void> | void;
@@ -695,6 +697,15 @@ export function SystemSettingsSection({
               >
                 {pathIndexAccelerationPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               </SettingsIconActionButton>
+              <SettingsCompactActionButton
+                onClick={() => void onInstallPathIndexAccelerationService()}
+                disabled={pathIndexAccelerationActionPending != null}
+                active={pathIndexAccelerationActionPending === 'install'}
+                accent={accent}
+              >
+                {pathIndexAccelerationActionPending === 'install' ? <Loader2 size={12} className="animate-spin" /> : <Settings2 size={12} />}
+                <span className="truncate">{pathIndexAccelerationStatus?.installed ? 'Repair' : 'Install'}</span>
+              </SettingsCompactActionButton>
               <SettingsCompactActionButton
                 onClick={() => void onEnablePathIndexAcceleration()}
                 disabled={pathIndexAccelerationActionPending != null}

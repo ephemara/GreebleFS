@@ -459,29 +459,29 @@ impl DaemonState {
 
     fn finish_job(&self, task_id: &str, result: Result<PathIndexRootSummary, String>) {
         let mut ready_summary = None;
+        let mut error_result = None;
         if let Ok(mut jobs) = self.inner.active_jobs.lock() {
-            if let Some(job) = jobs.iter_mut().find(|job| job.task_id == task_id) {
+            if let Some(job_index) = jobs.iter().position(|job| job.task_id == task_id) {
+                let job = jobs.remove(job_index);
                 match result {
                     Ok(summary) => {
-                        job.state = "ready".to_string();
-                        job.last_error = None;
-                        job.drive_root = summary.root_path.clone();
                         ready_summary = Some(summary);
                     }
                     Err(error) => {
-                        job.state = "error".to_string();
-                        job.last_error = Some(error.clone());
-                        if let Some(db_path) = self.profile_db_path() {
-                            if let Ok(connection) = open_index_connection(&db_path) {
-                                let _ = mark_volume_error(
-                                    &connection,
-                                    PathBuf::from(&job.drive_root).as_path(),
-                                    WINDOWS_USN_SERVICE_SOURCE,
-                                    &error,
-                                );
-                            }
-                        }
+                        error_result = Some((job.drive_root, error));
                     }
+                }
+            }
+        }
+        if let Some((drive_root, error)) = error_result {
+            if let Some(db_path) = self.profile_db_path() {
+                if let Ok(connection) = open_index_connection(&db_path) {
+                    let _ = mark_volume_error(
+                        &connection,
+                        PathBuf::from(&drive_root).as_path(),
+                        WINDOWS_USN_SERVICE_SOURCE,
+                        &error,
+                    );
                 }
             }
         }

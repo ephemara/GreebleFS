@@ -18,7 +18,6 @@
         "dragDropEnabled": true,
         "scrollBarStyle": "default",
         "transparent": true,
-        "webview2VisualHostingMode": "compositionController",
         "decorations": false,
         "visible": false,
         "alwaysOnTop": true,

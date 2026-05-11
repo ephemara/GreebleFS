@@ -150,18 +150,20 @@ async function captureFrontendEvidence(webviewSession) {
       return { available: false, cdpEndpoint: endpoint, errors: ["No CDP page found."] };
     }
     const client = await page.context().newCDPSession(page);
+    const frontendSampleStartedAtUnixMs = Date.now();
     const [dom, heap, raf, longTasks, trace, bridgePerformance] = await Promise.all([
       captureDomSummary(page),
       captureHeapSummary(page, client),
       captureRafSummary(page, 2200),
       captureLongTaskSummary(page, 2200),
       captureTraceSummary(page, client, 5200),
-      captureBridgePerformance(page),
+      captureBridgePerformance(page, frontendSampleStartedAtUnixMs),
     ]);
     return {
       available: true,
       cdpEndpoint: endpoint,
       pageUrl: page.url(),
+      frontendSampleStartedAtUnixMs,
       dom,
       heap,
       raf,
@@ -171,7 +173,7 @@ async function captureFrontendEvidence(webviewSession) {
       errors: [],
     };
   } finally {
-    await browser.close().catch(() => undefined);
+    await browser.disconnect().catch(() => undefined);
   }
 }
 
@@ -205,7 +207,7 @@ async function captureHeapSummary(page, client) {
 }
 
 async function captureRafSummary(page, durationMs) {
-  return page.evaluate(async (sampleDurationMs) => {
+  const frames = await page.evaluate(async (sampleDurationMs) => {
     const frames = [];
     let previous = performance.now();
     const endAt = previous + sampleDurationMs;
@@ -221,12 +223,13 @@ async function captureRafSummary(page, durationMs) {
       }
       requestAnimationFrame(tick);
     });
-    return summarizeDurations(frames);
+    return frames;
   }, durationMs);
+  return summarizeDurations(frames);
 }
 
 async function captureLongTaskSummary(page, durationMs) {
-  return page.evaluate(async (sampleDurationMs) => {
+  const sample = await page.evaluate(async (sampleDurationMs) => {
     if (!("PerformanceObserver" in window)) {
       return { supported: false };
     }
@@ -237,14 +240,18 @@ async function captureLongTaskSummary(page, durationMs) {
       }
     });
     try {
-      observer.observe({ type: "longtask", buffered: true });
+      observer.observe({ type: "longtask", buffered: false });
     } catch {
       return { supported: false };
     }
     await new Promise((resolve) => setTimeout(resolve, sampleDurationMs));
     observer.disconnect();
-    return { supported: true, ...summarizeDurations(durations) };
+    return { supported: true, durations };
   }, durationMs);
+  if (!sample.supported) {
+    return sample;
+  }
+  return { supported: true, ...summarizeDurations(sample.durations ?? []) };
 }
 
 async function captureTraceSummary(page, client, durationMs) {
@@ -254,33 +261,136 @@ async function captureTraceSummary(page, client, durationMs) {
       events.push(...event.value);
     }
   });
-  await client.send("Tracing.start", {
-    categories: [
-      "devtools.timeline",
-      "disabled-by-default-v8.cpu_profiler",
-      "blink.user_timing",
-      "loading",
-      "v8",
-    ].join(","),
-    options: "sampling-frequency=10000",
-  });
-  await page.evaluate((sampleDurationMs) => new Promise((resolve) => setTimeout(resolve, sampleDurationMs)), durationMs);
+  await stopExistingTraceIfNeeded(client);
+  try {
+    await client.send("Tracing.start", {
+      categories: [
+        "devtools.timeline",
+        "disabled-by-default-v8.cpu_profiler",
+        "blink.user_timing",
+        "loading",
+        "v8",
+      ].join(","),
+      options: "sampling-frequency=10000",
+    });
+  } catch (error) {
+    const message = messageOf(error);
+    if (/already been started/i.test(message)) {
+      await stopExistingTraceIfNeeded(client);
+      try {
+        await client.send("Tracing.start", {
+          categories: [
+            "devtools.timeline",
+            "disabled-by-default-v8.cpu_profiler",
+            "blink.user_timing",
+            "loading",
+            "v8",
+          ].join(","),
+          options: "sampling-frequency=10000",
+        });
+      } catch (retryError) {
+        return {
+          available: false,
+          error: messageOf(retryError),
+        };
+      }
+    } else {
+      return {
+        available: false,
+        error: message,
+      };
+    }
+  }
+  try {
+    await page.evaluate((sampleDurationMs) => new Promise((resolve) => setTimeout(resolve, sampleDurationMs)), durationMs);
+  } finally {
+    // Keep the tracing domain from poisoning the next scan if page sampling throws.
+  }
   const tracingComplete = new Promise((resolve) => {
     client.once("Tracing.tracingComplete", resolve);
   });
-  await client.send("Tracing.end");
-  await tracingComplete;
+  try {
+    await client.send("Tracing.end");
+    await tracingComplete;
+  } catch (error) {
+    return {
+      available: false,
+      error: error instanceof Error ? error.message : String(error),
+      collectedEvents: events.length,
+    };
+  }
   return summarizeTraceEvents(events);
 }
 
-async function captureBridgePerformance(page) {
-  return page.evaluate(async () => {
+async function stopExistingTraceIfNeeded(client) {
+  const tracingComplete = new Promise((resolve) => {
+    client.once("Tracing.tracingComplete", resolve);
+  });
+  try {
+    await client.send("Tracing.end");
+  } catch {
+    return;
+  }
+  await Promise.race([
+    tracingComplete,
+    new Promise((resolve) => setTimeout(resolve, 1000)),
+  ]);
+}
+
+async function captureBridgePerformance(page, sinceUnixMs) {
+  const snapshot = await page.evaluate(async () => {
     const bridge = window.__GREEBLEFS_DEV_MCP__;
     if (!bridge?.getPerformanceSnapshot) {
       return null;
     }
     return bridge.getPerformanceSnapshot();
   });
+  if (!snapshot) return null;
+  return {
+    snapshot,
+    recentSummary: summarizeBridgePerformanceSince(snapshot, sinceUnixMs),
+  };
+}
+
+function summarizeBridgePerformanceSince(snapshot, sinceUnixMs) {
+  const samplesByMetric = snapshot?.samples;
+  if (!samplesByMetric || typeof samplesByMetric !== "object") {
+    return {};
+  }
+  const summary = {};
+  for (const [metricId, samples] of Object.entries(samplesByMetric)) {
+    if (!Array.isArray(samples)) continue;
+    const recentSamples = samples.filter((sample) => {
+      const recordedAt = Number(sample?.recordedAt);
+      return Number.isFinite(recordedAt) && recordedAt >= sinceUnixMs;
+    });
+    const durations = recentSamples
+      .map((sample) => Number(sample?.durationMs))
+      .filter((duration) => Number.isFinite(duration));
+    const baseSummary = snapshot.summary?.[metricId] ?? {};
+    const durationSummary = summarizeDurations(durations);
+    const latest = recentSamples
+      .slice()
+      .sort((left, right) => Number(left?.recordedAt ?? 0) - Number(right?.recordedAt ?? 0))
+      .at(-1);
+    summary[metricId] = {
+      metricId,
+      label: baseSummary.label ?? metricId,
+      targetMs: baseSummary.targetMs ?? null,
+      count: durations.length,
+      latestMs: latest?.durationMs ?? null,
+      avgMs: durationSummary.avgMs,
+      p95Ms: durationSummary.p95Ms,
+      bestMs: durations.length > 0 ? round(Math.min(...durations)) : null,
+      worstMs: durationSummary.maxMs,
+      overBudgetCount: Number.isFinite(baseSummary.targetMs)
+        ? durations.filter((duration) => duration > baseSummary.targetMs).length
+        : durationSummary.over50Ms,
+      latestAt: latest?.recordedAt ?? null,
+      latestMetadata: latest?.metadata ?? {},
+    };
+  }
+  return summary;
 }
 
 async function analyzeAstTargets(targets) {
@@ -289,6 +399,11 @@ async function analyzeAstTargets(targets) {
     const absolutePath = path.join(repoRoot, relativePath);
     const source = await fs.readFile(absolutePath, "utf8");
     const isTsLike = /\.(ts|tsx)$/.test(relativePath);
+    const isBabelTarget = /\.[cm]?[jt]sx?$/.test(relativePath);
+    if (!isBabelTarget) {
+      summaries.push(analyzeTextTarget(relativePath, source));
+      continue;
+    }
     const ast = parse(source, {
       sourceType: "module",
       plugins: isTsLike
@@ -338,6 +453,31 @@ async function analyzeAstTargets(targets) {
     });
   }
   return summaries;
+}
+
+function analyzeTextTarget(relativePath, source) {
+  return {
+    path: relativePath,
+    bytes: Buffer.byteLength(source),
+    lines: source.split(/\r?\n/).length,
+    counts: {
+      functions: countMatches(source, /\bfn\s+[A-Za-z0-9_]+/g),
+      jsxElements: 0,
+      callExpressions: countMatches(source, /[A-Za-z0-9_!]+\s*\(/g),
+      useMemo: 0,
+      useCallback: 0,
+      useEffect: 0,
+      arrayMapCalls: 0,
+      arrayFilterCalls: 0,
+      promiseAllCalls: 0,
+      requestAnimationFrameCalls: 0,
+      conditionals: countMatches(source, /\b(if|match)\b/g),
+    },
+  };
+}
+
+function countMatches(source, pattern) {
+  return source.match(pattern)?.length ?? 0;
 }
 
 function observeCall(node, counts) {

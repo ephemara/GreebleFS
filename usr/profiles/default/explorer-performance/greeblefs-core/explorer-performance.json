@@ -24,13 +24,13 @@
     "maxCandidateQueueDepth": 96,
     "queueOverflowStrategy": "drop-lowest-priority",
     "previewPrefetch": {
-      "enabled": true,
-      "batchSize": 3,
+      "enabled": false,
+      "batchSize": 1,
       "maxConcurrentPreviewReads": 1,
-      "forwardPrefetchViewports": 0.25,
+      "forwardPrefetchViewports": 0,
       "backwardPrefetchViewports": 0,
-      "maxPreviewBytesPerEntry": 524288,
-      "maxBatchBytes": 1048576,
+      "maxPreviewBytesPerEntry": 131072,
+      "maxBatchBytes": 131072,
       "imagePrefetchMode": "disabled"
     }
   },

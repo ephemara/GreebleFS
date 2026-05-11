@@ -6,9 +6,8 @@ use crate::{
     PathIndexVolumeState, PathIndexWriteStats, UsnJournalOptions, PATH_INDEX_INSERT_CHUNK_SIZE,
     WINDOWS_USN_SERVICE_SOURCE,
 };
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::OsStrExt;
@@ -31,6 +30,7 @@ use windows_sys::Win32::System::IO::DeviceIoControl;
 const USN_ENUM_BUFFER_BYTES: usize = 1024 * 1024;
 const USN_TAIL_BUFFER_BYTES: usize = 256 * 1024;
 const USN_STAGE_CHUNK_SIZE: usize = 50_000;
+const USN_RESOLVE_FILE_REF_BATCH_SIZE: i64 = 50_000;
 const WINDOWS_TICK_MS_DIVISOR: i64 = 10_000;
 const WINDOWS_UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
 const ERROR_ACCESS_DENIED: u32 = 5;
@@ -71,7 +71,8 @@ pub struct WindowsUsnTailMarker {
 pub struct WindowsUsnIndexPlan {
     pub source: PathIndexBuildSource,
     pub volume_root: PathBuf,
-    pub high_usn: i64,
+    pub journal_cursor_usn: i64,
+    pub mft_enum_high_usn: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -139,7 +140,8 @@ where
             lowest_valid_usn: Some(journal_state.lowest_valid_usn),
         },
         volume_root,
-        high_usn: journal_state.next_usn,
+        journal_cursor_usn: journal_state.next_usn,
+        mft_enum_high_usn: full_mft_enum_high_usn(),
     })
 }
 
@@ -447,25 +449,36 @@ where
     let requested_root_key = normalize_path_key(requested_root_path);
     let volume_handle = open_volume_handle(&plan.volume_root, false)?;
     create_usn_stage(connection)?;
-    stage_usn_records(connection, volume_handle.0, plan.high_usn, should_cancel)?;
+    stage_usn_records(
+        connection,
+        volume_handle.0,
+        plan.mft_enum_high_usn,
+        should_cancel,
+    )?;
 
-    let file_refs = collect_staged_file_refs(connection)?;
-    let mut memo = HashMap::<String, Option<PathBuf>>::new();
+    create_usn_path_stage(connection, &plan.volume_root, should_cancel)?;
     let mut emitted = false;
-    for file_ref in file_refs {
+    let mut last_path_rowid = 0i64;
+    loop {
         throw_if_cancelled(should_cancel)?;
-        let Some(path) = resolve_record_path(&file_ref, &plan.volume_root, connection, &mut memo)?
-        else {
-            continue;
-        };
-        let path_key = normalize_path_key(&path);
-        if path_key == requested_root_key
-            || path_key_is_same_or_descendant(&path_key, &requested_root_key)
-        {
-            if path_key == requested_root_key {
-                continue;
-            }
-            if let Some(record) = load_stage_record(connection, &file_ref)? {
+        let records = collect_staged_path_record_batch(
+            connection,
+            last_path_rowid,
+            USN_RESOLVE_FILE_REF_BATCH_SIZE,
+        )?;
+        if records.is_empty() {
+            break;
+        }
+        for (rowid, path, record) in records {
+            last_path_rowid = rowid;
+            throw_if_cancelled(should_cancel)?;
+            let path_key = normalize_path_key(&path);
+            if path_key == requested_root_key
+                || path_key_is_same_or_descendant(&path_key, &requested_root_key)
+            {
+                if path_key == requested_root_key {
+                    continue;
+                }
                 chunk.push(usn_record_to_indexed_record(&path, &record));
                 emitted = true;
                 if chunk.len() >= PATH_INDEX_INSERT_CHUNK_SIZE {
@@ -530,7 +543,12 @@ fn create_usn_stage(connection: &Connection) -> Result<(), String> {
 
 fn drop_usn_stage(connection: &Connection) -> Result<(), String> {
     connection
-        .execute_batch("DROP TABLE IF EXISTS temp.path_index_usn_stage;")
+        .execute_batch(
+            r#"
+            DROP TABLE IF EXISTS temp.path_index_usn_paths;
+            DROP TABLE IF EXISTS temp.path_index_usn_stage;
+            "#,
+        )
         .map_err(|error| format!("Failed to clear USN staging table: {error}"))
 }
 
@@ -636,67 +654,189 @@ fn flush_usn_stage_chunk(
     Ok(())
 }
 
-fn collect_staged_file_refs(connection: &Connection) -> Result<Vec<String>, String> {
-    let mut statement = connection
-        .prepare("SELECT file_ref FROM path_index_usn_stage")
-        .map_err(|error| format!("Failed to prepare USN staged file refs query: {error}"))?;
-    let rows = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|error| format!("Failed to query USN staged file refs: {error}"))?;
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("Failed to read USN staged file ref: {error}"))
-}
-
-fn load_stage_record(connection: &Connection, file_ref: &str) -> Result<Option<UsnRecord>, String> {
-    connection
-        .query_row(
-            r#"
-            SELECT file_ref, parent_file_ref, name, file_attributes, timestamp_ms
-            FROM path_index_usn_stage
-            WHERE file_ref = ?1
-            "#,
-            params![file_ref],
-            |row| {
-                Ok(UsnRecord {
-                    file_ref: row.get(0)?,
-                    parent_file_ref: row.get(1)?,
-                    name: row.get(2)?,
-                    file_attributes: row.get::<_, i64>(3)? as u32,
-                    timestamp_ms: row.get::<_, i64>(4)?.max(0) as u64,
-                })
-            },
-        )
-        .optional()
-        .map_err(|error| format!("Failed to read staged USN record: {error}"))
-}
-
-fn resolve_record_path(
-    file_ref: &str,
+fn create_usn_path_stage<F>(
+    connection: &mut Connection,
     volume_root: &Path,
-    connection: &Connection,
-    memo: &mut HashMap<String, Option<PathBuf>>,
-) -> Result<Option<PathBuf>, String> {
-    if let Some(cached) = memo.get(file_ref) {
-        return Ok(cached.clone());
+    should_cancel: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut() -> PathIndexCancellation,
+{
+    connection
+        .execute_batch(
+            r#"
+            DROP TABLE IF EXISTS temp.path_index_usn_paths;
+            CREATE TEMP TABLE path_index_usn_paths (
+                file_ref TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                depth INTEGER NOT NULL
+            );
+            CREATE INDEX temp.idx_path_index_usn_paths_depth
+                ON path_index_usn_paths(depth);
+            "#,
+        )
+        .map_err(|error| format!("Failed to create USN path staging table: {error}"))?;
+    seed_usn_root_paths(connection, volume_root)?;
+    expand_usn_paths(connection, should_cancel)
+}
+
+fn seed_usn_root_paths(connection: &Connection, volume_root: &Path) -> Result<(), String> {
+    let volume_root = volume_root.to_string_lossy().to_string();
+    connection
+        .execute(
+            r#"
+            INSERT OR IGNORE INTO path_index_usn_paths (file_ref, path, depth)
+            SELECT file_ref, ?1, 0
+            FROM path_index_usn_stage
+            WHERE name = ''
+               OR name = '.'
+               OR parent_file_ref = file_ref
+            "#,
+            params![&volume_root],
+        )
+        .map_err(|error| format!("Failed to seed USN root path records: {error}"))?;
+
+    let mut missing_parent_statement = connection
+        .prepare(
+            r#"
+            SELECT DISTINCT child.parent_file_ref
+            FROM path_index_usn_stage child
+            LEFT JOIN path_index_usn_stage parent
+              ON parent.file_ref = child.parent_file_ref
+            WHERE parent.file_ref IS NULL
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare missing USN parent query: {error}"))?;
+    let missing_parent_refs = missing_parent_statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("Failed to query missing USN parent refs: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read missing USN parent ref: {error}"))?;
+    for file_ref in missing_parent_refs {
+        if is_probable_ntfs_root_file_ref(&file_ref) {
+            connection
+                .execute(
+                    r#"
+                    INSERT OR IGNORE INTO path_index_usn_paths (file_ref, path, depth)
+                    VALUES (?1, ?2, 0)
+                    "#,
+                    params![file_ref, &volume_root],
+                )
+                .map_err(|error| format!("Failed to seed inferred NTFS root path: {error}"))?;
+        }
     }
-    let Some(record) = load_stage_record(connection, file_ref)? else {
-        memo.insert(file_ref.to_string(), None);
-        return Ok(None);
-    };
-    let resolved = if record.name == "."
-        || record.name.is_empty()
-        || record.parent_file_ref == record.file_ref
-    {
-        Some(volume_root.to_path_buf())
-    } else if let Some(parent_path) =
-        resolve_record_path(&record.parent_file_ref, volume_root, connection, memo)?
-    {
-        Some(parent_path.join(&record.name))
-    } else {
-        None
-    };
-    memo.insert(file_ref.to_string(), resolved.clone());
-    Ok(resolved)
+
+    let root_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM path_index_usn_paths", [], |row| row.get(0))
+        .map_err(|error| format!("Failed to count seeded USN root paths: {error}"))?;
+    if root_count == 0 {
+        return Err(format!(
+            "USN path reconstruction could not find a volume root record for {}",
+            volume_root
+        ));
+    }
+    Ok(())
+}
+
+fn expand_usn_paths<F>(connection: &Connection, should_cancel: &mut F) -> Result<(), String>
+where
+    F: FnMut() -> PathIndexCancellation,
+{
+    let mut depth = 0i64;
+    loop {
+        throw_if_cancelled(should_cancel)?;
+        let inserted = connection
+            .execute(
+                r#"
+                INSERT OR IGNORE INTO path_index_usn_paths (file_ref, path, depth)
+                SELECT child.file_ref,
+                       CASE
+                         WHEN substr(parent.path, length(parent.path), 1) IN ('\', '/')
+                           THEN parent.path || child.name
+                         ELSE parent.path || '\' || child.name
+                       END,
+                       ?2
+                FROM path_index_usn_stage child
+                JOIN path_index_usn_paths parent
+                  ON child.parent_file_ref = parent.file_ref
+                WHERE parent.depth = ?1
+                "#,
+                params![depth, depth + 1],
+            )
+            .map_err(|error| {
+                format!("Failed to expand USN path records at depth {depth}: {error}")
+            })?;
+        if inserted == 0 {
+            break;
+        }
+        depth += 1;
+        if depth > 512 {
+            return Err("USN path reconstruction exceeded 512 directory levels".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn collect_staged_path_record_batch(
+    connection: &Connection,
+    after_rowid: i64,
+    limit: i64,
+) -> Result<Vec<(i64, PathBuf, UsnRecord)>, String> {
+    let mut statement = connection
+        .prepare(
+            r#"
+            SELECT paths.rowid,
+                   paths.path,
+                   stage.file_ref,
+                   stage.parent_file_ref,
+                   stage.name,
+                   stage.file_attributes,
+                   stage.timestamp_ms
+            FROM path_index_usn_paths paths
+            JOIN path_index_usn_stage stage
+              ON stage.file_ref = paths.file_ref
+            WHERE paths.rowid > ?1
+            ORDER BY paths.rowid
+            LIMIT ?2
+            "#,
+        )
+        .map_err(|error| format!("Failed to prepare USN staged path records query: {error}"))?;
+    let rows = statement
+        .query_map(params![after_rowid, limit], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                PathBuf::from(row.get::<_, String>(1)?),
+                UsnRecord {
+                    file_ref: row.get(2)?,
+                    parent_file_ref: row.get(3)?,
+                    name: row.get(4)?,
+                    file_attributes: row.get::<_, i64>(5)? as u32,
+                    timestamp_ms: row.get::<_, i64>(6)?.max(0) as u64,
+                },
+            ))
+        })
+        .map_err(|error| format!("Failed to query USN staged path records: {error}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to read USN staged path record: {error}"))
+}
+
+fn full_mft_enum_high_usn() -> i64 {
+    i64::MAX
+}
+
+fn is_probable_ntfs_root_file_ref(file_ref: &str) -> bool {
+    const NTFS_ROOT_MFT_ENTRY_NUMBER: u64 = 5;
+    const NTFS_FILE_NUMBER_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
+    if let Ok(value) = file_ref.parse::<u64>() {
+        return value & NTFS_FILE_NUMBER_MASK == NTFS_ROOT_MFT_ENTRY_NUMBER;
+    }
+    let normalized = file_ref.trim();
+    if normalized.len() == 32 && normalized.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return normalized.starts_with("0500000000000000")
+            || normalized.ends_with("0500000000000000")
+            || normalized.ends_with("0000000000000005");
+    }
+    false
 }
 
 fn open_volume_handle(volume_root: &Path, write: bool) -> Result<VolumeHandle, String> {
@@ -986,5 +1126,17 @@ mod tests {
         assert!(is_access_denied_error(
             "Windows USN indexing requires raw NTFS volume read permission"
         ));
+    }
+
+    #[test]
+    fn full_mft_enumeration_uses_unbounded_usn_ceiling() {
+        assert_eq!(full_mft_enum_high_usn(), i64::MAX);
+    }
+
+    #[test]
+    fn ntfs_root_file_reference_is_recognized_from_file_number_bits() {
+        assert!(is_probable_ntfs_root_file_ref("1407374883553285"));
+        assert!(is_probable_ntfs_root_file_ref("5"));
+        assert!(!is_probable_ntfs_root_file_ref("97380"));
     }
 }

@@ -12,6 +12,12 @@ export interface FsRuntimeCachePolicy {
   searchContentIndexTotalBytesBudget: number;
   maxSearchContentFileBytes: number;
   searchMaxIndexedEntries: number;
+  dirListCacheMaxKeys: number;
+  searchIndexCacheMaxKeys: number;
+  entrySizeCacheMaxKeys: number;
+  searchRequestScopeMaxKeys: number;
+  explorerTaskHistoryMaxEntries: number;
+  driveListCacheTtlMs: number;
 }
 
 export type RuntimeCachePolicyTelemetryStatus = 'pending' | 'ready' | 'failed' | 'unavailable';
@@ -37,6 +43,12 @@ const RUNTIME_CACHE_POLICY_METADATA_FIELDS = [
   ['runtimeCachePolicySearchContentIndexTotalBytesBudget', 'searchContentIndexTotalBytesBudget'],
   ['runtimeCachePolicyMaxSearchContentFileBytes', 'maxSearchContentFileBytes'],
   ['runtimeCachePolicySearchMaxIndexedEntries', 'searchMaxIndexedEntries'],
+  ['runtimeCachePolicyDirListCacheMaxKeys', 'dirListCacheMaxKeys'],
+  ['runtimeCachePolicySearchIndexCacheMaxKeys', 'searchIndexCacheMaxKeys'],
+  ['runtimeCachePolicyEntrySizeCacheMaxKeys', 'entrySizeCacheMaxKeys'],
+  ['runtimeCachePolicySearchRequestScopeMaxKeys', 'searchRequestScopeMaxKeys'],
+  ['runtimeCachePolicyExplorerTaskHistoryMaxEntries', 'explorerTaskHistoryMaxEntries'],
+  ['runtimeCachePolicyDriveListCacheTtlMs', 'driveListCacheTtlMs'],
 ] as const satisfies ReadonlyArray<
   readonly [metadataKey: string, policyKey: keyof FsRuntimeCachePolicy]
 >;

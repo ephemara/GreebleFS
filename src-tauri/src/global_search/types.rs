@@ -64,6 +64,14 @@ pub struct GlobalSearchIndexQueryRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct GlobalSearchIndexQueryResponse {
+    pub entries: Vec<GlobalSearchResultEntry>,
+    pub scanned_candidate_count: usize,
+    pub candidate_limited: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct GlobalSearchResultEntry {
     pub name: String,
     pub extension: Option<String>,

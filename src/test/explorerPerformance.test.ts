@@ -40,13 +40,13 @@ describe("explorerPerformance", () => {
       maxCandidateQueueDepth: 96,
       queueOverflowStrategy: "drop-lowest-priority",
       previewPrefetch: {
-        enabled: true,
-        batchSize: 3,
+        enabled: false,
+        batchSize: 1,
         maxConcurrentPreviewReads: 1,
-        forwardPrefetchViewports: 0.25,
+        forwardPrefetchViewports: 0,
         backwardPrefetchViewports: 0,
-        maxPreviewBytesPerEntry: 524288,
-        maxBatchBytes: 1048576,
+        maxPreviewBytesPerEntry: 131072,
+        maxBatchBytes: 131072,
         imagePrefetchMode: "disabled",
       },
     });
@@ -55,8 +55,11 @@ describe("explorerPerformance", () => {
       4,
     );
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth).toBe(96);
+    expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.enabled).toBe(
+      false,
+    );
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(
-      3,
+      1,
     );
     expect(explorerPerformance.nativeTaskGraph).toEqual({
       enabled: true,
@@ -213,13 +216,13 @@ describe("explorerPerformance", () => {
       "drop-lowest-priority",
     );
     expect(normalized.viewportScheduling.previewPrefetch).toEqual({
-      enabled: true,
-      batchSize: 3,
+      enabled: false,
+      batchSize: 1,
       maxConcurrentPreviewReads: 1,
-      forwardPrefetchViewports: 0.25,
+      forwardPrefetchViewports: 0,
       backwardPrefetchViewports: 0,
-      maxPreviewBytesPerEntry: 512 * 1024,
-      maxBatchBytes: 1024 * 1024,
+      maxPreviewBytesPerEntry: 128 * 1024,
+      maxBatchBytes: 128 * 1024,
       imagePrefetchMode: "disabled",
     });
   });

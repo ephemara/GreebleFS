@@ -78,14 +78,18 @@ export async function startExplorerPathIndex(
 export async function searchExplorerPathIndex(
   request: PathIndexSearchRequest,
 ): Promise<FileEntry[]> {
+  const resolvedRequest: PathIndexSearchRequest = {
+    ...request,
+    matchMode: request.matchMode ?? "prefix",
+  };
   if (!shouldUsePathIndexNativeControl()) {
-    return unwrapTauriResult(await commands.pathIndexSearch(request));
+    return unwrapTauriResult(await commands.pathIndexSearch(resolvedRequest));
   }
   return callGreebleNativeWithInvokeFallback<FileEntry[], PathIndexSearchRequest>(
     "explorer",
     "pathIndexSearch",
-    request,
-    () => commands.pathIndexSearch(request).then(unwrapTauriResult),
+    resolvedRequest,
+    () => commands.pathIndexSearch(resolvedRequest).then(unwrapTauriResult),
   );
 }
 

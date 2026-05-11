@@ -468,6 +468,13 @@ fn resolve_registered_thumbnail_artifact_path(
     })
 }
 
+pub(crate) fn resolve_thumbnail_artifact_poster_path(
+    app: &AppHandle,
+    artifact: &ExplorerThumbnailArtifact,
+) -> Result<PathBuf, String> {
+    resolve_registered_thumbnail_artifact_path(app, &artifact.poster)
+}
+
 fn build_entry_thumbnail_artifact(
     app: &AppHandle,
     gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,

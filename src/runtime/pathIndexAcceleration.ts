@@ -1,6 +1,8 @@
 import type {
   PathIndexAccelerationEnableRequest,
   PathIndexAccelerationEnableResponse,
+  PathIndexAccelerationInstallServiceRequest,
+  PathIndexAccelerationInstallServiceResponse,
   PathIndexAccelerationRebuildRequest,
   PathIndexAccelerationStatus,
 } from "../generated/tauri";
@@ -72,6 +74,25 @@ export async function rebuildPathIndexAcceleration(
     PathIndexAccelerationRebuildRequest
   >("explorer", "pathIndexAccelerationRebuild", request, () =>
     commands.pathIndexAccelerationRebuild(request).then(unwrapTauriResult),
+  );
+}
+
+export async function installPathIndexAccelerationService(
+  request: Partial<PathIndexAccelerationInstallServiceRequest> = {},
+): Promise<PathIndexAccelerationInstallServiceResponse> {
+  const normalizedRequest: PathIndexAccelerationInstallServiceRequest = {
+    daemonPath: request.daemonPath ?? null,
+  };
+  if (!shouldUsePathIndexAccelerationNativeControl()) {
+    return unwrapTauriResult(
+      await commands.pathIndexAccelerationInstallService(normalizedRequest),
+    );
+  }
+  return callGreebleNativeWithInvokeFallback<
+    PathIndexAccelerationInstallServiceResponse,
+    PathIndexAccelerationInstallServiceRequest
+  >("explorer", "pathIndexAccelerationInstallService", normalizedRequest, () =>
+    commands.pathIndexAccelerationInstallService(normalizedRequest).then(unwrapTauriResult),
   );
 }
 

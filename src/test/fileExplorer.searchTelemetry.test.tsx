@@ -292,7 +292,15 @@ const RUNTIME_POLICY: FsRuntimeCachePolicy = {
   searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
   maxSearchContentFileBytes: 8 * 1024 * 1024,
   searchMaxIndexedEntries: 25000,
+  dirListCacheMaxKeys: 512,
+  searchIndexCacheMaxKeys: 256,
+  entrySizeCacheMaxKeys: 768,
+  searchRequestScopeMaxKeys: 96,
+  explorerTaskHistoryMaxEntries: 400,
+  driveListCacheTtlMs: 5000,
 };
+const RUNTIME_POLICY_FINGERPRINT =
+  '2000:1500:1000:10000:900:12582912:8388608:25000:512:256:768:96:400:5000';
 
 const DEFAULT_SEARCH_DIAGNOSTICS: FileSearchDiagnostics = {
   executionStrategy: 'content_index_cache_hit',
@@ -463,7 +471,7 @@ describe('FileExplorer search telemetry', () => {
       queryLength: 6,
       resultCount: 1,
       runtimeCachePolicyStatus: 'ready',
-      runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608:25000',
+      runtimeCachePolicyFingerprint: RUNTIME_POLICY_FINGERPRINT,
       runtimeCachePolicyDirListCacheTtlMs: 2000,
       runtimeCachePolicySearchNameIndexCacheTtlMs: 1500,
       runtimeCachePolicySearchContentIndexCacheTtlMs: 1000,
@@ -472,6 +480,12 @@ describe('FileExplorer search telemetry', () => {
       runtimeCachePolicySearchContentIndexTotalBytesBudget: 12582912,
       runtimeCachePolicyMaxSearchContentFileBytes: 8388608,
       runtimeCachePolicySearchMaxIndexedEntries: 25000,
+      runtimeCachePolicyDirListCacheMaxKeys: 512,
+      runtimeCachePolicySearchIndexCacheMaxKeys: 256,
+      runtimeCachePolicyEntrySizeCacheMaxKeys: 768,
+      runtimeCachePolicySearchRequestScopeMaxKeys: 96,
+      runtimeCachePolicyExplorerTaskHistoryMaxEntries: 400,
+      runtimeCachePolicyDriveListCacheTtlMs: 5000,
       explorerSearchExecutionStrategy: 'content_index_cache_hit',
       explorerSearchContentCacheStatus: 'cache_hit',
       explorerSearchScannedEntryCount: 0,

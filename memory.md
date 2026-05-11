@@ -1,13 +1,14 @@
 # 2026-05-10 - Tauron Native Surface Backplane
 
 - Added the first production slice of the Tauron composition-controller backplane for GreebleFS.
-  - `src-tauri/tauri.conf.json` opts the main Windows window into `webview2VisualHostingMode: "compositionController"`.
+  - The app-owned native-surface runtime is wired, but the config-created main window must stay on the schema-valid Tauri window config path until Tauron's config schema supports `webview2VisualHostingMode`; placing that key in `src-tauri/tauri.conf.json` prevents `tauri dev` from booting.
   - Tauron now exposes composition-host handles through raw pointer APIs instead of Windows wrapper types, which keeps the downstream app insulated from `windows` crate version drift.
   - `src-tauri/src/native_surface.rs` starts a Windows-only `wgpu` render loop behind the React WebView2 shell and renders a live native backplane on the root composition visual.
   - `src/runtime/nativeSurface.ts` provides the frontend control facade, and `SystemSettingsSection.tsx` now shows a compact proof slice with live native-surface telemetry.
   - `src-tauri/src/dev_observatory.rs` mirrors native-surface telemetry into the dev observatory runtime snapshot.
 - Validation:
   - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+  - Lesson: native surface experiments must verify `gfs_app start` after config changes, because the JSON schema rejects unknown Tauri window keys before Rust setup runs.
 
 # 2026-05-11 - Windows USN Daemon Fast Path
 
@@ -43,6 +44,24 @@
   - Passed: `pnpm --dir D:/tauron build:api`, `node --check scripts/run-frontend-dev.mjs`, and Tauron `native-buffer-pool.js` syntax check.
   - Live MCP proof after restart: native WebView attached, console clean, native task graph idle, native buffer pool wait/mismatch/in-flight all zero, native ring benchmark moved 1 MiB / 256 packets with zero dropped bytes, direct WebView event-loop probe worst timeout delay about 6.5ms, and rAF held about 60fps with worst frame about 17.3ms on this display.
   - Tauron `cargo test --manifest-path D:/tauron/crates/tauri/Cargo.toml native_buffer_pool --lib` still compiles but the Windows lib-test binary hits the known `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` loader issue before tests run.
+
+# 2026-05-11 - Explorer Performance Evidence Pipeline And Hot-Path Guardrails
+
+- Implemented the repeatable Explorer performance scan requested for root-cause work.
+  - `scripts/perf/explorer-perf-scan.mjs` is the evidence pipeline behind `bun run perf:explorer`. It attaches through CDP/MCP/native automation, times `explorer.list_location`, captures rAF/LongTask/heap/DOM/Chrome trace summaries, native flow snapshots, native ring/pool/task-graph/path-index state, and hot-file complexity, then writes JSON under ignored `automations/explorer-perf/evidence/`.
+  - The first captured artifact showed local listing and native transport were healthy (`explorer.list_location` roughly 3-30ms on sampled folders, native pool `waitCount=0`, native ring 1 MiB / 256 packets / 0 drops), while the bad path was renderer/background speculation: old `explorer_preview_prefetch_batch` telemetry had multi-second and stale much-worse durations, path-index had prior SQLite lock noise, and the renderer trace contained long React scheduler work.
+- Durable fixes:
+  - `previewPrefetch` is now conservative opt-in: disabled by default, batch size 1, one concurrent read, no forward/backward viewport prefetch, 128 KiB per-entry and batch caps, and image prefetch disabled. `FileExplorer.tsx` also skips rescheduling identical prefetch batches.
+  - Preview cache prefetch must continue using the native byte-buffer payload helper for local files and decode only after byte-budget checks. Do not restore speculative `fsReadTextFile` / `fsReadFileBase64` string reads.
+  - Path-index warmup remains guarded by duplicate-root suppression, noisy-root refusal, cooldowns, SQLite busy timeouts/WAL setup, and stale `building` cleanup; generic catalog/theme/plugin scans should not opt into recursive path-index warming.
+  - Secondary hot paths now have bounded/cache-aware follow-up work in archive previews, global search paging/scans, LAN mobile asset reads, runtime cache capacity, and USN/path-index acceleration.
+- Validation:
+  - Passed: `node --check scripts/perf/explorer-perf-scan.mjs`.
+  - Passed: `bunx vitest run src/test/explorerPerformance.test.ts src/test/explorerViewportPreviewPrefetchScheduler.test.ts src/test/explorerPathIndexWarmup.test.ts src/test/explorerBackend.nativePool.test.ts src/test/performanceTelemetry.test.ts src/test/explorerViewportThumbnailScheduler.test.ts src/test/runtimeCachePolicy.test.ts src/test/pathIndexAcceleration.test.ts src/test/fileExplorer.searchTelemetry.test.tsx --reporter=dot --testTimeout=30000` (9 files / 52 tests).
+  - Passed: `cargo +1.92.0 check --manifest-path src-tauri/Cargo.toml --lib --quiet` using `target/codex-check`.
+  - Passed: `cargo +1.92.0 test --manifest-path crates/greeblefs-index-core/Cargo.toml --lib --quiet` (6 tests).
+  - Passed: `bun run perf:explorer`, producing `automations/explorer-perf/evidence/explorer-perf-20260511T050321Z.json`. The fresh scan kept native listing and transport healthy (`explorer.list_location` warm calls roughly 3.75-7.94ms, native pool `waitCount=0`, native ring 1 MiB / 256 packets / 0 drops). The preview-prefetch metric in the bridge summary is retained stale history from before the disable/byte-budget guard, not new scheduler work; compare metric timestamps to artifact `generatedAt` before treating retained telemetry as active.
+  - Remaining smoothness risk is now renderer-side: the same scan still showed rAF p95 about 566.9ms, LongTask p95 about 1212ms, Chrome trace long tasks led by `v8.callFunction` / `FunctionCall`, React invalidation from broad app/explorer props, overlay frame p95 about 200ms, and `explorer_native_icon_batch` p95 about 2301ms. The next pass should split/steady FileExplorer props, coalesce/cache native icon batches, and cap overlay frame work before changing the native listing substrate.
 
 # 2026-05-10 - Kain Plugin Host UI And Fabric Pipeline Contract
 

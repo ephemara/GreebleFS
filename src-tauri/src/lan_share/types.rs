@@ -10,7 +10,10 @@ use std::sync::Arc;
 use overlay_contracts::ThemeValue;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
+
+pub(super) const MOBILE_BROWSE_MAX_CONCURRENT_BLOCKING_JOBS: usize = 2;
+pub(super) const MOBILE_THUMBNAIL_MAX_CONCURRENT_JOBS: usize = 4;
 
 pub(super) const MDNS_SERVICE_TYPE: &str = "_http._tcp.local.";
 pub(super) const MDNS_HOSTNAME: &str = "sfm.local.";
@@ -32,6 +35,8 @@ pub(super) struct ShareState {
     pub(super) app_handle: AppHandle,
     pub(super) share_path: PathBuf,
     pub(super) file_hub: Option<Vec<PathBuf>>,
+    pub(super) browse_permits: Arc<Semaphore>,
+    pub(super) thumbnail_permits: Arc<Semaphore>,
 }
 
 pub(super) struct ActiveServer {

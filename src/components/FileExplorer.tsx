@@ -10472,6 +10472,7 @@ function FileExplorerImpl({
     activeWorkflowId === BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID;
   const previewSaveTimer = useRef<number | null>(null);
   const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
+  const previewPrefetchLastSignatureRef = useRef<string | null>(null);
   const internalPointerDragCandidateRef =
     useRef<ExplorerInternalPointerDragCandidate | null>(null);
   const internalPointerDragFrameRef = useRef<number | null>(null);
@@ -29504,8 +29505,17 @@ function FileExplorerImpl({
         resolvePreviewWork: resolveExplorerViewportPreviewPrefetchWork,
       });
     if (previewPrefetchCandidates.length === 0) {
+      previewPrefetchLastSignatureRef.current = null;
       return;
     }
+
+    const previewPrefetchSignature = previewPrefetchCandidates
+      .map((candidate) => candidate.workKey)
+      .join("\n");
+    if (previewPrefetchLastSignatureRef.current === previewPrefetchSignature) {
+      return;
+    }
+    previewPrefetchLastSignatureRef.current = previewPrefetchSignature;
 
     const schedulerBatchId = previewPrefetchSchedulerBatchIdRef.current + 1;
     previewPrefetchSchedulerBatchIdRef.current = schedulerBatchId;

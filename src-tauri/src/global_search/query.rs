@@ -3,19 +3,19 @@ use super::index::global_search_index_dir;
 use super::scoring::{calculate_similarity_score, get_min_score_for_query_length};
 use super::state::{GlobalSearchIndexFields, GLOBAL_SEARCH_STATE};
 use super::types::{
-    GlobalSearchIndexQueryRequest, GlobalSearchIndexSortDirection, GlobalSearchIndexSortKey,
-    GlobalSearchQueryOptions, GlobalSearchResultEntry,
+    GlobalSearchIndexQueryRequest, GlobalSearchIndexQueryResponse, GlobalSearchIndexSortDirection,
+    GlobalSearchIndexSortKey, GlobalSearchQueryOptions, GlobalSearchResultEntry,
 };
 use super::utils::{is_hidden_path, metadata_times_unix_ms, path_extension_lowercase};
 use regex::escape as escape_regex;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-use tantivy::collector::{DocSetCollector, TopDocs};
+use tantivy::collector::TopDocs;
 use tantivy::query::{AllQuery, BooleanQuery, FuzzyTermQuery, Query, RegexQuery, TermQuery};
 use tantivy::schema::{IndexRecordOption, Value};
 use tantivy::Term;
-use tantivy::{DocAddress, IndexReader};
+use tantivy::{DocAddress, IndexReader, Order};
 use tauri::Manager;
 
 fn build_query(
@@ -75,6 +75,7 @@ fn candidate_limit(limit: usize) -> usize {
 const INDEX_QUERY_DEFAULT_LIMIT: usize = 100;
 const INDEX_QUERY_MAX_LIMIT: usize = 5_000;
 const INDEX_QUERY_MAX_OFFSET: usize = 100_000;
+const INDEX_QUERY_EMPTY_CANDIDATE_MAX: usize = 20_000;
 
 #[derive(Debug, Clone)]
 struct NormalizedGlobalSearchIndexQueryRequest {
@@ -101,13 +102,24 @@ fn normalize_index_query_request(
     let offset = request.offset.min(INDEX_QUERY_MAX_OFFSET);
     let include_files = request.include_files || !request.include_directories;
     let include_directories = request.include_directories;
-    let sort_key = request.sort_key.unwrap_or_else(|| {
+    let requested_sort_key = request.sort_key.unwrap_or_else(|| {
         if query.is_empty() {
             GlobalSearchIndexSortKey::ModifiedTime
         } else {
             GlobalSearchIndexSortKey::Relevance
         }
     });
+    let sort_key = if query.is_empty()
+        && matches!(
+            requested_sort_key,
+            GlobalSearchIndexSortKey::Relevance
+                | GlobalSearchIndexSortKey::Name
+                | GlobalSearchIndexSortKey::Path
+        ) {
+        GlobalSearchIndexSortKey::ModifiedTime
+    } else {
+        requested_sort_key
+    };
 
     NormalizedGlobalSearchIndexQueryRequest {
         query,
@@ -429,10 +441,21 @@ fn index_query_candidate_limit(
     request: &NormalizedGlobalSearchIndexQueryRequest,
 ) -> usize {
     if request.query.is_empty() {
-        return searcher_doc_count;
+        let requested_window = request.offset.saturating_add(request.limit).max(1);
+        return requested_window
+            .saturating_mul(64)
+            .clamp(requested_window.max(256), INDEX_QUERY_EMPTY_CANDIDATE_MAX)
+            .min(searcher_doc_count);
     }
 
     candidate_limit(request.options.limit).min(searcher_doc_count)
+}
+
+fn empty_index_query_order(request: &NormalizedGlobalSearchIndexQueryRequest) -> Order {
+    match request.sort_direction {
+        GlobalSearchIndexSortDirection::Asc => Order::Asc,
+        GlobalSearchIndexSortDirection::Desc => Order::Desc,
+    }
 }
 
 fn build_plugin_index_query(
@@ -551,7 +574,7 @@ fn retrieve_index_query_entries(
     fields: &GlobalSearchIndexFields,
     request: &NormalizedGlobalSearchIndexQueryRequest,
     query: &dyn Query,
-) -> Result<Vec<GlobalSearchResultEntry>, String> {
+) -> Result<(Vec<GlobalSearchResultEntry>, usize, bool), String> {
     let searcher = reader.searcher();
     let normalized_query = normalize_case(&request.query);
     let min_score = request
@@ -561,13 +584,31 @@ fn retrieve_index_query_entries(
     let ignored_paths = build_ignored_path_list(&[]);
     let searcher_doc_count = searcher.num_docs() as usize;
     let candidate_limit = index_query_candidate_limit(searcher_doc_count, request);
+    let candidate_limited = candidate_limit < searcher_doc_count;
 
     let doc_addresses: Vec<DocAddress> = if request.query.is_empty() {
-        searcher
-            .search(query, &DocSetCollector)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .collect()
+        let order = empty_index_query_order(request);
+        match request.sort_key {
+            GlobalSearchIndexSortKey::Size => searcher
+                .search(
+                    query,
+                    &TopDocs::with_limit(candidate_limit).order_by_u64_field("size", order),
+                )
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|(_value, doc_address)| doc_address)
+                .collect(),
+            _ => searcher
+                .search(
+                    query,
+                    &TopDocs::with_limit(candidate_limit)
+                        .order_by_u64_field("modified_time", order),
+                )
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|(_value, doc_address)| doc_address)
+                .collect(),
+        }
     } else {
         searcher
             .search(query, &TopDocs::with_limit(candidate_limit))
@@ -576,6 +617,7 @@ fn retrieve_index_query_entries(
             .map(|(_score, doc_address)| doc_address)
             .collect()
     };
+    let scanned_candidate_count = doc_addresses.len();
 
     let mut results = Vec::new();
     for doc_address in doc_addresses {
@@ -599,23 +641,29 @@ fn retrieve_index_query_entries(
         results.push(entry);
     }
 
-    Ok(results)
+    Ok((results, scanned_candidate_count, candidate_limited))
 }
 
-fn execute_plugin_index_query(
+fn execute_plugin_index_query_response(
     reader: &IndexReader,
     fields: &GlobalSearchIndexFields,
     request: &NormalizedGlobalSearchIndexQueryRequest,
-) -> Result<Vec<GlobalSearchResultEntry>, String> {
+) -> Result<GlobalSearchIndexQueryResponse, String> {
     let query = build_plugin_index_query(fields, request);
-    let mut results = retrieve_index_query_entries(reader, fields, request, query.as_ref())?;
+    let (mut results, scanned_candidate_count, candidate_limited) =
+        retrieve_index_query_entries(reader, fields, request, query.as_ref())?;
 
     sort_index_query_results(&mut results, request);
-    Ok(results
+    let entries = results
         .into_iter()
         .skip(request.offset)
         .take(request.limit)
-        .collect())
+        .collect();
+    Ok(GlobalSearchIndexQueryResponse {
+        entries,
+        scanned_candidate_count,
+        candidate_limited,
+    })
 }
 
 #[tauri::command]
@@ -640,9 +688,18 @@ pub async fn global_search_query_index(
     app: tauri::AppHandle,
     request: GlobalSearchIndexQueryRequest,
 ) -> Result<Vec<GlobalSearchResultEntry>, String> {
+    Ok(global_search_query_index_page(app, request).await?.entries)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn global_search_query_index_page(
+    app: tauri::AppHandle,
+    request: GlobalSearchIndexQueryRequest,
+) -> Result<GlobalSearchIndexQueryResponse, String> {
     let normalized_request = normalize_index_query_request(request);
     let (reader, fields) = open_search_reader(&app)?;
-    execute_plugin_index_query(&reader, &fields, &normalized_request)
+    execute_plugin_index_query_response(&reader, &fields, &normalized_request)
 }
 
 #[tauri::command]

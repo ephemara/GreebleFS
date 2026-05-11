@@ -42,6 +42,7 @@ use crate::global_search::{
     GlobalSearchQueryOptions, GlobalSearchResultEntry, GlobalSearchScanSettings,
     GlobalSearchStatus,
 };
+use crate::native_task_graph::NativeTaskGraphManager;
 use crate::thumbnail_commands::{self, ExplorerEntryThumbnailRequest};
 
 const MOBILE_DEFAULT_PAGE_SIZE: usize = 160;
@@ -441,8 +442,40 @@ async fn mobile_search_handler(
     }
 
     if let Some(hub) = &state.file_hub {
-        let entries =
-            build_hub_search_entries(hub, trimmed_query, search_limit, browse_policy, &snapshot);
+        let hub = hub.clone();
+        let query_for_worker = trimmed_query.to_string();
+        let snapshot_for_worker = snapshot.clone();
+        let browse_permit = match state.browse_permits.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Mobile search queue is closed",
+                )
+                    .into_response()
+            }
+        };
+        let entries = match tokio::task::spawn_blocking(move || {
+            let _permit = browse_permit;
+            build_hub_search_entries(
+                &hub,
+                &query_for_worker,
+                search_limit,
+                browse_policy,
+                &snapshot_for_worker,
+            )
+        })
+        .await
+        {
+            Ok(entries) => entries,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to search mobile hub",
+                )
+                    .into_response()
+            }
+        };
         let response = MobileSearchResponse {
             query: trimmed_query.to_string(),
             share_name: share_root_label(&state.share_path),
@@ -534,15 +567,43 @@ async fn mobile_index_pictures_handler(
         normalize_mobile_index_root_paths(&state.share_path, query.root_paths.as_deref());
 
     if let Some(hub) = &state.file_hub {
-        let (total_count, entries) = build_hub_picture_entries(
-            hub,
-            &trimmed_query,
-            &extensions,
-            offset,
-            limit,
-            browse_policy,
-            &snapshot,
-        );
+        let hub = hub.clone();
+        let query_for_worker = trimmed_query.clone();
+        let extensions_for_worker = extensions.clone();
+        let snapshot_for_worker = snapshot.clone();
+        let browse_permit = match state.browse_permits.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Mobile search queue is closed",
+                )
+                    .into_response()
+            }
+        };
+        let (total_count, entries) = match tokio::task::spawn_blocking(move || {
+            let _permit = browse_permit;
+            build_hub_picture_entries(
+                &hub,
+                &query_for_worker,
+                &extensions_for_worker,
+                offset,
+                limit,
+                browse_policy,
+                &snapshot_for_worker,
+            )
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to search mobile media hub",
+                )
+                    .into_response()
+            }
+        };
         let response = MobileIndexPicturesResponse {
             query: trimmed_query,
             share_name: share_root_label(&state.share_path),
@@ -646,7 +707,16 @@ async fn mobile_search_scan_handler(State(state): State<ShareState>) -> Response
         parallel_scan: false,
     };
 
-    match global_search::global_search_start_scan(state.app_handle.clone(), settings).await {
+    let native_task_graph = state
+        .app_handle
+        .state::<crate::native_task_graph::NativeTaskGraphManager>();
+    match global_search::global_search_start_scan_with_task_graph(
+        state.app_handle.clone(),
+        native_task_graph.inner().clone(),
+        settings,
+    )
+    .await
+    {
         Ok(()) => StatusCode::ACCEPTED.into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -805,6 +875,13 @@ async fn mobile_thumbnail_handler(
     State(state): State<ShareState>,
     Query(query): Query<MobileThumbnailQuery>,
 ) -> Response {
+    let thumbnail_permit = match state.thumbnail_permits.clone().acquire_owned().await {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (StatusCode::SERVICE_UNAVAILABLE, "Thumbnail queue is closed").into_response()
+        }
+    };
+
     let resolved = match resolve_mobile_target(&state, &query.path) {
         Ok(target) => target,
         Err(status) => return (status, "Invalid thumbnail path").into_response(),
@@ -824,23 +901,67 @@ async fn mobile_thumbnail_handler(
         content_revision: None,
     };
 
-    let thumbnail = match thumbnail_commands::fs_read_entry_thumbnail(
+    let native_task_graph = state.app_handle.state::<NativeTaskGraphManager>();
+    let artifact = match thumbnail_commands::read_entry_thumbnail_artifact_with_task_graph(
         state.app_handle.clone(),
+        native_task_graph.inner().clone(),
         request,
+        None,
     )
     .await
     {
-        Ok(thumbnail) => thumbnail,
+        Ok(artifact) => artifact,
         Err(error) => {
+            drop(thumbnail_permit);
             return (
                 StatusCode::NOT_FOUND,
                 format!("Thumbnail is unavailable: {error}"),
             )
-                .into_response()
+                .into_response();
         }
     };
 
-    data_url_response(&thumbnail.poster_data_url)
+    let poster_path = match thumbnail_commands::resolve_thumbnail_artifact_poster_path(
+        &state.app_handle,
+        &artifact,
+    ) {
+        Ok(path) => path,
+        Err(error) => {
+            drop(thumbnail_permit);
+            return (
+                StatusCode::NOT_FOUND,
+                format!("Thumbnail artifact is unavailable: {error}"),
+            )
+                .into_response();
+        }
+    };
+    let bytes = match tokio::fs::read(&poster_path).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            drop(thumbnail_permit);
+            return (
+                StatusCode::NOT_FOUND,
+                format!("Thumbnail bytes are unavailable: {error}"),
+            )
+                .into_response();
+        }
+    };
+    drop(thumbnail_permit);
+    let content_type = mime_guess::from_path(&poster_path)
+        .first_raw()
+        .unwrap_or("image/png");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "public, max-age=86400")
+        .body(Body::from(bytes))
+        .unwrap_or_else(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to build thumbnail response",
+            )
+                .into_response()
+        })
 }
 
 async fn mobile_icon_handler(Query(query): Query<MobileIconQuery>) -> Response {
@@ -1026,7 +1147,7 @@ async fn mobile_list_handler(
     let browse_policy = resolve_mobile_browse_policy(&snapshot, &query);
 
     if state.file_hub.is_some() {
-        return mobile_hub_list_response(&state, &query, browse_policy, &snapshot);
+        return mobile_hub_list_response(&state, &query, browse_policy, &snapshot).await;
     }
 
     let target = match resolve_sub_path(&state.share_path, query.path.as_deref()) {
@@ -1045,14 +1166,33 @@ async fn mobile_list_handler(
         .clamp(1, MOBILE_MAX_PAGE_SIZE);
 
     let current_relative_path = compute_relative_path(&state.share_path, &target);
-    let mut entries = match collect_mobile_entries_for_directory(
-        &target,
-        &current_relative_path,
-        browse_policy,
-        &snapshot,
-    ) {
-        Ok(entries) => entries,
+    let browse_permit = match state.browse_permits.clone().acquire_owned().await {
+        Ok(permit) => permit,
         Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Mobile browse queue is closed",
+            )
+                .into_response()
+        }
+    };
+    let snapshot_for_worker = snapshot.clone();
+    let current_relative_path_for_worker = current_relative_path.clone();
+    let entries_result = tokio::task::spawn_blocking(move || {
+        let _permit = browse_permit;
+        let mut entries = collect_mobile_entries_for_directory(
+            &target,
+            &current_relative_path_for_worker,
+            browse_policy,
+            &snapshot_for_worker,
+        )?;
+        sort_mobile_entries(&mut entries, browse_policy);
+        Ok::<_, std::io::Error>(entries)
+    })
+    .await;
+    let entries = match entries_result {
+        Ok(Ok(entries)) => entries,
+        Ok(Err(_)) | Err(_) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to read directory",
@@ -1060,7 +1200,6 @@ async fn mobile_list_handler(
                 .into_response()
         }
     };
-    sort_mobile_entries(&mut entries, browse_policy);
 
     build_mobile_list_response(
         &state.share_path,
@@ -1072,7 +1211,7 @@ async fn mobile_list_handler(
     )
 }
 
-fn mobile_hub_list_response(
+async fn mobile_hub_list_response(
     state: &ShareState,
     query: &MobileListQuery,
     browse_policy: MobileBrowsePolicy,
@@ -1093,20 +1232,49 @@ fn mobile_hub_list_response(
         .unwrap_or(MOBILE_DEFAULT_PAGE_SIZE)
         .clamp(1, MOBILE_MAX_PAGE_SIZE);
 
-    let hub = state.file_hub.as_ref().expect("hub mode checked above");
-    let mut entries = Vec::new();
-    for (index, path) in hub.iter().enumerate() {
-        let metadata = match build_target_metadata(path, index.to_string()) {
-            Ok(metadata) => metadata,
-            Err(_) => continue,
-        };
-        if metadata.is_hidden && !browse_policy.show_hidden_files {
-            continue;
+    let hub = state
+        .file_hub
+        .as_ref()
+        .expect("hub mode checked above")
+        .clone();
+    let snapshot_for_worker = snapshot.clone();
+    let browse_permit = match state.browse_permits.clone().acquire_owned().await {
+        Ok(permit) => permit,
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Mobile browse queue is closed",
+            )
+                .into_response()
         }
-        entries.push(build_mobile_entry_info(metadata, snapshot));
-    }
-
-    sort_mobile_entries(&mut entries, browse_policy);
+    };
+    let entries = match tokio::task::spawn_blocking(move || {
+        let _permit = browse_permit;
+        let mut entries = Vec::new();
+        for (index, path) in hub.iter().enumerate() {
+            let metadata = match build_target_metadata(path, index.to_string()) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            if metadata.is_hidden && !browse_policy.show_hidden_files {
+                continue;
+            }
+            entries.push(build_mobile_entry_info(metadata, &snapshot_for_worker));
+        }
+        sort_mobile_entries(&mut entries, browse_policy);
+        entries
+    })
+    .await
+    {
+        Ok(entries) => entries,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read mobile hub",
+            )
+                .into_response()
+        }
+    };
 
     build_mobile_list_response(&state.share_path, "", true, offset, limit, entries)
 }

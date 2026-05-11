@@ -1,5 +1,6 @@
 use crate::explorer_path_key::ExplorerPathKey;
 use crate::indexing::{PathIndexManager, PathIndexStartResponse};
+use base64::Engine;
 use greeblefs_index_core::{
     normalize_drive_root, PathIndexVolumeState, DEFAULT_USN_JOURNAL_ALLOCATION_DELTA_BYTES,
     DEFAULT_USN_JOURNAL_MAXIMUM_SIZE_BYTES,
@@ -7,7 +8,7 @@ use greeblefs_index_core::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
@@ -16,6 +17,7 @@ const SERVICE_NAME: &str = "GreebleFSUsnIndexer";
 const DEFAULT_SERVICE_URL: &str = "http://127.0.0.1:12462";
 const LOOPBACK_ADDRESS: &str = "127.0.0.1:12462";
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(900);
+const DAEMON_BINARY_NAME: &str = "greeblefs-usn-daemon.exe";
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +89,22 @@ pub struct PathIndexAccelerationRebuildRequest {
     pub drive_root: String,
     pub journal_maximum_size_bytes: Option<u64>,
     pub journal_allocation_delta_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathIndexAccelerationInstallServiceRequest {
+    pub daemon_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PathIndexAccelerationInstallServiceResponse {
+    pub service_name: String,
+    pub service_url: String,
+    pub daemon_path: String,
+    pub launched_elevated: bool,
+    pub state: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +263,34 @@ pub fn path_index_acceleration_rebuild(
     })
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn path_index_acceleration_install_service(
+    app: AppHandle,
+    request: PathIndexAccelerationInstallServiceRequest,
+) -> Result<PathIndexAccelerationInstallServiceResponse, String> {
+    let daemon_path = request
+        .daemon_path
+        .as_deref()
+        .map(|value| Path::new(value).to_path_buf())
+        .map(Ok)
+        .unwrap_or_else(|| resolve_daemon_binary_path(&app))?;
+    if !daemon_path.exists() {
+        return Err(format!(
+            "Missing GreebleFS USN daemon binary at {}",
+            daemon_path.display()
+        ));
+    }
+    launch_elevated_service_install(&daemon_path)?;
+    Ok(PathIndexAccelerationInstallServiceResponse {
+        service_name: SERVICE_NAME.to_string(),
+        service_url: DEFAULT_SERVICE_URL.to_string(),
+        daemon_path: daemon_path.to_string_lossy().to_string(),
+        launched_elevated: true,
+        state: "installLaunched".to_string(),
+    })
+}
+
 pub fn try_start_accelerated_index(
     db_path: &Path,
     requested_path: &Path,
@@ -320,6 +366,20 @@ pub fn register_native_handlers(app: &AppHandle) -> Result<(), String> {
             let args: PathIndexAccelerationRebuildRequest = parse_native_args(request)?;
             let manager = app_for_rebuild.state::<PathIndexManager>();
             serialize_native_control_response(path_index_acceleration_rebuild(manager, args)?)
+        },
+    )?;
+
+    let app_for_install = app.clone();
+    tauri::native_control::register_handler(
+        app,
+        "explorer",
+        "pathIndexAccelerationInstallService",
+        move |request| {
+            let args: PathIndexAccelerationInstallServiceRequest = parse_native_args(request)?;
+            serialize_native_control_response(path_index_acceleration_install_service(
+                app_for_install.clone(),
+                args,
+            )?)
         },
     )?;
 
@@ -516,6 +576,120 @@ fn query_service_state() -> ServiceState {
             last_error: Some("Windows USN acceleration is Windows-only".to_string()),
         }
     }
+}
+
+fn resolve_daemon_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut candidates = Vec::new();
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            candidates.push(parent.join(DAEMON_BINARY_NAME));
+        }
+    }
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join(DAEMON_BINARY_NAME));
+    }
+    if let Some(repo_root) = Path::new(env!("CARGO_MANIFEST_DIR")).parent() {
+        candidates.push(
+            repo_root
+                .join("target")
+                .join("usn-service")
+                .join("release")
+                .join(DAEMON_BINARY_NAME),
+        );
+        candidates.push(
+            repo_root
+                .join("target")
+                .join("usn-service")
+                .join("debug")
+                .join(DAEMON_BINARY_NAME),
+        );
+        candidates.push(repo_root.join("target").join("release").join(DAEMON_BINARY_NAME));
+        candidates.push(repo_root.join("target").join("debug").join(DAEMON_BINARY_NAME));
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .ok_or_else(|| {
+            format!(
+                "Unable to find {DAEMON_BINARY_NAME}. Build it with `cargo build --release -p greeblefs-usn-daemon` or install from a bundle that includes the daemon resource."
+            )
+        })
+}
+
+fn launch_elevated_service_install(daemon_path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let script = build_service_install_powershell(daemon_path);
+        let encoded_script = base64::engine::general_purpose::STANDARD.encode(utf16le_bytes(&script));
+        let parameters =
+            format!("-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded_script}");
+        let operation = wide_null("runas");
+        let executable = wide_null("powershell.exe");
+        let parameters = wide_null(&parameters);
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                executable.as_ptr(),
+                parameters.as_ptr(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        } as isize;
+        if result <= 32 {
+            return Err(format!(
+                "Failed to launch elevated USN daemon service installer: ShellExecuteW returned {result}"
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = daemon_path;
+        Err("GreebleFS USN daemon service install is Windows-only".to_string())
+    }
+}
+
+fn build_service_install_powershell(daemon_path: &Path) -> String {
+    let service_name = powershell_single_quoted(SERVICE_NAME);
+    let daemon_path = powershell_single_quoted(&daemon_path.to_string_lossy());
+    format!(
+        r#"$ErrorActionPreference = 'Stop'
+$ServiceName = {service_name}
+$DaemonExe = {daemon_path}
+if (-not (Test-Path -LiteralPath $DaemonExe)) {{
+  throw "Missing GreebleFS USN daemon binary at $DaemonExe"
+}}
+& sc.exe stop $ServiceName | Out-Null
+& sc.exe delete $ServiceName | Out-Null
+Start-Sleep -Milliseconds 800
+$BinaryPath = '"' + $DaemonExe + '" --service'
+& sc.exe create $ServiceName binPath= $BinaryPath start= auto DisplayName= "GreebleFS USN Indexer" | Out-Null
+& sc.exe description $ServiceName "Indexes local NTFS volumes for GreebleFS through the Windows USN journal." | Out-Null
+& sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/15000/""/30000 | Out-Null
+& sc.exe start $ServiceName | Out-Null
+"#
+    )
+}
+
+fn powershell_single_quoted(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn utf16le_bytes(value: &str) -> Vec<u8> {
+    value
+        .encode_utf16()
+        .flat_map(|unit| unit.to_le_bytes())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn is_process_elevated_best_effort() -> bool {
