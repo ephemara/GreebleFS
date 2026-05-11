@@ -42,6 +42,7 @@
       "recursiveSearch": 2,
       "checksum": 1,
       "thumbnailDecode": 0,
+      "fileRead": 2,
       "previewRead": 2,
       "archive": 1,
       "indexing": 1,

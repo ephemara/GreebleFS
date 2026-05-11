@@ -67,7 +67,7 @@ async function main() {
   const fileName = `explorer-perf-${formatTimestamp(startedAt)}.json`;
   const outPath = path.join(evidenceRoot, fileName);
   await fs.writeFile(outPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-  console.log(JSON.stringify({ ok: true, outPath, summary: summarizeResult(result) }, null, 2));
+  await writeStdoutJson({ ok: true, outPath, summary: summarizeResult(result) });
 }
 
 async function captureNativeEvidence(session) {
@@ -173,7 +173,9 @@ async function captureFrontendEvidence(webviewSession) {
       errors: [],
     };
   } finally {
-    await browser.disconnect().catch(() => undefined);
+    // `browser.close()` closes the inspected WebView when attached over CDP.
+    // The CLI exits after flushing evidence so Node does not stay alive on
+    // Playwright's CDP transport handles.
   }
 }
 
@@ -644,7 +646,20 @@ function round(value) {
   return Math.round(value * 100) / 100;
 }
 
-main().catch((error) => {
+function writeStdoutJson(value) {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(`${JSON.stringify(value, null, 2)}\n`, (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+main().then(
+  () => {
+    process.exit(0);
+  },
+).catch((error) => {
   console.error(error);
-  process.exitCode = 1;
+  process.exit(1);
 });

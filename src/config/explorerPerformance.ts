@@ -67,6 +67,7 @@ export interface ExplorerNativeTaskGraphLaneConcurrency {
   recursiveSearch: number;
   checksum: number;
   thumbnailDecode: number;
+  fileRead: number;
   previewRead: number;
   archive: number;
   indexing: number;
@@ -221,6 +222,7 @@ const defaultExplorerNativeTaskGraphPolicy: ExplorerNativeTaskGraphPolicy =
       recursiveSearch: 2,
       checksum: 1,
       thumbnailDecode: 4,
+      fileRead: 4,
       previewRead: 2,
       archive: 1,
       indexing: 1,
@@ -582,6 +584,12 @@ function normalizeNativeTaskGraph(
           defaultLanes.thumbnailDecode,
           { minimum: 1, maximum: 16 },
         ),
+      ),
+      fileRead: Math.round(
+        asFiniteNumber(laneConcurrency?.fileRead, defaultLanes.fileRead, {
+          minimum: 1,
+          maximum: 16,
+        }),
       ),
       previewRead: Math.round(
         asFiniteNumber(laneConcurrency?.previewRead, defaultLanes.previewRead, {

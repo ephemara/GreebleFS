@@ -152,6 +152,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 }));
 
 const currentWindowMock = {
+  label: 'main',
   close: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn().mockResolvedValue(undefined),
   emitTo: vi.fn().mockResolvedValue(undefined),

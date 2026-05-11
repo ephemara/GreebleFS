@@ -4,9 +4,10 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    gpu_runtime::GpuRuntimeManager, indexing::PathIndexManager, native_surface::NativeSurfaceManager,
-    native_task_graph::NativeTaskGraphManager, preview_streaming::PreviewStreamingManager,
-    runtime_pipeline::HostEventBusState, telemetry::TelemetryManager,
+    gpu_runtime::GpuRuntimeManager, indexing::PathIndexManager,
+    native_surface::NativeSurfaceManager, native_task_graph::NativeTaskGraphManager,
+    preview_streaming::PreviewStreamingManager, runtime_pipeline::HostEventBusState,
+    telemetry::TelemetryManager,
 };
 
 pub fn initialize_greeblefs_dev_observatory(app: &AppHandle) -> Result<(), String> {

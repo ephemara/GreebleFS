@@ -12,6 +12,7 @@ const requiredTauronRelativeManifestPaths = [
   path.join("crates", "tauri-runtime", "Cargo.toml"),
   path.join("crates", "tauri-runtime-wry", "Cargo.toml"),
   path.join("crates", "tauri-utils", "Cargo.toml"),
+  path.join("crates", "tauri-plugin-windowmgr", "Cargo.toml"),
 ];
 
 const tauronApiSourceRelativePaths = [
@@ -25,6 +26,7 @@ const tauronApiSourceRelativePaths = [
   path.join("packages", "api", "src", "native-control.ts"),
   path.join("packages", "api", "src", "native-stream.ts"),
   path.join("packages", "api", "src", "transport.ts"),
+  path.join("packages", "api", "src", "windowmgr.ts"),
   path.join("crates", "tauri", "scripts", "core.js"),
 ];
 
@@ -37,6 +39,7 @@ const tauronApiDistRequiredRelativePaths = [
   path.join("packages", "api", "dist", "native-control.js"),
   path.join("packages", "api", "dist", "native-stream.js"),
   path.join("packages", "api", "dist", "transport.js"),
+  path.join("packages", "api", "dist", "windowmgr.js"),
 ];
 
 const tauronApiDistGeneratedRelativePaths = [
@@ -47,6 +50,7 @@ const tauronApiDistGeneratedRelativePaths = [
   path.join("packages", "api", "dist", "native-control.js"),
   path.join("packages", "api", "dist", "native-stream.js"),
   path.join("packages", "api", "dist", "transport.js"),
+  path.join("packages", "api", "dist", "windowmgr.js"),
   path.join("crates", "tauri", "scripts", "bundle.global.js"),
 ];
 

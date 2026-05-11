@@ -1951,7 +1951,7 @@ export async function writeExplorerFile(
 
 export async function readExplorerTextFile(
   path: string,
-  _options?: ExplorerPreviewReadOptions,
+  options?: ExplorerPreviewReadOptions,
 ): Promise<string> {
   const archiveLocation = parseExplorerArchiveVirtualPath(path);
   if (archiveLocation) {
@@ -1967,8 +1967,14 @@ export async function readExplorerTextFile(
       return unwrapTauriResult(await commands.cloudReadTextFile(path));
     case "remote":
       return unwrapTauriResult(await commands.remoteReadTextFile(path));
-    case "local":
-      return unwrapTauriResult(await commands.fsReadTextFile(path));
+    case "local": {
+      const bytes = await readExplorerPreviewBytes(
+        path,
+        EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes,
+        options,
+      );
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    }
     default:
       throw new Error(
         "Text file reads are only available for local, remote, or cloud items.",
@@ -1978,7 +1984,7 @@ export async function readExplorerTextFile(
 
 export async function readExplorerFileBase64(
   path: string,
-  _options?: ExplorerPreviewReadOptions,
+  options?: ExplorerPreviewReadOptions,
 ): Promise<string> {
   const archiveLocation = parseExplorerArchiveVirtualPath(path);
   if (archiveLocation) {
@@ -1994,8 +2000,14 @@ export async function readExplorerFileBase64(
       return unwrapTauriResult(await commands.cloudReadFileBase64(path));
     case "remote":
       return unwrapTauriResult(await commands.remoteReadFileBase64(path));
-    case "local":
-      return unwrapTauriResult(await commands.fsReadFileBase64(path));
+    case "local": {
+      const bytes = await readExplorerPreviewBytes(
+        path,
+        EXPLORER_PREVIEW_STREAMING_POLICY.dataUriMaxBytes,
+        options,
+      );
+      return bytesToExplorerPreviewDataUri(path, bytes);
+    }
     default:
       throw new Error(
         "Binary file reads are only available for local, remote, or cloud items.",

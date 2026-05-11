@@ -73,6 +73,7 @@ describe("explorerPerformance", () => {
         recursiveSearch: 2,
         checksum: 1,
         thumbnailDecode: 4,
+        fileRead: 4,
         previewRead: 2,
         archive: 1,
         indexing: 1,
@@ -83,6 +84,7 @@ describe("explorerPerformance", () => {
       EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.directoryScan,
     ).toBe(2);
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.checksum).toBe(1);
+    expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.fileRead).toBe(4);
     expect(EXPLORER_NATIVE_TASK_GRAPH_POLICY.laneConcurrency.previewRead).toBe(
       2,
     );
@@ -269,6 +271,7 @@ describe("explorerPerformance", () => {
           recursiveSearch: 0,
           checksum: 99,
           thumbnailDecode: 99,
+          fileRead: 0,
           previewRead: -1,
           archive: 99,
           indexing: Number.NaN,
@@ -289,6 +292,7 @@ describe("explorerPerformance", () => {
         recursiveSearch: 1,
         checksum: 8,
         thumbnailDecode: 16,
+        fileRead: 1,
         previewRead: 0,
         archive: 8,
         indexing: 1,

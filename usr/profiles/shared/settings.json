@@ -82,6 +82,15 @@
     "linuxNvidiaWebkitWorkaroundMode": "auto",
     "showInTaskbar": true,
     "sourceTraceModeEnabled": false,
-    "startMobileShareOnBoot": false
+    "startMobileShareOnBoot": false,
+    "windowsUsnAcceleration": {
+      "autoEnsureJournal": true,
+      "autoIndexFixedNtfsDrives": true,
+      "autoRegisterProfile": true,
+      "enabled": true,
+      "journalAllocationDeltaBytes": 67108864,
+      "journalMaximumSizeBytes": 536870912,
+      "serviceUrl": "http://127.0.0.1:12462"
+    }
   }
 }

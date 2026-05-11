@@ -324,7 +324,9 @@ fn render_windows_native_surface(
     });
     let surface = unsafe {
         instance
-            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CompositionVisual(backplane_visual))
+            .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CompositionVisual(
+                backplane_visual,
+            ))
             .map_err(|error| error.to_string())?
     };
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {

@@ -5535,11 +5535,11 @@ pub async fn fs_read_text_file(
     run_native_blocking_task(
         &native_task_graph,
         NativeTaskRequest::new(
-            NativeTaskLane::PreviewRead,
-            NativeTaskPriority::Visible,
-            "read text preview",
+            NativeTaskLane::FileRead,
+            NativeTaskPriority::Background,
+            "read text file",
         )
-        .with_work_key(NativeTaskWorkKey::new(format!("preview-text:{path}"))),
+        .with_work_key(NativeTaskWorkKey::new(format!("file-text:{path}"))),
         move |token| read_local_text_file(&target, &policy, &token),
     )
     .await
@@ -6972,11 +6972,11 @@ pub async fn fs_read_file_base64(
     run_native_blocking_task(
         &native_task_graph,
         NativeTaskRequest::new(
-            NativeTaskLane::PreviewRead,
-            NativeTaskPriority::Visible,
-            "read data uri preview",
+            NativeTaskLane::FileRead,
+            NativeTaskPriority::Background,
+            "read data uri file",
         )
-        .with_work_key(NativeTaskWorkKey::new(format!("preview-data-uri:{path}"))),
+        .with_work_key(NativeTaskWorkKey::new(format!("file-data-uri:{path}"))),
         move |token| read_local_file_data_url(&target, &policy, &token),
     )
     .await

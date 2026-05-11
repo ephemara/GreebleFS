@@ -30,6 +30,7 @@ tauri-plugin-window-state = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-kain = { path = "../../tauron/crates/tauri-plugin-kain" }
+tauri-plugin-windowmgr = { path = "../../tauron/crates/tauri-plugin-windowmgr" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 specta = { workspace = true }

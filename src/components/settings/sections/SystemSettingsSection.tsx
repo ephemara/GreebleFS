@@ -22,6 +22,7 @@ import {
   getGreebleNativeSurfaceTelemetry,
   type NativeSurfaceTelemetry,
 } from '../../../runtime/nativeSurface';
+import { WindowMgrProofSurface } from '../WindowMgrProofSurface';
 import {
   SettingsCompactActionButton,
   SettingsCompactPath,
@@ -393,6 +394,7 @@ export function SystemSettingsSection({
   const nativeSurfaceSummary = nativeSurfaceTelemetry == null
     ? (nativeSurfacePending ? 'starting' : 'surface pending')
     : `${nativeSurfaceTelemetry.visualHostingMode} · ${nativeSurfaceTelemetry.framesRendered} frames`;
+  const windowMgrProofSummary = platform === 'windows' ? 'ready' : 'windows only';
 
   return (
     <SettingsSectionScaffold
@@ -929,6 +931,12 @@ export function SystemSettingsSection({
                 value: nativeSurfaceSummary,
                 tone: nativeSurfaceTelemetry?.wgpuSurfaceReady ? 'accent' : 'default',
               },
+              {
+                id: 'windowmgr-proof',
+                label: 'WindowMgr',
+                value: windowMgrProofSummary,
+                tone: platform === 'windows' ? 'accent' : 'default',
+              },
             ]}
           />
 
@@ -944,6 +952,12 @@ export function SystemSettingsSection({
               {nativeSurfaceError}
             </SettingsInlineNotice>
           ) : null}
+
+          <WindowMgrProofSurface
+            platform={platform}
+            accent={accent}
+            border={border}
+          />
 
           {gpuRuntimeSnapshot.workloads.length > 0 ? (
             <>

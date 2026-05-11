@@ -603,8 +603,18 @@ fn resolve_daemon_binary_path(app: &AppHandle) -> Result<PathBuf, String> {
                 .join("debug")
                 .join(DAEMON_BINARY_NAME),
         );
-        candidates.push(repo_root.join("target").join("release").join(DAEMON_BINARY_NAME));
-        candidates.push(repo_root.join("target").join("debug").join(DAEMON_BINARY_NAME));
+        candidates.push(
+            repo_root
+                .join("target")
+                .join("release")
+                .join(DAEMON_BINARY_NAME),
+        );
+        candidates.push(
+            repo_root
+                .join("target")
+                .join("debug")
+                .join(DAEMON_BINARY_NAME),
+        );
     }
 
     candidates
@@ -624,7 +634,8 @@ fn launch_elevated_service_install(daemon_path: &Path) -> Result<(), String> {
         use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
         let script = build_service_install_powershell(daemon_path);
-        let encoded_script = base64::engine::general_purpose::STANDARD.encode(utf16le_bytes(&script));
+        let encoded_script =
+            base64::engine::general_purpose::STANDARD.encode(utf16le_bytes(&script));
         let parameters =
             format!("-NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded_script}");
         let operation = wide_null("runas");

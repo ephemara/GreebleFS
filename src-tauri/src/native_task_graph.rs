@@ -33,6 +33,7 @@ pub enum NativeTaskLane {
     RecursiveSearch,
     Checksum,
     ThumbnailDecode,
+    FileRead,
     PreviewRead,
     Archive,
     Indexing,
@@ -46,6 +47,7 @@ impl NativeTaskLane {
             Self::RecursiveSearch => "recursiveSearch",
             Self::Checksum => "checksum",
             Self::ThumbnailDecode => "thumbnailDecode",
+            Self::FileRead => "fileRead",
             Self::PreviewRead => "previewRead",
             Self::Archive => "archive",
             Self::Indexing => "indexing",
@@ -59,6 +61,7 @@ impl NativeTaskLane {
             Self::RecursiveSearch,
             Self::Checksum,
             Self::ThumbnailDecode,
+            Self::FileRead,
             Self::PreviewRead,
             Self::Archive,
             Self::Indexing,
@@ -139,6 +142,7 @@ pub struct NativeTaskLaneConcurrency {
     pub recursive_search: usize,
     pub checksum: usize,
     pub thumbnail_decode: usize,
+    pub file_read: usize,
     pub preview_read: usize,
     pub archive: usize,
     pub indexing: usize,
@@ -152,6 +156,7 @@ impl NativeTaskLaneConcurrency {
             NativeTaskLane::RecursiveSearch => self.recursive_search,
             NativeTaskLane::Checksum => self.checksum,
             NativeTaskLane::ThumbnailDecode => self.thumbnail_decode,
+            NativeTaskLane::FileRead => self.file_read,
             NativeTaskLane::PreviewRead => self.preview_read,
             NativeTaskLane::Archive => self.archive,
             NativeTaskLane::Indexing => self.indexing,
@@ -167,6 +172,7 @@ impl Default for NativeTaskLaneConcurrency {
             recursive_search: 2,
             checksum: 1,
             thumbnail_decode: 4,
+            file_read: 4,
             preview_read: 2,
             archive: 1,
             indexing: 1,
@@ -242,6 +248,7 @@ impl NativeTaskGraphPolicy {
                     1,
                     16,
                 ),
+                file_read: clamp_usize(shipped_lanes.file_read, default_lanes.file_read, 1, 16),
                 preview_read: clamp_usize(
                     shipped_lanes.preview_read,
                     default_lanes.preview_read,
@@ -1259,6 +1266,7 @@ struct ShippedNativeTaskLaneConcurrency {
     recursive_search: Option<usize>,
     checksum: Option<usize>,
     thumbnail_decode: Option<usize>,
+    file_read: Option<usize>,
     preview_read: Option<usize>,
     archive: Option<usize>,
     indexing: Option<usize>,
@@ -1652,6 +1660,7 @@ mod tests {
                         "recursiveSearch": 0,
                         "checksum": 100,
                         "thumbnailDecode": 3,
+                        "fileRead": 6,
                         "previewRead": 4,
                         "archive": 2
                     }
@@ -1666,6 +1675,7 @@ mod tests {
         assert_eq!(clamped.lane_concurrency.recursive_search, 1);
         assert_eq!(clamped.lane_concurrency.checksum, 8);
         assert_eq!(clamped.lane_concurrency.thumbnail_decode, 3);
+        assert_eq!(clamped.lane_concurrency.file_read, 6);
         assert_eq!(clamped.lane_concurrency.preview_read, 4);
         assert_eq!(clamped.lane_concurrency.archive, 2);
 
