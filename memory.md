@@ -1,3 +1,18 @@
+# 2026-05-11 - Windows USN Daemon Fast Path
+
+- Implemented the privileged Windows path-index lane as the default acceleration path.
+  - `crates/greeblefs-index-core` owns SQLite schema v2, per-volume journal state, drive-root normalization, USN journal create/query/read helpers, MFT enumeration, chunked SQLite writes, and the no-stat USN rule.
+  - `crates/greeblefs-usn-daemon` builds `greeblefs-usn-daemon.exe`, serves loopback JSON on `127.0.0.1:12462`, registers the active path-index database, ensures missing USN journals, builds drive-root indexes as `windowsUsnService`, and tails journal cursors so wrapped or replaced journals trigger a service-side rebuild.
+  - `src-tauri/src/path_index_acceleration.rs` exposes native-control/Specta status, enable, and rebuild commands. The unelevated app registers its profile DB with the daemon and `pathIndexStart` normalizes Windows requests to the drive root instead of recursively walking a folder when acceleration is enabled.
+  - Frontend startup auto-registers the profile through `src/runtime/pathIndexAcceleration.ts`; Settings has a compact System block for service status, linked DB, indexed drives, Enable, Refresh, and Rebuild. Explorer folder reads still flow through `localDirectoryListing -> pathIndexDirectorySnapshots -> native_buffer_pool` for hot folder payloads.
+  - Windows release prep in `scripts/run-platform-tauri.mjs` builds/stages `greeblefs-usn-daemon.exe`; the NSIS template installs/removes `GreebleFSUsnIndexer`, and `scripts/platform/install-usn-daemon-dev.ps1` is the elevated local helper.
+- Validation:
+  - Passed: `cargo check -p greeblefs-index-core`, `cargo check -p greeblefs-usn-daemon`, `cargo check --manifest-path src-tauri/Cargo.toml --lib`, and `cargo test -p greeblefs-index-core`.
+  - Passed: `bunx vitest run src/test/pathIndexAcceleration.test.ts src/test/explorerPathIndexWarmup.test.ts src/test/explorerPerformance.test.ts --reporter=dot --testTimeout=30000`.
+  - Daemon loopback smoke passed with `/health`, `/profile/register`, and `/status` against `target/usn-daemon-smoke/path-index.sqlite`.
+  - Current shell is not elevated, so `fsutil usn queryjournal D:` still returns error 1179 until the service is installed from an elevated shell or the NSIS installer runs.
+  - Later reruns against the dirty working tree reached unrelated `src-tauri/src/native_surface.rs` work and failed because DirectComposition COM interfaces were moved to a worker thread without COM marshaling; do not treat that as a path-index daemon failure.
+
 # 2026-05-11 - Native Buffer Pool Stall And Dev Startup Recovery
 
 - Fixed the app-wide 20-40s interaction stall by removing two pressure sources instead of masking symptoms.
