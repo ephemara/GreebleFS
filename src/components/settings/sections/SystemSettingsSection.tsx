@@ -18,6 +18,11 @@ import type { GpuRuntimeTierOption } from '../../../config/gpuRuntime';
 import { formatHotkeyLabel } from '../../../config/hotkeys';
 import { getRuntimeToolchainStatus } from '../../../runtime/externalRuntimeBackend';
 import {
+  createGreebleNativeSurface,
+  getGreebleNativeSurfaceTelemetry,
+  type NativeSurfaceTelemetry,
+} from '../../../runtime/nativeSurface';
+import {
   SettingsCompactActionButton,
   SettingsCompactPath,
   SettingsCompactSection,
@@ -232,6 +237,9 @@ export function SystemSettingsSection({
   const [runtimeToolchainStatus, setRuntimeToolchainStatus] = useState<RuntimeToolchainStatus | null>(null);
   const [runtimeToolchainPending, setRuntimeToolchainPending] = useState(true);
   const [runtimeToolchainError, setRuntimeToolchainError] = useState<string | null>(null);
+  const [nativeSurfaceTelemetry, setNativeSurfaceTelemetry] = useState<NativeSurfaceTelemetry | null>(null);
+  const [nativeSurfacePending, setNativeSurfacePending] = useState(false);
+  const [nativeSurfaceError, setNativeSurfaceError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,6 +263,58 @@ export function SystemSettingsSection({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!developerTestSettingsEnabled) {
+      setNativeSurfaceTelemetry(null);
+      setNativeSurfacePending(false);
+      setNativeSurfaceError(null);
+      return () => {};
+    }
+
+    let cancelled = false;
+    let intervalId: number | null = null;
+
+    const refresh = () => {
+      void getGreebleNativeSurfaceTelemetry()
+        .then(telemetry => {
+          if (cancelled) return;
+          setNativeSurfaceTelemetry(telemetry);
+          setNativeSurfaceError(telemetry.lastError);
+        })
+        .catch(error => {
+          if (cancelled) return;
+          setNativeSurfaceError(error instanceof Error ? error.message : String(error));
+        });
+    };
+
+    setNativeSurfacePending(true);
+    void createGreebleNativeSurface()
+      .then(telemetry => {
+        if (cancelled) return;
+        setNativeSurfaceTelemetry(telemetry);
+        setNativeSurfaceError(telemetry.lastError);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setNativeSurfaceError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setNativeSurfacePending(false);
+        }
+      });
+
+    refresh();
+    intervalId = window.setInterval(refresh, 4000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId != null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [developerTestSettingsEnabled]);
 
   const kainProbe = runtimeToolchainStatus?.kain ?? null;
   const kainStatusLabel = runtimeToolchainPending
@@ -328,6 +388,9 @@ export function SystemSettingsSection({
       && volume.journalId != null
       && volume.lastUsn != null,
   ) ?? false;
+  const nativeSurfaceSummary = nativeSurfaceTelemetry == null
+    ? (nativeSurfacePending ? 'starting' : 'surface pending')
+    : `${nativeSurfaceTelemetry.visualHostingMode} · ${nativeSurfaceTelemetry.framesRendered} frames`;
 
   return (
     <SettingsSectionScaffold
@@ -849,8 +912,27 @@ export function SystemSettingsSection({
                 value: `${runtimeToolchainPending ? 'checking' : kainProbe?.installed ? 'ready' : 'missing'} · ${kainProbe?.version ?? 'version n/a'}`,
                 tone: kainProbe?.installed ? 'accent' : 'default',
               },
+              {
+                id: 'native-surface-proof',
+                label: 'Native Surface',
+                value: nativeSurfaceSummary,
+                tone: nativeSurfaceTelemetry?.wgpuSurfaceReady ? 'accent' : 'default',
+              },
             ]}
           />
+
+          <SettingsControlRow
+            label="Backplane"
+            detail={nativeSurfaceTelemetry ? `${nativeSurfaceTelemetry.backend ?? 'backend n/a'} · ${nativeSurfaceTelemetry.adapterName ?? 'adapter n/a'}${nativeSurfaceTelemetry.averageFrameMs != null ? ` · ${nativeSurfaceTelemetry.averageFrameMs.toFixed(2)} ms` : ''}` : 'pending'}
+            control={<ThemeBadge label={nativeSurfaceTelemetry?.running ? 'running' : 'idle'} active={nativeSurfaceTelemetry?.wgpuSurfaceReady === true} />}
+            action={<ThemeBadge label={nativeSurfaceTelemetry?.surfaceFormat ?? 'format n/a'} />}
+          />
+
+          {nativeSurfaceError ? (
+            <SettingsInlineNotice tone={nativeSurfaceTelemetry?.available ? 'warning' : 'danger'} className="mx-3 my-2">
+              {nativeSurfaceError}
+            </SettingsInlineNotice>
+          ) : null}
 
           {gpuRuntimeSnapshot.workloads.length > 0 ? (
             <>

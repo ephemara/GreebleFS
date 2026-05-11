@@ -48,6 +48,8 @@ pub mod lan_share;
 #[cfg(not(test))]
 mod linux_graphics;
 pub mod message_ring;
+#[cfg(not(test))]
+pub mod native_surface;
 pub mod native_pool_snapshots;
 pub mod native_task_graph;
 #[cfg(not(test))]
@@ -279,6 +281,9 @@ pub fn run() {
             initialize_fs_command_events(app.handle().clone());
             tauri::native_buffer_pool::register_native_control_handlers(&app.handle())?;
             fs_commands::register_native_pool_handlers(&app.handle())?;
+            app.manage(native_surface::NativeSurfaceManager::new());
+            native_surface::register_native_surface_handlers(&app.handle())?;
+            native_surface::start_main_native_surface(&app.handle());
             initialize_explorer_identity_store(app.handle())?;
             let path_index_manager = PathIndexManager::from_app(&app.handle())?;
             let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());

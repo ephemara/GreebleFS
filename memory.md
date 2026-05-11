@@ -1,3 +1,14 @@
+# 2026-05-10 - Tauron Native Surface Backplane
+
+- Added the first production slice of the Tauron composition-controller backplane for GreebleFS.
+  - `src-tauri/tauri.conf.json` opts the main Windows window into `webview2VisualHostingMode: "compositionController"`.
+  - Tauron now exposes composition-host handles through raw pointer APIs instead of Windows wrapper types, which keeps the downstream app insulated from `windows` crate version drift.
+  - `src-tauri/src/native_surface.rs` starts a Windows-only `wgpu` render loop behind the React WebView2 shell and renders a live native backplane on the root composition visual.
+  - `src/runtime/nativeSurface.ts` provides the frontend control facade, and `SystemSettingsSection.tsx` now shows a compact proof slice with live native-surface telemetry.
+  - `src-tauri/src/dev_observatory.rs` mirrors native-surface telemetry into the dev observatory runtime snapshot.
+- Validation:
+  - Passed: `cargo check --manifest-path D:/GreebleFS/src-tauri/Cargo.toml --lib`
+
 # 2026-05-11 - Windows USN Daemon Fast Path
 
 - Implemented the privileged Windows path-index lane as the default acceleration path.

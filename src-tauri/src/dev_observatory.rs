@@ -4,7 +4,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 
 use crate::{
-    gpu_runtime::GpuRuntimeManager, indexing::PathIndexManager,
+    gpu_runtime::GpuRuntimeManager, indexing::PathIndexManager, native_surface::NativeSurfaceManager,
     native_task_graph::NativeTaskGraphManager, preview_streaming::PreviewStreamingManager,
     runtime_pipeline::HostEventBusState, telemetry::TelemetryManager,
 };
@@ -81,6 +81,11 @@ pub fn build_greeblefs_runtime_snapshot(app: &AppHandle) -> Result<Value, String
         .map(|state| serde_json::to_value(state.status_snapshot()))
         .transpose()
         .map_err(|error| format!("Failed to serialize GPU runtime status: {error}"))?;
+    let native_surface = app
+        .try_state::<NativeSurfaceManager>()
+        .map(|state| serde_json::to_value(state.telemetry()))
+        .transpose()
+        .map_err(|error| format!("Failed to serialize native surface telemetry: {error}"))?;
     let telemetry_recent_records_ring = telemetry_status
         .as_ref()
         .map(|status| serde_json::to_value(&status.recent_records_telemetry))
@@ -109,6 +114,7 @@ pub fn build_greeblefs_runtime_snapshot(app: &AppHandle) -> Result<Value, String
             }
         },
         "gpu": gpu,
+        "nativeSurface": native_surface,
         "nativePool": {
             "explorer": native_buffer_pool,
             "note": "Renderer-side attempts/success/fallbacks are mirrored through native buffer pool, native byte-stream, and observatory event telemetry."
