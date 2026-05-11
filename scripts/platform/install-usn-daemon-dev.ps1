@@ -1,13 +1,27 @@
 param(
   [switch]$NoBuild,
-  [switch]$StopOnly
+  [switch]$StopOnly,
+  [string]$DaemonExe,
+  [switch]$UseSharedCargoTarget
 )
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $ServiceName = "GreebleFSUsnIndexer"
-$DaemonExe = Join-Path $RepoRoot "target\release\greeblefs-usn-daemon.exe"
+$IsolatedTargetDir = Join-Path $RepoRoot "target\usn-service"
+$IsolatedDaemonExe = Join-Path $IsolatedTargetDir "release\greeblefs-usn-daemon.exe"
+$SharedDaemonExe = Join-Path $RepoRoot "target\release\greeblefs-usn-daemon.exe"
+
+if ([string]::IsNullOrWhiteSpace($DaemonExe)) {
+  if ($UseSharedCargoTarget) {
+    $DaemonExe = $SharedDaemonExe
+  } else {
+    $DaemonExe = $IsolatedDaemonExe
+  }
+} else {
+  $DaemonExe = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DaemonExe)
+}
 
 function Assert-Elevated {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -33,15 +47,31 @@ if ($StopOnly) {
 if (-not $NoBuild) {
   Push-Location $RepoRoot
   try {
+    $PreviousCargoTargetDir = $env:CARGO_TARGET_DIR
+    if (-not $UseSharedCargoTarget) {
+      $env:CARGO_TARGET_DIR = $IsolatedTargetDir
+    }
     cargo build --release -p greeblefs-usn-daemon
   } finally {
+    if ($null -eq $PreviousCargoTargetDir) {
+      Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+    } else {
+      $env:CARGO_TARGET_DIR = $PreviousCargoTargetDir
+    }
     Pop-Location
   }
+}
+
+if (-not (Test-Path $DaemonExe) -and -not $UseSharedCargoTarget -and (Test-Path $SharedDaemonExe)) {
+  Write-Host "Isolated daemon binary was not found; using shared target binary at $SharedDaemonExe"
+  $DaemonExe = $SharedDaemonExe
 }
 
 if (-not (Test-Path $DaemonExe)) {
   throw "Missing daemon binary at $DaemonExe"
 }
+
+Write-Host "Installing $ServiceName from $DaemonExe"
 
 Invoke-ServiceCommand @("stop", $ServiceName)
 Invoke-ServiceCommand @("delete", $ServiceName)
