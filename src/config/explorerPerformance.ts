@@ -112,6 +112,15 @@ export interface ExplorerPreviewStreamingPolicy {
 export type ShippedExplorerPreviewStreamingPolicy =
   Partial<ExplorerPreviewStreamingPolicy>;
 
+export interface ExplorerNativeBufferPoolPolicy {
+  directorySnapshotMaxConcurrent: number;
+  previewByteReadMaxConcurrent: number;
+  maxQueuedRequests: number;
+}
+
+export type ShippedExplorerNativeBufferPoolPolicy =
+  Partial<ExplorerNativeBufferPoolPolicy>;
+
 export interface ShippedExplorerPerformanceManifest {
   version?: number;
   id?: string;
@@ -123,6 +132,7 @@ export interface ShippedExplorerPerformanceManifest {
   nativeTaskGraph?: ShippedExplorerNativeTaskGraphPolicy;
   messageStreams?: ShippedExplorerMessageStreamsPolicy;
   previewStreaming?: ShippedExplorerPreviewStreamingPolicy;
+  nativeBufferPool?: ShippedExplorerNativeBufferPoolPolicy;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -136,6 +146,7 @@ export interface ExplorerPerformanceManifest {
   nativeTaskGraph: ExplorerNativeTaskGraphPolicy;
   messageStreams: ExplorerMessageStreamsPolicy;
   previewStreaming: ExplorerPreviewStreamingPolicy;
+  nativeBufferPool: ExplorerNativeBufferPoolPolicy;
 }
 
 const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance =
@@ -225,6 +236,13 @@ const defaultExplorerPreviewStreamingPolicy: ExplorerPreviewStreamingPolicy =
     dataUriMaxBytes: 12 * 1024 * 1024,
     binaryMaxBytes: 256 * 1024 * 1024,
     archiveEntryMaxBytes: 256 * 1024 * 1024,
+  });
+
+const defaultExplorerNativeBufferPoolPolicy: ExplorerNativeBufferPoolPolicy =
+  Object.freeze({
+    directorySnapshotMaxConcurrent: 2,
+    previewByteReadMaxConcurrent: 2,
+    maxQueuedRequests: 512,
   });
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -632,6 +650,34 @@ function normalizePreviewStreaming(
   };
 }
 
+function normalizeNativeBufferPool(
+  value: ShippedExplorerPerformanceManifest["nativeBufferPool"],
+): ExplorerNativeBufferPoolPolicy {
+  return {
+    directorySnapshotMaxConcurrent: Math.round(
+      asFiniteNumber(
+        value?.directorySnapshotMaxConcurrent,
+        defaultExplorerNativeBufferPoolPolicy.directorySnapshotMaxConcurrent,
+        { minimum: 1, maximum: 8 },
+      ),
+    ),
+    previewByteReadMaxConcurrent: Math.round(
+      asFiniteNumber(
+        value?.previewByteReadMaxConcurrent,
+        defaultExplorerNativeBufferPoolPolicy.previewByteReadMaxConcurrent,
+        { minimum: 1, maximum: 8 },
+      ),
+    ),
+    maxQueuedRequests: Math.round(
+      asFiniteNumber(
+        value?.maxQueuedRequests,
+        defaultExplorerNativeBufferPoolPolicy.maxQueuedRequests,
+        { minimum: 16, maximum: 4096 },
+      ),
+    ),
+  };
+}
+
 export function normalizeExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): ExplorerPerformanceManifest {
@@ -658,6 +704,7 @@ export function normalizeExplorerPerformanceManifest(
     nativeTaskGraph: normalizeNativeTaskGraph(manifest?.nativeTaskGraph),
     messageStreams: normalizeMessageStreams(manifest?.messageStreams),
     previewStreaming: normalizePreviewStreaming(manifest?.previewStreaming),
+    nativeBufferPool: normalizeNativeBufferPool(manifest?.nativeBufferPool),
   });
 }
 
@@ -694,6 +741,9 @@ export let EXPLORER_MESSAGE_STREAMS_POLICY =
 export let EXPLORER_PREVIEW_STREAMING_POLICY =
   defaultExplorerPreviewStreamingPolicy;
 
+export let EXPLORER_NATIVE_BUFFER_POOL_POLICY =
+  defaultExplorerNativeBufferPoolPolicy;
+
 export function applyUsrExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): void {
@@ -715,6 +765,7 @@ export function applyUsrExplorerPerformanceManifest(
   EXPLORER_NATIVE_TASK_GRAPH_POLICY = explorerPerformance.nativeTaskGraph;
   EXPLORER_MESSAGE_STREAMS_POLICY = explorerPerformance.messageStreams;
   EXPLORER_PREVIEW_STREAMING_POLICY = explorerPerformance.previewStreaming;
+  EXPLORER_NATIVE_BUFFER_POOL_POLICY = explorerPerformance.nativeBufferPool;
 }
 
 applyUsrExplorerPerformanceManifest(

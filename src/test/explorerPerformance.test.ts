@@ -7,6 +7,7 @@ import {
   EXPLORER_FOLDER_DOUBLE_CLICK_PREVIEW_DELAY_MS,
   EXPLORER_FOLDER_DOUBLE_CLICK_SECOND_CLICK_IMMEDIATE_NAVIGATION,
   EXPLORER_MESSAGE_STREAMS_POLICY,
+  EXPLORER_NATIVE_BUFFER_POOL_POLICY,
   EXPLORER_NATIVE_TASK_GRAPH_POLICY,
   EXPLORER_PREVIEW_STREAMING_POLICY,
   EXPLORER_POINTER_DOWN_DIRECTORY_WARM_ENABLED,
@@ -68,7 +69,7 @@ describe("explorerPerformance", () => {
         thumbnailDecode: 4,
         previewRead: 2,
         archive: 1,
-        indexing: 0,
+        indexing: 1,
         maintenance: 0,
       },
     });
@@ -88,10 +89,16 @@ describe("explorerPerformance", () => {
       binaryMaxBytes: 268435456,
       archiveEntryMaxBytes: 268435456,
     });
+    expect(explorerPerformance.nativeBufferPool).toEqual({
+      directorySnapshotMaxConcurrent: 2,
+      previewByteReadMaxConcurrent: 2,
+      maxQueuedRequests: 512,
+    });
     expect(EXPLORER_PREVIEW_STREAMING_POLICY.chunkBytes).toBe(65536);
     expect(EXPLORER_PREVIEW_STREAMING_POLICY.archiveEntryMaxBytes).toBe(
       268435456,
     );
+    expect(EXPLORER_NATIVE_BUFFER_POOL_POLICY.maxQueuedRequests).toBe(512);
     expect(explorerPerformance.messageStreams).toEqual({
       enabled: true,
       telemetryEnabled: true,
@@ -223,7 +230,7 @@ describe("explorerPerformance", () => {
         thumbnailDecode: 16,
         previewRead: 0,
         archive: 8,
-        indexing: 0,
+        indexing: 1,
         maintenance: 4,
       },
     });
@@ -238,6 +245,35 @@ describe("explorerPerformance", () => {
     expect(
       zeroThumbnailLane.nativeTaskGraph.laneConcurrency.thumbnailDecode,
     ).toBe(1);
+  });
+
+  it("normalizes native buffer pool queue policy", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      nativeBufferPool: {
+        directorySnapshotMaxConcurrent: 99,
+        previewByteReadMaxConcurrent: 0,
+        maxQueuedRequests: 999999,
+      },
+    });
+
+    expect(normalized.nativeBufferPool).toEqual({
+      directorySnapshotMaxConcurrent: 8,
+      previewByteReadMaxConcurrent: 1,
+      maxQueuedRequests: 4096,
+    });
+
+    const malformed = normalizeExplorerPerformanceManifest({
+      nativeBufferPool: {
+        directorySnapshotMaxConcurrent: Number.NaN,
+        previewByteReadMaxConcurrent: Number.NEGATIVE_INFINITY,
+        maxQueuedRequests: 0,
+      },
+    });
+    expect(malformed.nativeBufferPool).toEqual({
+      directorySnapshotMaxConcurrent: 2,
+      previewByteReadMaxConcurrent: 2,
+      maxQueuedRequests: 16,
+    });
   });
 
   it("normalizes message stream defaults and clamps authored policy values", () => {

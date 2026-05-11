@@ -19,7 +19,6 @@ export type {
   SecondaryWindowSize,
   SecondaryWindowSurfaceKind,
 } from '../generated/tauri';
-import { commands, unwrapTauriResult } from './tauriClient';
 import { bindDeferredUnlisten } from './deferredUnlisten';
 
 export const SECONDARY_WINDOW_DESCRIPTOR_EVENT =
@@ -53,30 +52,36 @@ export interface SecondaryWindowDockBackEventDetail {
 export async function openSecondaryWindow(
   request: SecondaryWindowOpenRequest,
 ): Promise<SecondaryWindowDescriptor> {
+  const { commands, unwrapTauriResult } = await loadSecondaryWindowTauriClient();
   return unwrapTauriResult(await commands.secondaryWindowOpen(request));
 }
 
 export async function focusSecondaryWindow(windowId: string): Promise<void> {
+  const { commands, unwrapTauriResult } = await loadSecondaryWindowTauriClient();
   unwrapTauriResult(await commands.secondaryWindowFocus(windowId));
 }
 
 export async function closeSecondaryWindow(windowId: string): Promise<void> {
+  const { commands, unwrapTauriResult } = await loadSecondaryWindowTauriClient();
   unwrapTauriResult(await commands.secondaryWindowClose(windowId));
 }
 
 export async function dockBackSecondaryWindow(windowId: string): Promise<void> {
+  const { commands, unwrapTauriResult } = await loadSecondaryWindowTauriClient();
   unwrapTauriResult(await commands.secondaryWindowDockBack(windowId));
 }
 
 export async function beginSecondaryWindowDragSession(
   request: SecondaryWindowDragSessionRequest,
 ): Promise<SecondaryWindowDragSessionRequest> {
+  const { commands } = await loadSecondaryWindowTauriClient();
   return commands.secondaryWindowBeginDragSession(request);
 }
 
 export async function completeSecondaryWindowDragSession(
   windowId: string,
 ): Promise<SecondaryWindowDragSessionRequest | null> {
+  const { commands } = await loadSecondaryWindowTauriClient();
   return commands.secondaryWindowCompleteDragSession(windowId);
 }
 
@@ -86,6 +91,7 @@ export async function getCurrentSecondaryWindowDescriptor(): Promise<SecondaryWi
   }
 
   try {
+    const { commands } = await loadSecondaryWindowTauriClient();
     return await commands.secondaryWindowGetCurrentDescriptor();
   } catch {
     return null;
@@ -99,7 +105,13 @@ export async function listSecondaryWindowDescriptors(): Promise<
     return [];
   }
 
+  const { commands } = await loadSecondaryWindowTauriClient();
   return commands.secondaryWindowListDescriptors();
+}
+
+async function loadSecondaryWindowTauriClient() {
+  const tauriClientLoader = await import('./tauriClientLoader');
+  return tauriClientLoader.loadTauriClientThroughLoader();
 }
 
 export function createWorkbenchSurfaceSecondaryWindowId(

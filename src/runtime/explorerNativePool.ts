@@ -7,6 +7,7 @@ import {
 import { recordDevObservatoryEvent } from "@tauri-apps/api/dev-observatory";
 import type { FileEntry } from "../generated/tauri";
 import type { GreebleNativeLaneSystemId } from "../config/nativeLaneMigration";
+import { EXPLORER_NATIVE_BUFFER_POOL_POLICY } from "../config/explorerPerformance";
 
 const DIRECTORY_SNAPSHOT_MAGIC = "GFLS";
 const DIRECTORY_SNAPSHOT_VERSION = 1;
@@ -32,6 +33,20 @@ const nativePoolTelemetry: ExplorerNativePoolTelemetry = {
 };
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
+type ExplorerNativePoolQueueName = "directorySnapshot" | "previewByteRead";
+
+interface ExplorerNativePoolQueueState {
+  activeCount: number;
+  queuedResolvers: Array<() => void>;
+}
+
+const nativePoolQueues: Record<
+  ExplorerNativePoolQueueName,
+  ExplorerNativePoolQueueState
+> = {
+  directorySnapshot: { activeCount: 0, queuedResolvers: [] },
+  previewByteRead: { activeCount: 0, queuedResolvers: [] },
+};
 
 export function isExplorerNativePoolAvailable(): boolean {
   return isNativeBufferPoolAvailable();
@@ -83,39 +98,45 @@ export async function listLocalExplorerDirectorySnapshotViaNativePool(args: {
   showHidden: boolean;
   bypassCache?: boolean;
 }): Promise<FileEntry[]> {
-  return withNativePooledBufferOnce({
-    namespace: "explorer",
-    method: "listDirSnapshot",
-    args,
-    timeoutMs: 8000,
-    decode: decodeExplorerDirectorySnapshot,
-  });
+  return runNativePoolQueued("directorySnapshot", () =>
+    withNativePooledBufferOnce({
+      namespace: "explorer",
+      method: "listDirSnapshot",
+      args,
+      timeoutMs: 8000,
+      decode: decodeExplorerDirectorySnapshot,
+    }),
+  );
 }
 
 export async function listIndexedExplorerDirectorySnapshotViaNativePool(args: {
   path: string;
   showHidden: boolean;
 }): Promise<FileEntry[]> {
-  return withNativePooledBufferOnce({
-    namespace: "explorer",
-    method: "pathIndexListDirSnapshot",
-    args,
-    timeoutMs: 4000,
-    decode: decodeExplorerDirectorySnapshot,
-  });
+  return runNativePoolQueued("directorySnapshot", () =>
+    withNativePooledBufferOnce({
+      namespace: "explorer",
+      method: "pathIndexListDirSnapshot",
+      args,
+      timeoutMs: 4000,
+      decode: decodeExplorerDirectorySnapshot,
+    }),
+  );
 }
 
 export async function readLocalExplorerPreviewBytesViaNativePool(
   path: string,
   maxBytes: number,
 ): Promise<Uint8Array> {
-  return withNativePooledBufferOnce({
-    namespace: "explorer",
-    method: "readPreviewBytes",
-    args: { path, maxBytes },
-    timeoutMs: 8000,
-    decode: copyNativePoolBytes,
-  });
+  return runNativePoolQueued("previewByteRead", () =>
+    withNativePooledBufferOnce({
+      namespace: "explorer",
+      method: "readPreviewBytes",
+      args: { path, maxBytes },
+      timeoutMs: 8000,
+      decode: copyNativePoolBytes,
+    }),
+  );
 }
 
 export async function readArchiveEntryExplorerPreviewBytesViaNativePool(args: {
@@ -123,13 +144,66 @@ export async function readArchiveEntryExplorerPreviewBytesViaNativePool(args: {
   entryPath: string;
   maxBytes: number;
 }): Promise<Uint8Array> {
-  return withNativePooledBufferOnce({
-    namespace: "explorer",
-    method: "readArchiveEntryPreviewBytes",
-    args,
-    timeoutMs: 8000,
-    decode: copyNativePoolBytes,
-  });
+  return runNativePoolQueued("previewByteRead", () =>
+    withNativePooledBufferOnce({
+      namespace: "explorer",
+      method: "readArchiveEntryPreviewBytes",
+      args,
+      timeoutMs: 8000,
+      decode: copyNativePoolBytes,
+    }),
+  );
+}
+
+async function runNativePoolQueued<TResult>(
+  queueName: ExplorerNativePoolQueueName,
+  operation: () => Promise<TResult>,
+): Promise<TResult> {
+  const queue = nativePoolQueues[queueName];
+  const maxConcurrent = getNativePoolQueueConcurrency(queueName);
+  const maxQueuedRequests = getNativePoolMaxQueuedRequests();
+  if (queue.activeCount >= maxConcurrent) {
+    if (queue.queuedResolvers.length >= maxQueuedRequests) {
+      throw new Error(
+        `Native buffer pool ${queueName} queue exceeded ${maxQueuedRequests} pending requests`,
+      );
+    }
+    await new Promise<void>((resolve) => {
+      queue.queuedResolvers.push(resolve);
+    });
+  }
+
+  queue.activeCount += 1;
+  try {
+    return await operation();
+  } finally {
+    queue.activeCount = Math.max(0, queue.activeCount - 1);
+    const nextResolver = queue.queuedResolvers.shift();
+    if (nextResolver) {
+      queueMicrotask(nextResolver);
+    }
+  }
+}
+
+function getNativePoolQueueConcurrency(
+  queueName: ExplorerNativePoolQueueName,
+): number {
+  const policy = EXPLORER_NATIVE_BUFFER_POOL_POLICY;
+  return Math.max(
+    1,
+    Math.round(
+      queueName === "directorySnapshot"
+        ? policy.directorySnapshotMaxConcurrent
+        : policy.previewByteReadMaxConcurrent,
+    ),
+  );
+}
+
+function getNativePoolMaxQueuedRequests(): number {
+  return Math.max(
+    1,
+    Math.round(EXPLORER_NATIVE_BUFFER_POOL_POLICY.maxQueuedRequests),
+  );
 }
 
 export function decodeExplorerDirectorySnapshot(bytes: Uint8Array): FileEntry[] {

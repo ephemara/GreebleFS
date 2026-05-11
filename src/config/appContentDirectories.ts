@@ -581,8 +581,9 @@ async function resolveNativeManagedContentRoots(): Promise<ManagedContentRootsSn
   }
 
   try {
+    const tauriClientLoader = await import("../runtime/tauriClientLoader");
     const { commands, unwrapTauriResult } =
-      await import("../runtime/tauriClient");
+      await tauriClientLoader.loadTauriClientThroughLoader();
     const resolvedRoots = await commands
       .startupResolveManagedContentRoots()
       .then(unwrapTauriResult);

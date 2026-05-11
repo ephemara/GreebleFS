@@ -1,3 +1,23 @@
+# 2026-05-11 - Native Buffer Pool Stall And Dev Startup Recovery
+
+- Fixed the app-wide 20-40s interaction stall by removing two pressure sources instead of masking symptoms.
+  - The immediate machine-wide CPU/load spike was a stale Windows release bundle process tree (`bun run release:windows:bundle` / NSIS / Cargo) running beside dev. Kill stale dev/release siblings before judging frontend responsiveness.
+  - The live app stall was native buffer pool pressure: before the fix, MCP flow showed `waitCount` above 100k, generation mismatches, and posted/in-flight shared buffers that were not settling. After the fix, the same live app holds `waitCount=0`, `generationMismatchCount=0`, `inFlight=0`, `postedToJs=0`, and `maxInFlight=2`.
+- Durable implementation shape:
+  - `src/runtime/explorerNativePool.ts` now gates directory snapshot and preview byte native-pool requests through manifest-driven frontend queues before calling Tauron `withNativePooledBufferOnce`.
+  - `src/config/explorerPerformance.ts` and the shipped `usr/profiles/default/explorer-performance/greeblefs-core/explorer-performance.json` own `nativeBufferPool.directorySnapshotMaxConcurrent`, `previewByteReadMaxConcurrent`, and `maxQueuedRequests`; keep these data-driven rather than hardcoded in callers.
+  - The sibling Tauron fork (`D:/tauron/packages/api/src/native-buffer-pool.ts`) now drains late shared-buffer packets after a frontend timeout so native buffers are still released even when the renderer was temporarily stalled. Tauron native reclaim for posted buffers is 90s to avoid reclaim/reuse racing a delayed JS release.
+  - `scripts/run-frontend-dev.mjs` starts Vite through the programmatic API, warms the desktop shell/window entrypoints, waits for request idle, and only then listens/prints ready. `vite.config.ts` prebundles the hot dependency set and keeps dev HMR off unless explicitly enabled.
+  - Startup-only Tauri-heavy imports are now lazy-loaded through small loader seams so Vite can mount the shell before pulling the generated client/telemetry/settings store graph.
+- Windows USN note:
+  - `Win32 error 1179` means the volume change journal is inactive. On this host `fsutil usn queryjournal D:` returned 1179 and `fsutil fsinfo volumeinfo D:` returned access denied because the current shell was medium-integrity even though the user is in Administrators. The USN/MFT fast path is wired, but it cannot run for `D:` until the journal exists and the app runs elevated or through a privileged index service.
+- Validation:
+  - Passed focused Vitest: `nativeBufferPoolApi`, `explorerNativePool`, `explorerBackend.nativePool`, `explorerPerformance`, and `extensionHostApi`.
+  - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib`.
+  - Passed: `pnpm --dir D:/tauron build:api`, `node --check scripts/run-frontend-dev.mjs`, and Tauron `native-buffer-pool.js` syntax check.
+  - Live MCP proof after restart: native WebView attached, console clean, native task graph idle, native buffer pool wait/mismatch/in-flight all zero, native ring benchmark moved 1 MiB / 256 packets with zero dropped bytes, direct WebView event-loop probe worst timeout delay about 6.5ms, and rAF held about 60fps with worst frame about 17.3ms on this display.
+  - Tauron `cargo test --manifest-path D:/tauron/crates/tauri/Cargo.toml native_buffer_pool --lib` still compiles but the Windows lib-test binary hits the known `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` loader issue before tests run.
+
 # 2026-05-10 - Kain Plugin Host UI And Fabric Pipeline Contract
 
 - Extended the Kain-native plugin lane so plugins can describe more than panels and actions.

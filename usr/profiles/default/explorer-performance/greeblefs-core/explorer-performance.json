@@ -57,6 +57,11 @@
     "binaryMaxBytes": 268435456,
     "archiveEntryMaxBytes": 268435456
   },
+  "nativeBufferPool": {
+    "directorySnapshotMaxConcurrent": 2,
+    "previewByteReadMaxConcurrent": 2,
+    "maxQueuedRequests": 512
+  },
   "messageStreams": {
     "enabled": true,
     "telemetryEnabled": true,

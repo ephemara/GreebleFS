@@ -88,8 +88,10 @@ describe("extensionHostApi events", () => {
         methodId: "events.get_snapshot",
         payloadJson: JSON.stringify({
           topics: ["tasks.output"],
+          filters: null,
           includeSnapshot: false,
           replayFrom: 1,
+          deliveryOverride: null,
         }),
       }),
     );

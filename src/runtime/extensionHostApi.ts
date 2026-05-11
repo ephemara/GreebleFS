@@ -34,7 +34,6 @@ import type {
   TerminalWriteRequest,
 } from '../generated/tauri';
 import { subscribeIpcStream } from './ipc/streams';
-import { commands, unwrapTauriResult } from './tauriClient';
 
 export type {
   ExecutionContextPreviewSession,
@@ -58,6 +57,12 @@ export type {
   HostSubscriptionRequest,
   HostTopicDescriptor,
 };
+
+export type ExtensionHostSubscriptionRequest = Pick<
+  HostSubscriptionRequest,
+  'topics'
+> &
+  Partial<Omit<HostSubscriptionRequest, 'topics'>>;
 
 export interface ExtensionHostCallRequest {
   callerPluginId?: string | null;
@@ -199,13 +204,32 @@ function resolveExecutionContext(
   return snapshot ?? null;
 }
 
+function normalizeHostSubscriptionRequest(
+  request: ExtensionHostSubscriptionRequest,
+): HostSubscriptionRequest {
+  return {
+    topics: request.topics,
+    filters: request.filters ?? null,
+    includeSnapshot: request.includeSnapshot ?? false,
+    replayFrom: request.replayFrom ?? null,
+    deliveryOverride: request.deliveryOverride ?? null,
+  };
+}
+
+async function loadExtensionHostTauriClient() {
+  const tauriClientLoader = await import('./tauriClientLoader');
+  return tauriClientLoader.loadTauriClientThroughLoader();
+}
+
 export async function extensionHostGetApiSchema(): Promise<ExtensionHostApiSchema> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(await commands.extensionHostGetApiSchema());
 }
 
 export async function extensionHostCall(
   request: ExtensionHostCallRequest,
 ): Promise<ExtensionHostCallResponse> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(
     await commands.extensionHostCall({
       callerPluginId: request.callerPluginId ?? null,
@@ -220,12 +244,14 @@ export async function extensionHostCall(
 export async function inspectExtensionSource(
   request: ExtensionInspectRequest,
 ): Promise<ExtensionInspection> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(await commands.extensionInspect(request));
 }
 
 export async function buildExtensionSource(
   request: ExtensionBuildRequest,
 ): Promise<ExtensionBuildResult> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(
     await commands.extensionBuild({
       sourceDirectory: request.sourceDirectory,
@@ -238,6 +264,7 @@ export async function buildExtensionSource(
 export async function packExtensionSource(
   request: ExtensionPackRequest,
 ): Promise<ExtensionPackResult> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(
     await commands.extensionPack({
       sourceDirectory: request.sourceDirectory,
@@ -250,6 +277,7 @@ export async function packExtensionSource(
 export async function installExtensionBundle(
   request: ExtensionInstallRequest,
 ): Promise<ExtensionInstallResult> {
+  const { commands, unwrapTauriResult } = await loadExtensionHostTauriClient();
   return unwrapTauriResult(
     await commands.extensionInstall({
       bundlePath: request.bundlePath,
@@ -314,14 +342,16 @@ export interface ExtensionHostClient {
   events: {
     describeTopics: () => Promise<HostTopicDescriptor[]>;
     subscribe: (
-      request: HostSubscriptionRequest,
+      request: ExtensionHostSubscriptionRequest,
       listener: (event: HostEventEnvelope) => void,
     ) => Promise<{
       subscription: HostSubscription;
       unsubscribe: () => Promise<void>;
     }>;
     unsubscribe: (subscriptionId: string) => Promise<HostSubscription | null>;
-    getSnapshot: (request: HostSubscriptionRequest) => Promise<HostEventEnvelope[]>;
+    getSnapshot: (
+      request: ExtensionHostSubscriptionRequest,
+    ) => Promise<HostEventEnvelope[]>;
     publish: (topic: string, payload?: unknown) => Promise<HostEventEnvelope>;
   };
   files: {
@@ -452,15 +482,17 @@ export function createExtensionHostClient(
     events: {
       describeTopics: () => call<HostTopicDescriptor[]>('events.describe_topics'),
       subscribe: async (request, listener) => {
+        const subscriptionRequest = normalizeHostSubscriptionRequest(request);
         const subscription = await call<HostSubscription, HostSubscriptionRequest>(
           'events.subscribe',
-          request,
+          subscriptionRequest,
         );
         const snapshots =
-          request.includeSnapshot === true || request.replayFrom != null
+          subscriptionRequest.includeSnapshot === true ||
+          subscriptionRequest.replayFrom != null
             ? await call<HostEventEnvelope[], HostSubscriptionRequest>(
                 'events.get_snapshot',
-                request,
+                subscriptionRequest,
               )
             : [];
         snapshots.forEach((event) => {
@@ -495,7 +527,10 @@ export function createExtensionHostClient(
           { subscriptionId },
         ),
       getSnapshot: (request) =>
-        call<HostEventEnvelope[], HostSubscriptionRequest>('events.get_snapshot', request),
+        call<HostEventEnvelope[], HostSubscriptionRequest>(
+          'events.get_snapshot',
+          normalizeHostSubscriptionRequest(request),
+        ),
       publish: (topic, payload) =>
         call<HostEventEnvelope, HostPublishEventRequest>('events.publish', {
           topic,

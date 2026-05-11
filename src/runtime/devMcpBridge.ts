@@ -10,10 +10,6 @@ import {
   createExtensionHostClient,
 } from './extensionHostApi';
 import {
-  getRecentTelemetryRecords,
-  getTelemetryStatus,
-} from './telemetryBackend';
-import {
   loadExplorerPerformanceSnapshot,
   summarizeExplorerPerformance,
 } from '../config/performanceTelemetry';
@@ -23,7 +19,6 @@ import {
 import {
   getUsrProfileRuntimeSnapshot,
 } from './usrProfiles';
-import { useSettingsStore } from '../store/settingsStore';
 
 const DEV_MCP_BRIDGE_VERSION = 1;
 const MAX_CONSOLE_ENTRIES = 400;
@@ -146,7 +141,7 @@ interface DevMcpBridgeApi {
   getConsoleEntries: (limit?: number) => DevMcpBridgeConsoleEntry[];
   clearConsoleEntries: () => void;
   getHostApiSchema: () => Promise<unknown>;
-  getTelemetryStatus: typeof getTelemetryStatus;
+  getTelemetryStatus: () => Promise<unknown>;
   getTelemetryRecords: (limit?: number) => Promise<unknown[]>;
   getUsrProfileSnapshot: () => unknown | null;
   getPerformanceSnapshot: () => DevMcpBridgeSnapshot['performance'];
@@ -475,26 +470,32 @@ function collectDomNodes(): DevMcpBridgeDomNodeSnapshot[] {
   return nodes;
 }
 
-function createSettingsExcerpt(): Record<string, unknown> {
-  const settings = useSettingsStore.getState().settings as unknown as Record<string, unknown> | undefined;
-  if (!settings) {
+async function createSettingsExcerpt(): Promise<Record<string, unknown>> {
+  try {
+    const settingsStoreLoader = await import('./usrProfileSettingsStoreLoader');
+    const settingsStoreModule = await settingsStoreLoader.loadSettingsStoreForUsrProfilePersistence();
+    const settings = settingsStoreModule.useSettingsStore.getState().settings as unknown as Record<string, unknown> | undefined;
+    if (!settings) {
+      return {};
+    }
+    const pickedKeys = [
+      'appearance',
+      'presentation',
+      'dock',
+      'explorer',
+      'layout',
+      'terminal',
+      'system',
+      'plugins',
+    ];
+    return Object.fromEntries(
+      pickedKeys
+        .filter((key) => key in settings)
+        .map((key) => [key, summarizeUnknownValue(settings[key])]),
+    );
+  } catch {
     return {};
   }
-  const pickedKeys = [
-    'appearance',
-    'presentation',
-    'dock',
-    'explorer',
-    'layout',
-    'terminal',
-    'system',
-    'plugins',
-  ];
-  return Object.fromEntries(
-    pickedKeys
-      .filter((key) => key in settings)
-      .map((key) => [key, summarizeUnknownValue(settings[key])]),
-  );
 }
 
 async function resolveWindowLabel(): Promise<string | null> {
@@ -568,13 +569,15 @@ async function createBridgeSnapshot(
       errors.push(`events.describeTopics failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     try {
-      telemetryStatus = await getTelemetryStatus();
+      const telemetryLoader = await import('./devMcpTelemetryLoader');
+      telemetryStatus = await telemetryLoader.getTelemetryStatusThroughLoader();
     } catch (error) {
       errors.push(`getTelemetryStatus failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (options.includeTelemetryRecords !== false) {
       try {
-        telemetryRecords = await getRecentTelemetryRecords(options.telemetryLimit ?? 60);
+        const telemetryLoader = await import('./devMcpTelemetryLoader');
+        telemetryRecords = await telemetryLoader.getRecentTelemetryRecordsThroughLoader(options.telemetryLimit ?? 60);
       } catch (error) {
         errors.push(`getRecentTelemetryRecords failed: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -601,7 +604,7 @@ async function createBridgeSnapshot(
     previewSession,
     hostTopics,
     usrProfileSnapshot: getUsrProfileRuntimeSnapshot(),
-    settingsExcerpt: createSettingsExcerpt(),
+    settingsExcerpt: await createSettingsExcerpt(),
     performance: {
       snapshot: loadExplorerPerformanceSnapshot(),
       summary: summarizeExplorerPerformance(),
@@ -634,8 +637,14 @@ function createBridgeApi(): DevMcpBridgeApi {
       }
       return hostClient.host.getApiSchema();
     },
-    getTelemetryStatus,
-    getTelemetryRecords: async (limit = 60) => getRecentTelemetryRecords(limit),
+    getTelemetryStatus: async () => {
+      const telemetryLoader = await import('./devMcpTelemetryLoader');
+      return telemetryLoader.getTelemetryStatusThroughLoader();
+    },
+    getTelemetryRecords: async (limit = 60) => {
+      const telemetryLoader = await import('./devMcpTelemetryLoader');
+      return telemetryLoader.getRecentTelemetryRecordsThroughLoader(limit);
+    },
     getUsrProfileSnapshot: () => getUsrProfileRuntimeSnapshot(),
     getPerformanceSnapshot: () => ({
       snapshot: loadExplorerPerformanceSnapshot(),
