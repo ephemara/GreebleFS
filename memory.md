@@ -5,14 +5,16 @@
   - `scripts/tauron-preflight.mjs` now treats `crates/tauri-plugin-windowmgr` plus `packages/api/src|dist/windowmgr.*` as part of the required Tauron fork/API freshness contract.
 - Added the first React proof lane under Developer Test Settings.
   - `src/config/windowMgrProofs.ts` owns the data-driven Windows Notepad proof executable.
-  - `src/runtime/windowMgr.ts` wraps `@tauri-apps/api/windowmgr`, normalizes DOM bounds, binds unload-safe session events, and exposes proof session lifecycle helpers.
+  - `src/runtime/windowMgr.ts` wraps `@tauri-apps/api/windowmgr`, converts DOM CSS rects into native window coordinates through Tauri client metrics, binds unload-safe session events, listens to host move/resize, and exposes proof session lifecycle helpers.
   - `src/components/settings/WindowMgrProofSurface.tsx` mounts a compact HWND slot in System > Proofs with Launch, Sync Bounds, and Stop controls. The proof surface is discoverable through `data-windowmgr-proof-surface="notepad"`.
 - Validation:
   - Passed: `bunx vitest run src/test/windowMgrRuntime.test.ts --reporter=dot --testTimeout=30000`.
+  - Passed: `node scripts/tauron-preflight.mjs` and `node --check scripts/tauron-preflight.mjs`.
   - Passed: `cargo check --manifest-path src-tauri/Cargo.toml --lib` with isolated `CARGO_TARGET_DIR=D:/GreebleFS/target-windowmgr-check`.
   - Targeted TS source check still reports existing unrelated repo errors, but no diagnostics for `WindowMgrProofSurface`, `src/runtime/windowMgr.ts`, or `src/config/windowMgrProofs.ts`.
+  - Live MCP proof passed after dev-app restart: dynamically imported `src/runtime/windowMgr.ts`, launched the default Windows Notepad proof, attached it through Tauron's `legacyOwnedWindow` backend, and verified `windowmgr_list_sessions` returned the visible session with native bounds `1285,848 1208x781`; screenshot evidence is under `MCP/.state/screenshots/windowmgr-runtime-corrected-smoke.png`.
 - Next recommended step:
-  - Launch the live app, enable Developer Test Settings, click the WindowMgr proof launch button, and use MCP screenshot/native-window inspection to verify Notepad follows the React-owned proof rectangle. If DirectComposition visual ownership conflicts with the main WebView composition root, switch the proof executable to `backendPreference: "legacyOwnedWindow"` before deeper experiments.
+  - Click the System > Proofs WindowMgr controls manually once Developer Test Settings is enabled, then harden Tauron's process/session shutdown path for packaged Windows apps like modern Notepad. During live smoke, direct plugin stop could hang the old WebView session, while killing the exact Notepad PIDs allowed the plugin exit watcher to clear sessions and the app stayed healthy after restart.
 
 # 2026-05-10 - Tauron Native Surface Backplane
 
