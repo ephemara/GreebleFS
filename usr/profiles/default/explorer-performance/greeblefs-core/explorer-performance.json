@@ -25,10 +25,13 @@
     "queueOverflowStrategy": "drop-lowest-priority",
     "previewPrefetch": {
       "enabled": true,
-      "batchSize": 4,
-      "maxConcurrentPreviewReads": 2,
-      "forwardPrefetchViewports": 0.5,
-      "backwardPrefetchViewports": 0.25
+      "batchSize": 3,
+      "maxConcurrentPreviewReads": 1,
+      "forwardPrefetchViewports": 0.25,
+      "backwardPrefetchViewports": 0,
+      "maxPreviewBytesPerEntry": 524288,
+      "maxBatchBytes": 1048576,
+      "imagePrefetchMode": "disabled"
     }
   },
   "nativeTaskGraph": {
@@ -61,6 +64,24 @@
     "directorySnapshotMaxConcurrent": 2,
     "previewByteReadMaxConcurrent": 2,
     "maxQueuedRequests": 512
+  },
+  "pathIndexWarmup": {
+    "enabled": false,
+    "allowDriveRoots": false,
+    "minimumImplicitRootDepth": 1,
+    "maxImplicitRootDepth": 5,
+    "maxBuildingRoots": 1,
+    "requestCooldownMs": 30000,
+    "failureCooldownMs": 60000,
+    "staleBuildingRootMs": 600000,
+    "excludedDirectoryNames": [
+      ".git",
+      ".cache",
+      "appdata",
+      "node_modules",
+      "onedrive",
+      "target"
+    ]
   },
   "messageStreams": {
     "enabled": true,

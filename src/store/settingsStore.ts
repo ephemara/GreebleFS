@@ -390,6 +390,7 @@ export interface SystemSettings {
   startMobileShareOnBoot: boolean;
   hideAppInTray: boolean;
   showInTaskbar: boolean;
+  windowsUsnAcceleration: WindowsUsnAccelerationSettings;
   gpuTierMode: GpuTierMode;
   accelerationRoutingMode: AccelerationRoutingMode;
   developerMode: boolean;
@@ -570,6 +571,16 @@ export function normalizeIntegratedTerminalHost(
   _fallback: IntegratedTerminalHost = defaultIntegratedTerminalHost,
 ): IntegratedTerminalHost {
   return 'xterm';
+}
+
+export interface WindowsUsnAccelerationSettings {
+  enabled: boolean;
+  autoRegisterProfile: boolean;
+  autoEnsureJournal: boolean;
+  autoIndexFixedNtfsDrives: boolean;
+  journalMaximumSizeBytes: number;
+  journalAllocationDeltaBytes: number;
+  serviceUrl: string;
 }
 
 export function normalizeDockThemeMode(value: unknown): DockThemeMode {
@@ -1503,6 +1514,10 @@ export function normalizeSystemSettings(
     startMobileShareOnBoot: Boolean(merged.startMobileShareOnBoot),
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
+    windowsUsnAcceleration: normalizeWindowsUsnAccelerationSettings(
+      base.windowsUsnAcceleration,
+      merged.windowsUsnAcceleration,
+    ),
     gpuTierMode: normalizeGpuTierMode(merged.gpuTierMode),
     accelerationRoutingMode: normalizeAccelerationRoutingMode(merged.accelerationRoutingMode),
     developerMode: Boolean(merged.developerMode),
@@ -1552,6 +1567,39 @@ export function normalizeSystemSettings(
   }
 
   return normalized;
+}
+
+function normalizeWindowsUsnAccelerationSettings(
+  base: WindowsUsnAccelerationSettings,
+  updates?: Partial<WindowsUsnAccelerationSettings>,
+): WindowsUsnAccelerationSettings {
+  const merged = { ...base, ...updates };
+  return {
+    enabled: merged.enabled !== false,
+    autoRegisterProfile: merged.autoRegisterProfile !== false,
+    autoEnsureJournal: merged.autoEnsureJournal !== false,
+    autoIndexFixedNtfsDrives: merged.autoIndexFixedNtfsDrives !== false,
+    journalMaximumSizeBytes: normalizePositiveInteger(
+      merged.journalMaximumSizeBytes,
+      base.journalMaximumSizeBytes,
+    ),
+    journalAllocationDeltaBytes: normalizePositiveInteger(
+      merged.journalAllocationDeltaBytes,
+      base.journalAllocationDeltaBytes,
+    ),
+    serviceUrl:
+      typeof merged.serviceUrl === 'string' && merged.serviceUrl.trim()
+        ? merged.serviceUrl.trim()
+        : base.serviceUrl,
+  };
+}
+
+function normalizePositiveInteger(value: unknown, fallback: number): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return fallback;
+  }
+  return Math.round(numeric);
 }
 
 export interface SystemPresentationState {
@@ -1951,6 +1999,15 @@ const runtimeFallbackDefaultSettings: Settings = {
     startMobileShareOnBoot: false,
     hideAppInTray: true,
     showInTaskbar: true,
+    windowsUsnAcceleration: {
+      enabled: true,
+      autoRegisterProfile: true,
+      autoEnsureJournal: true,
+      autoIndexFixedNtfsDrives: true,
+      journalMaximumSizeBytes: 536870912,
+      journalAllocationDeltaBytes: 67108864,
+      serviceUrl: 'http://127.0.0.1:12462',
+    },
     gpuTierMode: 'auto',
     accelerationRoutingMode: 'auto',
     developerMode: false,

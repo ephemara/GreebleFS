@@ -9252,3 +9252,17 @@ The existing `reference/src/README.md` now links to the exhaustive map. Keep usi
   - Passed: `cargo check --manifest-path .\src-tauri\Cargo.toml --lib`
   - Passed compile-only: `CARGO_TARGET_DIR=D:\GreebleFS\target-codex-native-task-graph cargo test --manifest-path .\src-tauri\Cargo.toml --lib native_task_graph --no-run`
   - Blocked at runtime: both normal and isolated-target `cargo test --manifest-path .\src-tauri\Cargo.toml --lib native_task_graph` compiled the test binary, then the Windows test executable exited before running tests with `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)`.
+# 2026-05-10 - Warp Reference Comparison Notes
+
+- Reviewed `reference/warp-master` as a source mine for GreebleFS-relevant systems.
+- High-value transplant candidates for GreebleFS:
+  - A typed, structured command/workflow parser that preserves argument ranges, highlights, and history reconstruction. Warp's `app/src/workflows/command_parser.rs` is a strong precedent for making command-centric UI data-driven instead of stringly.
+  - A small runtime feature-flag surface with menu exposure and checked state. Warp's `crates/warp_core/src/features.rs` keeps flag toggles centralized and cheap to surface in UI.
+  - Dense reusable UI widgets for compact dropdowns, split buttons, find/search, and action surfaces. Warp's `crates/warpui` and `app/src/view_components/*` are worth mining for interaction grammar, not for direct architecture replacement.
+  - Global search/result hierarchy patterns that keep directory/file/match state explicit and keyboard-navigable. Warp's global search view is a useful model for progressive search results and collapsible result trees.
+  - Workspace-level action routing that dispatches into the active workspace rather than treating every command as global.
+- GreebleFS already exceeds Warp in a few areas that should stay first-class:
+  - File-explorer and preview depth, plugin/runtime extensibility, theme/shader runtime authoring, native MCP automation, and data-driven explorer state.
+  - The current React/Tauri shell should not be replaced by WarpUI; borrow concepts, not the entire rendering stack.
+- Recommended next step if we ever port Warp ideas:
+  - Build a shared command/workflow model in GreebleFS that can back command palette actions, explorer workflows, search filters, and agent-facing tools with the same parsed-argument contract.

@@ -64,6 +64,8 @@ ${StrLoc}
 !define ESTIMATEDSIZE "{{estimated_size}}"
 !define STARTMENUFOLDER "{{start_menu_folder}}"
 !define INSTALLPROFILEFILENAME "greeblefs-install-profile.toml"
+!define USNINDEXSERVICENAME "GreebleFSUsnIndexer"
+!define USNINDEXBINARYNAME "greeblefs-usn-daemon.exe"
 
 Var PassiveMode
 Var UpdateMode
@@ -585,6 +587,25 @@ Function WriteInstallProfile
   Pop $0
 FunctionEnd
 
+Function InstallGreebleFsUsnService
+  IfFileExists "$INSTDIR\${USNINDEXBINARYNAME}" 0 done
+  DetailPrint "Installing GreebleFS USN indexer service..."
+  nsExec::ExecToLog `sc.exe stop "${USNINDEXSERVICENAME}"`
+  nsExec::ExecToLog `sc.exe delete "${USNINDEXSERVICENAME}"`
+  Sleep 500
+  nsExec::ExecToLog `sc.exe create "${USNINDEXSERVICENAME}" binPath= "$\"$INSTDIR\${USNINDEXBINARYNAME}$\" --service" start= auto DisplayName= "GreebleFS USN Indexer"`
+  nsExec::ExecToLog `sc.exe description "${USNINDEXSERVICENAME}" "Indexes local NTFS volumes for GreebleFS through the Windows USN journal."`
+  nsExec::ExecToLog `sc.exe failure "${USNINDEXSERVICENAME}" reset= 86400 actions= restart/5000/restart/15000/""/30000`
+  nsExec::ExecToLog `sc.exe start "${USNINDEXSERVICENAME}"`
+  done:
+FunctionEnd
+
+Function UninstallGreebleFsUsnService
+  DetailPrint "Removing GreebleFS USN indexer service..."
+  nsExec::ExecToLog `sc.exe stop "${USNINDEXSERVICENAME}"`
+  nsExec::ExecToLog `sc.exe delete "${USNINDEXSERVICENAME}"`
+FunctionEnd
+
 ; Uninstaller Pages
 ; 1. Confirm uninstall page
 Var DeleteAppDataCheckbox
@@ -834,6 +855,8 @@ Section Install
     File /a "/oname={{this}}" "{{no-escape @key}}"
   {{/each}}
 
+  Call InstallGreebleFsUsnService
+
   ; Create file associations
   {{#each file_associations as |association| ~}}
     {{#each association.ext as |ext| ~}}
@@ -961,6 +984,8 @@ Section Uninstall
   !endif
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+
+  Call UninstallGreebleFsUsnService
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

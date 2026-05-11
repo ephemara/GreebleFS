@@ -9268,7 +9268,7 @@ function resolveStableExplorerChromeLabelWidthCh(
   return Math.max(minimumCh, Math.min(maximumCh, longestLabelLength));
 }
 
-export function FileExplorer({
+function FileExplorerImpl({
   theme,
   appearance,
   explorerBackend = explorerBackendContract,
@@ -9343,6 +9343,7 @@ export function FileExplorer({
     invokeShellContextMenuItem: invokeExplorerShellContextMenuItem,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
+    readPreviewCachePayload: readExplorerPreviewCachePayload,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     resolveEntryOpenWithPolicy: resolveExplorerEntryOpenWithPolicy,
@@ -16273,6 +16274,10 @@ export function FileExplorer({
       return {
         previewKind: resolvedPreview.kind,
         previewCacheKey,
+        estimatedByteSize:
+          typeof entry.size === "number" && Number.isFinite(entry.size)
+            ? entry.size
+            : null,
       };
     },
     [
@@ -16286,8 +16291,10 @@ export function FileExplorer({
   const prefetchExplorerViewportPreviewCandidate = useCallback(
     async (
       candidate: ExplorerViewportPreviewPrefetchCandidate<FileEntry>,
+      isStale: () => boolean = () => false,
     ): Promise<string | null> => {
       if (
+        isStale() ||
         readCachedExplorerPreview<string>(candidate.previewCacheKey) != null ||
         previewPrefetchInFlightRef.current.has(candidate.previewCacheKey)
       ) {
@@ -16296,30 +16303,41 @@ export function FileExplorer({
 
       previewPrefetchInFlightRef.current.add(candidate.previewCacheKey);
       try {
-        if (candidate.previewKind === "image") {
-          const dataUri = await readExplorerFileBase64(candidate.path);
-          storeCachedExplorerPreview({
-            key: candidate.previewCacheKey,
-            path: candidate.path,
-            value: dataUri,
-            bytes: estimateStringPreviewCacheBytes(dataUri),
-          });
-          return candidate.previewCacheKey;
+        const previewPrefetchPolicy =
+          EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch;
+        if (
+          candidate.previewKind === "image" &&
+          previewPrefetchPolicy.imagePrefetchMode === "disabled"
+        ) {
+          return null;
         }
 
-        const content = await readExplorerTextFile(candidate.path);
+        const payload = await readExplorerPreviewCachePayload(
+          {
+            path: candidate.path,
+            previewKind: candidate.previewKind,
+            maxBytes: previewPrefetchPolicy.maxPreviewBytesPerEntry,
+          },
+          {
+            priority: "prefetch",
+            workKey: candidate.previewCacheKey,
+          },
+        );
+        if (isStale()) {
+          return null;
+        }
         storeCachedExplorerPreview({
           key: candidate.previewCacheKey,
           path: candidate.path,
-          value: content,
-          bytes: estimateStringPreviewCacheBytes(content),
+          value: payload.value,
+          bytes: payload.cacheBytes,
         });
         return candidate.previewCacheKey;
       } finally {
         previewPrefetchInFlightRef.current.delete(candidate.previewCacheKey);
       }
     },
-    [readExplorerFileBase64, readExplorerTextFile],
+    [readExplorerPreviewCachePayload],
   );
 
   useEffect(() => {
@@ -29499,7 +29517,13 @@ export function FileExplorer({
         isStale: () =>
           !isExplorerMountedRef.current ||
           previewPrefetchSchedulerBatchIdRef.current !== schedulerBatchId,
-        prefetchCandidate: prefetchExplorerViewportPreviewCandidate,
+        prefetchCandidate: (candidate) =>
+          prefetchExplorerViewportPreviewCandidate(
+            candidate,
+            () =>
+              !isExplorerMountedRef.current ||
+              previewPrefetchSchedulerBatchIdRef.current !== schedulerBatchId,
+          ),
       }).then((schedulerResult) => {
         if (
           !isExplorerMountedRef.current ||
@@ -29527,11 +29551,16 @@ export function FileExplorer({
             backwardPrefetchCount:
               schedulerResult.telemetry.priorityCounts["backward-prefetch"],
             droppedCount: schedulerResult.telemetry.droppedCount,
+            budgetSkippedCount: schedulerResult.telemetry.budgetSkippedCount,
             coalescedCount: schedulerResult.telemetry.coalescedCount,
             failedCount: schedulerResult.telemetry.failedCount,
             cancelled: schedulerResult.telemetry.cancelled,
             maxConcurrentPreviewReads:
               schedulerResult.telemetry.maxConcurrentPreviewReads,
+            maxPreviewBytesPerEntry:
+              schedulerResult.telemetry.maxPreviewBytesPerEntry,
+            maxBatchBytes: schedulerResult.telemetry.maxBatchBytes,
+            imagePrefetchMode: schedulerResult.telemetry.imagePrefetchMode,
             maxCandidateQueueDepth:
               schedulerResult.telemetry.maxCandidateQueueDepth,
             queueOverflowStrategy:
@@ -36918,6 +36947,110 @@ export function FileExplorer({
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>
+  );
+}
+
+const ENABLE_EXPLORER_REACT_PROFILER = (() => {
+  const env = (import.meta as unknown as {
+    env?: {
+      DEV?: boolean;
+      MODE?: string;
+      VITE_GREEBLEFS_MCP_ENABLED?: string;
+      VITE_GREEBLEFS_EXPLORER_REACT_PROFILER?: string;
+    };
+  }).env;
+  return (
+    env?.VITE_GREEBLEFS_EXPLORER_REACT_PROFILER === "1" ||
+    env?.VITE_GREEBLEFS_MCP_ENABLED === "1" ||
+    env?.DEV === true ||
+    env?.MODE === "development"
+  );
+})();
+
+const EXPLORER_REACT_INVALIDATION_CHANGED_PROP_LIMIT = 12;
+
+function recordExplorerReactCommit(
+  id: string,
+  phase: string,
+  actualDuration: number,
+  baseDuration: number,
+  startTime: number,
+  commitTime: number,
+): void {
+  recordExplorerPerformanceSample({
+    metricId: "explorer_react_commit",
+    durationMs: actualDuration,
+    metadata: {
+      profilerId: id,
+      phase,
+      baseDuration,
+      startTime,
+      commitTime,
+    },
+  });
+}
+
+function recordExplorerReactInvalidation(
+  source: string,
+  changedProps: string[],
+): void {
+  recordExplorerPerformanceSample({
+    metricId: "explorer_react_invalidation",
+    durationMs: changedProps.length,
+    metadata: {
+      source,
+      changedPropCount: changedProps.length,
+      changedProps: changedProps
+        .slice(0, EXPLORER_REACT_INVALIDATION_CHANGED_PROP_LIMIT)
+        .join(","),
+      clipped:
+        changedProps.length > EXPLORER_REACT_INVALIDATION_CHANGED_PROP_LIMIT,
+    },
+  });
+}
+
+function areFileExplorerPropsEqualForMemo(
+  previousProps: FileExplorerProps,
+  nextProps: FileExplorerProps,
+): boolean {
+  const previousRecord = previousProps as unknown as Record<string, unknown>;
+  const nextRecord = nextProps as unknown as Record<string, unknown>;
+  const propKeys = new Set([
+    ...Object.keys(previousRecord),
+    ...Object.keys(nextRecord),
+  ]);
+  const changedProps: string[] = [];
+
+  for (const propKey of propKeys) {
+    if (!Object.is(previousRecord[propKey], nextRecord[propKey])) {
+      changedProps.push(propKey);
+    }
+  }
+
+  if (changedProps.length === 0) {
+    return true;
+  }
+
+  if (ENABLE_EXPLORER_REACT_PROFILER) {
+    recordExplorerReactInvalidation("props", changedProps);
+  }
+  return false;
+}
+
+const MemoizedFileExplorerImpl = React.memo(
+  FileExplorerImpl,
+  areFileExplorerPropsEqualForMemo,
+);
+
+export function FileExplorer(props: FileExplorerProps) {
+  if (!ENABLE_EXPLORER_REACT_PROFILER) {
+    return <MemoizedFileExplorerImpl {...props} />;
+  }
+  const profilerId = `FileExplorer:${props.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID}`;
+  return (
+    <React.Profiler id={profilerId} onRender={recordExplorerReactCommit}>
+      <MemoizedFileExplorerImpl {...props} />
+    </React.Profiler>
   );
 }
 

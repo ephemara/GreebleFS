@@ -33,9 +33,9 @@ export const settingsSectionCatalog = [
   {
     key: 'system',
     label: 'System',
-    subtitle: 'Startup and OS integration status.',
-    keywords: ['system', 'startup', 'tray', 'taskbar', 'diagnostics'],
-    overviewSummary: 'Startup, tray, taskbar, GPU.',
+    subtitle: 'Startup, OS integration, and USN indexing.',
+    keywords: ['system', 'startup', 'tray', 'taskbar', 'diagnostics', 'usn', 'index', 'daemon'],
+    overviewSummary: 'Startup, tray, taskbar, GPU, USN.',
     featuredInOverview: true,
     archetype: 'rows',
     shell: { preferredContentDensity: 'comfortable' },

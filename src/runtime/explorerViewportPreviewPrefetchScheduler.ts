@@ -18,6 +18,7 @@ export type ExplorerViewportPreviewPrefetchKind = "image" | "script" | "text";
 export interface ExplorerViewportPreviewPrefetchWork {
   previewKind: ExplorerViewportPreviewPrefetchKind;
   previewCacheKey: string;
+  estimatedByteSize?: number | null;
 }
 
 export interface ExplorerViewportPreviewPrefetchCandidate<TEntry>
@@ -31,6 +32,7 @@ export interface ExplorerViewportPreviewPrefetchCandidate<TEntry>
   sequence: number;
   previewKind: ExplorerViewportPreviewPrefetchKind;
   previewCacheKey: string;
+  estimatedByteSize: number | null;
 }
 
 export interface ExplorerViewportPreviewPrefetchTelemetry {
@@ -40,9 +42,13 @@ export interface ExplorerViewportPreviewPrefetchTelemetry {
   completedCount: number;
   failedCount: number;
   droppedCount: number;
+  budgetSkippedCount: number;
   coalescedCount: number;
   cancelled: boolean;
   maxConcurrentPreviewReads: number;
+  maxPreviewBytesPerEntry: number;
+  maxBatchBytes: number;
+  imagePrefetchMode: ExplorerViewportPreviewPrefetchPolicy["imagePrefetchMode"];
   maxCandidateQueueDepth: number;
   queueOverflowStrategy: ExplorerViewportSchedulerPolicy["queueOverflowStrategy"];
   priorityCounts: Record<ExplorerViewportPreviewPrefetchPriority, number>;
@@ -138,6 +144,12 @@ export function buildExplorerViewportPreviewPrefetchCandidates<TEntry>(
     if (!previewWork || seenWorkKeys.has(previewWork.previewCacheKey)) {
       return;
     }
+    if (
+      previewWork.previewKind === "image" &&
+      input.policy.imagePrefetchMode === "disabled"
+    ) {
+      return;
+    }
     seenWorkKeys.add(previewWork.previewCacheKey);
 
     candidates.push({
@@ -153,6 +165,9 @@ export function buildExplorerViewportPreviewPrefetchCandidates<TEntry>(
       sequence,
       previewKind: previewWork.previewKind,
       previewCacheKey: previewWork.previewCacheKey,
+      estimatedByteSize: normalizeEstimatedByteSize(
+        previewWork.estimatedByteSize,
+      ),
     });
     sequence += 1;
   };
@@ -202,12 +217,16 @@ export async function runExplorerViewportPreviewPrefetchScheduler<
 >(
   input: RunExplorerViewportPreviewPrefetchSchedulerInput<TEntry, TValue>,
 ): Promise<ExplorerViewportPreviewPrefetchRunResult<TEntry, TValue>> {
+  const budgetedCandidates = applyPreviewPrefetchBudgets(
+    input.candidates,
+    input.policy.previewPrefetch,
+  );
   const laneResult = await runBoundedWorkLane<
     ExplorerViewportPreviewPrefetchCandidate<TEntry>,
     TValue,
     ExplorerViewportPreviewPrefetchPriority
   >({
-    candidates: input.candidates,
+    candidates: budgetedCandidates.candidates,
     policy: {
       batchSize: input.policy.previewPrefetch.batchSize,
       maxConcurrentWork: input.policy.previewPrefetch.maxConcurrentPreviewReads,
@@ -229,14 +248,61 @@ export async function runExplorerViewportPreviewPrefetchScheduler<
       completedCount: laneResult.telemetry.completedCount,
       failedCount: laneResult.telemetry.failedCount,
       droppedCount: laneResult.telemetry.droppedCount,
+      budgetSkippedCount: budgetedCandidates.skippedCount,
       coalescedCount: laneResult.telemetry.coalescedCount,
       cancelled: laneResult.telemetry.cancelled,
       maxConcurrentPreviewReads: laneResult.telemetry.maxConcurrentWork,
+      maxPreviewBytesPerEntry:
+        input.policy.previewPrefetch.maxPreviewBytesPerEntry,
+      maxBatchBytes: input.policy.previewPrefetch.maxBatchBytes,
+      imagePrefetchMode: input.policy.previewPrefetch.imagePrefetchMode,
       maxCandidateQueueDepth: laneResult.telemetry.maxCandidateQueueDepth,
       queueOverflowStrategy: laneResult.telemetry.queueOverflowStrategy,
       priorityCounts: createPriorityCounts(laneResult.scheduledCandidates),
     },
   };
+}
+
+function applyPreviewPrefetchBudgets<TEntry>(
+  candidates: readonly ExplorerViewportPreviewPrefetchCandidate<TEntry>[],
+  policy: ExplorerViewportPreviewPrefetchPolicy,
+): {
+  candidates: ExplorerViewportPreviewPrefetchCandidate<TEntry>[];
+  skippedCount: number;
+} {
+  const orderedCandidates = [...candidates].sort(
+    compareExplorerViewportPreviewPrefetchCandidates,
+  );
+  const maxEntryBytes = Math.max(1024, policy.maxPreviewBytesPerEntry);
+  const maxBatchBytes = Math.max(maxEntryBytes, policy.maxBatchBytes);
+  const accepted: ExplorerViewportPreviewPrefetchCandidate<TEntry>[] = [];
+  let accumulatedBytes = 0;
+  let skippedCount = 0;
+
+  for (const candidate of orderedCandidates) {
+    if (
+      candidate.previewKind === "image" &&
+      policy.imagePrefetchMode === "disabled"
+    ) {
+      skippedCount += 1;
+      continue;
+    }
+
+    const estimatedBytes = candidate.estimatedByteSize ?? maxEntryBytes;
+    if (estimatedBytes > maxEntryBytes) {
+      skippedCount += 1;
+      continue;
+    }
+    if (accumulatedBytes + estimatedBytes > maxBatchBytes) {
+      skippedCount += 1;
+      continue;
+    }
+
+    accumulatedBytes += estimatedBytes;
+    accepted.push(candidate);
+  }
+
+  return { candidates: accepted, skippedCount };
 }
 
 function compareExplorerViewportPreviewPrefetchCandidates<TEntry>(
@@ -296,5 +362,11 @@ function normalizeOptionalEntryIndex(
   const normalizedIndex = Math.floor(index);
   return normalizedIndex >= 0 && normalizedIndex < totalEntries
     ? normalizedIndex
+    : null;
+}
+
+function normalizeEstimatedByteSize(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
     : null;
 }

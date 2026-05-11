@@ -9,11 +9,14 @@ use crate::native_task_graph::{
     NativeTaskCancellationToken, NativeTaskGraphManager, NativeTaskLane, NativeTaskPriority,
     NativeTaskRequest, NativeTaskWorkKey,
 };
+use greeblefs_index_core::{
+    ensure_path_index_schema, open_index_connection, PathIndexCancellation, UsnJournalOptions,
+};
 use ignore::WalkState;
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
@@ -22,13 +25,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
-#[cfg(target_os = "windows")]
-mod windows_usn;
-
 const PATH_INDEX_DB_ENV: &str = "GREEBLEFS_PATH_INDEX_DB_PATH";
-const PATH_INDEX_SCHEMA_VERSION: i64 = 1;
 const PATH_INDEX_INSERT_CHUNK_SIZE: usize = 50_000;
 const PATH_INDEX_WALK_CHANNEL_BOUND: usize = 100_000;
+const PATH_INDEX_STALE_BUILDING_ROOT_MS: u64 = 10 * 60 * 1_000;
+const PATH_INDEX_MAX_IMPLICIT_ACTIVE_TASKS: usize = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -217,11 +218,24 @@ impl PathIndexManager {
     }
 
     pub fn status(&self) -> Result<PathIndexStatus, String> {
-        let active_tasks = self
+        let active_task_pairs = self
             .inner
             .active_tasks
             .lock()
             .map_err(|_| "Path index active task state is poisoned".to_string())?
+            .iter()
+            .map(|(root_key, task)| (root_key.clone(), task.clone()))
+            .collect::<Vec<_>>();
+        let active_root_keys = active_task_pairs
+            .iter()
+            .map(|(root_key, _)| root_key.clone())
+            .collect::<HashSet<_>>();
+        clear_stale_building_roots(
+            &self.inner.db_path,
+            &active_root_keys,
+            PATH_INDEX_STALE_BUILDING_ROOT_MS,
+        )?;
+        let active_tasks = active_task_pairs
             .iter()
             .map(|(root_key, task)| PathIndexActiveTask {
                 root_key: root_key.clone(),
@@ -244,6 +258,10 @@ impl PathIndexManager {
         })
     }
 
+    pub fn database_path(&self) -> PathBuf {
+        self.inner.db_path.clone()
+    }
+
     pub fn start_index(
         &self,
         native_task_graph: NativeTaskGraphManager,
@@ -253,6 +271,62 @@ impl PathIndexManager {
         let requested_root_key = ExplorerPathKey::from_path(&requested_root_path).into_string();
         let force_rebuild = request.force_rebuild.unwrap_or(false);
         let recursive_fallback = request.recursive_fallback.unwrap_or(true);
+
+        #[cfg(target_os = "windows")]
+        if crate::path_index_acceleration::windows_usn_acceleration_enabled() {
+            if !force_rebuild {
+                if let Some(root) =
+                    find_suppressing_related_root(&self.inner.db_path, &requested_root_key)?
+                {
+                    if root.source == greeblefs_index_core::WINDOWS_USN_SERVICE_SOURCE {
+                        return Ok(PathIndexStartResponse {
+                            task_id: None,
+                            root_path: root.root_path,
+                            root_key: root.root_key,
+                            state: root.state,
+                            source: root.source,
+                        });
+                    }
+                }
+            }
+            match crate::path_index_acceleration::try_start_accelerated_index(
+                &self.inner.db_path,
+                &requested_root_path,
+                force_rebuild,
+            ) {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    if let Ok(mut last_error) = self.inner.last_error.lock() {
+                        *last_error = Some(error.clone());
+                    }
+                    return Err(error);
+                }
+            }
+        }
+
+        if !force_rebuild && is_drive_root_path_index_key(&requested_root_key) {
+            return Ok(PathIndexStartResponse {
+                task_id: None,
+                root_path: requested_root_path.to_string_lossy().to_string(),
+                root_key: requested_root_key,
+                state: "skipped".to_string(),
+                source: "driveRootSuppressed".to_string(),
+            });
+        }
+
+        {
+            let active = self
+                .inner
+                .active_tasks
+                .lock()
+                .map_err(|_| "Path index active task state is poisoned".to_string())?;
+            let active_root_keys = active.keys().cloned().collect::<HashSet<_>>();
+            clear_stale_building_roots(
+                &self.inner.db_path,
+                &active_root_keys,
+                PATH_INDEX_STALE_BUILDING_ROOT_MS,
+            )?;
+        }
 
         if !force_rebuild {
             if let Some(root) = load_root_status_for_key(&self.inner.db_path, &requested_root_key)?
@@ -283,6 +357,44 @@ impl PathIndexManager {
                     root_key: requested_root_key,
                     state: "building".to_string(),
                     source: "activeTask".to_string(),
+                });
+            }
+            if let Some((active_root_key, active_task)) =
+                active.iter().find(|(active_root_key, _)| {
+                    path_index_keys_are_related(&requested_root_key, active_root_key)
+                })
+            {
+                return Ok(PathIndexStartResponse {
+                    task_id: Some(active_task.task_id.clone()),
+                    root_path: requested_root_path.to_string_lossy().to_string(),
+                    root_key: active_root_key.clone(),
+                    state: "building".to_string(),
+                    source: "relatedActiveTask".to_string(),
+                });
+            }
+            if !force_rebuild && active.len() >= PATH_INDEX_MAX_IMPLICIT_ACTIVE_TASKS {
+                if let Some((active_root_key, active_task)) = active.iter().next() {
+                    return Ok(PathIndexStartResponse {
+                        task_id: Some(active_task.task_id.clone()),
+                        root_path: requested_root_path.to_string_lossy().to_string(),
+                        root_key: active_root_key.clone(),
+                        state: "building".to_string(),
+                        source: "activeTaskCap".to_string(),
+                    });
+                }
+            }
+        }
+
+        if !force_rebuild {
+            if let Some(root) =
+                find_suppressing_related_root(&self.inner.db_path, &requested_root_key)?
+            {
+                return Ok(PathIndexStartResponse {
+                    task_id: None,
+                    root_path: root.root_path,
+                    root_key: root.root_key,
+                    state: root.state,
+                    source: format!("suppressedBy{}", root.source),
                 });
             }
         }
@@ -589,13 +701,13 @@ fn build_index_root_into_database(
         ) {
             Ok(status) => return Ok(status),
             Err(error) if input.recursive_fallback => {
-                if windows_usn::is_first_unavailable_fallback(&error) {
+                if greeblefs_index_core::windows_usn::is_first_unavailable_fallback(&error) {
                     eprintln!(
                         "GreebleFS path index: Windows USN unavailable for {}; using recursive fallback. {}",
                         input.requested_root_path.display(),
                         error
                     );
-                } else if !windows_usn::is_cached_unavailable_fallback(&error) {
+                } else {
                     eprintln!("GreebleFS path index: Windows USN index fallback: {error}");
                 }
             }
@@ -618,13 +730,20 @@ fn replace_index_root_from_windows_usn(
     root_key: &str,
     token: &NativeTaskCancellationToken,
 ) -> Result<PathIndexRootStatus, String> {
-    let plan = windows_usn::prepare_usn_index(root_path, token)?;
-    let mut connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
-    let root_id = prepare_replace_index_root(&mut connection, root_path, root_key, &plan.source)?;
-    let stats =
-        insert_windows_usn_records_chunked(&mut connection, root_id, root_path, plan, token)?;
-    finalize_index_root(&mut connection, root_id, stats)?;
+    greeblefs_index_core::windows_usn::build_windows_usn_index(
+        db_path,
+        root_path,
+        greeblefs_index_core::WINDOWS_USN_APP_SOURCE,
+        &UsnJournalOptions::default(),
+        false,
+        || {
+            if token.is_cancelled() {
+                PathIndexCancellation::Cancelled
+            } else {
+                PathIndexCancellation::Continue
+            }
+        },
+    )?;
     load_root_status_for_key(db_path, root_key)?
         .ok_or_else(|| "Path index root disappeared after Windows USN commit".to_string())
 }
@@ -635,8 +754,7 @@ fn replace_index_root_from_recursive_walk(
     root_key: &str,
     token: &NativeTaskCancellationToken,
 ) -> Result<PathIndexRootStatus, String> {
-    let mut connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let mut connection = open_path_index_connection(db_path)?;
     let source = PathIndexBuildSource {
         source: "recursiveWalk".to_string(),
         volume_key: volume_key_for_path(root_path),
@@ -648,28 +766,6 @@ fn replace_index_root_from_recursive_walk(
     finalize_index_root(&mut connection, root_id, stats)?;
     load_root_status_for_key(db_path, root_key)?
         .ok_or_else(|| "Path index root disappeared after recursive walk commit".to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn insert_windows_usn_records_chunked(
-    connection: &mut Connection,
-    root_id: i64,
-    root_path: &Path,
-    plan: windows_usn::WindowsUsnIndexPlan,
-    token: &NativeTaskCancellationToken,
-) -> Result<PathIndexWriteStats, String> {
-    let mut stats = PathIndexWriteStats::default();
-    let mut chunk = Vec::with_capacity(PATH_INDEX_INSERT_CHUNK_SIZE);
-    windows_usn::stream_records_from_usn(plan, root_path, token, |record| {
-        token.throw_if_cancelled()?;
-        chunk.push(record);
-        if chunk.len() >= PATH_INDEX_INSERT_CHUNK_SIZE {
-            flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
-        }
-        Ok(())
-    })?;
-    flush_index_record_chunk(connection, root_id, &mut chunk, &mut stats)?;
-    Ok(stats)
 }
 
 fn insert_parallel_walk_records_chunked(
@@ -961,96 +1057,7 @@ fn apply_filesystem_event_path(db_path: &Path, root_key: &str, path: &Path) -> R
 }
 
 fn ensure_schema(db_path: &Path) -> Result<(), String> {
-    if let Some(parent) = db_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create path index directory {}: {error}",
-                parent.display()
-            )
-        })?;
-    }
-    let connection = Connection::open(db_path).map_err(|error| {
-        format!(
-            "Failed to open path index database {}: {error}",
-            db_path.display()
-        )
-    })?;
-    connection
-        .pragma_update(None, "journal_mode", "WAL")
-        .map_err(|error| format!("Failed to enable WAL for path index database: {error}"))?;
-    connection
-        .pragma_update(None, "synchronous", "NORMAL")
-        .map_err(|error| format!("Failed to tune path index database sync mode: {error}"))?;
-    connection
-        .execute_batch(
-            r#"
-            CREATE TABLE IF NOT EXISTS path_index_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-            INSERT OR REPLACE INTO path_index_meta (key, value)
-            VALUES ('schemaVersion', '1');
-
-            CREATE TABLE IF NOT EXISTS path_index_roots (
-                root_id INTEGER PRIMARY KEY,
-                root_path TEXT NOT NULL UNIQUE,
-                root_key TEXT NOT NULL UNIQUE,
-                volume_key TEXT NOT NULL,
-                state TEXT NOT NULL,
-                source TEXT NOT NULL,
-                journal_id INTEGER,
-                last_usn INTEGER,
-                indexed_at_ms INTEGER,
-                entry_count INTEGER NOT NULL DEFAULT 0,
-                directory_count INTEGER NOT NULL DEFAULT 0,
-                file_count INTEGER NOT NULL DEFAULT 0,
-                last_error TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS path_index_entries (
-                root_id INTEGER NOT NULL,
-                file_ref TEXT,
-                parent_file_ref TEXT,
-                path TEXT NOT NULL,
-                path_key TEXT NOT NULL,
-                parent_path TEXT NOT NULL,
-                parent_key TEXT NOT NULL,
-                name TEXT NOT NULL,
-                name_lower TEXT NOT NULL,
-                extension TEXT NOT NULL,
-                size INTEGER NOT NULL DEFAULT 0,
-                modified_ms INTEGER NOT NULL DEFAULT 0,
-                is_dir INTEGER NOT NULL,
-                is_hidden INTEGER NOT NULL,
-                is_symlink INTEGER NOT NULL,
-                PRIMARY KEY(root_id, path_key),
-                FOREIGN KEY(root_id) REFERENCES path_index_roots(root_id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_path_index_entries_parent
-                ON path_index_entries(root_id, parent_key, is_hidden, name_lower);
-            CREATE INDEX IF NOT EXISTS idx_path_index_entries_name
-                ON path_index_entries(root_id, name_lower);
-            CREATE INDEX IF NOT EXISTS idx_path_index_entries_file_ref
-                ON path_index_entries(root_id, file_ref);
-            "#,
-        )
-        .map_err(|error| format!("Failed to initialize path index schema: {error}"))?;
-    let schema_version: i64 = connection
-        .query_row(
-            "SELECT value FROM path_index_meta WHERE key = 'schemaVersion'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(0);
-    if schema_version != PATH_INDEX_SCHEMA_VERSION {
-        return Err(format!(
-            "Unsupported path index schema version {schema_version}; expected {PATH_INDEX_SCHEMA_VERSION}"
-        ));
-    }
-    Ok(())
+    ensure_path_index_schema(db_path)
 }
 
 fn mark_root_building(
@@ -1061,8 +1068,7 @@ fn mark_root_building(
     journal_id: Option<u64>,
     last_usn: Option<i64>,
 ) -> Result<i64, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .execute(
             r#"
@@ -1246,8 +1252,7 @@ fn upsert_index_entry(
     root_id: i64,
     record: &IndexedPathRecord,
 ) -> Result<(), String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .execute(
             r#"
@@ -1279,16 +1284,14 @@ fn upsert_index_entry(
 }
 
 fn upsert_directory_subtree(db_path: &Path, root_id: i64, directory: &Path) -> Result<(), String> {
-    let mut connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let mut connection = open_path_index_connection(db_path)?;
     let token = NativeTaskCancellationToken::new();
     let _ = insert_parallel_walk_records_chunked(&mut connection, root_id, directory, &token)?;
     Ok(())
 }
 
 fn path_index_entry_exists(db_path: &Path, root_id: i64, path_key: &str) -> Result<bool, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let exists = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM path_index_entries WHERE root_id = ?1 AND path_key = ?2)",
@@ -1300,8 +1303,7 @@ fn path_index_entry_exists(db_path: &Path, root_id: i64, path_key: &str) -> Resu
 }
 
 fn refresh_root_counts(db_path: &Path, root_id: i64) -> Result<(), String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .execute(
             r#"
@@ -1326,8 +1328,7 @@ fn refresh_root_counts(db_path: &Path, root_id: i64) -> Result<(), String> {
 }
 
 fn delete_entry_subtree(db_path: &Path, root_id: i64, path_key: &str) -> Result<(), String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let prefix = format!(
         "{}{}",
         path_key.trim_end_matches('\\').trim_end_matches('/'),
@@ -1343,8 +1344,7 @@ fn delete_entry_subtree(db_path: &Path, root_id: i64, path_key: &str) -> Result<
 }
 
 fn mark_root_error(db_path: &Path, root_key: &str, error: &str) -> Result<(), String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .execute(
             "UPDATE path_index_roots SET state = 'error', last_error = ?2 WHERE root_key = ?1",
@@ -1354,6 +1354,97 @@ fn mark_root_error(db_path: &Path, root_key: &str, error: &str) -> Result<(), St
     Ok(())
 }
 
+fn clear_stale_building_roots(
+    db_path: &Path,
+    active_root_keys: &HashSet<String>,
+    stale_after_ms: u64,
+) -> Result<(), String> {
+    let now = now_ms();
+    let stale_before_ms = now.saturating_sub(stale_after_ms);
+    let roots = load_root_statuses(db_path)?;
+    let stale_roots = roots
+        .into_iter()
+        .filter(|root| {
+            root.state == "building"
+                && root.source != greeblefs_index_core::WINDOWS_USN_SERVICE_SOURCE
+                && !active_root_keys.contains(&root.root_key)
+                && root
+                    .last_indexed_at_ms
+                    .map(|indexed_at_ms| indexed_at_ms <= stale_before_ms)
+                    .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    if stale_roots.is_empty() {
+        return Ok(());
+    }
+    let connection = open_path_index_connection(db_path)?;
+    for root in stale_roots {
+        connection
+            .execute(
+                "UPDATE path_index_roots SET state = 'error', last_error = ?2 WHERE root_key = ?1",
+                params![
+                    root.root_key,
+                    format!(
+                        "Path index build was abandoned with no active task for at least {} ms",
+                        stale_after_ms
+                    )
+                ],
+            )
+            .map_err(|error| format!("Failed to clear stale path index root: {error}"))?;
+    }
+    Ok(())
+}
+
+fn find_suppressing_related_root(
+    db_path: &Path,
+    requested_root_key: &str,
+) -> Result<Option<PathIndexRootStatus>, String> {
+    let requested_key = ExplorerPathKey::from_raw(requested_root_key);
+    let mut best_ready_ancestor: Option<PathIndexRootStatus> = None;
+    let mut best_building_related: Option<PathIndexRootStatus> = None;
+
+    for root in load_root_statuses(db_path)? {
+        if root.state != "ready" && root.state != "building" {
+            continue;
+        }
+        let root_key = ExplorerPathKey::from_raw(&root.root_key);
+        let root_is_ancestor = requested_key.is_same_or_descendant_of(&root_key);
+        let root_is_descendant = root_key.is_same_or_descendant_of(&requested_key);
+        if root.state == "ready" && root.entry_count > 0 && root_is_ancestor {
+            if best_ready_ancestor
+                .as_ref()
+                .map(|current| root.root_key.len() > current.root_key.len())
+                .unwrap_or(true)
+            {
+                best_ready_ancestor = Some(root);
+            }
+            continue;
+        }
+        if root.state == "building" && (root_is_ancestor || root_is_descendant) {
+            if best_building_related
+                .as_ref()
+                .map(|current| root.root_key.len() > current.root_key.len())
+                .unwrap_or(true)
+            {
+                best_building_related = Some(root);
+            }
+        }
+    }
+
+    Ok(best_ready_ancestor.or(best_building_related))
+}
+
+fn path_index_keys_are_related(left: &str, right: &str) -> bool {
+    let left_key = ExplorerPathKey::from_raw(left);
+    let right_key = ExplorerPathKey::from_raw(right);
+    left_key.is_same_or_descendant_of(&right_key) || right_key.is_same_or_descendant_of(&left_key)
+}
+
+fn is_drive_root_path_index_key(root_key: &str) -> bool {
+    let normalized = root_key.trim_end_matches(|ch| ch == '\\' || ch == '/');
+    cfg!(target_os = "windows") && normalized.len() == 2 && normalized.as_bytes()[1] == b':'
+}
+
 #[derive(Debug)]
 struct PathIndexRootRecord {
     root_id: i64,
@@ -1361,8 +1452,7 @@ struct PathIndexRootRecord {
 }
 
 fn load_root_statuses(db_path: &Path) -> Result<Vec<PathIndexRootStatus>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let mut statement = connection
         .prepare(
             r#"
@@ -1384,8 +1474,7 @@ fn load_root_status_for_key(
     db_path: &Path,
     root_key: &str,
 ) -> Result<Option<PathIndexRootStatus>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .query_row(
             r#"
@@ -1405,8 +1494,7 @@ fn load_root_record_for_key(
     db_path: &Path,
     root_key: &str,
 ) -> Result<Option<PathIndexRootRecord>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     connection
         .query_row(
             "SELECT root_id, root_path, root_key, state FROM path_index_roots WHERE root_key = ?1",
@@ -1426,8 +1514,7 @@ fn find_best_ready_root(
     db_path: &Path,
     path_key: &str,
 ) -> Result<Option<PathIndexRootRecord>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let mut statement = connection
         .prepare(
             "SELECT root_id, root_path, root_key, state FROM path_index_roots WHERE state = 'ready'",
@@ -1463,8 +1550,7 @@ fn load_directory_entries(
     root_id: i64,
     parent_key: &str,
 ) -> Result<Vec<IndexedPathRecord>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let mut statement = connection
         .prepare(
             r#"
@@ -1489,8 +1575,7 @@ fn search_entries(
     limit: u32,
     include_hidden: bool,
 ) -> Result<Vec<IndexedPathRecord>, String> {
-    let connection = Connection::open(db_path)
-        .map_err(|error| format!("Failed to open path index database: {error}"))?;
+    let connection = open_path_index_connection(db_path)?;
     let sql = if root_key.is_some() {
         r#"
         SELECT entry.file_ref, entry.parent_file_ref, entry.path, entry.path_key, entry.parent_path,
@@ -1739,6 +1824,10 @@ fn resolve_path_index_db_path(app: &AppHandle) -> Result<PathBuf, String> {
         .join("path-index.sqlite3"))
 }
 
+fn open_path_index_connection(db_path: &Path) -> Result<Connection, String> {
+    open_index_connection(db_path)
+}
+
 fn volume_key_for_path(path: &Path) -> String {
     #[cfg(target_os = "windows")]
     {
@@ -1776,5 +1865,85 @@ mod tests {
         if cfg!(target_os = "windows") {
             assert_eq!(path.to_string_lossy(), "D:\\");
         }
+    }
+
+    #[test]
+    fn clears_stale_building_roots_without_active_tasks() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let db_path = temp.path().join("path-index.sqlite3");
+        ensure_schema(&db_path).expect("schema should initialize");
+
+        let root_path = temp.path().join("stale-root");
+        let root_key = ExplorerPathKey::from_path(&root_path).into_string();
+        mark_root_building(&db_path, &root_path, &root_key, "pending", None, None)
+            .expect("root should be marked building");
+        let old_indexed_at = now_ms().saturating_sub(PATH_INDEX_STALE_BUILDING_ROOT_MS + 1);
+        open_path_index_connection(&db_path)
+            .expect("connection should open")
+            .execute(
+                "UPDATE path_index_roots SET indexed_at_ms = ?2 WHERE root_key = ?1",
+                params![root_key, old_indexed_at as i64],
+            )
+            .expect("root timestamp should update");
+
+        clear_stale_building_roots(&db_path, &HashSet::new(), PATH_INDEX_STALE_BUILDING_ROOT_MS)
+            .expect("stale roots should clear");
+
+        let root = load_root_status_for_key(&db_path, &root_key)
+            .expect("root status should load")
+            .expect("root should exist");
+        assert_eq!(root.state, "error");
+        assert!(root
+            .last_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("abandoned"));
+    }
+
+    #[test]
+    fn suppresses_ready_ancestor_roots() {
+        let temp = tempfile::tempdir().expect("tempdir should be created");
+        let db_path = temp.path().join("path-index.sqlite3");
+        ensure_schema(&db_path).expect("schema should initialize");
+
+        let root_path = temp.path().join("workspace");
+        let child_path = root_path.join("src");
+        let root_key = ExplorerPathKey::from_path(&root_path).into_string();
+        let child_key = ExplorerPathKey::from_path(&child_path).into_string();
+        let mut connection = open_path_index_connection(&db_path).expect("connection should open");
+        let source = PathIndexBuildSource {
+            source: "recursiveWalk".to_string(),
+            volume_key: volume_key_for_path(&root_path),
+            journal_id: None,
+            last_usn: None,
+        };
+        let root_id = prepare_replace_index_root(&mut connection, &root_path, &root_key, &source)
+            .expect("root should prepare");
+        finalize_index_root(
+            &mut connection,
+            root_id,
+            PathIndexWriteStats {
+                entry_count: 1,
+                directory_count: 1,
+                file_count: 0,
+            },
+        )
+        .expect("root should finalize");
+
+        let suppressing_root = find_suppressing_related_root(&db_path, &child_key)
+            .expect("related root lookup should succeed")
+            .expect("ready ancestor should suppress child warmup");
+        assert_eq!(suppressing_root.root_key, root_key);
+        assert_eq!(suppressing_root.state, "ready");
+    }
+
+    #[test]
+    fn detects_related_path_index_keys() {
+        let parent = ExplorerPathKey::from_raw("D:/GreebleFS/usr").into_string();
+        let child = ExplorerPathKey::from_raw("D:/GreebleFS/usr/plugins/demo").into_string();
+        let sibling = ExplorerPathKey::from_raw("D:/GreebleFS/userland").into_string();
+
+        assert!(path_index_keys_are_related(&parent, &child));
+        assert!(!path_index_keys_are_related(&parent, &sibling));
     }
 }

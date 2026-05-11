@@ -41,10 +41,13 @@ describe("explorerPerformance", () => {
       queueOverflowStrategy: "drop-lowest-priority",
       previewPrefetch: {
         enabled: true,
-        batchSize: 4,
-        maxConcurrentPreviewReads: 2,
-        forwardPrefetchViewports: 0.5,
-        backwardPrefetchViewports: 0.25,
+        batchSize: 3,
+        maxConcurrentPreviewReads: 1,
+        forwardPrefetchViewports: 0.25,
+        backwardPrefetchViewports: 0,
+        maxPreviewBytesPerEntry: 524288,
+        maxBatchBytes: 1048576,
+        imagePrefetchMode: "disabled",
       },
     });
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.batchSize).toBe(12);
@@ -53,7 +56,7 @@ describe("explorerPerformance", () => {
     );
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.maxCandidateQueueDepth).toBe(96);
     expect(EXPLORER_VIEWPORT_SCHEDULER_POLICY.previewPrefetch.batchSize).toBe(
-      4,
+      3,
     );
     expect(explorerPerformance.nativeTaskGraph).toEqual({
       enabled: true,
@@ -93,6 +96,24 @@ describe("explorerPerformance", () => {
       directorySnapshotMaxConcurrent: 2,
       previewByteReadMaxConcurrent: 2,
       maxQueuedRequests: 512,
+    });
+    expect(explorerPerformance.pathIndexWarmup).toEqual({
+      enabled: false,
+      allowDriveRoots: false,
+      minimumImplicitRootDepth: 1,
+      maxImplicitRootDepth: 5,
+      maxBuildingRoots: 1,
+      requestCooldownMs: 30000,
+      failureCooldownMs: 60000,
+      staleBuildingRootMs: 600000,
+      excludedDirectoryNames: [
+        ".git",
+        ".cache",
+        "appdata",
+        "node_modules",
+        "onedrive",
+        "target",
+      ],
     });
     expect(EXPLORER_PREVIEW_STREAMING_POLICY.chunkBytes).toBe(65536);
     expect(EXPLORER_PREVIEW_STREAMING_POLICY.archiveEntryMaxBytes).toBe(
@@ -144,6 +165,9 @@ describe("explorerPerformance", () => {
           maxConcurrentPreviewReads: 0,
           forwardPrefetchViewports: 99,
           backwardPrefetchViewports: Number.NaN,
+          maxPreviewBytesPerEntry: 1,
+          maxBatchBytes: 999999999,
+          imagePrefetchMode: "dataUri",
         },
       },
     });
@@ -163,7 +187,10 @@ describe("explorerPerformance", () => {
         batchSize: 64,
         maxConcurrentPreviewReads: 1,
         forwardPrefetchViewports: 4,
-        backwardPrefetchViewports: 0.25,
+        backwardPrefetchViewports: 0,
+        maxPreviewBytesPerEntry: 1024,
+        maxBatchBytes: 64 * 1024 * 1024,
+        imagePrefetchMode: "dataUri",
       },
     });
   });
@@ -187,10 +214,41 @@ describe("explorerPerformance", () => {
     );
     expect(normalized.viewportScheduling.previewPrefetch).toEqual({
       enabled: true,
-      batchSize: 4,
-      maxConcurrentPreviewReads: 2,
-      forwardPrefetchViewports: 0.5,
-      backwardPrefetchViewports: 0.25,
+      batchSize: 3,
+      maxConcurrentPreviewReads: 1,
+      forwardPrefetchViewports: 0.25,
+      backwardPrefetchViewports: 0,
+      maxPreviewBytesPerEntry: 512 * 1024,
+      maxBatchBytes: 1024 * 1024,
+      imagePrefetchMode: "disabled",
+    });
+  });
+
+  it("normalizes path index warmup policy", () => {
+    const normalized = normalizeExplorerPerformanceManifest({
+      pathIndexWarmup: {
+        enabled: true,
+        allowDriveRoots: true,
+        minimumImplicitRootDepth: -1,
+        maxImplicitRootDepth: 99,
+        maxBuildingRoots: 99,
+        requestCooldownMs: -5,
+        failureCooldownMs: 999999999,
+        staleBuildingRootMs: 5,
+        excludedDirectoryNames: [" node_modules ", "", "AppData"],
+      },
+    });
+
+    expect(normalized.pathIndexWarmup).toEqual({
+      enabled: true,
+      allowDriveRoots: true,
+      minimumImplicitRootDepth: 0,
+      maxImplicitRootDepth: 32,
+      maxBuildingRoots: 16,
+      requestCooldownMs: 0,
+      failureCooldownMs: 30 * 60_000,
+      staleBuildingRootMs: 60_000,
+      excludedDirectoryNames: ["node_modules", "AppData"],
     });
   });
 

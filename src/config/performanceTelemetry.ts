@@ -54,6 +54,16 @@ export const explorerPerformanceBudgets = {
     targetMs: 8.3,
     description: 'p95 frame time sampled while ctrl/cmd+scroll live zoom is active in the explorer.',
   },
+  explorer_react_commit: {
+    label: 'Explorer React Commit',
+    targetMs: 16,
+    description: 'React Profiler commit duration for the Explorer subtree in dev/MCP sessions.',
+  },
+  explorer_react_invalidation: {
+    label: 'Explorer React Invalidation',
+    targetMs: 1,
+    description: 'Dev/MCP-only Explorer render invalidation source captured before a React commit.',
+  },
   explorer_drag_pointer_frame: {
     label: 'Drag Pointer Frame',
     targetMs: 4,
@@ -406,6 +416,8 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_refresh_reconcile: factory('explorer_refresh_reconcile'),
     explorer_first_interactive: factory('explorer_first_interactive'),
     explorer_layout_zoom: factory('explorer_layout_zoom'),
+    explorer_react_commit: factory('explorer_react_commit'),
+    explorer_react_invalidation: factory('explorer_react_invalidation'),
     explorer_drag_pointer_frame: factory('explorer_drag_pointer_frame'),
     explorer_drag_hit_test: factory('explorer_drag_hit_test'),
     explorer_drag_overlay_present: factory('explorer_drag_overlay_present'),

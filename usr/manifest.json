@@ -1,5 +1,17 @@
 {
   "version": 1,
+  "releaseBundle": {
+    "excludedDirectoryNames": [
+      ".cache",
+      ".git",
+      ".kain",
+      ".tmp",
+      ".venv",
+      "__pycache__",
+      "node_modules",
+      "target"
+    ]
+  },
   "entries": [
     {
       "id": "plugins",

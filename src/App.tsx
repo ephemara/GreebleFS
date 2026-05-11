@@ -334,6 +334,7 @@ import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
+import { registerWindowsPathIndexAccelerationProfileOnce } from './runtime/pathIndexAcceleration';
 import { executeVsCodeCommand } from './runtime/vscodeBridgeBackend';
 import {
   loadKainUiGraph,
@@ -1181,6 +1182,28 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   const mobileShareBootEvaluationRef = useRef(false);
   const usrProfileRuntimeActiveProfileId =
     usrProfileRuntimeSnapshot?.activeProfileId ?? "default";
+  useEffect(() => {
+    if (!settingsHydrated || runtimePlatform !== 'windows') {
+      return;
+    }
+    void registerWindowsPathIndexAccelerationProfileOnce({
+      enabled: systemSettings.windowsUsnAcceleration.enabled,
+      autoRegisterProfile: systemSettings.windowsUsnAcceleration.autoRegisterProfile,
+      journalMaximumSizeBytes:
+        systemSettings.windowsUsnAcceleration.journalMaximumSizeBytes,
+      journalAllocationDeltaBytes:
+        systemSettings.windowsUsnAcceleration.journalAllocationDeltaBytes,
+    }).catch((error) => {
+      console.warn('GreebleFS path index acceleration registration failed', error);
+    });
+  }, [
+    runtimePlatform,
+    settingsHydrated,
+    systemSettings.windowsUsnAcceleration.autoRegisterProfile,
+    systemSettings.windowsUsnAcceleration.enabled,
+    systemSettings.windowsUsnAcceleration.journalAllocationDeltaBytes,
+    systemSettings.windowsUsnAcceleration.journalMaximumSizeBytes,
+  ]);
   useEffect(() => {
     if (!settingsHydrated) {
       return;

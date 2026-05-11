@@ -1,0 +1,15 @@
+[package]
+name = "greeblefs-usn-daemon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8"
+greeblefs-index-core = { path = "../greeblefs-index-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-service = "0.8"

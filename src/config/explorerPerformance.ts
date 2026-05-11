@@ -32,13 +32,33 @@ export interface ExplorerViewportPreviewPrefetchPolicy {
   maxConcurrentPreviewReads: number;
   forwardPrefetchViewports: number;
   backwardPrefetchViewports: number;
+  maxPreviewBytesPerEntry: number;
+  maxBatchBytes: number;
+  imagePrefetchMode: ExplorerViewportPreviewPrefetchImageMode;
 }
+
+export type ExplorerViewportPreviewPrefetchImageMode = "disabled" | "dataUri";
 
 export type ShippedExplorerViewportSchedulerPolicy = Partial<
   Omit<ExplorerViewportSchedulerPolicy, "previewPrefetch">
 > & {
   previewPrefetch?: Partial<ExplorerViewportPreviewPrefetchPolicy>;
 };
+
+export interface ExplorerPathIndexWarmupPolicy {
+  enabled: boolean;
+  allowDriveRoots: boolean;
+  minimumImplicitRootDepth: number;
+  maxImplicitRootDepth: number;
+  maxBuildingRoots: number;
+  requestCooldownMs: number;
+  failureCooldownMs: number;
+  staleBuildingRootMs: number;
+  excludedDirectoryNames: string[];
+}
+
+export type ShippedExplorerPathIndexWarmupPolicy =
+  Partial<ExplorerPathIndexWarmupPolicy>;
 
 export type ExplorerNativeTaskGraphOverflowPolicy = "cancelStaleQueuedFirst";
 
@@ -133,6 +153,7 @@ export interface ShippedExplorerPerformanceManifest {
   messageStreams?: ShippedExplorerMessageStreamsPolicy;
   previewStreaming?: ShippedExplorerPreviewStreamingPolicy;
   nativeBufferPool?: ShippedExplorerNativeBufferPoolPolicy;
+  pathIndexWarmup?: ShippedExplorerPathIndexWarmupPolicy;
 }
 
 export interface ExplorerPerformanceManifest {
@@ -147,6 +168,7 @@ export interface ExplorerPerformanceManifest {
   messageStreams: ExplorerMessageStreamsPolicy;
   previewStreaming: ExplorerPreviewStreamingPolicy;
   nativeBufferPool: ExplorerNativeBufferPoolPolicy;
+  pathIndexWarmup: ExplorerPathIndexWarmupPolicy;
 }
 
 const defaultFolderActivationPerformance: ExplorerFolderActivationPerformance =
@@ -176,10 +198,13 @@ const defaultExplorerViewportSchedulerPolicy: ExplorerViewportSchedulerPolicy =
     queueOverflowStrategy: "drop-lowest-priority",
     previewPrefetch: Object.freeze({
       enabled: true,
-      batchSize: 4,
-      maxConcurrentPreviewReads: 2,
-      forwardPrefetchViewports: 0.5,
-      backwardPrefetchViewports: 0.25,
+      batchSize: 3,
+      maxConcurrentPreviewReads: 1,
+      forwardPrefetchViewports: 0.25,
+      backwardPrefetchViewports: 0,
+      maxPreviewBytesPerEntry: 512 * 1024,
+      maxBatchBytes: 1024 * 1024,
+      imagePrefetchMode: "disabled",
     }),
   });
 
@@ -245,6 +270,26 @@ const defaultExplorerNativeBufferPoolPolicy: ExplorerNativeBufferPoolPolicy =
     maxQueuedRequests: 512,
   });
 
+const defaultExplorerPathIndexWarmupPolicy: ExplorerPathIndexWarmupPolicy =
+  Object.freeze({
+    enabled: false,
+    allowDriveRoots: false,
+    minimumImplicitRootDepth: 1,
+    maxImplicitRootDepth: 5,
+    maxBuildingRoots: 1,
+    requestCooldownMs: 30_000,
+    failureCooldownMs: 60_000,
+    staleBuildingRootMs: 10 * 60_000,
+    excludedDirectoryNames: Object.freeze([
+      ".git",
+      ".cache",
+      "appdata",
+      "node_modules",
+      "onedrive",
+      "target",
+    ]) as unknown as string[],
+  });
+
 function clampNumber(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
 }
@@ -295,6 +340,23 @@ function asMessageStreamOverflowPolicy(
   fallback: ExplorerMessageStreamOverflowPolicy,
 ): ExplorerMessageStreamOverflowPolicy {
   return value === "drop-oldest" ? value : fallback;
+}
+
+function asPreviewPrefetchImageMode(
+  value: unknown,
+  fallback: ExplorerViewportPreviewPrefetchImageMode,
+): ExplorerViewportPreviewPrefetchImageMode {
+  return value === "dataUri" || value === "disabled" ? value : fallback;
+}
+
+function asStringArray(value: unknown, fallback: readonly string[]): string[] {
+  if (!Array.isArray(value)) {
+    return [...fallback];
+  }
+  const normalized = value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+  return normalized.length > 0 ? normalized : [...fallback];
 }
 
 function normalizeFolderActivationPerformance(
@@ -431,6 +493,26 @@ function normalizeViewportScheduling(
         defaultExplorerViewportSchedulerPolicy.previewPrefetch
           .backwardPrefetchViewports,
         { minimum: 0, maximum: 4 },
+      ),
+      maxPreviewBytesPerEntry: Math.round(
+        asFiniteNumber(
+          previewPrefetch?.maxPreviewBytesPerEntry,
+          defaultExplorerViewportSchedulerPolicy.previewPrefetch
+            .maxPreviewBytesPerEntry,
+          { minimum: 1024, maximum: 32 * 1024 * 1024 },
+        ),
+      ),
+      maxBatchBytes: Math.round(
+        asFiniteNumber(
+          previewPrefetch?.maxBatchBytes,
+          defaultExplorerViewportSchedulerPolicy.previewPrefetch.maxBatchBytes,
+          { minimum: 1024, maximum: 64 * 1024 * 1024 },
+        ),
+      ),
+      imagePrefetchMode: asPreviewPrefetchImageMode(
+        previewPrefetch?.imagePrefetchMode,
+        defaultExplorerViewportSchedulerPolicy.previewPrefetch
+          .imagePrefetchMode,
       ),
     },
   };
@@ -678,6 +760,70 @@ function normalizeNativeBufferPool(
   };
 }
 
+function normalizePathIndexWarmup(
+  value: ShippedExplorerPerformanceManifest["pathIndexWarmup"],
+): ExplorerPathIndexWarmupPolicy {
+  const minimumImplicitRootDepth = Math.round(
+    asFiniteNumber(
+      value?.minimumImplicitRootDepth,
+      defaultExplorerPathIndexWarmupPolicy.minimumImplicitRootDepth,
+      { minimum: 0, maximum: 16 },
+    ),
+  );
+  const maxImplicitRootDepth = Math.round(
+    asFiniteNumber(
+      value?.maxImplicitRootDepth,
+      defaultExplorerPathIndexWarmupPolicy.maxImplicitRootDepth,
+      { minimum: minimumImplicitRootDepth, maximum: 32 },
+    ),
+  );
+
+  return {
+    enabled: asBoolean(
+      value?.enabled,
+      defaultExplorerPathIndexWarmupPolicy.enabled,
+    ),
+    allowDriveRoots: asBoolean(
+      value?.allowDriveRoots,
+      defaultExplorerPathIndexWarmupPolicy.allowDriveRoots,
+    ),
+    minimumImplicitRootDepth,
+    maxImplicitRootDepth,
+    maxBuildingRoots: Math.round(
+      asFiniteNumber(
+        value?.maxBuildingRoots,
+        defaultExplorerPathIndexWarmupPolicy.maxBuildingRoots,
+        { minimum: 0, maximum: 16 },
+      ),
+    ),
+    requestCooldownMs: Math.round(
+      asFiniteNumber(
+        value?.requestCooldownMs,
+        defaultExplorerPathIndexWarmupPolicy.requestCooldownMs,
+        { minimum: 0, maximum: 10 * 60_000 },
+      ),
+    ),
+    failureCooldownMs: Math.round(
+      asFiniteNumber(
+        value?.failureCooldownMs,
+        defaultExplorerPathIndexWarmupPolicy.failureCooldownMs,
+        { minimum: 0, maximum: 30 * 60_000 },
+      ),
+    ),
+    staleBuildingRootMs: Math.round(
+      asFiniteNumber(
+        value?.staleBuildingRootMs,
+        defaultExplorerPathIndexWarmupPolicy.staleBuildingRootMs,
+        { minimum: 60_000, maximum: 24 * 60 * 60_000 },
+      ),
+    ),
+    excludedDirectoryNames: asStringArray(
+      value?.excludedDirectoryNames,
+      defaultExplorerPathIndexWarmupPolicy.excludedDirectoryNames,
+    ),
+  };
+}
+
 export function normalizeExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): ExplorerPerformanceManifest {
@@ -705,6 +851,7 @@ export function normalizeExplorerPerformanceManifest(
     messageStreams: normalizeMessageStreams(manifest?.messageStreams),
     previewStreaming: normalizePreviewStreaming(manifest?.previewStreaming),
     nativeBufferPool: normalizeNativeBufferPool(manifest?.nativeBufferPool),
+    pathIndexWarmup: normalizePathIndexWarmup(manifest?.pathIndexWarmup),
   });
 }
 
@@ -744,6 +891,9 @@ export let EXPLORER_PREVIEW_STREAMING_POLICY =
 export let EXPLORER_NATIVE_BUFFER_POOL_POLICY =
   defaultExplorerNativeBufferPoolPolicy;
 
+export let EXPLORER_PATH_INDEX_WARMUP_POLICY =
+  defaultExplorerPathIndexWarmupPolicy;
+
 export function applyUsrExplorerPerformanceManifest(
   manifest: ShippedExplorerPerformanceManifest | null | undefined,
 ): void {
@@ -766,6 +916,7 @@ export function applyUsrExplorerPerformanceManifest(
   EXPLORER_MESSAGE_STREAMS_POLICY = explorerPerformance.messageStreams;
   EXPLORER_PREVIEW_STREAMING_POLICY = explorerPerformance.previewStreaming;
   EXPLORER_NATIVE_BUFFER_POOL_POLICY = explorerPerformance.nativeBufferPool;
+  EXPLORER_PATH_INDEX_WARMUP_POLICY = explorerPerformance.pathIndexWarmup;
 }
 
 applyUsrExplorerPerformanceManifest(

@@ -7,7 +7,7 @@
     "activeShaderId": null,
     "activeShellRendererId": null,
     "activeThemeEngineId": null,
-    "activeThemeId": "catppuccin",
+    "activeThemeId": "github-dark",
     "activeThemeRecipeId": null,
     "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
@@ -16,11 +16,11 @@
     "appAnimationDurationMs": 320,
     "appAnimationIntensity": 1,
     "appBlur": false,
-    "appBlurStrength": 18,
+    "appBlurStrength": 0,
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1,
+    "appZoom": 0.725,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -2824,7 +2824,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.8370000019449053,
+    "gridZoom": 0.5190000072430951,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2843,7 +2843,7 @@
     "sortOrder": "asc",
     "thumbnails": {
       "enableVideoHoverScrub": true,
-      "enabled": true,
+      "enabled": false,
       "includeAudio": true,
       "includeCode": false,
       "includeImages": true,
@@ -2852,7 +2852,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "details"
+    "viewMode": "icons-l"
   },
   "home": {
     "activePackId": null,
@@ -3256,7 +3256,7 @@
     "shellProfile": "auto",
     "showSidebar": false,
     "windowMode": "windowed",
-    "windowedHeight": 906,
-    "windowedWidth": 1683
+    "windowedHeight": 560,
+    "windowedWidth": 843
   }
 }

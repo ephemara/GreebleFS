@@ -33,6 +33,9 @@ const basePolicy: ExplorerViewportSchedulerPolicy = {
     maxConcurrentPreviewReads: 2,
     forwardPrefetchViewports: 0.5,
     backwardPrefetchViewports: 0.25,
+    maxPreviewBytesPerEntry: 512 * 1024,
+    maxBatchBytes: 1024 * 1024,
+    imagePrefetchMode: "dataUri",
   },
 };
 
@@ -56,6 +59,7 @@ function resolvePreviewWork(entry: TestEntry): ExplorerViewportPreviewPrefetchWo
   return {
     previewKind: entry.previewKind,
     previewCacheKey: `${entry.previewKind}:${entry.path}`,
+    estimatedByteSize: 128 * 1024,
   };
 }
 
@@ -223,5 +227,69 @@ describe("explorerViewportPreviewPrefetchScheduler", () => {
     expect(result.results).toHaveLength(5);
     expect(result.telemetry.maxConcurrentPreviewReads).toBe(2);
     expect(maxActiveReads).toBeLessThanOrEqual(2);
+  });
+
+  it("skips image candidates when image prefetch is disabled", () => {
+    const entries = [
+      createEntry(0, { previewKind: "image" }),
+      createEntry(1, { previewKind: "text" }),
+    ];
+
+    const candidates = buildExplorerViewportPreviewPrefetchCandidates({
+      entries,
+      viewportStartIndex: 0,
+      viewportEndIndex: 2,
+      policy: {
+        ...basePolicy.previewPrefetch,
+        imagePrefetchMode: "disabled",
+      },
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: (entry) =>
+        `${entry.entityId}::${entry.contentRevision}`,
+      resolvePreviewWork,
+    });
+
+    expect(candidates.map((candidate) => candidate.previewKind)).toEqual([
+      "text",
+    ]);
+  });
+
+  it("applies entry and batch byte budgets before scheduling reads", async () => {
+    const entries = Array.from({ length: 5 }, (_, index) => createEntry(index));
+    const candidates = buildExplorerViewportPreviewPrefetchCandidates({
+      entries,
+      viewportStartIndex: 0,
+      viewportEndIndex: 5,
+      policy: basePolicy.previewPrefetch,
+      getEntryPath: (entry) => entry.path,
+      getEntryIdentityKey: (entry) =>
+        `${entry.entityId}::${entry.contentRevision}`,
+      resolvePreviewWork: (entry) => ({
+        previewKind: entry.previewKind,
+        previewCacheKey: `${entry.previewKind}:${entry.path}`,
+        estimatedByteSize: entry.path.endsWith("0.txt")
+          ? 1024 * 1024
+          : 256 * 1024,
+      }),
+    });
+
+    const result = await runExplorerViewportPreviewPrefetchScheduler({
+      candidates,
+      policy: {
+        ...basePolicy,
+        previewPrefetch: {
+          ...basePolicy.previewPrefetch,
+          batchSize: 5,
+          maxPreviewBytesPerEntry: 512 * 1024,
+          maxBatchBytes: 512 * 1024,
+        },
+      },
+      prefetchCandidate: async (candidate) => candidate.previewCacheKey,
+    });
+
+    expect(result.results).toHaveLength(2);
+    expect(result.telemetry.budgetSkippedCount).toBe(3);
+    expect(result.telemetry.maxPreviewBytesPerEntry).toBe(512 * 1024);
+    expect(result.telemetry.maxBatchBytes).toBe(512 * 1024);
   });
 });

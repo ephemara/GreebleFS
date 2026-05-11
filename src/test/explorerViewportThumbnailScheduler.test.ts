@@ -30,6 +30,9 @@ const basePolicy: ExplorerViewportSchedulerPolicy = {
     maxConcurrentPreviewReads: 2,
     forwardPrefetchViewports: 0.5,
     backwardPrefetchViewports: 0.25,
+    maxPreviewBytesPerEntry: 512 * 1024,
+    maxBatchBytes: 1024 * 1024,
+    imagePrefetchMode: "dataUri",
   },
 };
 

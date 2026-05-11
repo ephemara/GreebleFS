@@ -1,6 +1,8 @@
 [workspace]
 members = [
   "src-tauri",
+  "crates/greeblefs-index-core",
+  "crates/greeblefs-usn-daemon",
   "crates/greeble-ipc-contracts",
   "crates/file-opening",
   "crates/file-opening-macos",

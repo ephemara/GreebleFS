@@ -18,6 +18,29 @@ function normalizeManifestEntry(entry) {
   };
 }
 
+function normalizeStringList(values) {
+  const normalizedValues = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const normalizedValue = String(value ?? "").trim();
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      continue;
+    }
+    seen.add(normalizedValue);
+    normalizedValues.push(normalizedValue);
+  }
+  return normalizedValues;
+}
+
+function normalizeReleaseBundleConfig(releaseBundle) {
+  const config = releaseBundle && typeof releaseBundle === "object"
+    ? releaseBundle
+    : {};
+  return {
+    excludedDirectoryNames: normalizeStringList(config.excludedDirectoryNames),
+  };
+}
+
 export function getUsrManifestPath({ projectRootPath = defaultProjectRoot } = {}) {
   return path.join(projectRootPath, "usr", "manifest.json");
 }
@@ -28,8 +51,13 @@ export function readUsrManifest({ projectRootPath = defaultProjectRoot } = {}) {
   const parsed = JSON.parse(manifestText);
   return {
     version: typeof parsed.version === "number" ? parsed.version : 1,
+    releaseBundle: normalizeReleaseBundleConfig(parsed.releaseBundle),
     entries: Array.isArray(parsed.entries) ? parsed.entries.map(normalizeManifestEntry) : [],
   };
+}
+
+export function getUsrReleaseBundleConfig({ projectRootPath = defaultProjectRoot } = {}) {
+  return readUsrManifest({ projectRootPath }).releaseBundle;
 }
 
 export function getUsrManagedContentEntries({ projectRootPath = defaultProjectRoot } = {}) {

@@ -6,6 +6,7 @@ import {
   loadCachedExplorerLocation,
   listExplorerLocation,
   navigateExplorerPolicySession,
+  readExplorerPreviewCachePayload,
   readExplorerPreviewBytes,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
@@ -196,6 +197,34 @@ describe("explorer backend native pool routing", () => {
     expect([...archiveBytes]).toEqual([4, 5, 6]);
     expect(localInvokeSpy).not.toHaveBeenCalled();
     expect(archiveInvokeSpy).not.toHaveBeenCalled();
+  });
+
+  it("builds local preview cache payloads through native pooled bytes", async () => {
+    nativePoolRuntimeMock.readLocalExplorerPreviewBytesViaNativePool.mockResolvedValue(
+      new TextEncoder().encode("prefetched text"),
+    );
+    const textInvokeSpy = vi.spyOn(commands, "fsReadTextFile");
+    const base64InvokeSpy = vi.spyOn(commands, "fsReadFileBase64");
+
+    const payload = await readExplorerPreviewCachePayload(
+      {
+        path: "D:/demo/prefetch.txt",
+        previewKind: "text",
+        maxBytes: 1024,
+      },
+      {
+        priority: "prefetch",
+        workKey: "text:D:/demo/prefetch.txt",
+      },
+    );
+
+    expect(payload.value).toBe("prefetched text");
+    expect(payload.sourceBytes).toBe("prefetched text".length);
+    expect(
+      nativePoolRuntimeMock.readLocalExplorerPreviewBytesViaNativePool,
+    ).toHaveBeenCalledWith("D:/demo/prefetch.txt", 1024);
+    expect(textInvokeSpy).not.toHaveBeenCalled();
+    expect(base64InvokeSpy).not.toHaveBeenCalled();
   });
 
   it("keeps cloud preview bytes on the binary invoke fallback", async () => {

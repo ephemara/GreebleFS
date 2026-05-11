@@ -9,7 +9,11 @@ import { fileURLToPath } from "node:url";
 
 import { cleanupGreeblefsDevProcesses } from "./cleanup-dev-processes.mjs";
 import { assertTauronForkAvailable } from "./tauron-preflight.mjs";
-import { getUsrEntrySourcePath, getUsrManagedContentEntries } from "./usr-manifest.mjs";
+import {
+  getUsrEntrySourcePath,
+  getUsrManagedContentEntries,
+  getUsrReleaseBundleConfig,
+} from "./usr-manifest.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +28,13 @@ const srcTauriRoot = path.join(projectRoot, "src-tauri");
 const defaultWorkspaceCargoTargetDir = path.join(projectRoot, "target");
 const cacheRoot = path.join(os.homedir(), ".cache", "greeblefs-tauri");
 const defaultWindowsReleaseArtifactRoot = path.join(defaultWorkspaceCargoTargetDir, "release-support");
+const repoUsrRoot = path.join(projectRoot, "usr");
+const bundledUsrResourceRoot = path.join(defaultWindowsReleaseArtifactRoot, "usr");
+const windowsUsnDaemonReleaseBinaryPath = path.join(
+  defaultWorkspaceCargoTargetDir,
+  "release",
+  "greeblefs-usn-daemon.exe",
+);
 const windowsReleaseInstallerAliasFileName = "GreebleFS Setup.exe";
 const hasExplicitArtifactRoot = Boolean(
   process.env.GREEBLEFS_VPS_ARTIFACTS_ROOT || process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT,
@@ -167,6 +178,52 @@ function formatBundleDirectoryResourcePathForTauriProject(directoryPath) {
   return formatBundleDirectoryResourcePath(
     formatProjectPathForTauriConfig(directoryPath, "bundle resource directory"),
   );
+}
+
+function formatBundleFileResourcePathForTauriProject(filePath) {
+  return formatProjectPathForTauriConfig(filePath, "bundle resource file");
+}
+
+function isTauriUsrResourceSource(resourceSource) {
+  return normalizePathForLogs(resourceSource).replace(/\/+$/, "") === "../usr";
+}
+
+function assertPathInside(parentPath, targetPath, label) {
+  const relativePath = path.relative(parentPath, targetPath);
+  if (!relativePath || relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error(
+      `${label} must stay inside ${normalizePathForLogs(parentPath)}. Received ${normalizePathForLogs(targetPath)}.`,
+    );
+  }
+}
+
+function shouldCopyBundledUsrPath(sourcePath, sourceRoot, excludedDirectoryNames) {
+  const relativePath = path.relative(sourceRoot, sourcePath);
+  if (!relativePath || relativePath === ".") {
+    return true;
+  }
+
+  const pathSegments = normalizePathForLogs(relativePath)
+    .split("/")
+    .filter(Boolean);
+  return !pathSegments.some((segment) => excludedDirectoryNames.has(segment.toLowerCase()));
+}
+
+function formatByteCount(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  for (const unit of units) {
+    if (value < 1024 || unit === units[units.length - 1]) {
+      return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
+    }
+    value /= 1024;
+  }
+
+  return `${bytes} B`;
 }
 
 function resolveMobileShareBundleDist(tauriCommand, existingEnv = process.env) {
@@ -459,6 +516,65 @@ async function pathExists(targetPath) {
   }
 }
 
+async function collectDirectoryStats(rootPath) {
+  let fileCount = 0;
+  let byteCount = 0;
+
+  async function visitDirectory(directoryPath) {
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(directoryPath, entry.name);
+      if (entry.isDirectory()) {
+        await visitDirectory(entryPath);
+        continue;
+      }
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const stats = await fs.stat(entryPath);
+      fileCount += 1;
+      byteCount += stats.size;
+    }
+  }
+
+  if (await pathExists(rootPath)) {
+    await visitDirectory(rootPath);
+  }
+
+  return { fileCount, byteCount };
+}
+
+async function prepareBundledUsrResource(tauriCommand) {
+  if (tauriCommand !== "build") {
+    return null;
+  }
+  if (!(await pathExists(repoUsrRoot))) {
+    return null;
+  }
+
+  assertPathInside(projectRoot, bundledUsrResourceRoot, "Bundled usr staging directory");
+  const releaseBundleConfig = getUsrReleaseBundleConfig({ projectRootPath: projectRoot });
+  const excludedDirectoryNames = new Set(
+    releaseBundleConfig.excludedDirectoryNames.map((name) => name.toLowerCase()),
+  );
+
+  await fs.rm(bundledUsrResourceRoot, { recursive: true, force: true });
+  await fs.mkdir(path.dirname(bundledUsrResourceRoot), { recursive: true });
+  await fs.cp(repoUsrRoot, bundledUsrResourceRoot, {
+    recursive: true,
+    force: true,
+    filter: (sourcePath) =>
+      shouldCopyBundledUsrPath(sourcePath, repoUsrRoot, excludedDirectoryNames),
+  });
+
+  const stats = await collectDirectoryStats(bundledUsrResourceRoot);
+  console.log(
+    `Prepared bundled usr resource at ${normalizePathForLogs(path.relative(projectRoot, bundledUsrResourceRoot))} (${stats.fileCount} files, ${formatByteCount(stats.byteCount)}; excluded dirs: ${[...excludedDirectoryNames].sort().join(", ")}).`,
+  );
+  return bundledUsrResourceRoot;
+}
+
 async function collectDirectoryFilesRecursively(rootPath, extension, matchingFiles = []) {
   const entries = await fs.readdir(rootPath, { withFileTypes: true });
 
@@ -695,6 +811,28 @@ function buildWindowsRustAccelerationEnvironment({
   return windowsRustEnvironment;
 }
 
+async function prepareWindowsUsnDaemonResource(tauriCommand) {
+  if (process.platform !== "win32" || tauriCommand !== "build") {
+    return null;
+  }
+
+  console.log("Preparing GreebleFS USN daemon service binary...");
+  const exitCode = await runCommand(
+    "cargo",
+    ["build", "--release", "-p", "greeblefs-usn-daemon"],
+    buildWindowsRustAccelerationEnvironment(),
+  );
+  if (exitCode !== 0) {
+    process.exit(exitCode);
+  }
+  if (!(await pathExists(windowsUsnDaemonReleaseBinaryPath))) {
+    throw new Error(
+      `Expected USN daemon binary at ${normalizePathForLogs(windowsUsnDaemonReleaseBinaryPath)} after cargo build.`,
+    );
+  }
+  return windowsUsnDaemonReleaseBinaryPath;
+}
+
 async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const tauriConfigPath = path.join(projectRoot, "src-tauri", "tauri.conf.json");
   const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
@@ -707,6 +845,8 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const explicitDevPort = (process.env.GREEBLEFS_TAURI_DEV_PORT || process.env.OVERLAYTERM_TAURI_DEV_PORT)?.trim();
   const isDevCommand = tauriCommand === "dev";
   const resolvedDevPort = explicitDevPort || "1420";
+  const stagedUsrResourceRoot = await prepareBundledUsrResource(tauriCommand);
+  const windowsUsnDaemonResourcePath = await prepareWindowsUsnDaemonResource(tauriCommand);
   const resolvedDevUrl = isDevCommand
     ? explicitDevUrl || `http://localhost:${resolvedDevPort}`
     : null;
@@ -726,6 +866,8 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
     for (const [resourceSource, resourceDestination] of Object.entries(config.bundle.resources)) {
       if (resourceSource === "../dist-mobile/" || resourceSource === "../dist-mobile") {
         rewrittenResources[formatBundleDirectoryResourcePathForTauriProject(mobileShareBundleDist)] = resourceDestination;
+      } else if (stagedUsrResourceRoot && isTauriUsrResourceSource(resourceSource)) {
+        rewrittenResources[formatBundleDirectoryResourcePathForTauriProject(stagedUsrResourceRoot)] = resourceDestination;
       } else {
         rewrittenResources[resourceSource] = resourceDestination;
       }
@@ -745,6 +887,9 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
     }
     if (await pathExists(nodeRuntimeSourceRoot)) {
       config.bundle.resources[formatBundleDirectoryResourcePathForTauriProject(nodeRuntimeSourceRoot)] = "runtimes/node/";
+    }
+    if (windowsUsnDaemonResourcePath) {
+      config.bundle.resources[formatBundleFileResourcePathForTauriProject(windowsUsnDaemonResourcePath)] = "greeblefs-usn-daemon.exe";
     }
   }
 

@@ -55,6 +55,8 @@ pub mod native_terminal;
 #[cfg(not(test))]
 pub mod open_with;
 #[cfg(not(test))]
+pub mod path_index_acceleration;
+#[cfg(not(test))]
 pub mod pdf_commands;
 #[cfg(not(test))]
 pub mod plugin_commands;
@@ -305,6 +307,7 @@ pub fn run() {
             app.manage(PreviewStreamingManager::from_app(&app.handle()));
             app.manage(path_index_manager);
             indexing::register_native_handlers(&app.handle())?;
+            path_index_acceleration::register_native_handlers(&app.handle())?;
             if let Err(error) = dev_observatory::initialize_greeblefs_dev_observatory(&app.handle())
             {
                 eprintln!("GreebleFS: failed to initialize Tauron dev observatory: {error}");

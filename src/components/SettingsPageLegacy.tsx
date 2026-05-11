@@ -431,6 +431,12 @@ import {
   type LinuxDisplayBackendStatus,
   type LinuxNvidiaWebkitWorkaroundMode,
 } from "../runtime/tauriClient";
+import type { PathIndexAccelerationStatus } from "../generated/tauri";
+import {
+  enablePathIndexAcceleration,
+  getPathIndexAccelerationStatus,
+  rebuildPathIndexAcceleration,
+} from "../runtime/pathIndexAcceleration";
 import {
   connectTailscale,
   disconnectTailscale,
@@ -2837,6 +2843,11 @@ const EMPTY_CLOUD_ACCOUNTS_SNAPSHOT: ExplorerCloudAccountsSnapshot = {
   providers: [],
 };
 
+function resolveWindowsDriveRoot(path: string | null | undefined): string | undefined {
+  const match = path?.trim().replace(/\//g, "\\").match(/^([a-zA-Z]:)\\/);
+  return match ? `${match[1]}\\` : undefined;
+}
+
 const CLOUD_PROVIDER_IDS = [
   "google-drive",
   "dropbox",
@@ -3468,6 +3479,18 @@ export function SettingsPage({
   const [telemetryActionPending, setTelemetryActionPending] = useState<
     "export" | "clear" | null
   >(null);
+  const [pathIndexAccelerationStatus, setPathIndexAccelerationStatus] =
+    useState<PathIndexAccelerationStatus | null>(null);
+  const [pathIndexAccelerationPending, setPathIndexAccelerationPending] =
+    useState(false);
+  const [
+    pathIndexAccelerationActionPending,
+    setPathIndexAccelerationActionPending,
+  ] = useState<"enable" | "rebuild" | null>(null);
+  const [pathIndexAccelerationNotice, setPathIndexAccelerationNotice] =
+    useState<string | null>(null);
+  const [pathIndexAccelerationError, setPathIndexAccelerationError] =
+    useState<string | null>(null);
   const [localModelStatus, setLocalModelStatus] =
     useState<LocalModelCatalogStatus | null>(null);
   const [localModelStatusPending, setLocalModelStatusPending] = useState(false);
@@ -3852,6 +3875,104 @@ export function SettingsPage({
     settings.python,
     settings.terminal.shell,
     updatePython,
+  ]);
+
+  const currentWindowsDriveRoot = useMemo(
+    () => resolveWindowsDriveRoot(explorerCurrentPath),
+    [explorerCurrentPath],
+  );
+  const refreshPathIndexAccelerationStatus = useCallback(async () => {
+    if (platform !== "windows") {
+      return;
+    }
+    setPathIndexAccelerationPending(true);
+    try {
+      const status = await getPathIndexAccelerationStatus();
+      setPathIndexAccelerationStatus(status);
+      setPathIndexAccelerationError(status.lastError ?? null);
+    } catch (error) {
+      setPathIndexAccelerationError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setPathIndexAccelerationPending(false);
+    }
+  }, [platform]);
+
+  useEffect(() => {
+    void refreshPathIndexAccelerationStatus();
+  }, [refreshPathIndexAccelerationStatus]);
+
+  const handleEnablePathIndexAcceleration = useCallback(async () => {
+    setPathIndexAccelerationActionPending("enable");
+    setPathIndexAccelerationNotice(null);
+    setPathIndexAccelerationError(null);
+    try {
+      const response = await enablePathIndexAcceleration({
+        driveRoot: currentWindowsDriveRoot ?? null,
+        autoIndex: settings.system.windowsUsnAcceleration.autoIndexFixedNtfsDrives,
+        journalMaximumSizeBytes:
+          settings.system.windowsUsnAcceleration.journalMaximumSizeBytes,
+        journalAllocationDeltaBytes:
+          settings.system.windowsUsnAcceleration.journalAllocationDeltaBytes,
+      });
+      setPathIndexAccelerationNotice(
+        response.taskId
+          ? `USN indexing queued for ${response.driveRoot ?? currentWindowsDriveRoot ?? "drive"}.`
+          : "USN daemon profile registered.",
+      );
+      await refreshPathIndexAccelerationStatus();
+    } catch (error) {
+      setPathIndexAccelerationError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setPathIndexAccelerationActionPending(null);
+    }
+  }, [
+    currentWindowsDriveRoot,
+    refreshPathIndexAccelerationStatus,
+    settings.system.windowsUsnAcceleration.autoIndexFixedNtfsDrives,
+    settings.system.windowsUsnAcceleration.journalAllocationDeltaBytes,
+    settings.system.windowsUsnAcceleration.journalMaximumSizeBytes,
+  ]);
+
+  const handleRebuildPathIndexAcceleration = useCallback(async () => {
+    const driveRoot =
+      pathIndexAccelerationStatus?.volumes.find(volume => volume.driveRoot)?.driveRoot
+      ?? currentWindowsDriveRoot;
+    if (!driveRoot) {
+      setPathIndexAccelerationError("No Windows drive root is available to rebuild.");
+      return;
+    }
+    setPathIndexAccelerationActionPending("rebuild");
+    setPathIndexAccelerationNotice(null);
+    setPathIndexAccelerationError(null);
+    try {
+      const response = await rebuildPathIndexAcceleration({
+        driveRoot,
+        journalMaximumSizeBytes:
+          settings.system.windowsUsnAcceleration.journalMaximumSizeBytes,
+        journalAllocationDeltaBytes:
+          settings.system.windowsUsnAcceleration.journalAllocationDeltaBytes,
+      });
+      setPathIndexAccelerationNotice(
+        `USN rebuild queued for ${response.driveRoot ?? driveRoot}.`,
+      );
+      await refreshPathIndexAccelerationStatus();
+    } catch (error) {
+      setPathIndexAccelerationError(
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setPathIndexAccelerationActionPending(null);
+    }
+  }, [
+    currentWindowsDriveRoot,
+    pathIndexAccelerationStatus?.volumes,
+    refreshPathIndexAccelerationStatus,
+    settings.system.windowsUsnAcceleration.journalAllocationDeltaBytes,
+    settings.system.windowsUsnAcceleration.journalMaximumSizeBytes,
   ]);
   const cudaProviderStatus = useMemo(
     () =>
@@ -14020,6 +14141,11 @@ export function SettingsPage({
             }
             accelerationRuntimeSnapshot={accelerationRuntimeSnapshot}
             accelerationWorkloadRoutes={accelerationWorkloadRoutes}
+            pathIndexAccelerationStatus={pathIndexAccelerationStatus}
+            pathIndexAccelerationPending={pathIndexAccelerationPending}
+            pathIndexAccelerationActionPending={pathIndexAccelerationActionPending}
+            pathIndexAccelerationNotice={pathIndexAccelerationNotice}
+            pathIndexAccelerationError={pathIndexAccelerationError}
             semanticSearchProof={semanticSearchProof}
             onSetLaunchAtStartup={setLaunchAtStartup}
             onUpdateSystem={updateSystem}
@@ -14027,6 +14153,9 @@ export function SettingsPage({
             onSetShowInTaskbar={setShowInTaskbar}
             onProbeAccelerationPipeline={handleProbeAccelerationPipeline}
             onQueueAccelerationInstall={handleQueueAccelerationInstall}
+            onRefreshPathIndexAccelerationStatus={refreshPathIndexAccelerationStatus}
+            onEnablePathIndexAcceleration={handleEnablePathIndexAcceleration}
+            onRebuildPathIndexAcceleration={handleRebuildPathIndexAcceleration}
             onSetLinuxDisplayBackendPreference={
               setLinuxDisplayBackendPreference
             }

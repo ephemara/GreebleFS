@@ -1,11 +1,12 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Download, Loader2, RefreshCw, Settings2, Trash2 } from '@/components/AppIcons';
+import { Download, HardDrive, Loader2, RefreshCw, Settings2, Trash2 } from '@/components/AppIcons';
 import type {
   AccelerationRuntimeStatusSnapshot,
   GpuRuntimeStatusSnapshot,
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
   LinuxNvidiaWebkitWorkaroundMode,
+  PathIndexAccelerationStatus,
   RuntimeToolchainStatus,
 } from '../../../generated/tauri';
 import type {
@@ -116,6 +117,11 @@ export function SystemSettingsSection({
   accelerationAutoInstallPlanAvailable,
   accelerationRuntimeSnapshot,
   accelerationWorkloadRoutes,
+  pathIndexAccelerationStatus,
+  pathIndexAccelerationPending,
+  pathIndexAccelerationActionPending,
+  pathIndexAccelerationNotice,
+  pathIndexAccelerationError,
   semanticSearchProof,
   onSetLaunchAtStartup,
   onUpdateSystem,
@@ -123,6 +129,9 @@ export function SystemSettingsSection({
   onSetShowInTaskbar,
   onProbeAccelerationPipeline,
   onQueueAccelerationInstall,
+  onRefreshPathIndexAccelerationStatus,
+  onEnablePathIndexAcceleration,
+  onRebuildPathIndexAcceleration,
   onSetLinuxDisplayBackendPreference,
   onSetLinuxNvidiaWebkitWorkaroundMode,
   onRefreshTelemetryStatus,
@@ -189,6 +198,11 @@ export function SystemSettingsSection({
   accelerationAutoInstallPlanAvailable: boolean;
   accelerationRuntimeSnapshot: AccelerationRuntimeStatusSnapshot;
   accelerationWorkloadRoutes: AccelerationWorkloadRouteView[];
+  pathIndexAccelerationStatus: PathIndexAccelerationStatus | null;
+  pathIndexAccelerationPending: boolean;
+  pathIndexAccelerationActionPending: 'enable' | 'rebuild' | null;
+  pathIndexAccelerationNotice: string | null;
+  pathIndexAccelerationError: string | null;
   semanticSearchProof: SemanticSearchProofView | null;
   onSetLaunchAtStartup: (enabled: boolean) => Promise<void> | void;
   onUpdateSystem: (patch: Record<string, unknown>) => void;
@@ -196,6 +210,9 @@ export function SystemSettingsSection({
   onSetShowInTaskbar: (enabled: boolean) => void;
   onProbeAccelerationPipeline: () => Promise<void> | void;
   onQueueAccelerationInstall: () => Promise<void> | void;
+  onRefreshPathIndexAccelerationStatus: () => Promise<void> | void;
+  onEnablePathIndexAcceleration: () => Promise<void> | void;
+  onRebuildPathIndexAcceleration: () => Promise<void> | void;
   onSetLinuxDisplayBackendPreference: (preference: LinuxDisplayBackendPreference) => Promise<void> | void;
   onSetLinuxNvidiaWebkitWorkaroundMode: (mode: LinuxNvidiaWebkitWorkaroundMode) => Promise<void> | void;
   onRefreshTelemetryStatus: () => Promise<void> | void;
@@ -302,6 +319,15 @@ export function SystemSettingsSection({
   const accelerationInstallNotice = accelerationInstallRecommended
     ? 'Blank runtime detected. Queue managed packages from Terminal.'
     : 'Install follows the selected routing mode.';
+  const pathIndexAccelerationSummary = pathIndexAccelerationStatus == null
+    ? 'USN daemon status pending'
+    : `${pathIndexAccelerationStatus.running ? 'service running' : 'service offline'} · ${pathIndexAccelerationStatus.profileRegistered ? 'profile linked' : 'profile unlinked'} · ${pathIndexAccelerationStatus.volumes.length} drives`;
+  const pathIndexHealthy = pathIndexAccelerationStatus?.volumes.some(
+    volume => volume.source === 'windowsUsnService'
+      && volume.state === 'ready'
+      && volume.journalId != null
+      && volume.lastUsn != null,
+  ) ?? false;
 
   return (
     <SettingsSectionScaffold
@@ -591,6 +617,93 @@ export function SystemSettingsSection({
           </>
         ) : null}
       </SettingsCompactSection>
+
+      {platform === 'windows' ? (
+        <SettingsCompactSection
+          title="Path Index"
+          subtitle={pathIndexAccelerationSummary}
+          actions={(
+            <>
+              <SettingsIconActionButton
+                aria-label="Refresh Path Index Acceleration"
+                title="Refresh Path Index Acceleration"
+                onClick={() => void onRefreshPathIndexAccelerationStatus()}
+                disabled={pathIndexAccelerationPending}
+              >
+                {pathIndexAccelerationPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              </SettingsIconActionButton>
+              <SettingsCompactActionButton
+                onClick={() => void onEnablePathIndexAcceleration()}
+                disabled={pathIndexAccelerationActionPending != null}
+                active={pathIndexAccelerationStatus?.running === true}
+                accent={accent}
+              >
+                {pathIndexAccelerationActionPending === 'enable' ? <Loader2 size={12} className="animate-spin" /> : <HardDrive size={12} />}
+                <span className="truncate">Enable</span>
+              </SettingsCompactActionButton>
+              <SettingsCompactActionButton
+                onClick={() => void onRebuildPathIndexAcceleration()}
+                disabled={pathIndexAccelerationActionPending != null}
+                active={pathIndexAccelerationActionPending === 'rebuild'}
+                accent={accent}
+              >
+                {pathIndexAccelerationActionPending === 'rebuild' ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                <span className="truncate">Rebuild</span>
+              </SettingsCompactActionButton>
+            </>
+          )}
+        >
+          <SettingsMetricStrip
+            items={[
+              {
+                id: 'usn-service',
+                label: 'Daemon',
+                value: pathIndexAccelerationStatus?.running ? 'running' : 'offline',
+                tone: pathIndexAccelerationStatus?.running ? 'accent' : 'default',
+              },
+              {
+                id: 'usn-profile',
+                label: 'Profile',
+                value: pathIndexAccelerationStatus?.profileRegistered ? 'linked' : 'unlinked',
+                tone: pathIndexAccelerationStatus?.profileRegistered ? 'accent' : 'default',
+              },
+              {
+                id: 'usn-drives',
+                label: 'Drives',
+                value: String(pathIndexAccelerationStatus?.volumes.length ?? 0),
+                tone: pathIndexHealthy ? 'accent' : 'default',
+              },
+            ]}
+          />
+          {pathIndexAccelerationNotice ? (
+            <SettingsInlineNotice tone="success" className="mx-3 my-2">
+              {pathIndexAccelerationNotice}
+            </SettingsInlineNotice>
+          ) : null}
+          {pathIndexAccelerationError ? (
+            <SettingsInlineNotice tone="danger" className="mx-3 my-2">
+              {pathIndexAccelerationError}
+            </SettingsInlineNotice>
+          ) : null}
+          {pathIndexAccelerationStatus?.volumes.length ? (
+            pathIndexAccelerationStatus.volumes.map(volume => (
+              <SettingsControlRow
+                key={volume.volumeKey}
+                label={volume.driveRoot}
+                detail={`journal ${volume.journalId ?? 'n/a'} · usn ${volume.lastUsn ?? 'n/a'} · entries ${volume.entryCount}`}
+                control={<ThemeBadge label={volume.state} active={volume.state === 'ready'} />}
+                action={<ThemeBadge label={volume.source} active={volume.source === 'windowsUsnService'} />}
+              />
+            ))
+          ) : (
+            <SettingsInlineNotice tone="muted" className="mx-3 my-2">
+              {pathIndexAccelerationStatus?.running
+                ? 'No drive index registered yet.'
+                : 'Daemon service is not responding.'}
+            </SettingsInlineNotice>
+          )}
+        </SettingsCompactSection>
+      ) : null}
 
       <SettingsCompactSection
         title="Diagnostics"

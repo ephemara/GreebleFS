@@ -264,6 +264,22 @@ export interface ExplorerPreviewReadOptions {
   workKey?: string;
 }
 
+export type ExplorerPreviewCachePayloadKind = "image" | "script" | "text";
+
+export interface ExplorerPreviewCachePayloadRequest {
+  path: string;
+  previewKind: ExplorerPreviewCachePayloadKind;
+  maxBytes: number;
+}
+
+export interface ExplorerPreviewCachePayload {
+  path: string;
+  previewKind: ExplorerPreviewCachePayloadKind;
+  value: string;
+  sourceBytes: number;
+  cacheBytes: number;
+}
+
 export type ExplorerLocalDriveInfo = DriveInfo & {
   kind: "local";
   capabilities: ExplorerSourceCapabilities;
@@ -716,6 +732,7 @@ export type ExplorerBackendContract = {
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
   readPreviewBytes: typeof readExplorerPreviewBytes;
+  readPreviewCachePayload: typeof readExplorerPreviewCachePayload;
   readImageThumbnail: typeof readExplorerImageThumbnail;
   readEntryThumbnail: typeof readExplorerEntryThumbnail;
   readEntryThumbnailArtifact: typeof readExplorerThumbnailArtifact;
@@ -1986,6 +2003,32 @@ export async function readExplorerFileBase64(
   }
 }
 
+export async function readExplorerPreviewCachePayload(
+  request: ExplorerPreviewCachePayloadRequest,
+  options?: ExplorerPreviewReadOptions,
+): Promise<ExplorerPreviewCachePayload> {
+  const maxBytes =
+    typeof request.maxBytes === "number" && Number.isFinite(request.maxBytes)
+      ? Math.max(1024, Math.floor(request.maxBytes))
+      : EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes;
+  const bytes = await readExplorerPreviewBytes(request.path, maxBytes, {
+    ...options,
+    priority: options?.priority ?? "prefetch",
+    workKey: options?.workKey ?? `preview-cache:${request.path}`,
+  });
+  const value =
+    request.previewKind === "image"
+      ? bytesToExplorerPreviewDataUri(request.path, bytes)
+      : new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  return {
+    path: request.path,
+    previewKind: request.previewKind,
+    value,
+    sourceBytes: bytes.byteLength,
+    cacheBytes: estimatePreviewCachePayloadBytes(value),
+  };
+}
+
 export async function readExplorerPreviewBytes(
   path: string,
   maxBytes: number,
@@ -2047,6 +2090,10 @@ function bytesToExplorerPreviewDataUri(
   bytes: Uint8Array,
 ): string {
   return `data:${detectExplorerPreviewMimeType(path)};base64,${bytesToBase64(bytes)}`;
+}
+
+function estimatePreviewCachePayloadBytes(value: string): number {
+  return value.length * 2;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -2685,6 +2732,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
   readPreviewBytes: readExplorerPreviewBytes,
+  readPreviewCachePayload: readExplorerPreviewCachePayload,
   readImageThumbnail: readExplorerImageThumbnail,
   readEntryThumbnail: readExplorerEntryThumbnail,
   readEntryThumbnailArtifact: readExplorerThumbnailArtifact,

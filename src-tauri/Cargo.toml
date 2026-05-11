@@ -98,6 +98,7 @@ p256 = "0.13"
 toml = { workspace = true }
 which = { workspace = true }
 greeble-ipc-contracts = { path = "../crates/greeble-ipc-contracts" }
+greeblefs-index-core = { path = "../crates/greeblefs-index-core" }
 overlay-contracts = { path = "../crates/overlay-contracts" }
 yazi-specta = { path = "../crates/yazi-specta" }
 yazi-boot = { path = "../crates/fileexplorer/crates/yazi-boot" }
