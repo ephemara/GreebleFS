@@ -1,0 +1,45 @@
+name: layout-overlap
+description: "Proves that two flex layout nodes (rectangles) never mathematically overlap"
+language: typescript
+target_nodes:
+  - CallExpression
+  - ObjectLiteralExpression
+
+# Map typescript AST symbols to Z3 solver declarations
+declarations:
+  - name: node_a_x
+    sort: {kind: int}
+  - name: node_a_y
+    sort: {kind: int}
+  - name: node_a_w
+    sort: {kind: int}
+  - name: node_a_h
+    sort: {kind: int}
+    
+  - name: node_b_x
+    sort: {kind: int}
+  - name: node_b_y
+    sort: {kind: int}
+  - name: node_b_w
+    sort: {kind: int}
+  - name: node_b_h
+    sort: {kind: int}
+
+# An overlap occurs if all 4 geometric constraints are met simultaneously.
+# By asserting this constraint, Z3 will try to find *any* possible UI 
+# state where an overlap happens. If it fails (unsat), overlap is impossible.
+constraints:
+  - op: and
+    args:
+      # A's right edge is to the right of B's left edge
+      - op: gt
+        args: [{op: add, args: [node_a_x, node_a_w]}, node_b_x]
+      # A's left edge is to the left of B's right edge
+      - op: lt
+        args: [node_a_x, {op: add, args: [node_b_x, node_b_w]}]
+      # A's bottom edge is below B's top edge
+      - op: gt
+        args: [{op: add, args: [node_a_y, node_a_h]}, node_b_y]
+      # A's top edge is above B's bottom edge
+      - op: lt
+        args: [node_a_y, {op: add, args: [node_b_y, node_b_h]}]

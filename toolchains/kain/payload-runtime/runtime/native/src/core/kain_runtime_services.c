@@ -1,11 +1,21 @@
 #include "../../include/kain_runtime_services.h"
 #include "../../include/kain_runtime_base.h"
+#include "../../include/kain_native_net_system.h"
+#include "../../include/kain_native_process_system.h"
 #include "../../include/kain_runtime_vendor_lane.h"
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #ifndef _WIN32
 #include <strings.h>
+#endif
+
+#ifdef _WIN32
+#define KAIN_NATIVE_NET_SERVICE_STATUS KAIN_SERVICE_STATUS_AVAILABLE
+#define KAIN_NATIVE_PROCESS_SERVICE_STATUS KAIN_SERVICE_STATUS_AVAILABLE
+#else
+#define KAIN_NATIVE_NET_SERVICE_STATUS KAIN_SERVICE_STATUS_DEGRADED
+#define KAIN_NATIVE_PROCESS_SERVICE_STATUS KAIN_SERVICE_STATUS_DEGRADED
 #endif
 
 typedef struct {
@@ -72,6 +82,7 @@ static const KainServiceKeyAlias g_kain_native_runtime_service_aliases[] = {
     {"native.app-host", KAIN_SERVICE_KEY_PLATFORM_APP_HOST},
     {"native.input", KAIN_SERVICE_KEY_PLATFORM_INPUT},
     {"native.viewport", KAIN_SERVICE_KEY_GFX_VIEWPORT},
+    {"native.graphics", KAIN_SERVICE_KEY_GFX_RAW_NATIVE},
     {"native.scene", KAIN_SERVICE_KEY_SCENE_RUNTIME},
     {"native.scene.query", KAIN_SERVICE_KEY_SCENE_QUERY},
     {"native.scene.mutation", KAIN_SERVICE_KEY_SCENE_MUTATION},
@@ -81,6 +92,10 @@ static const KainServiceKeyAlias g_kain_native_runtime_service_aliases[] = {
     {"native.asset.ingestion", KAIN_SERVICE_KEY_ASSET_INGESTION},
     {"native.ui.compiled-bundle", KAIN_SERVICE_KEY_UI_BUNDLE},
     {"native.compute", KAIN_SERVICE_KEY_GFX_COMPUTE},
+    {"native.shader.spirv", KAIN_SERVICE_KEY_GFX_SHADER_SPIRV},
+    {"native.vulkan", KAIN_SERVICE_KEY_GFX_BACKEND_VULKAN},
+    {"native.dx12", KAIN_SERVICE_KEY_GFX_BACKEND_D3D12},
+    {"native.d3d12", KAIN_SERVICE_KEY_GFX_BACKEND_D3D12},
 };
 
 static const KainServiceDescriptor g_kain_native_runtime_service_catalog[] = {
@@ -127,7 +142,7 @@ static const KainServiceDescriptor g_kain_native_runtime_service_catalog[] = {
     {
         KAIN_SERVICE_KEY_PLATFORM_INPUT,
         "Native Input",
-        "Win32 input capture and event handling",
+        "Canonical Kain input sessions, semantic actions, replay traces, and native platform event handling",
         KAIN_SERVICE_PROVIDER_PLATFORM_WIN32,
         KAIN_SERVICE_STATUS_AVAILABLE,
         KAIN_SERVICE_REQUIREMENT_REQUIRED,
@@ -407,22 +422,22 @@ static const KainServiceDescriptor g_kain_native_runtime_service_catalog[] = {
     {
         KAIN_SERVICE_KEY_IO_NET,
         "IO Network",
-        "Vendor-backed TCP, UDP, and name-resolution primitives",
+        "Native TCP and HTTP/1.1 networking primitives",
         KAIN_SERVICE_PROVIDER_NATIVE_CORE,
-        KAIN_VENDOR_HAS_LIBUV ? KAIN_SERVICE_STATUS_AVAILABLE : KAIN_SERVICE_STATUS_DEGRADED,
+        KAIN_NATIVE_NET_SERVICE_STATUS,
         KAIN_SERVICE_REQUIREMENT_OPTIONAL,
         KAIN_RUNTIME_ABI_VERSION_CURRENT,
-        (void*)&g_kain_vendor_io_net_service
+        (void*)&g_kain_native_net_function_table
     },
     {
         KAIN_SERVICE_KEY_IO_PROCESS,
         "IO Process",
-        "Vendor-backed process spawning, pipes, and child lifecycle management",
+        "Native child-process, pipe, and PTY session management",
         KAIN_SERVICE_PROVIDER_NATIVE_CORE,
-        KAIN_VENDOR_HAS_LIBUV ? KAIN_SERVICE_STATUS_AVAILABLE : KAIN_SERVICE_STATUS_DEGRADED,
+        KAIN_NATIVE_PROCESS_SERVICE_STATUS,
         KAIN_SERVICE_REQUIREMENT_OPTIONAL,
         KAIN_RUNTIME_ABI_VERSION_CURRENT,
-        (void*)&g_kain_vendor_io_process_service
+        (void*)&g_kain_native_process_function_table
     },
     {
         KAIN_SERVICE_KEY_IO_TIMERS,
@@ -440,6 +455,46 @@ static const KainServiceDescriptor g_kain_native_runtime_service_catalog[] = {
         "Compute bundle validation, dispatch planning, and native runtime handoff",
         KAIN_SERVICE_PROVIDER_NATIVE_CORE,
         KAIN_SERVICE_STATUS_AVAILABLE,
+        KAIN_SERVICE_REQUIREMENT_OPTIONAL,
+        KAIN_RUNTIME_ABI_VERSION_CURRENT,
+        NULL
+    },
+    {
+        KAIN_SERVICE_KEY_GFX_RAW_NATIVE,
+        "Raw Native Graphics",
+        "Catalog-free graphics kernel for Kain-authored engines, buffers, SPIR-V modules, pipelines, and draw commands",
+        KAIN_SERVICE_PROVIDER_NATIVE_CORE,
+        KAIN_SERVICE_STATUS_AVAILABLE,
+        KAIN_SERVICE_REQUIREMENT_OPTIONAL,
+        KAIN_RUNTIME_ABI_VERSION_CURRENT,
+        NULL
+    },
+    {
+        KAIN_SERVICE_KEY_GFX_SHADER_SPIRV,
+        "SPIR-V Shader Modules",
+        "Canonical native shader payload registration for Kain-authored graphics and compute pipelines",
+        KAIN_SERVICE_PROVIDER_NATIVE_CORE,
+        KAIN_SERVICE_STATUS_AVAILABLE,
+        KAIN_SERVICE_REQUIREMENT_OPTIONAL,
+        KAIN_RUNTIME_ABI_VERSION_CURRENT,
+        NULL
+    },
+    {
+        KAIN_SERVICE_KEY_GFX_BACKEND_VULKAN,
+        "Vulkan Backend Target",
+        "Kain-visible Vulkan backend selection and capability probe; direct command execution is not attached in this runtime build",
+        KAIN_SERVICE_PROVIDER_NATIVE_CORE,
+        KAIN_SERVICE_STATUS_DEGRADED,
+        KAIN_SERVICE_REQUIREMENT_OPTIONAL,
+        KAIN_RUNTIME_ABI_VERSION_CURRENT,
+        NULL
+    },
+    {
+        KAIN_SERVICE_KEY_GFX_BACKEND_D3D12,
+        "DirectX 12 Backend Target",
+        "Kain-visible DirectX 12 backend selection and capability probe; direct command execution is not attached in this runtime build",
+        KAIN_SERVICE_PROVIDER_NATIVE_CORE,
+        KAIN_SERVICE_STATUS_DEGRADED,
         KAIN_SERVICE_REQUIREMENT_OPTIONAL,
         KAIN_RUNTIME_ABI_VERSION_CURRENT,
         NULL

@@ -1,0 +1,56 @@
+version: 1
+id: greeblefs-backend.prune_explorer_task_registry_rust_growth
+kind: buffer_growth_ok
+description: Vec or buffer growth arithmetic in `prune_explorer_task_registry`
+tags:
+- bitwise
+- bounds
+- overflow
+source:
+  path: D:\GreebleFS\src-tauri\src\fs_commands.rs
+  language: rust
+  symbol: prune_explorer_task_registry
+  signature: 'fn prune_explorer_task_registry(registry: &mut ExplorerTaskRegistry)
+    {'
+  start_line: 1110
+  end_line: 1151
+  template_id: rust-growth
+  template_origin: builtin
+  template_path: C:\Dev\polytools\z3-mcp\src\z3_mcp\templates\languages\rust.yaml
+  template_engine: regex
+  reason: Vec or buffer growth arithmetic in `prune_explorer_task_registry`
+  bindings: {}
+  binding_spans: {}
+case:
+  size_bits: 64
+  length: length
+  capacity: capacity
+  increment: increment
+  slack: 1
+  declarations:
+  - name: length
+    sort:
+      kind: int
+  - name: capacity
+    sort:
+      kind: int
+  - name: increment
+    sort:
+      kind: int
+  constraints:
+  - op: ge
+    args:
+    - length
+    - 0
+  - op: ge
+    args:
+    - capacity
+    - 0
+  - op: le
+    args:
+    - length
+    - capacity
+  - op: gt
+    args:
+    - increment
+    - 0

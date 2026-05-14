@@ -1,0 +1,36 @@
+{
+  "claim_holds": false,
+  "counterexample": {
+    "left": {
+      "kind": "int",
+      "text": "0",
+      "value": 0
+    },
+    "right": {
+      "kind": "int",
+      "text": "18446744073709551616",
+      "value": 18446744073709551616
+    }
+  },
+  "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+  "human_counterexample": [
+    "left = 0",
+    "right = 18446744073709551616"
+  ],
+  "kind": "size_add_ok",
+  "patch_hints": [
+    "Use overflow-checked addition before storing the result in size_t or usize.",
+    "Reject negative or oversized inputs before they reach unsigned arithmetic."
+  ],
+  "solver_status": "sat",
+  "status": "counterexample",
+  "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+  "title": "Checked size addition",
+  "witness_values": {
+    "sum": {
+      "kind": "int",
+      "text": "18446744073709551616",
+      "value": 18446744073709551616
+    }
+  }
+}

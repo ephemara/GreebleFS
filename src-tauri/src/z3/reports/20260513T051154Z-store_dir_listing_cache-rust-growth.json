@@ -1,0 +1,47 @@
+{
+  "claim_holds": false,
+  "counterexample": {
+    "capacity": {
+      "kind": "int",
+      "text": "5764616338027724729",
+      "value": 5764616338027724729
+    },
+    "increment": {
+      "kind": "int",
+      "text": "31137922306211430504",
+      "value": 31137922306211430504
+    },
+    "length": {
+      "kind": "int",
+      "text": "5764616338027724729",
+      "value": 5764616338027724729
+    }
+  },
+  "counterexample_summary": "buffer_growth_ok: counterexample found (['length = 5764616338027724729', 'capacity = 5764616338027724729', 'increment = 31137922306211430504'])",
+  "human_counterexample": [
+    "length = 5764616338027724729",
+    "capacity = 5764616338027724729",
+    "increment = 31137922306211430504"
+  ],
+  "kind": "buffer_growth_ok",
+  "patch_hints": [
+    "Compute needed size with checked arithmetic before comparing against capacity.",
+    "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+  ],
+  "solver_status": "sat",
+  "status": "counterexample",
+  "summary": "buffer_growth_ok: counterexample found (['length = 5764616338027724729', 'capacity = 5764616338027724729', 'increment = 31137922306211430504'])",
+  "title": "Buffer growth wrap guard",
+  "witness_values": {
+    "true_needed": {
+      "kind": "int",
+      "text": "36902538644239155234",
+      "value": 36902538644239155234
+    },
+    "wrapped_needed": {
+      "kind": "int",
+      "text": "9050496820052002",
+      "value": 9050496820052002
+    }
+  }
+}

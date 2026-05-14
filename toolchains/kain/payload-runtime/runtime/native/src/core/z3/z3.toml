@@ -1,0 +1,31 @@
+[pack]
+name = "kain.native.core.proofs"
+scope = ".."
+languages = ["c"]
+
+[solver]
+timeout_ms = 5000
+size_bits = 64
+
+[sources]
+include = ["**/*"]
+exclude = ["z3/**", "target/**", "node_modules/**"]
+
+[templates]
+use = ["builtin:*", "local:templates/*.yaml"]
+
+[fixtures]
+use = ["fixtures/**/*.*"]
+
+[ci]
+smoke = ["proofs/**/*.yaml"]
+full = ["proofs/**/*.*"]
+actor = ["proofs/actor-*.yaml"]
+net = ["proofs/native-net-*.yaml"]
+native = ["proofs/native-*.yaml"]
+process = ["proofs/native-process-*.yaml"]
+entangle = ["proofs/native-entangle-*.yaml"]
+
+[reports]
+path = "reports"
+keep_history = true

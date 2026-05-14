@@ -1,0 +1,631 @@
+{
+  "all_cases_passed": false,
+  "counterexamples": 10,
+  "errors": 0,
+  "lane": "smoke",
+  "pack_dir": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3",
+  "pack_name": "ui",
+  "pattern": "proofs/**/*.yaml",
+  "proved": 1,
+  "results": [
+    {
+      "id": "ui.if_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-if-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\if-generic-size-add.yaml",
+      "relative_path": "proofs/c/if-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 240,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `if`",
+        "signature": "if (!session->state[index].in_use) {",
+        "start_line": 233,
+        "symbol": "if",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_decode_hex_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": true,
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_decode_hex-generic-size-add.json",
+        "solver_status": "unsat",
+        "status": "proved",
+        "summary": "size_add_ok: proved",
+        "title": "Checked size addition"
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_decode_hex-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_decode_hex-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 314,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_decode_hex`",
+        "signature": "static int64_t kain_native_ui_decode_hex(const char* bytes_hex, uint8_t** out_bytes) {",
+        "start_line": 270,
+        "symbol": "kain_native_ui_decode_hex",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_ensure_state_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_ensure_state-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_ensure_state-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_ensure_state-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 243,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_ensure_state`",
+        "signature": "static KainNativeUiStateRecord* kain_native_ui_ensure_state(KainNativeUiSession* session, int64_t node_id, const char* key) {",
+        "start_line": 223,
+        "symbol": "kain_native_ui_ensure_state",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_ensure_style_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_ensure_style-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_ensure_style-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_ensure_style-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 206,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_ensure_style`",
+        "signature": "static KainNativeUiStyleRecord* kain_native_ui_ensure_style(KainNativeUiSession* session, int64_t node_id, const char* key) {",
+        "start_line": 186,
+        "symbol": "kain_native_ui_ensure_style",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_find_state_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_find_state-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_find_state-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_find_state-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 221,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_find_state`",
+        "signature": "static KainNativeUiStateRecord* kain_native_ui_find_state(KainNativeUiSession* session, int64_t node_id, const char* key) {",
+        "start_line": 208,
+        "symbol": "kain_native_ui_find_state",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_find_style_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_find_style-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_find_style-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_find_style-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 184,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_find_style`",
+        "signature": "static KainNativeUiStyleRecord* kain_native_ui_find_style(KainNativeUiSession* session, int64_t node_id, const char* key) {",
+        "start_line": 171,
+        "symbol": "kain_native_ui_find_style",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_host_present_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_host_present-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_host_present-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_host_present-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 520,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_host_present`",
+        "signature": "int64_t kain_native_ui_host_present(int64_t session_id) {",
+        "start_line": 488,
+        "symbol": "kain_native_ui_host_present",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_node_create_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_node_create-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_node_create-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_node_create-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 577,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_node_create`",
+        "signature": "int64_t kain_native_ui_node_create(int64_t session_id, const char* kind) {",
+        "start_line": 555,
+        "symbol": "kain_native_ui_node_create",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_node_destroy_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_node_destroy-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_node_destroy-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_node_destroy-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 600,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_node_destroy`",
+        "signature": "int64_t kain_native_ui_node_destroy(int64_t session_id, int64_t node_id) {",
+        "start_line": 579,
+        "symbol": "kain_native_ui_node_destroy",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_win32_gl_process_menu_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_win32_gl_process_menu-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_win32_gl_process_menu-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_win32_gl_process_menu-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 701,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_host_win32_gl.c",
+        "reason": "Size addition overflow in `kain_native_ui_win32_gl_process_menu`",
+        "signature": "static void kain_native_ui_win32_gl_process_menu(KainNativeUiWin32GlState* state) {",
+        "start_line": 642,
+        "symbol": "kain_native_ui_win32_gl_process_menu",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    },
+    {
+      "id": "ui.kain_native_ui_win32_gl_render_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": false,
+        "counterexample": {
+          "left": {
+            "kind": "int",
+            "text": "0",
+            "value": 0
+          },
+          "right": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        },
+        "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "human_counterexample": [
+          "left = 0",
+          "right = 18446744073709551616"
+        ],
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T105147Z-kain_native_ui_win32_gl_render-generic-size-add.json",
+        "solver_status": "sat",
+        "status": "counterexample",
+        "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+        "title": "Checked size addition",
+        "witness_values": {
+          "sum": {
+            "kind": "int",
+            "text": "18446744073709551616",
+            "value": 18446744073709551616
+          }
+        }
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_win32_gl_render-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_win32_gl_render-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 640,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_host_win32_gl.c",
+        "reason": "Size addition overflow in `kain_native_ui_win32_gl_render`",
+        "signature": "static void kain_native_ui_win32_gl_render(KainNativeUiWin32GlState* state) {",
+        "start_line": 625,
+        "symbol": "kain_native_ui_win32_gl_render",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    }
+  ],
+  "scope_dir": "D:\\Kain-Lang\\runtime\\native\\src\\ui",
+  "status": "completed",
+  "summary": "proof suite: 1 proved, 10 counterexamples, 0 unknown, 0 errors",
+  "total_cases": 11,
+  "unknown": 0
+}

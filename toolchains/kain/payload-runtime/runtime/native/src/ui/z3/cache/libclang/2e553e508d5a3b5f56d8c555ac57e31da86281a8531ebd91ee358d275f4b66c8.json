@@ -1,0 +1,8 @@
+{
+  "matches": [],
+  "why": {
+    "match_count": 0,
+    "match_engine": "libclang",
+    "rule": "pointer_offset_add"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "claim_holds": null,
+  "kind": "buffer_growth_ok",
+  "patch_hints": [
+    "Compute needed size with checked arithmetic before comparing against capacity.",
+    "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+  ],
+  "reason": "timeout",
+  "solver_status": "unknown",
+  "status": "unknown",
+  "summary": "buffer_growth_ok: unknown (timeout)",
+  "title": "Buffer growth wrap guard"
+}

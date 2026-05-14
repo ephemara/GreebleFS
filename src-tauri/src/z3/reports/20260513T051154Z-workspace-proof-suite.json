@@ -1,0 +1,333 @@
+{
+  "all_cases_passed": false,
+  "counterexamples": 4,
+  "errors": 0,
+  "lane": "full",
+  "pack_count": 1,
+  "pack_results": [
+    {
+      "all_cases_passed": false,
+      "counterexamples": 4,
+      "errors": 0,
+      "lane": "full",
+      "pack_dir": "D:\\GreebleFS\\src-tauri\\src\\z3",
+      "pack_name": "greeblefs-backend",
+      "pattern": "proofs/**/*.*",
+      "proved": 0,
+      "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051154Z-greeblefs-backend-full.json",
+      "results": [
+        {
+          "id": "greeblefs-backend.fuzzy_score_text_generic_size_add",
+          "kind": "size_add_ok",
+          "outcome": {
+            "claim_holds": false,
+            "counterexample": {
+              "left": {
+                "kind": "int",
+                "text": "0",
+                "value": 0
+              },
+              "right": {
+                "kind": "int",
+                "text": "18446744073709551616",
+                "value": 18446744073709551616
+              }
+            },
+            "counterexample_summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+            "human_counterexample": [
+              "left = 0",
+              "right = 18446744073709551616"
+            ],
+            "kind": "size_add_ok",
+            "patch_hints": [
+              "Use overflow-checked addition before storing the result in size_t or usize.",
+              "Reject negative or oversized inputs before they reach unsigned arithmetic."
+            ],
+            "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051124Z-fuzzy_score_text-generic-size-add.json",
+            "solver_status": "sat",
+            "status": "counterexample",
+            "summary": "size_add_ok: counterexample found (['left = 0', 'right = 18446744073709551616'])",
+            "title": "Checked size addition",
+            "witness_values": {
+              "sum": {
+                "kind": "int",
+                "text": "18446744073709551616",
+                "value": 18446744073709551616
+              }
+            }
+          },
+          "path": "D:\\GreebleFS\\src-tauri\\src\\z3\\proofs\\rust\\fuzzy_score_text-generic-size-add.yaml",
+          "relative_path": "proofs/rust/fuzzy_score_text-generic-size-add.yaml",
+          "source": {
+            "binding_spans": {},
+            "bindings": {},
+            "end_line": 1495,
+            "language": "rust",
+            "path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+            "reason": "Size addition overflow in `fuzzy_score_text`",
+            "signature": "fn fuzzy_score_text(query: &str, haystack: &str) -> Option<(i64, Vec<usize>)> {",
+            "start_line": 1471,
+            "symbol": "fuzzy_score_text",
+            "template_engine": "regex",
+            "template_id": "generic-size-add",
+            "template_origin": "builtin",
+            "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+          }
+        },
+        {
+          "id": "greeblefs-backend.fuzzy_score_text_rust_growth",
+          "kind": "buffer_growth_ok",
+          "outcome": {
+            "claim_holds": null,
+            "kind": "buffer_growth_ok",
+            "patch_hints": [
+              "Compute needed size with checked arithmetic before comparing against capacity.",
+              "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+            ],
+            "reason": "timeout",
+            "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051134Z-fuzzy_score_text-rust-growth.json",
+            "solver_status": "unknown",
+            "status": "unknown",
+            "summary": "buffer_growth_ok: unknown (timeout)",
+            "title": "Buffer growth wrap guard"
+          },
+          "path": "D:\\GreebleFS\\src-tauri\\src\\z3\\proofs\\rust\\fuzzy_score_text-rust-growth.yaml",
+          "relative_path": "proofs/rust/fuzzy_score_text-rust-growth.yaml",
+          "source": {
+            "binding_spans": {},
+            "bindings": {},
+            "end_line": 1495,
+            "language": "rust",
+            "path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+            "reason": "Vec or buffer growth arithmetic in `fuzzy_score_text`",
+            "signature": "fn fuzzy_score_text(query: &str, haystack: &str) -> Option<(i64, Vec<usize>)> {",
+            "start_line": 1471,
+            "symbol": "fuzzy_score_text",
+            "template_engine": "regex",
+            "template_id": "rust-growth",
+            "template_origin": "builtin",
+            "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\rust.yaml"
+          }
+        },
+        {
+          "id": "greeblefs-backend.normalize_batch_delete_paths_rust_growth",
+          "kind": "buffer_growth_ok",
+          "outcome": {
+            "claim_holds": false,
+            "counterexample": {
+              "capacity": {
+                "kind": "int",
+                "text": "16234",
+                "value": 16234
+              },
+              "increment": {
+                "kind": "int",
+                "text": "18446744073709567847",
+                "value": 18446744073709567847
+              },
+              "length": {
+                "kind": "int",
+                "text": "2",
+                "value": 2
+              }
+            },
+            "counterexample_summary": "buffer_growth_ok: counterexample found (['length = 2', 'capacity = 16234', 'increment = 18446744073709567847'])",
+            "human_counterexample": [
+              "length = 2",
+              "capacity = 16234",
+              "increment = 18446744073709567847"
+            ],
+            "kind": "buffer_growth_ok",
+            "patch_hints": [
+              "Compute needed size with checked arithmetic before comparing against capacity.",
+              "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+            ],
+            "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051140Z-normalize_batch_delete_paths-rust-growth.json",
+            "solver_status": "sat",
+            "status": "counterexample",
+            "summary": "buffer_growth_ok: counterexample found (['length = 2', 'capacity = 16234', 'increment = 18446744073709567847'])",
+            "title": "Buffer growth wrap guard",
+            "witness_values": {
+              "true_needed": {
+                "kind": "int",
+                "text": "18446744073709567850",
+                "value": 18446744073709567850
+              },
+              "wrapped_needed": {
+                "kind": "int",
+                "text": "16234",
+                "value": 16234
+              }
+            }
+          },
+          "path": "D:\\GreebleFS\\src-tauri\\src\\z3\\proofs\\rust\\normalize_batch_delete_paths-rust-growth.yaml",
+          "relative_path": "proofs/rust/normalize_batch_delete_paths-rust-growth.yaml",
+          "source": {
+            "binding_spans": {},
+            "bindings": {},
+            "end_line": 1395,
+            "language": "rust",
+            "path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+            "reason": "Vec or buffer growth arithmetic in `normalize_batch_delete_paths`",
+            "signature": "fn normalize_batch_delete_paths(paths: Vec<String>) -> Vec<String> {",
+            "start_line": 1369,
+            "symbol": "normalize_batch_delete_paths",
+            "template_engine": "regex",
+            "template_id": "rust-growth",
+            "template_origin": "builtin",
+            "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\rust.yaml"
+          }
+        },
+        {
+          "id": "greeblefs-backend.prune_explorer_task_registry_rust_growth",
+          "kind": "buffer_growth_ok",
+          "outcome": {
+            "claim_holds": false,
+            "counterexample": {
+              "capacity": {
+                "kind": "int",
+                "text": "306244774703136770",
+                "value": 306244774703136770
+              },
+              "increment": {
+                "kind": "int",
+                "text": "110986709216960446463",
+                "value": 110986709216960446463
+              },
+              "length": {
+                "kind": "int",
+                "text": "2",
+                "value": 2
+              }
+            },
+            "counterexample_summary": "buffer_growth_ok: counterexample found (['length = 2', 'capacity = 306244774703136770', 'increment = 110986709216960446463'])",
+            "human_counterexample": [
+              "length = 2",
+              "capacity = 306244774703136770",
+              "increment = 110986709216960446463"
+            ],
+            "kind": "buffer_growth_ok",
+            "patch_hints": [
+              "Compute needed size with checked arithmetic before comparing against capacity.",
+              "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+            ],
+            "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051149Z-prune_explorer_task_registry-rust-growth.json",
+            "solver_status": "sat",
+            "status": "counterexample",
+            "summary": "buffer_growth_ok: counterexample found (['length = 2', 'capacity = 306244774703136770', 'increment = 110986709216960446463'])",
+            "title": "Buffer growth wrap guard",
+            "witness_values": {
+              "true_needed": {
+                "kind": "int",
+                "text": "110986709216960446466",
+                "value": 110986709216960446466
+              },
+              "wrapped_needed": {
+                "kind": "int",
+                "text": "306244774703136770",
+                "value": 306244774703136770
+              }
+            }
+          },
+          "path": "D:\\GreebleFS\\src-tauri\\src\\z3\\proofs\\rust\\prune_explorer_task_registry-rust-growth.yaml",
+          "relative_path": "proofs/rust/prune_explorer_task_registry-rust-growth.yaml",
+          "source": {
+            "binding_spans": {},
+            "bindings": {},
+            "end_line": 1151,
+            "language": "rust",
+            "path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+            "reason": "Vec or buffer growth arithmetic in `prune_explorer_task_registry`",
+            "signature": "fn prune_explorer_task_registry(registry: &mut ExplorerTaskRegistry) {",
+            "start_line": 1110,
+            "symbol": "prune_explorer_task_registry",
+            "template_engine": "regex",
+            "template_id": "rust-growth",
+            "template_origin": "builtin",
+            "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\rust.yaml"
+          }
+        },
+        {
+          "id": "greeblefs-backend.store_dir_listing_cache_rust_growth",
+          "kind": "buffer_growth_ok",
+          "outcome": {
+            "claim_holds": false,
+            "counterexample": {
+              "capacity": {
+                "kind": "int",
+                "text": "5764616338027724729",
+                "value": 5764616338027724729
+              },
+              "increment": {
+                "kind": "int",
+                "text": "31137922306211430504",
+                "value": 31137922306211430504
+              },
+              "length": {
+                "kind": "int",
+                "text": "5764616338027724729",
+                "value": 5764616338027724729
+              }
+            },
+            "counterexample_summary": "buffer_growth_ok: counterexample found (['length = 5764616338027724729', 'capacity = 5764616338027724729', 'increment = 31137922306211430504'])",
+            "human_counterexample": [
+              "length = 5764616338027724729",
+              "capacity = 5764616338027724729",
+              "increment = 31137922306211430504"
+            ],
+            "kind": "buffer_growth_ok",
+            "patch_hints": [
+              "Compute needed size with checked arithmetic before comparing against capacity.",
+              "Do not let wrapped needed <= capacity guards drive realloc or memcpy."
+            ],
+            "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051154Z-store_dir_listing_cache-rust-growth.json",
+            "solver_status": "sat",
+            "status": "counterexample",
+            "summary": "buffer_growth_ok: counterexample found (['length = 5764616338027724729', 'capacity = 5764616338027724729', 'increment = 31137922306211430504'])",
+            "title": "Buffer growth wrap guard",
+            "witness_values": {
+              "true_needed": {
+                "kind": "int",
+                "text": "36902538644239155234",
+                "value": 36902538644239155234
+              },
+              "wrapped_needed": {
+                "kind": "int",
+                "text": "9050496820052002",
+                "value": 9050496820052002
+              }
+            }
+          },
+          "path": "D:\\GreebleFS\\src-tauri\\src\\z3\\proofs\\rust\\store_dir_listing_cache-rust-growth.yaml",
+          "relative_path": "proofs/rust/store_dir_listing_cache-rust-growth.yaml",
+          "source": {
+            "binding_spans": {},
+            "bindings": {},
+            "end_line": 816,
+            "language": "rust",
+            "path": "D:\\GreebleFS\\src-tauri\\src\\fs_commands.rs",
+            "reason": "Vec or buffer growth arithmetic in `store_dir_listing_cache`",
+            "signature": "fn store_dir_listing_cache(",
+            "start_line": 794,
+            "symbol": "store_dir_listing_cache",
+            "template_engine": "regex",
+            "template_id": "rust-growth",
+            "template_origin": "builtin",
+            "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\rust.yaml"
+          }
+        }
+      ],
+      "scope_dir": "D:\\GreebleFS\\src-tauri\\src",
+      "status": "completed",
+      "summary": "proof suite: 0 proved, 4 counterexamples, 1 unknown, 0 errors",
+      "total_cases": 5,
+      "unknown": 1
+    }
+  ],
+  "project_root": "D:\\GreebleFS\\src-tauri\\src",
+  "proved": 0,
+  "status": "completed",
+  "summary": "proof suite: 0 proved, 4 counterexamples, 1 unknown, 0 errors",
+  "total_cases": 5,
+  "unknown": 1
+}

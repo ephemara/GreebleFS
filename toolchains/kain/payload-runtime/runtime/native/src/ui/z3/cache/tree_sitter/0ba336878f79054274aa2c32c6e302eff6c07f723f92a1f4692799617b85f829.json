@@ -1,0 +1,6 @@
+{
+  "file": "\\\\?\\D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+  "file_extension": ".c",
+  "matches": [],
+  "query": "(call_expression\n  function: (identifier) @callee\n  arguments: (argument_list\n    (_)\n    (_)\n    (binary_expression\n      left: (identifier) @count\n      operator: \"*\"\n      right: (identifier) @stride))) @copy_call\n"
+}

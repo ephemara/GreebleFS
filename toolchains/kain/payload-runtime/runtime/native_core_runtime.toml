@@ -1,0 +1,36 @@
+name = "kain-native-core-runtime"
+
+# Lean runtime manifest for normal LLVM/direct-C file builds.
+# Keep this focused on the ABI needed by the core language, native stdlib,
+# actors, entanglement, and intent helpers. The broader native_runtime.toml
+# remains the opt-in app/UI/vendor bundle.
+sources = [
+    "native/src/core/kain_runtime_core.c",
+    "native/src/core/kain_runtime_version.c",
+    "native/src/core/kain_runtime_diagnostics.c",
+    "native/src/core/kain_runtime_async.c",
+    "native/src/core/kain_runtime_actor.c",
+    "native/src/core/kain_runtime_entangle.c",
+    "native/src/core/kain_runtime_native_stdlib.c",
+    "native/src/core/kain_native_input_system.c",
+    "native/src/core/kain_native_net_system.c",
+    "native/src/core/kain_native_process_system.c",
+    "native/src/core/kain_native_graphics_system.c",
+    "native/src/ui/kain_native_ui_system.c",
+    "native/src/ui/kain_native_ui_host_adapter.c",
+]
+
+windows_sources = [
+    "native/src/gfx/opengl/kain_gl_win32_host.c",
+    "native/src/platform/win32/kain_runtime_win32_shared.c",
+    "native/src/ui/kain_native_ui_host_win32_gl.c",
+]
+
+include_dirs = [
+    "native/include",
+]
+
+[link]
+windows = ["legacy_stdio_definitions", "user32", "gdi32", "opengl32", "shell32", "ws2_32", "winhttp"]
+linux = []
+macos = []

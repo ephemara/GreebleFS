@@ -1,0 +1,51 @@
+{
+  "all_cases_passed": true,
+  "counterexamples": 0,
+  "errors": 0,
+  "lane": "full",
+  "pack_dir": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3",
+  "pack_name": "ui",
+  "pattern": "**/kain_native_ui_decode_hex-generic-size-add.yaml",
+  "proved": 1,
+  "results": [
+    {
+      "id": "ui.kain_native_ui_decode_hex_generic_size_add",
+      "kind": "size_add_ok",
+      "outcome": {
+        "claim_holds": true,
+        "kind": "size_add_ok",
+        "patch_hints": [
+          "Use overflow-checked addition before storing the result in size_t or usize.",
+          "Reject negative or oversized inputs before they reach unsigned arithmetic."
+        ],
+        "report_path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\reports\\20260513T045429Z-kain_native_ui_decode_hex-generic-size-add.json",
+        "solver_status": "unsat",
+        "status": "proved",
+        "summary": "size_add_ok: proved",
+        "title": "Checked size addition"
+      },
+      "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\z3\\proofs\\c\\kain_native_ui_decode_hex-generic-size-add.yaml",
+      "relative_path": "proofs/c/kain_native_ui_decode_hex-generic-size-add.yaml",
+      "source": {
+        "binding_spans": {},
+        "bindings": {},
+        "end_line": 314,
+        "language": "c",
+        "path": "D:\\Kain-Lang\\runtime\\native\\src\\ui\\kain_native_ui_system.c",
+        "reason": "Size addition overflow in `kain_native_ui_decode_hex`",
+        "signature": "static int64_t kain_native_ui_decode_hex(const char* bytes_hex, uint8_t** out_bytes) {",
+        "start_line": 270,
+        "symbol": "kain_native_ui_decode_hex",
+        "template_engine": "regex",
+        "template_id": "generic-size-add",
+        "template_origin": "builtin",
+        "template_path": "C:\\Dev\\polytools\\z3-mcp\\src\\z3_mcp\\templates\\languages\\generic.yaml"
+      }
+    }
+  ],
+  "scope_dir": "D:\\Kain-Lang\\runtime\\native\\src\\ui",
+  "status": "completed",
+  "summary": "proof suite: 1 proved, 0 counterexamples, 0 unknown, 0 errors",
+  "total_cases": 1,
+  "unknown": 0
+}

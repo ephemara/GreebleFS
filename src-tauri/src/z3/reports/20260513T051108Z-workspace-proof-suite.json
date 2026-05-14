@@ -1,0 +1,32 @@
+{
+  "all_cases_passed": true,
+  "counterexamples": 0,
+  "errors": 0,
+  "lane": "full",
+  "pack_count": 1,
+  "pack_results": [
+    {
+      "all_cases_passed": true,
+      "counterexamples": 0,
+      "errors": 0,
+      "lane": "full",
+      "pack_dir": "D:\\GreebleFS\\src-tauri\\src\\z3",
+      "pack_name": "greeblefs-backend",
+      "pattern": "proofs/**/*.*",
+      "proved": 0,
+      "report_path": "D:\\GreebleFS\\src-tauri\\src\\z3\\reports\\20260513T051108Z-greeblefs-backend-full.json",
+      "results": [],
+      "scope_dir": "D:\\GreebleFS\\src-tauri\\src",
+      "status": "completed",
+      "summary": "proof suite: 0 proved, 0 counterexamples, 0 unknown, 0 errors",
+      "total_cases": 0,
+      "unknown": 0
+    }
+  ],
+  "project_root": "D:\\GreebleFS\\src-tauri\\src",
+  "proved": 0,
+  "status": "completed",
+  "summary": "proof suite: 0 proved, 0 counterexamples, 0 unknown, 0 errors",
+  "total_cases": 0,
+  "unknown": 0
+}
