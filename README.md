@@ -867,7 +867,7 @@ GreebleFS/
 │   ├── main.tsx               # Entry point, window descriptor routing
 │   ├── App.css                # Shell-level CSS
 │   ├── components/            # UI components
-│   │   ├── FileExplorer.tsx   # Core explorer (~6,000+ lines)
+│   │   ├── FileExplorer.tsx   # Core explorer (~30k lines)
 │   │   ├── explorer/          # Explorer sub-components
 │   │   │   ├── ExplorerWorkspace.tsx      # Multi-pane workspace shell
 │   │   │   ├── ExplorerSideRail.tsx       # Drive/bookmark rail
