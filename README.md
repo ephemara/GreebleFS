@@ -71,7 +71,7 @@ GreebleFS is a **massive** codebase. Here are some numbers that suggest its scal
 ### Lines of Code (estimate)
 
 - `src/App.tsx`: ~8,500 lines (the main shell orchestrator)
-- `src/components/FileExplorer.tsx`: ~6,000+ lines (the explorer core)
+- `src/components/FileExplorer.tsx`: ~30,000+ lines ~ the eldritch horror of typescript.
 - `architecture.md`: ~2,700 lines
 - `memory.md`: ~9,300 lines (developer session memory)
 - `scripts/run-platform-tauri.mjs`: ~1,400 lines (dev/build orchestration)
