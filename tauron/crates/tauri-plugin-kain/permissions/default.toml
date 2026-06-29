@@ -1,0 +1,20 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+This permission set exposes the default Kain bridge commands.
+
+#### Granted Permissions
+
+It allows webviews to inspect bridge status, read the active Kain manifest and
+reflection payload, dispatch Kain bridge requests, and broadcast Kain runtime
+reload events.
+"""
+
+permissions = [
+  "allow-status",
+  "allow-manifest",
+  "allow-reflection",
+  "allow-dispatch",
+  "allow-reload",
+]

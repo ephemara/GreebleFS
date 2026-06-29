@@ -146,3 +146,5 @@ src/generated/tauri.ts
 .windsurf/skills/.other/fp/FPilot_Research_Findings.md
 .windsurf/skills/.other/fp/FPilot_CtrlScroll_Zoom_Math.md
 .windsurf/skills/.other/fp/analyze_zoom_math.py
+/.cargo-registry
+*.md

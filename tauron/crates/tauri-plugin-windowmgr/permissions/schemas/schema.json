@@ -1,0 +1,474 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PermissionFile",
+  "description": "Permission file that can define a default permission, a set of permissions or a list of inlined permissions.",
+  "type": "object",
+  "properties": {
+    "default": {
+      "description": "The default permission set for the plugin",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DefaultPermission"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "set": {
+      "description": "A list of permissions sets defined",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PermissionSet"
+      }
+    },
+    "permission": {
+      "description": "A list of inlined permissions",
+      "default": [],
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Permission"
+      }
+    }
+  },
+  "definitions": {
+    "DefaultPermission": {
+      "description": "The default permission set of the plugin.\n\nWorks similarly to a permission with the \"default\" identifier.",
+      "type": "object",
+      "required": [
+        "permissions"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PermissionSet": {
+      "description": "A set of direct permissions grouped together under a new name.",
+      "type": "object",
+      "required": [
+        "description",
+        "identifier",
+        "permissions"
+      ],
+      "properties": {
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does.",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "All permissions this set contains.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PermissionKind"
+          }
+        }
+      }
+    },
+    "Permission": {
+      "description": "Descriptions of explicit privileges of commands.\n\nIt can enable commands to be accessible in the frontend of the application.\n\nIf the scope is defined it can be used to fine grain control the access of individual or multiple commands.",
+      "type": "object",
+      "required": [
+        "identifier"
+      ],
+      "properties": {
+        "version": {
+          "description": "The version of the permission.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "identifier": {
+          "description": "A unique identifier for the permission.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of what the permission does. Tauri internal convention is to use `<h4>` headings in markdown content for Tauri documentation generation purposes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commands": {
+          "description": "Allowed or denied commands when using this permission.",
+          "default": {
+            "allow": [],
+            "deny": []
+          },
+          "allOf": [
+            {
+              "$ref": "#/definitions/Commands"
+            }
+          ]
+        },
+        "scope": {
+          "description": "Allowed or denied scoped when using this permission.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Scopes"
+            }
+          ]
+        },
+        "platforms": {
+          "description": "Target platforms this permission applies. By default all platforms are affected by this permission.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Target"
+          }
+        }
+      }
+    },
+    "Commands": {
+      "description": "Allowed and denied commands inside a permission.\n\nIf two commands clash inside of `allow` and `deny`, it should be denied by default.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Allowed command.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "description": "Denied command, which takes priority.",
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Scopes": {
+      "description": "An argument for fine grained behavior control of Tauri commands.\n\nIt can be of any serde serializable type and is used to allow or prevent certain actions inside a Tauri command. The configured scope is passed to the command and will be enforced by the command implementation.\n\n## Example\n\n```json { \"allow\": [{ \"path\": \"$HOME/**\" }], \"deny\": [{ \"path\": \"$HOME/secret.txt\" }] } ```",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "Data that defines what is allowed by the scope.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        "deny": {
+          "description": "Data that defines what is denied by the scope. This should be prioritized by validation logic.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      }
+    },
+    "Value": {
+      "description": "All supported ACL values.",
+      "anyOf": [
+        {
+          "description": "Represents a null JSON value.",
+          "type": "null"
+        },
+        {
+          "description": "Represents a [`bool`].",
+          "type": "boolean"
+        },
+        {
+          "description": "Represents a valid ACL [`Number`].",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Number"
+            }
+          ]
+        },
+        {
+          "description": "Represents a [`String`].",
+          "type": "string"
+        },
+        {
+          "description": "Represents a list of other [`Value`]s.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Value"
+          }
+        },
+        {
+          "description": "Represents a map of [`String`] keys to [`Value`]s.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/Value"
+          }
+        }
+      ]
+    },
+    "Number": {
+      "description": "A valid ACL number.",
+      "anyOf": [
+        {
+          "description": "Represents an [`i64`].",
+          "type": "integer",
+          "format": "int64"
+        },
+        {
+          "description": "Represents a [`f64`].",
+          "type": "number",
+          "format": "double"
+        }
+      ]
+    },
+    "Target": {
+      "description": "Platform target.",
+      "oneOf": [
+        {
+          "description": "MacOS.",
+          "type": "string",
+          "enum": [
+            "macOS"
+          ]
+        },
+        {
+          "description": "Windows.",
+          "type": "string",
+          "enum": [
+            "windows"
+          ]
+        },
+        {
+          "description": "Linux.",
+          "type": "string",
+          "enum": [
+            "linux"
+          ]
+        },
+        {
+          "description": "Android.",
+          "type": "string",
+          "enum": [
+            "android"
+          ]
+        },
+        {
+          "description": "iOS.",
+          "type": "string",
+          "enum": [
+            "iOS"
+          ]
+        }
+      ]
+    },
+    "PermissionKind": {
+      "type": "string",
+      "oneOf": [
+        {
+          "description": "Enables the windowmgr_drag_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-drag-begin",
+          "markdownDescription": "Enables the windowmgr_drag_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_drag_begin command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-drag-begin",
+          "markdownDescription": "Denies the windowmgr_drag_begin command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_drag_drop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-drag-drop",
+          "markdownDescription": "Enables the windowmgr_drag_drop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_drag_drop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-drag-drop",
+          "markdownDescription": "Denies the windowmgr_drag_drop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_drag_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-drag-end",
+          "markdownDescription": "Enables the windowmgr_drag_end command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_drag_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-drag-end",
+          "markdownDescription": "Denies the windowmgr_drag_end command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_drag_get_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-drag-get-session",
+          "markdownDescription": "Enables the windowmgr_drag_get_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_drag_get_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-drag-get-session",
+          "markdownDescription": "Denies the windowmgr_drag_get_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_hide_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-hide-session",
+          "markdownDescription": "Enables the windowmgr_hide_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_hide_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-hide-session",
+          "markdownDescription": "Denies the windowmgr_hide_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_list_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-list-sessions",
+          "markdownDescription": "Enables the windowmgr_list_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_list_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-list-sessions",
+          "markdownDescription": "Denies the windowmgr_list_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_register_manifest command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-register-manifest",
+          "markdownDescription": "Enables the windowmgr_register_manifest command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_register_manifest command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-register-manifest",
+          "markdownDescription": "Denies the windowmgr_register_manifest command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_set_reserved_insets command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-set-reserved-insets",
+          "markdownDescription": "Enables the windowmgr_set_reserved_insets command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_set_reserved_insets command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-set-reserved-insets",
+          "markdownDescription": "Denies the windowmgr_set_reserved_insets command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_show_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-show-session",
+          "markdownDescription": "Enables the windowmgr_show_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_show_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-show-session",
+          "markdownDescription": "Denies the windowmgr_show_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_start_inline_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-start-inline-session",
+          "markdownDescription": "Enables the windowmgr_start_inline_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_start_inline_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-start-inline-session",
+          "markdownDescription": "Denies the windowmgr_start_inline_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_start_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-start-session",
+          "markdownDescription": "Enables the windowmgr_start_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_start_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-start-session",
+          "markdownDescription": "Denies the windowmgr_start_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_stop_host_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-stop-host-sessions",
+          "markdownDescription": "Enables the windowmgr_stop_host_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_stop_host_sessions command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-stop-host-sessions",
+          "markdownDescription": "Denies the windowmgr_stop_host_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_stop_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-stop-session",
+          "markdownDescription": "Enables the windowmgr_stop_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_stop_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-stop-session",
+          "markdownDescription": "Denies the windowmgr_stop_session command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the windowmgr_update_session_bounds command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-windowmgr-update-session-bounds",
+          "markdownDescription": "Enables the windowmgr_update_session_bounds command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the windowmgr_update_session_bounds command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-windowmgr-update-session-bounds",
+          "markdownDescription": "Denies the windowmgr_update_session_bounds command without any pre-configured scope."
+        },
+        {
+          "description": "This permission set exposes the default window manager embedding commands.\n\n#### Granted Permissions\n\nIt allows webviews to register executable manifests, start or stop embedded\nexecutable sessions, update bounds and reserved insets, list active sessions,\nand coordinate window manager drag operations.\n\n#### This default permission set includes:\n\n- `allow-windowmgr-register-manifest`\n- `allow-windowmgr-start-session`\n- `allow-windowmgr-start-inline-session`\n- `allow-windowmgr-show-session`\n- `allow-windowmgr-hide-session`\n- `allow-windowmgr-update-session-bounds`\n- `allow-windowmgr-set-reserved-insets`\n- `allow-windowmgr-stop-session`\n- `allow-windowmgr-stop-host-sessions`\n- `allow-windowmgr-list-sessions`\n- `allow-windowmgr-drag-begin`\n- `allow-windowmgr-drag-get-session`\n- `allow-windowmgr-drag-end`\n- `allow-windowmgr-drag-drop`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "This permission set exposes the default window manager embedding commands.\n\n#### Granted Permissions\n\nIt allows webviews to register executable manifests, start or stop embedded\nexecutable sessions, update bounds and reserved insets, list active sessions,\nand coordinate window manager drag operations.\n\n#### This default permission set includes:\n\n- `allow-windowmgr-register-manifest`\n- `allow-windowmgr-start-session`\n- `allow-windowmgr-start-inline-session`\n- `allow-windowmgr-show-session`\n- `allow-windowmgr-hide-session`\n- `allow-windowmgr-update-session-bounds`\n- `allow-windowmgr-set-reserved-insets`\n- `allow-windowmgr-stop-session`\n- `allow-windowmgr-stop-host-sessions`\n- `allow-windowmgr-list-sessions`\n- `allow-windowmgr-drag-begin`\n- `allow-windowmgr-drag-get-session`\n- `allow-windowmgr-drag-end`\n- `allow-windowmgr-drag-drop`"
+        }
+      ]
+    }
+  }
+}

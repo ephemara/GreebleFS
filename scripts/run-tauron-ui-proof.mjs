@@ -10,7 +10,7 @@ import { createServer } from "vite";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const tauronRoot = path.resolve(repoRoot, "..", "tauron");
+const tauronRoot = path.resolve(repoRoot, "tauron");
 const tauronApiDistPath = path.join(tauronRoot, "packages", "api", "dist").replace(/\\/g, "/");
 const tauronApiViteAliases = [
   { find: /^@tauri-apps\/api$/, replacement: `${tauronApiDistPath}/index.js` },

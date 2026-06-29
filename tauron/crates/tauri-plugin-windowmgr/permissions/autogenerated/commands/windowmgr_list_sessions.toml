@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-list-sessions"
+description = "Enables the windowmgr_list_sessions command without any pre-configured scope."
+commands.allow = ["windowmgr_list_sessions"]
+
+[[permission]]
+identifier = "deny-windowmgr-list-sessions"
+description = "Denies the windowmgr_list_sessions command without any pre-configured scope."
+commands.deny = ["windowmgr_list_sessions"]

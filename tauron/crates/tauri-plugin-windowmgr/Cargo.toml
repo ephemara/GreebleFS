@@ -1,0 +1,41 @@
+[package]
+name = "tauri-plugin-windowmgr"
+version = "0.1.0"
+description = "Executable window embedding plugin for Tauron applications"
+authors = ["Tauri Programme within The Commons Conservancy"]
+homepage = "https://tauri.app/"
+repository = "https://github.com/tauri-apps/tauri"
+categories = ["gui", "web-programming"]
+license = "Apache-2.0 OR MIT"
+edition = "2021"
+rust-version = "1.77.2"
+links = "tauri-plugin-windowmgr"
+
+[lib]
+name = "tauri_plugin_windowmgr"
+
+[dependencies]
+parking_lot = "0.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tauri = { version = "2.11.0", path = "../tauri" }
+thiserror = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+[build-dependencies]
+tauri-plugin = { version = "2.6.0", path = "../tauri-plugin", features = [
+  "build",
+] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+    "Win32_Graphics_DirectComposition",
+    "Win32_System_WinRT_Composition",
+] }

@@ -169,7 +169,7 @@ function ensureTauronApiDist(tauronRoot) {
 }
 
 export function resolveTauronRoot(projectRoot) {
-  return path.resolve(projectRoot, "..", "tauron");
+  return path.resolve(projectRoot, "tauron");
 }
 
 export function assertTauronForkAvailable(projectRoot) {

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-drag-begin"
+description = "Enables the windowmgr_drag_begin command without any pre-configured scope."
+commands.allow = ["windowmgr_drag_begin"]
+
+[[permission]]
+identifier = "deny-windowmgr-drag-begin"
+description = "Denies the windowmgr_drag_begin command without any pre-configured scope."
+commands.deny = ["windowmgr_drag_begin"]

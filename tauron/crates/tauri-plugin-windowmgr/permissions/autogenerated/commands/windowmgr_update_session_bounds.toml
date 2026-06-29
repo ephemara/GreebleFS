@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-update-session-bounds"
+description = "Enables the windowmgr_update_session_bounds command without any pre-configured scope."
+commands.allow = ["windowmgr_update_session_bounds"]
+
+[[permission]]
+identifier = "deny-windowmgr-update-session-bounds"
+description = "Denies the windowmgr_update_session_bounds command without any pre-configured scope."
+commands.deny = ["windowmgr_update_session_bounds"]

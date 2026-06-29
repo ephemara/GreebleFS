@@ -1,0 +1,29 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = """
+This permission set exposes the default window manager embedding commands.
+
+#### Granted Permissions
+
+It allows webviews to register executable manifests, start or stop embedded
+executable sessions, update bounds and reserved insets, list active sessions,
+and coordinate window manager drag operations.
+"""
+
+permissions = [
+  "allow-windowmgr-register-manifest",
+  "allow-windowmgr-start-session",
+  "allow-windowmgr-start-inline-session",
+  "allow-windowmgr-show-session",
+  "allow-windowmgr-hide-session",
+  "allow-windowmgr-update-session-bounds",
+  "allow-windowmgr-set-reserved-insets",
+  "allow-windowmgr-stop-session",
+  "allow-windowmgr-stop-host-sessions",
+  "allow-windowmgr-list-sessions",
+  "allow-windowmgr-drag-begin",
+  "allow-windowmgr-drag-get-session",
+  "allow-windowmgr-drag-end",
+  "allow-windowmgr-drag-drop",
+]

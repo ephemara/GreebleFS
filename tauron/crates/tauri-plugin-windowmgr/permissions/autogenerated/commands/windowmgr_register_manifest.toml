@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-register-manifest"
+description = "Enables the windowmgr_register_manifest command without any pre-configured scope."
+commands.allow = ["windowmgr_register_manifest"]
+
+[[permission]]
+identifier = "deny-windowmgr-register-manifest"
+description = "Denies the windowmgr_register_manifest command without any pre-configured scope."
+commands.deny = ["windowmgr_register_manifest"]

@@ -1,0 +1,6 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "permissions": ["core:default", "core:native-stream:default"],
+  "windows": ["main"]
+}

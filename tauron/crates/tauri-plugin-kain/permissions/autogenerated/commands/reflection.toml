@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-reflection"
+description = "Enables the reflection command without any pre-configured scope."
+commands.allow = ["reflection"]
+
+[[permission]]
+identifier = "deny-reflection"
+description = "Denies the reflection command without any pre-configured scope."
+commands.deny = ["reflection"]

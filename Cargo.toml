@@ -22,6 +22,7 @@ authors = ["sxyazi <sxyazi@gmail.com>"]
 homepage = "https://yazi-rs.github.io"
 repository = "https://github.com/sxyazi/yazi"
 rust-version = "1.92.0"
+categories = ["gui", "web-programming"]
 
 [profile.dev]
 debug = "line-tables-only"
@@ -93,11 +94,11 @@ unit_arg = "allow"
 use_self = "warn"
 
 [patch.crates-io]
-tauri = { path = "../tauron/crates/tauri" }
-tauri-build = { path = "../tauron/crates/tauri-build" }
-tauri-codegen = { path = "../tauron/crates/tauri-codegen" }
-tauri-macros = { path = "../tauron/crates/tauri-macros" }
-tauri-plugin = { path = "../tauron/crates/tauri-plugin" }
-tauri-runtime = { path = "../tauron/crates/tauri-runtime" }
-tauri-runtime-wry = { path = "../tauron/crates/tauri-runtime-wry" }
-tauri-utils = { path = "../tauron/crates/tauri-utils" }
+tauri = { path = "tauron/crates/tauri" }
+tauri-build = { path = "tauron/crates/tauri-build" }
+tauri-codegen = { path = "tauron/crates/tauri-codegen" }
+tauri-macros = { path = "tauron/crates/tauri-macros" }
+tauri-plugin = { path = "tauron/crates/tauri-plugin" }
+tauri-runtime = { path = "tauron/crates/tauri-runtime" }
+tauri-runtime-wry = { path = "tauron/crates/tauri-runtime-wry" }
+tauri-utils = { path = "tauron/crates/tauri-utils" }

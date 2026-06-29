@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-drag-drop"
+description = "Enables the windowmgr_drag_drop command without any pre-configured scope."
+commands.allow = ["windowmgr_drag_drop"]
+
+[[permission]]
+identifier = "deny-windowmgr-drag-drop"
+description = "Denies the windowmgr_drag_drop command without any pre-configured scope."
+commands.deny = ["windowmgr_drag_drop"]

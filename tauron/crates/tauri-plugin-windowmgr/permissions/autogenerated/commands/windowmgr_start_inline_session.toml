@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-windowmgr-start-inline-session"
+description = "Enables the windowmgr_start_inline_session command without any pre-configured scope."
+commands.allow = ["windowmgr_start_inline_session"]
+
+[[permission]]
+identifier = "deny-windowmgr-start-inline-session"
+description = "Denies the windowmgr_start_inline_session command without any pre-configured scope."
+commands.deny = ["windowmgr_start_inline_session"]

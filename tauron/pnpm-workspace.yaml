@@ -1,0 +1,12 @@
+packages:
+  - packages/api
+  - packages/cli
+  - packages/dev-observatory
+  - crates/tauri-schema-worker
+  - examples/api
+  - examples/resources
+  - examples/file-associations
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

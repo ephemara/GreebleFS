@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauron Native Lane Benchmark</title>
+    <style>
+      body {
+        margin: 0;
+        background: #101418;
+        color: #d8e1e8;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+          monospace;
+      }
+
+      main {
+        padding: 18px;
+      }
+
+      pre {
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Tauron Native Lane Benchmark</h1>
+      <pre id="log">booting...</pre>
+    </main>
+
+    <script>
+      const logNode = document.getElementById('log')
+      const invoke = window.__TAURI__.core.invoke
+
+      function log(line) {
+        logNode.textContent += `\n${line}`
+      }
+
+      function now() {
+        return performance.now()
+      }
+
+      function currentWebviewLabel() {
+        return (
+          window.__TAURI_INTERNALS__?.metadata?.currentWebview?.label ||
+          window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label ||
+          'main'
+        )
+      }
+
+      async function controlCall(namespace, method, args) {
+        const bridge = window.__TAURI_NATIVE_CONTROL__
+        if (!bridge || !bridge.available) {
+          throw new Error('window.__TAURI_NATIVE_CONTROL__ is unavailable')
+        }
+        return bridge.call({ namespace, method, args })
+      }
+
+      function makePayload(size) {
+        const chars = '0123456789abcdef'
+        let value = ''
+        while (value.length < size) {
+          value += chars
+        }
+        return {
+          id: 'payload',
+          size,
+          text: value.slice(0, size)
+        }
+      }
+
+      function percentile(sortedValues, percentileValue) {
+        if (sortedValues.length === 0) {
+          return null
+        }
+        const index = Math.min(
+          sortedValues.length - 1,
+          Math.max(0, Math.ceil((percentileValue / 100) * sortedValues.length) - 1)
+        )
+        return sortedValues[index]
+      }
+
+      function summarize(samples, unit = 'ms') {
+        const sorted = [...samples].sort((a, b) => a - b)
+        const total = sorted.reduce((sum, value) => sum + value, 0)
+        return {
+          unit,
+          samples: sorted.length,
+          min: sorted[0] ?? null,
+          mean: sorted.length === 0 ? null : total / sorted.length,
+          p50: percentile(sorted, 50),
+          p95: percentile(sorted, 95),
+          p99: percentile(sorted, 99),
+          max: sorted[sorted.length - 1] ?? null
+        }
+      }
+
+      function unavailableMetrics(reason) {
+        return {
+          reason,
+          latency: null,
+          throughputBytesPerSecond: null,
+          counters: null,
+          timings: null,
+          cpu: null,
+          jsConsume: null
+        }
+      }
+
+      function diffNativeStreamTelemetry(before, after) {
+        if (!before || !after) {
+          return null
+        }
+        return {
+          packets: after.packets - before.packets,
+          bytes: after.bytes - before.bytes,
+          droppedBytes: after.droppedBytes - before.droppedBytes,
+          droppedRanges: after.droppedRanges,
+          maxQueueDepth: after.maxQueueDepth,
+          allocationCount: after.allocationCount - before.allocationCount,
+          copyCount: after.copyCount - before.copyCount,
+          copiedBytes: after.copiedBytes - before.copiedBytes,
+          postFailures: after.postFailures - before.postFailures,
+          unavailableSubscriptions:
+            after.unavailableSubscriptions - before.unavailableSubscriptions
+        }
+      }
+
+      function cpuDelta(before, after) {
+        if (!before || !after) {
+          return null
+        }
+        return {
+          userTime100ns: after.userTime100ns - before.userTime100ns,
+          kernelTime100ns: after.kernelTime100ns - before.kernelTime100ns,
+          elapsedMs: after.timestampMs - before.timestampMs
+        }
+      }
+
+      async function cpuSnapshot() {
+        return invoke('bench_cpu_snapshot')
+      }
+
+      async function nativeStreamTelemetry() {
+        try {
+          return await controlCall('nativeStream', 'telemetry')
+        } catch {
+          return invoke('plugin:native-stream|telemetry')
+        }
+      }
+
+      async function subscribeNativeStream(streamId, kind) {
+        try {
+          const subscription = await controlCall('nativeStream', 'subscribe', {
+            id: streamId,
+            kind
+          })
+          return {
+            ...subscription,
+            controlPlane: 'native-control'
+          }
+        } catch (error) {
+          const subscription = await invoke('plugin:native-stream|subscribe', {
+            id: streamId,
+            kind
+          })
+          return {
+            ...subscription,
+            controlPlane: 'invoke-fallback',
+            fallbackReason: String(error && error.message ? error.message : error)
+          }
+        }
+      }
+
+      async function unsubscribeNativeStream(subscription) {
+        try {
+          await controlCall('nativeStream', 'unsubscribe', { id: subscription.id })
+        } catch {
+          await invoke('plugin:native-stream|unsubscribe', { id: subscription.id })
+        }
+      }
+
+      async function measureLane(lane, run) {
+        const cpuBefore = await cpuSnapshot()
+        try {
+          const result = await run()
+          const cpuAfter = await cpuSnapshot()
+          return {
+            cpu: cpuDelta(cpuBefore, cpuAfter),
+            ...result
+          }
+        } catch (error) {
+          const cpuAfter = await cpuSnapshot().catch(() => null)
+          return {
+            lane,
+            status: 'failed',
+            error: String(error && error.stack ? error.stack : error),
+            cpu: cpuDelta(cpuBefore, cpuAfter),
+            unavailableMetrics: unavailableMetrics('lane failed before all metrics were produced')
+          }
+        }
+      }
+
+      async function benchmarkInvokeJson(config, payload) {
+        const samples = []
+        for (let index = 0; index < config.invokeIterations; index += 1) {
+          const startedAt = now()
+          await invoke('invoke_echo_json', { payload })
+          samples.push(now() - startedAt)
+        }
+        return {
+          lane: 'tauri-invoke-json',
+          status: 'measured',
+          controlPlane: 'invoke',
+          payloadBytes: config.payloadBytes,
+          iterations: config.invokeIterations,
+          latency: summarize(samples),
+          counters: null,
+          timings: null,
+          jsConsume: null,
+          unavailableMetrics: {
+            counters: 'Tauri invoke JSON lane does not expose native-lane counters',
+            timings: 'Tauri invoke JSON lane does not expose native enqueue/post timings',
+            jsConsume: 'No shared-buffer listener runs for this lane'
+          }
+        }
+      }
+
+      async function benchmarkHostObjectJson(config, payload) {
+        const bridge = window.__TAURI_NATIVE_CONTROL__
+        if (!bridge || !bridge.available) {
+          return {
+            lane: 'webview2-host-object-json',
+            status: 'unavailable',
+            reason: 'window.__TAURI_NATIVE_CONTROL__ is unavailable',
+            controlPlane: null,
+            ...unavailableMetrics('native-control host object unavailable')
+          }
+        }
+
+        const samples = []
+        for (let index = 0; index < config.hostObjectIterations; index += 1) {
+          const startedAt = now()
+          await bridge.call({
+            namespace: 'bench',
+            method: 'echoJson',
+            args: payload,
+            correlationId: `host-object-${index}`
+          })
+          samples.push(now() - startedAt)
+        }
+        return {
+          lane: 'webview2-host-object-json',
+          status: 'measured',
+          controlPlane: 'native-control',
+          payloadBytes: config.payloadBytes,
+          iterations: config.hostObjectIterations,
+          latency: summarize(samples),
+          counters: null,
+          timings: null,
+          jsConsume: null,
+          unavailableMetrics: {
+            counters: 'Host-object JSON lane has no shared-buffer counters',
+            timings: 'Host-object JSON lane has no native enqueue/post timings',
+            jsConsume: 'No shared-buffer listener runs for this lane'
+          }
+        }
+      }
+
+      async function benchmarkNativeStream(config) {
+        const bridge = window.__TAURI_NATIVE_STREAM__
+        if (!bridge || !bridge.available) {
+          return {
+            lane: 'webview2-shared-buffer-packet',
+            status: 'unavailable',
+            reason: 'window.__TAURI_NATIVE_STREAM__ is unavailable',
+            controlPlane: null,
+            ...unavailableMetrics('native-stream JS bridge unavailable')
+          }
+        }
+
+        bridge.resetTelemetry?.()
+        const streamId = config.streamId
+        const expectedPackets = config.streamPackets
+        const expectedBytes = config.streamPackets * config.streamPacketBytes
+        const gaps = []
+        let receivedPackets = 0
+        let receivedBytes = 0
+        let expectedSequence = 0
+        let firstPacketAt = 0
+        let completedAt = 0
+
+        const completed = new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            removeLocalListener()
+            reject(new Error('timed out waiting for native stream packets'))
+          }, 30000)
+
+          var removeLocalListener = bridge.addListener(streamId, packet => {
+            if (receivedPackets === 0) {
+              firstPacketAt = now()
+            }
+            if (packet.sequence !== expectedSequence) {
+              gaps.push({
+                expected: expectedSequence,
+                actual: packet.sequence
+              })
+              expectedSequence = packet.sequence
+            }
+            expectedSequence += 1
+            receivedPackets += 1
+            receivedBytes += packet.bytes.byteLength
+            if (receivedPackets >= expectedPackets) {
+              completedAt = now()
+              window.clearTimeout(timeout)
+              removeLocalListener()
+              resolve()
+            }
+          })
+        })
+
+        const telemetryBefore = await nativeStreamTelemetry()
+        const subscription = await subscribeNativeStream(streamId, 'native-lane-benchmark')
+        const startedAt = now()
+        await invoke('start_native_stream_benchmark', {
+          request: {
+            streamId,
+            packets: config.streamPackets,
+            packetBytes: config.streamPacketBytes
+          }
+        })
+        await completed
+        await unsubscribeNativeStream(subscription)
+        const telemetryAfter = await nativeStreamTelemetry()
+
+        const elapsedMs = completedAt - startedAt
+        return {
+          lane: 'webview2-shared-buffer-packet',
+          status: 'measured',
+          controlPlane: subscription.controlPlane,
+          fallbackReason: subscription.fallbackReason || null,
+          packets: receivedPackets,
+          packetBytes: config.streamPacketBytes,
+          bytes: receivedBytes,
+          expectedBytes,
+          gaps,
+          latency: summarize([firstPacketAt - startedAt, elapsedMs]),
+          timeToFirstPacketMs: firstPacketAt - startedAt,
+          elapsedMs,
+          throughputBytesPerSecond:
+            elapsedMs <= 0 ? null : Math.round((receivedBytes / elapsedMs) * 1000),
+          counters: diffNativeStreamTelemetry(telemetryBefore, telemetryAfter),
+          timings: telemetryAfter
+            ? {
+                nativeEnqueueTimeTotalUs: telemetryAfter.nativeEnqueueTimeTotalUs,
+                nativeEnqueueTimeMaxUs: telemetryAfter.nativeEnqueueTimeMaxUs,
+                webviewPostTimeTotalUs: telemetryAfter.webviewPostTimeTotalUs,
+                webviewPostTimeMaxUs: telemetryAfter.webviewPostTimeMaxUs
+              }
+            : null,
+          jsConsume: bridge.telemetrySnapshot?.() ?? null,
+          unavailableMetrics: {}
+        }
+      }
+
+      async function benchmarkPooledSharedBuffer(config) {
+        const webview = window.chrome && window.chrome.webview
+        if (!webview || typeof webview.addEventListener !== 'function') {
+          return {
+            lane: 'webview2-pooled-shared-buffer',
+            status: 'unavailable',
+            reason: 'chrome.webview shared buffer events are unavailable',
+            controlPlane: null,
+            ...unavailableMetrics('WebView2 chrome.webview bridge unavailable')
+          }
+        }
+
+        const streamId = 'tauron-native-lane-bench-pooled'
+        const expectedPackets = config.streamPackets
+        let receivedPackets = 0
+        let receivedBytes = 0
+        let firstPacketAt = 0
+        let completedAt = 0
+        const listenerSamples = []
+        const pendingReleases = []
+        const releasePromises = []
+        const releaseErrors = []
+        const packetWaiters = []
+        let releaseFlushTimer = 0
+
+        function flushReleases() {
+          if (releaseFlushTimer) {
+            window.clearTimeout(releaseFlushTimer)
+          }
+          releaseFlushTimer = 0
+          if (pendingReleases.length === 0) {
+            return
+          }
+          const buffers = pendingReleases.splice(0, pendingReleases.length)
+          const releasePromise = controlCall('nativeBufferPool', 'releaseBatch', {
+            buffers
+          })
+            .then(result => {
+              if (result && Array.isArray(result.errors) && result.errors.length > 0) {
+                releaseErrors.push(...result.errors)
+              }
+            })
+            .catch(error => {
+              releaseErrors.push(String(error && error.message ? error.message : error))
+            })
+            releasePromises.push(releasePromise)
+        }
+
+        async function drainReleases() {
+          flushReleases()
+          while (releasePromises.length > 0) {
+            const batch = releasePromises.splice(0, releasePromises.length)
+            await Promise.all(batch)
+          }
+          if (releaseErrors.length > 0) {
+            throw new Error(`native buffer pool release errors: ${releaseErrors.join('; ')}`)
+          }
+        }
+
+        function scheduleRelease(bufferIdentity) {
+          pendingReleases.push({
+            id: bufferIdentity.id,
+            generation: bufferIdentity.generation
+          })
+          if (pendingReleases.length >= 32) {
+            if (releaseFlushTimer) {
+              window.clearTimeout(releaseFlushTimer)
+              releaseFlushTimer = 0
+            }
+            flushReleases()
+            return
+          }
+          if (!releaseFlushTimer) {
+            releaseFlushTimer = window.setTimeout(flushReleases, 0)
+          }
+        }
+
+        function waitForPackets(targetPackets) {
+          if (receivedPackets >= targetPackets) {
+            return Promise.resolve()
+          }
+          return new Promise(resolve => {
+            packetWaiters.push({ targetPackets, resolve })
+          })
+        }
+
+        function resolvePacketWaiters() {
+          for (let index = packetWaiters.length - 1; index >= 0; index -= 1) {
+            const waiter = packetWaiters[index]
+            if (receivedPackets >= waiter.targetPackets) {
+              packetWaiters.splice(index, 1)
+              waiter.resolve()
+            }
+          }
+        }
+
+        const completed = new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            webview.removeEventListener('sharedbufferreceived', onSharedBuffer)
+            reject(new Error('timed out waiting for pooled shared buffers'))
+          }, 30000)
+
+          function onSharedBuffer(event) {
+            const metadata = event.additionalData || {}
+            if (!metadata.tauronNativePooledBuffer || metadata.streamId !== streamId) {
+              return
+            }
+            if (receivedPackets === 0) {
+              firstPacketAt = now()
+            }
+            const listenerStartedAt = now()
+            const buffer = event.getBuffer()
+            const bytes = new Uint8Array(buffer, 0, Number(metadata.byteLength || 0))
+            receivedBytes += bytes.byteLength
+            receivedPackets += 1
+            if (webview.releaseBuffer) {
+              webview.releaseBuffer(buffer)
+            }
+            scheduleRelease(metadata.buffer)
+            listenerSamples.push(now() - listenerStartedAt)
+            resolvePacketWaiters()
+            if (receivedPackets >= expectedPackets) {
+              completedAt = now()
+              window.clearTimeout(timeout)
+              webview.removeEventListener('sharedbufferreceived', onSharedBuffer)
+              resolve()
+            }
+          }
+
+          webview.addEventListener('sharedbufferreceived', onSharedBuffer)
+        })
+
+        const startedAt = now()
+        const nativeResult = {
+          allocationCount: 0,
+          reuseCount: 0,
+          copyCount: 0,
+          copiedBytes: 0,
+          webviewPostTimeTotalUs: 0
+        }
+        const poolBatchPackets = 16
+        for (
+          let startSequence = 0;
+          startSequence < config.streamPackets;
+          startSequence += poolBatchPackets
+        ) {
+          const packets = Math.min(
+            poolBatchPackets,
+            config.streamPackets - startSequence
+          )
+          const batchResult = await invoke('start_native_buffer_pool_benchmark', {
+            request: {
+              streamId,
+              packets,
+              startSequence,
+              packetBytes: config.streamPacketBytes,
+              webviewLabel: currentWebviewLabel()
+            }
+          })
+          nativeResult.allocationCount += batchResult.allocationCount || 0
+          nativeResult.reuseCount += batchResult.reuseCount || 0
+          nativeResult.copyCount += batchResult.copyCount || 0
+          nativeResult.copiedBytes += batchResult.copiedBytes || 0
+          nativeResult.webviewPostTimeTotalUs +=
+            batchResult.webviewPostTimeTotalUs || 0
+          await waitForPackets(startSequence + packets)
+          await drainReleases()
+        }
+        await completed
+        await drainReleases()
+        const telemetry = await controlCall('nativeBufferPool', 'telemetry')
+        const elapsedMs = completedAt - startedAt
+        return {
+          lane: 'webview2-pooled-shared-buffer',
+          status: 'measured',
+          controlPlane: 'native-control',
+          packets: receivedPackets,
+          packetBytes: config.streamPacketBytes,
+          bytes: receivedBytes,
+          latency: summarize([firstPacketAt - startedAt, elapsedMs]),
+          timeToFirstPacketMs: firstPacketAt - startedAt,
+          elapsedMs,
+          throughputBytesPerSecond:
+            elapsedMs <= 0 ? null : Math.round((receivedBytes / elapsedMs) * 1000),
+          counters: {
+            ...telemetry,
+            allocationCount: nativeResult.allocationCount,
+            reuseCount: nativeResult.reuseCount,
+            copyCount: nativeResult.copyCount,
+            copiedBytes: nativeResult.copiedBytes
+          },
+          timings: {
+            webviewPostTimeTotalUs: nativeResult.webviewPostTimeTotalUs
+          },
+          jsConsume: {
+            packetCount: listenerSamples.length,
+            bytes: receivedBytes,
+            totalListenerTimeMs: listenerSamples.reduce((sum, value) => sum + value, 0),
+            maxListenerTimeMs: Math.max(0, ...listenerSamples)
+          },
+          unavailableMetrics: {}
+        }
+      }
+
+      async function benchmarkSharedMemoryRing(config) {
+        const webview = window.chrome && window.chrome.webview
+        if (!webview || typeof webview.addEventListener !== 'function') {
+          return {
+            lane: 'webview2-shared-memory-ring',
+            status: 'unavailable',
+            reason: 'chrome.webview shared buffer events are unavailable',
+            controlPlane: null,
+            ...unavailableMetrics('WebView2 chrome.webview bridge unavailable')
+          }
+        }
+
+        const ringId = 'tauron-native-lane-bench-ring'
+        const expectedPackets = config.streamPackets
+        let ringBytes = null
+        let receivedPackets = 0
+        let receivedBytes = 0
+        let firstPacketAt = 0
+        let completedAt = 0
+        const listenerSamples = []
+        const droppedRanges = []
+        const pendingDoorbells = []
+
+        const completed = new Promise((resolve, reject) => {
+          const timeout = window.setTimeout(() => {
+            webview.removeEventListener('sharedbufferreceived', onSharedBuffer)
+            webview.removeEventListener('message', onDoorbell)
+            reject(new Error('timed out waiting for native ring doorbells'))
+          }, 30000)
+
+          function onSharedBuffer(event) {
+            const metadata = event.additionalData || {}
+            if (!metadata.tauronNativeRing || metadata.ringId !== ringId) {
+              return
+            }
+            ringBytes = new Uint8Array(event.getBuffer())
+            while (pendingDoorbells.length > 0) {
+              processDoorbell(pendingDoorbells.shift())
+            }
+          }
+
+          function onDoorbell(event) {
+            const message = event.data || {}
+            if (!message.tauronNativeRingDoorbell || message.ringId !== ringId) {
+              return
+            }
+            if (!ringBytes) {
+              pendingDoorbells.push(message)
+              return
+            }
+            processDoorbell(message)
+          }
+
+          function processDoorbell(message) {
+            if (receivedPackets === 0) {
+              firstPacketAt = now()
+            }
+            const listenerStartedAt = now()
+            const bytes = ringBytes.subarray(
+              Number(message.offset || 0),
+              Number(message.offset || 0) + Number(message.byteLength || 0)
+            )
+            receivedBytes += bytes.byteLength
+            receivedPackets += 1
+            droppedRanges.push(...(message.droppedRanges || []))
+            listenerSamples.push(now() - listenerStartedAt)
+            if (receivedPackets >= expectedPackets) {
+              completedAt = now()
+              window.clearTimeout(timeout)
+              webview.removeEventListener('sharedbufferreceived', onSharedBuffer)
+              webview.removeEventListener('message', onDoorbell)
+              resolve()
+            }
+          }
+
+          webview.addEventListener('sharedbufferreceived', onSharedBuffer)
+          webview.addEventListener('message', onDoorbell)
+        })
+
+        const startedAt = now()
+        const nativeResult = await invoke('start_native_ring_benchmark', {
+          request: {
+            ringId,
+            packets: config.streamPackets,
+            packetBytes: config.streamPacketBytes,
+            webviewLabel: currentWebviewLabel()
+          }
+        })
+        await completed
+        const elapsedMs = completedAt - startedAt
+        return {
+          lane: 'webview2-shared-memory-ring',
+          status: 'measured',
+          controlPlane: 'native-control-doorbell',
+          packets: receivedPackets,
+          packetBytes: config.streamPacketBytes,
+          bytes: receivedBytes,
+          latency: summarize([firstPacketAt - startedAt, elapsedMs]),
+          timeToFirstPacketMs: firstPacketAt - startedAt,
+          elapsedMs,
+          throughputBytesPerSecond:
+            elapsedMs <= 0 ? null : Math.round((receivedBytes / elapsedMs) * 1000),
+          counters: {
+            packets: nativeResult.packets,
+            bytes: nativeResult.bytes,
+            copyCount: nativeResult.copyCount,
+            copiedBytes: nativeResult.copiedBytes,
+            droppedBytes: nativeResult.telemetry.droppedBytes,
+            droppedRanges,
+            maxQueueDepth: nativeResult.telemetry.maxQueueDepth
+          },
+          timings: {
+            webviewPostTimeTotalUs: nativeResult.webviewPostTimeUs
+          },
+          jsConsume: {
+            packetCount: listenerSamples.length,
+            bytes: receivedBytes,
+            totalListenerTimeMs: listenerSamples.reduce((sum, value) => sum + value, 0),
+            maxListenerTimeMs: Math.max(0, ...listenerSamples)
+          },
+          unavailableMetrics: {}
+        }
+      }
+
+      async function main() {
+        try {
+          logNode.textContent = 'loading config...'
+          const config = await invoke('bench_config')
+          const payload = makePayload(config.payloadBytes)
+          const results = {
+            schemaVersion: 2,
+            createdAtEpochMs: Date.now(),
+            userAgent: navigator.userAgent,
+            config,
+            lanes: []
+          }
+
+          log('benchmarking Tauri invoke JSON...')
+          results.lanes.push(
+            await measureLane('tauri-invoke-json', () =>
+              benchmarkInvokeJson(config, payload)
+            )
+          )
+
+          log('benchmarking WebView2 host-object JSON...')
+          results.lanes.push(
+            await measureLane('webview2-host-object-json', () =>
+              benchmarkHostObjectJson(config, payload)
+            )
+          )
+
+          log('benchmarking WebView2 shared-buffer packets...')
+          results.lanes.push(
+            await measureLane('webview2-shared-buffer-packet', () =>
+              benchmarkNativeStream(config)
+            )
+          )
+
+          log('benchmarking WebView2 pooled shared buffers...')
+          results.lanes.push(
+            await measureLane('webview2-pooled-shared-buffer', () =>
+              benchmarkPooledSharedBuffer(config)
+            )
+          )
+
+          log('benchmarking WebView2 shared-memory ring...')
+          results.lanes.push(
+            await measureLane('webview2-shared-memory-ring', () =>
+              benchmarkSharedMemoryRing(config)
+            )
+          )
+
+          log('recording results...')
+          await invoke('record_benchmark_results', { results })
+          await invoke('app_should_close', { exitCode: 0 })
+        } catch (error) {
+          log(`FAILED: ${error && error.stack ? error.stack : error}`)
+          await invoke('record_benchmark_results', {
+            results: {
+              schemaVersion: 2,
+              createdAtEpochMs: Date.now(),
+              failed: true,
+              error: String(error && error.stack ? error.stack : error)
+            }
+          }).catch(() => {})
+          await invoke('app_should_close', { exitCode: 1 })
+        }
+      }
+
+      window.addEventListener('DOMContentLoaded', main)
+    </script>
+  </body>
+</html>
