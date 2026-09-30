@@ -1,8 +1,10 @@
 # GreebleFS Plugin & Content System (`usr/`)
 
-> Companion to `06-EXTENSION-API.md` (the future contract) and
-> `02-THEMING-SYSTEM.md` (theme deep-dive). This document describes the
-> system that **actually runs today**: the `usr/` content tree.
+> Companion to `06-EXTENSION-API.md` (the contract) and
+> `02-THEMING-SYSTEM.md` (theme deep-dive). This document describes content
+> delivery: the `usr/` tree as **legacy input** plus the harness registries
+> that actually apply it. New work targets the API; JSON packs keep working
+> as bridge-fed data.
 
 GreebleFS ships a managed content root (`usr/`) — plugins, themes, icon
 packs, wallpapers, profiles — that is bundled with the installer,
@@ -87,7 +89,17 @@ Shipped first-party workbenches: text, image, audio, video, pdf, archive,
 docx, spreadsheet, sqlite, folder, shader, python, model3d, bevy-model3d.
 Third-party compat: `.vsix` files (e.g. VS Code 3D viewer) load as viewers.
 
-## Authoring a theme (today's format)
+## Themes: API first, JSON as legacy input
+
+Theme *application* runs through the harness `theme` domain
+(`src/runtime/greebleThemeBridge.ts`): `fs.registerTheme` contributions
+(tokens + composed modules) convert to renderable definitions and merge
+into the same pipeline — ThemeCatalog, selection, CSS vars — as JSON
+packs. JSON `theme.json` playlists still load and keep working; they are
+simply no longer the only way in. Author new themes against
+`06-EXTENSION-API.md`; reach for `theme.json` only to patch legacy packs.
+
+## Authoring a theme, legacy format (still supported)
 
 A theme is a **playlist**: `usr/themes/<id>/theme.json` points at lane IDs,
 each lane independently overridable (`null` = follow the theme):
@@ -140,9 +152,14 @@ Kain-language extensions: `kain-image-converter`,
 
 ## Migration roadmap (toward `06-EXTENSION-API.md`)
 
-The `greeblefs` harness will eventually back these lanes with real
-renderers: `registerTheme` / `registerPreviewLane` / `registerViewMode`
-replacing `theme.json` playlists and `extension.toml` contribution blocks
-(with a legacy shim so existing packs keep working). Until the runtime
-import map lands (`src/components/pluginRuntime.tsx`), author against
-**this** document — it describes what ships and runs.
+- [x] `greeblefs` import map live in both transpiler lanes
+  (`pluginRuntime`, `themeRendererRuntime`) — TSX can import the contract.
+- [x] Theme domain backed by a real renderer path
+  (`greebleThemeBridge`: registry → definitions → catalog/apply/CSS).
+- [ ] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs.
+- [ ] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`.
+- [ ] Rust watcher re-runs factories on file change (hot reload end to end).
+
+Until the shims land, `extension.toml` packs and `theme.json` playlists
+run on their legacy loaders while API registrations flow through the
+bridge — both visible side by side.

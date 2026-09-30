@@ -332,6 +332,7 @@ import {
 } from './runtime/explorerBackend';
 import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
+import { useGreebleApiThemeDefinitions } from './runtime/greebleThemeBridge';
 import { useUpdateAutoCheck } from './runtime/useUpdateAutoCheck';
 import { UpdateBanner } from './components/UpdateBanner';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
@@ -1652,9 +1653,12 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       themeBundleDependencyCatalogs,
     ],
   );
+  // API-registered themes (greeblefs harness `theme` domain) render through
+  // the same pipeline as JSON packs — catalog, selection, CSS vars.
+  const greebleApiThemeDefinitions = useGreebleApiThemeDefinitions();
   const resolvedPackageThemes = useMemo(
-    () => [...combinedThemePackages.map(pkg => pkg.theme), ...resolvedCustomBundleThemes],
-    [combinedThemePackages, resolvedCustomBundleThemes],
+    () => [...combinedThemePackages.map(pkg => pkg.theme), ...resolvedCustomBundleThemes, ...greebleApiThemeDefinitions],
+    [combinedThemePackages, resolvedCustomBundleThemes, greebleApiThemeDefinitions],
   );
   const windowMode: TerminalWindowMode = presentationSettings.windowMode === 'dock' ? 'overlay' : 'windowed';
   const zenFocusMode = layoutSettings.zenFocusMode === true;

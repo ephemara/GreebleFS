@@ -1,6 +1,11 @@
 import React from 'react';
 import * as LucideReact from '@/components/AppIcons';
 import * as THREE from 'three';
+import {
+  GREEBLE_API_VERSION,
+  GREEBLE_API_VERSION_STRING,
+  GREEBLE_RUNTIME_MODULE,
+} from '../api/greeble';
 
 import type { OverlayThemeDefinition, ResolvedOverlayAppearance } from '../config/appearance';
 import type { LayoutProfile } from '../config/layoutProfiles';
@@ -265,6 +270,15 @@ function executeThemeRendererModuleGraph(graph: RuntimeModuleGraph): unknown {
     react: React,
     'lucide-react': LucideReact,
     three: THREE,
+    // The greeblefs harness contract. Extension factories receive their
+    // per-extension harness as an argument (runGreebleExtension); the
+    // module itself exposes version constants. Registration verbs run
+    // against the app-wide host book (src/runtime/greebleHost.ts).
+    [GREEBLE_RUNTIME_MODULE]: {
+      GREEBLE_API_VERSION,
+      GREEBLE_API_VERSION_STRING,
+      GREEBLE_RUNTIME_MODULE,
+    },
     [overlayThemeRendererRuntimeModuleName]: {
       defineThemeRenderer,
     },

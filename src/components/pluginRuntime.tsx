@@ -6,6 +6,11 @@ import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as TauriNotification from '@tauri-apps/plugin-notification';
 import * as LucideReact from '@/components/AppIcons';
 import * as WorkbenchAdapters from './pluginWorkbenchAdapters';
+import {
+  GREEBLE_API_VERSION,
+  GREEBLE_API_VERSION_STRING,
+  GREEBLE_RUNTIME_MODULE,
+} from '../api/greeble';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { PremiumSlider } from './PremiumSlider';
 import type { OverlayThemeDefinition } from '../config/appearance';
@@ -880,6 +885,15 @@ function executePluginModuleGraph(
       ExplorerWorkflowStatusNotice,
     },
     'greeblefs-workbenches': WorkbenchAdapters,
+    // The greeblefs harness contract (see src/runtime/greebleHost.ts).
+    // Extension factories receive their per-extension harness as an
+    // argument; the module exposes version constants. Registration
+    // verbs run against the app-wide host book.
+    [GREEBLE_RUNTIME_MODULE]: {
+      GREEBLE_API_VERSION,
+      GREEBLE_API_VERSION_STRING,
+      GREEBLE_RUNTIME_MODULE,
+    },
   };
 
   return executeRuntimeModuleGraph(graph, allowedModules);

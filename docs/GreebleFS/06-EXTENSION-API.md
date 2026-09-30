@@ -188,11 +188,9 @@ harness.dispose();   // releases handles + sweeps the owner's contributions
 | --- | --- |
 | Contract, registries, event spine, bus, host binding | ✅ Done (`src/api/*`) |
 | Unit tests (`src/test/greebleApi.test.ts`, 14 tests) | ✅ Passing |
-| `greeblefs` virtual module in the runtime transpiler import map (`src/components/pluginRuntime.tsx`) | ⬜ TODO — extensions can't `import 'greeblefs'` at runtime yet |
+| `greeblefs` virtual module in both transpiler import maps (`pluginRuntime`, `themeRendererRuntime`) | ✅ Done — TSX can import the contract at runtime |
 | Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs | ⬜ TODO |
-| Theme, shell, view-mode domains backed by real renderers | ⬜ TODO — themes still run on the JSON playlist system (see `02-THEMING-SYSTEM.md`) |
+| Theme domain backed by a real renderer path (`greebleThemeBridge`: registry → definitions → ThemeCatalog/apply/CSS) | ✅ Done + runtime-tested (`greebleThemeBridge.test.ts`) |
+| Legacy `defineThemeRenderer` TSX shimmed onto `registerShell` | ⬜ TODO |
+| Remaining domains (view-mode, preview-lane, …) backed by real renderers | ⬜ TODO |
 | Rust watcher re-runs factories on file change (hot reload end-to-end) | ⬜ TODO |
-
-Until the import map lands, `src/api` is callable from host code and tests,
-but `usr/plugins/*` author code cannot import it yet. That wiring is the
-single unblocker for the whole system.
