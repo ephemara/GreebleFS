@@ -24,7 +24,7 @@ import {
 } from "../../config/explorerChromeLayouts";
 import { shouldAllowNativeContextMenu } from "../../runtime/documentInteractionGuards";
 import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
-import { ShelfDropIndicator } from "../../customization";
+import { ShelfDropIndicator, ZBrushFreeformShelf } from "../../customization";
 import {
   useExplorerCustomizePointerSnapshot,
   type ExplorerCustomizePointerDropTarget,
@@ -106,6 +106,10 @@ interface ExplorerChromeSurfaceProps {
       placement: ExplorerChromeResolvedControlPlacement,
     ) => boolean;
     onRemoveControl?: (controlId: ExplorerChromeControlId) => void;
+    onUpdatePlacement?: (
+      controlId: ExplorerChromeControlId,
+      patch: { anchorX?: number; anchorY?: number; widthPx?: number },
+    ) => void;
   };
 }
 
@@ -658,6 +662,45 @@ export function ExplorerChromeSurface({
           return null;
         }
 
+        const rowControls = row.zones.flatMap((zone) => zone.controls);
+        const hasCustomAnchors = rowControls.some((c) => c.anchorX != null);
+
+        if (hasCustomAnchors) {
+          return (
+            <div
+              className="explorer-chrome-surface__row overlay-scrollbars-none"
+              key={row.id}
+              data-overlay-explorer-row={row.id}
+              data-explorer-customize-row-id={row.id}
+              style={{
+                width: "100%",
+                minWidth: 0,
+                position: "relative",
+                ...(getRowStyle?.(row.id) ?? {}),
+                overflowX: "auto",
+                overflowY: "visible",
+              }}
+            >
+              <ZBrushFreeformShelf
+                surfaceId={surface.surfaceId}
+                rowId={row.id}
+                controls={rowControls}
+                editModeActive={editModeActive}
+                selectedControlId={editMode?.selectedControlId ?? null}
+                renderControl={renderControl}
+                onSelectControl={editMode?.onSetSelectedControl}
+                onUpdatePlacement={editMode?.onUpdatePlacement}
+                onRemoveControl={editMode?.onRemoveControl}
+                onRequestHotkeyCapture={editMode?.onRequestHotkeyCapture}
+                onBeginPointerDrag={editMode?.onBeginPointerDrag}
+                onBeginPointerResize={editMode?.onBeginPointerResize}
+                isControlResizable={editMode?.isControlResizable}
+                style={getRowStyle?.(row.id)}
+              />
+            </div>
+          );
+        }
+
         return (
           <div
             className="explorer-chrome-surface__row overlay-scrollbars-none"
@@ -712,17 +755,9 @@ export function ExplorerChromeSurface({
                           minHeight: 32,
                           padding:
                             zone.controls.length === 0 ? "4px 6px" : "2px 4px",
-                          borderRadius: 12,
-                          background: zoneIsActiveDropTarget
-                            ? "color-mix(in srgb, var(--overlay-accent) 10%, transparent)"
-                            : zone.controls.length === 0
-                              ? "color-mix(in srgb, var(--overlay-border) 8%, transparent)"
-                              : "transparent",
-                          boxShadow: zoneIsActiveDropTarget
-                            ? "inset 0 0 0 1px color-mix(in srgb, var(--overlay-accent) 40%, transparent)"
-                            : zone.controls.length === 0
-                              ? "inset 0 0 0 1px color-mix(in srgb, var(--overlay-border) 52%, transparent)"
-                              : undefined,
+                          borderRadius: 8,
+                          background: "transparent",
+                          boxShadow: undefined,
                           transition:
                             "background 120ms ease, box-shadow 120ms ease",
                         }
@@ -857,9 +892,13 @@ export function ExplorerChromeSurface({
                           style={{
                             display: "flex",
                             alignItems: "center",
+                            justifyContent: "center",
                             minWidth: hasExplicitWidth
                               ? responsivePlacement.widthPx
-                              : 0,
+                              : editModeActive
+                                ? 30
+                                : 0,
+                            minHeight: editModeActive ? 30 : undefined,
                             position: "relative",
                             boxSizing: "border-box",
                             contain: hasExplicitWidth

@@ -27,6 +27,10 @@ const {
     loadAddon: ReturnType<typeof vi.fn>;
     options: Record<string, unknown>;
     reset: ReturnType<typeof vi.fn>;
+    write: ReturnType<typeof vi.fn>;
+    writeln: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+    focus: ReturnType<typeof vi.fn>;
     emitData: (data: string) => void;
   }[],
   isNativeStreamAvailableMock: vi.fn(),
@@ -855,5 +859,43 @@ describe('TerminalOverlay', () => {
       expect(screen.getByText('No directories yet — click + to add')).toBeInTheDocument();
       expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(true);
     });
+  }, 20000);
+
+  it('enters local echo mode when the PTY backend is unreachable instead of throwing', async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'terminal_spawn') {
+        throw new Error('TAURON_GUEST_UNAVAILABLE: backend offline');
+      }
+      if (command === 'terminal_open_output_stream') {
+        throw new Error('TAURON_GUEST_UNAVAILABLE: backend offline');
+      }
+      return null;
+    });
+    subscribeTransportStreamMock.mockRejectedValueOnce(
+      new Error('TAURON_GUEST_UNAVAILABLE: subscribeStreamPackets needs the Tauron native transport'),
+    );
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => {
+      expect(mockXtermInstances).toHaveLength(1);
+    });
+    await waitFor(() => {
+      expect(mockXtermInstances[0]?.writeln).toHaveBeenCalledWith(
+        expect.stringContaining('local echo mode'),
+      );
+    });
+
+    // Local input is echoed without touching the (dead) backend.
+    invokeMock.mockClear();
+    mockXtermInstances[0]?.emitData('help\r');
+
+    await waitFor(() => {
+      expect(mockXtermInstances[0]?.writeln).toHaveBeenCalledWith(
+        expect.stringContaining('Local commands'),
+      );
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_write', expect.anything());
   }, 20000);
 });

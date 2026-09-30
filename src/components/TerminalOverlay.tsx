@@ -711,6 +711,168 @@ const XTermPane = memo(function XTermPane({
 
     runFit(false);
 
+    const flushBufferedOutput = () => {
+      outputFrameRef.current = null;
+      const chunk = bufferedOutputRef.current;
+      if (!chunk) {
+        return;
+      }
+
+      bufferedOutputRef.current = '';
+      term.write(chunk);
+      onOutputRef.current?.(id, chunk);
+    };
+
+    const setupPaneChrome = (streamUnlisten: () => void) => {
+      const ro = new ResizeObserver(() => scheduleFit());
+      if (containerRef.current) {
+        ro.observe(containerRef.current);
+      }
+
+      const focusTarget = viewportRef.current ?? containerRef.current;
+      const handlePointerDown = () => onFocusRef.current?.(id);
+      focusTarget?.addEventListener('pointerdown', handlePointerDown);
+
+      xtermRegistry.set(id, {
+        xterm: term, fitAddon: fit,
+        unlisten: () => {
+          flushBufferedOutput();
+          if (fitFrameRef.current !== null) {
+            window.cancelAnimationFrame(fitFrameRef.current);
+            fitFrameRef.current = null;
+          }
+          if (outputFrameRef.current !== null) {
+            window.cancelAnimationFrame(outputFrameRef.current);
+            outputFrameRef.current = null;
+          }
+          disposeWebglRenderer();
+          try {
+            streamUnlisten();
+          } catch {
+            // Best effort only.
+          }
+          ro.disconnect();
+          focusTarget?.removeEventListener('pointerdown', handlePointerDown);
+        },
+      });
+      registerTerminalPaneHostEntry(id, {
+        hostId: 'xterm',
+        focus: () => {
+          requestAnimationFrame(() => term.focus());
+        },
+        clear: () => {
+          term.clear();
+        },
+        getSelectionText: () => term.getSelection().trim(),
+        appendLocalMessage: (label, body, tone = 'info') => {
+          const tonePrefix = tone === 'error'
+            ? '\x1b[31m'
+            : tone === 'success'
+              ? '\x1b[32m'
+              : '\x1b[36m';
+          const normalized = body.trim().replace(/\r?\n/g, '\r\n');
+          term.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
+        },
+      });
+      onResizeRef.current?.(id, term.rows, term.cols);
+      onReadyRef.current?.(id);
+      term.focus();
+    };
+
+    const enterLocalEchoMode = (reason: string) => {
+      console.warn(`[terminal:${id}] entering local echo mode: ${reason}`);
+      term.writeln('\r\n\x1b[33mTerminal backend unavailable — running in local echo mode.\x1b[0m');
+      term.writeln('\x1b[2mType `help` for local commands. PTY output will appear here once the backend is reachable.\x1b[0m');
+      if (reason) {
+        const singleLine = reason.split(/\r?\n/)[0]?.slice(0, 220);
+        if (singleLine) {
+          term.writeln(`\x1b[2m(${singleLine})\x1b[0m`);
+        }
+      }
+      let lineBuffer = '';
+      const writePrompt = () => term.write('\r\n\x1b[32m$\x1b[0m ');
+      const emitLocal = (chunk: string) => onOutputRef.current?.(id, chunk);
+      term.onData(data => {
+        onFocusRef.current?.(id);
+        for (const ch of data) {
+          if (ch === '\r' || ch === '\n') {
+            const line = lineBuffer;
+            lineBuffer = '';
+            term.write('\r\n');
+            emitLocal(`\n${line}\n`);
+            const trimmed = line.trim();
+            if (!trimmed) {
+              writePrompt();
+              continue;
+            }
+            const [verb, ...rest] = trimmed.split(/\s+/);
+            const argText = rest.join(' ');
+            if (verb === 'clear') {
+              term.clear();
+              writePrompt();
+            } else if (verb === 'help') {
+              term.writeln('Local commands: help, clear, echo <text>, pwd');
+              emitLocal('Local commands: help, clear, echo <text>, pwd\n');
+              writePrompt();
+            } else if (verb === 'echo') {
+              term.writeln(argText);
+              emitLocal(`${argText}\n`);
+              writePrompt();
+            } else if (verb === 'pwd') {
+              term.writeln(workingDirectory ?? '(no working directory)');
+              emitLocal(`${workingDirectory ?? ''}\n`);
+              writePrompt();
+            } else {
+              term.writeln(`\x1b[33mNo PTY backend: cannot run "${trimmed.slice(0, 80)}".\x1b[0m`);
+              emitLocal(`No PTY backend: cannot run "${trimmed}"\n`);
+              writePrompt();
+            }
+            continue;
+          }
+          if (ch === '\x7f' || ch === '\b') {
+            if (lineBuffer.length > 0) {
+              lineBuffer = lineBuffer.slice(0, -1);
+              term.write('\b \b');
+            }
+            continue;
+          }
+          if (ch === '\x03') {
+            lineBuffer = '';
+            term.write('^C');
+            writePrompt();
+            continue;
+          }
+          if (ch === '\x0c') {
+            lineBuffer = '';
+            term.clear();
+            writePrompt();
+            continue;
+          }
+          if (ch === '\x15') {
+            while (lineBuffer.length > 0) {
+              lineBuffer = lineBuffer.slice(0, -1);
+              term.write('\b \b');
+            }
+            continue;
+          }
+          lineBuffer += ch;
+          term.write(ch);
+        }
+      });
+      term.onResize(({ rows: r, cols: c }) => {
+        if (
+          lastResizeRef.current?.rows === r &&
+          lastResizeRef.current?.cols === c
+        ) {
+          return;
+        }
+        lastResizeRef.current = { rows: r, cols: c };
+        onResizeRef.current?.(id, r, c);
+      });
+      setupPaneChrome(() => {});
+      term.write('\r\n\x1b[32m$\x1b[0m ');
+    };
+
     try {
       unwrapTauriResult(await commands.terminalSpawn(
         id,
@@ -727,21 +889,9 @@ const XTermPane = memo(function XTermPane({
         reportedCwd: null,
       }));
     } catch (e) {
-      term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
+      enterLocalEchoMode(e instanceof Error ? e.message : String(e));
       return;
     }
-
-    const flushBufferedOutput = () => {
-      outputFrameRef.current = null;
-      const chunk = bufferedOutputRef.current;
-      if (!chunk) {
-        return;
-      }
-
-      bufferedOutputRef.current = '';
-      term.write(chunk);
-      onOutputRef.current?.(id, chunk);
-    };
 
     const scheduleBufferedFlush = () => {
       if (outputFrameRef.current !== null) {
@@ -758,36 +908,62 @@ const XTermPane = memo(function XTermPane({
       bufferedOutputRef.current += chunk;
       scheduleBufferedFlush();
     };
-    const outputStream = unwrapTauriResult(
-      await commands.terminalOpenOutputStream(id),
-    );
+    let outputStream: { id: string; kind: string } | null = null;
+    try {
+      outputStream = unwrapTauriResult(
+        await commands.terminalOpenOutputStream(id),
+      );
+    } catch (e) {
+      enterLocalEchoMode(e instanceof Error ? e.message : String(e));
+      return;
+    }
     const subscribeIpcFallback = () => subscribeIpcStream<TerminalOutputStreamChunk>(
-      outputStream,
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      outputStream!,
       appendOutputChunk,
       {
         replayFromSequence: 0,
         releaseOnUnsubscribe: false,
       },
     );
-    const unlisten = isNativeStreamAvailable()
-      ? await subscribeNativeByteStream(
-        outputStream,
-        (() => {
-          const decoder = new TextDecoder();
-          let expectedSequence = 0;
-          return packet => {
-            if (packet.sequence !== expectedSequence) {
-              console.warn(
-                `native terminal stream sequence gap for ${id}: expected ${expectedSequence}, received ${packet.sequence}`,
-              );
-              expectedSequence = packet.sequence;
-            }
-            expectedSequence += 1;
-            appendOutputChunk(decoder.decode(packet.bytes, { stream: true }));
-          };
-        })(),
-      ).catch(() => subscribeIpcFallback())
-      : await subscribeIpcFallback();
+    let unlisten: () => void;
+    try {
+      let nativeAvailable = false;
+      try {
+        nativeAvailable = isNativeStreamAvailable();
+      } catch {
+        nativeAvailable = false;
+      }
+      if (nativeAvailable) {
+        try {
+          unlisten = await subscribeNativeByteStream(
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            outputStream!.id,
+            (() => {
+              const decoder = new TextDecoder();
+              let expectedSequence = 0;
+              return packet => {
+                if (packet.sequence !== expectedSequence) {
+                  console.warn(
+                    `native terminal stream sequence gap for ${id}: expected ${expectedSequence}, received ${packet.sequence}`,
+                  );
+                  expectedSequence = packet.sequence;
+                }
+                expectedSequence += 1;
+                appendOutputChunk(decoder.decode(packet.bytes, { stream: true }));
+              };
+            })(),
+          );
+        } catch {
+          unlisten = await subscribeIpcFallback();
+        }
+      } else {
+        unlisten = await subscribeIpcFallback();
+      }
+    } catch (e) {
+      enterLocalEchoMode(e instanceof Error ? e.message : String(e));
+      return;
+    }
     term.onData(data => {
       onFocusRef.current?.(id);
       onDataRef.current?.(id, data);
@@ -804,58 +980,16 @@ const XTermPane = memo(function XTermPane({
       void commands.terminalResize(id, r, c).then(unwrapTauriResult).catch(() => {});
     });
 
-    const ro = new ResizeObserver(() => scheduleFit());
-    ro.observe(containerRef.current!);
-
-    const focusTarget = viewportRef.current ?? containerRef.current;
-    const handlePointerDown = () => onFocusRef.current?.(id);
-    focusTarget?.addEventListener('pointerdown', handlePointerDown);
-
-    xtermRegistry.set(id, {
-      xterm: term, fitAddon: fit,
-      unlisten: () => {
-        flushBufferedOutput();
-        if (fitFrameRef.current !== null) {
-          window.cancelAnimationFrame(fitFrameRef.current);
-          fitFrameRef.current = null;
-        }
-        if (outputFrameRef.current !== null) {
-          window.cancelAnimationFrame(outputFrameRef.current);
-          outputFrameRef.current = null;
-        }
-        disposeWebglRenderer();
-        unlisten();
-        ro.disconnect();
-        focusTarget?.removeEventListener('pointerdown', handlePointerDown);
-      },
-    });
-    registerTerminalPaneHostEntry(id, {
-      hostId: 'xterm',
-      focus: () => {
-        requestAnimationFrame(() => term.focus());
-      },
-      clear: () => {
-        term.clear();
-      },
-      getSelectionText: () => term.getSelection().trim(),
-      appendLocalMessage: (label, body, tone = 'info') => {
-        const tonePrefix = tone === 'error'
-          ? '\x1b[31m'
-          : tone === 'success'
-            ? '\x1b[32m'
-            : '\x1b[36m';
-        const normalized = body.trim().replace(/\r?\n/g, '\r\n');
-        term.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
-      },
-    });
-    onResizeRef.current?.(id, term.rows, term.cols);
-    onReadyRef.current?.(id);
-    term.focus();
+    setupPaneChrome(unlisten);
   }, [attachWebglRenderer, disposeWebglRenderer, id, settings, spawnShellOverride, theme, workingDirectory]);
 
   useEffect(() => {
     if (visible && bootReady) {
-      const raf = requestAnimationFrame(() => boot());
+      const raf = requestAnimationFrame(() => {
+        void boot().catch(error => {
+          console.warn(`[terminal:${id}] boot failed:`, error instanceof Error ? error.message : error);
+        });
+      });
       return () => cancelAnimationFrame(raf);
     }
   }, [boot, bootReady, visible]);

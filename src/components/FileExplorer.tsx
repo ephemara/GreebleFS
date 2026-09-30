@@ -22625,6 +22625,22 @@ function FileExplorerImpl({
       onRemoveControl: activeChromeEditSession
         ? removeExplorerChromeControlFromDraft
         : undefined,
+      onUpdatePlacement: activeChromeEditSession
+        ? (
+            controlId: ExplorerChromeControlId,
+            patch: { anchorX?: number; anchorY?: number; widthPx?: number },
+          ) => {
+            updateExplorerChromeEditEntry(controlId, patch);
+            const liveSession = getLiveExplorerChromeEditSession();
+            if (liveSession) {
+              persistExplorerChromeOverrideSnapshot(
+                liveSession.themeId,
+                liveSession.layoutId,
+                liveSession.draftOverride,
+              );
+            }
+          }
+        : undefined,
     }),
     [
       activeChromeEditSession,

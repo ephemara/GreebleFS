@@ -4,4 +4,5 @@ export * from "./components/ShelfDropIndicator";
 export * from "./components/ZBrushCustomizationOverlay";
 export * from "./components/HotkeyCaptureModal";
 export * from "./components/IconPickerPopover";
+export * from "./components/ZBrushFreeformShelf";
 export * from "./hooks/useZBrushShelfDrag";

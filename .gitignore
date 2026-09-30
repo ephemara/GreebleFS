@@ -151,3 +151,5 @@ src/generated/tauri.ts
 /.cache
 /toolchains/kain
 /toolchains
+*.zip
+/.pi
