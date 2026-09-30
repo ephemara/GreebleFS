@@ -1,0 +1,7 @@
+{
+  "name": "@tauri-apps/api",
+  "version": "2.11.0-tauron.0",
+  "description": "Tauron fork of the Tauri JS guest API (reconstructed guest bindings; see dist/*.js headers)",
+  "license": "Apache-2.0 OR MIT",
+  "private": true
+}

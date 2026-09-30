@@ -600,7 +600,7 @@ Function InstallGreebleFsUsnService
   done:
 FunctionEnd
 
-Function UninstallGreebleFsUsnService
+Function un.UninstallGreebleFsUsnService
   DetailPrint "Removing GreebleFS USN indexer service..."
   nsExec::ExecToLog `sc.exe stop "${USNINDEXSERVICENAME}"`
   nsExec::ExecToLog `sc.exe delete "${USNINDEXSERVICENAME}"`
@@ -985,7 +985,7 @@ Section Uninstall
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
 
-  Call UninstallGreebleFsUsnService
+  Call un.UninstallGreebleFsUsnService
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

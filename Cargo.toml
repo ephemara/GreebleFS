@@ -30,6 +30,18 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
+# Release LLVM-OOM guard (2026-09: rustc-LLVM 'out of memory' on 16 GB boxes).
+# The greeblefs app crate is enormous; even 4 parallel codegen units blow the
+# ~7 GB free budget (Paseo/Chrome/Defender own the rest - do not kill for builds).
+# Single-unit codegen: slowest, lowest peak. Deps keep the default so only
+# this crate rebuilds narrowly.
+[profile.release.package.greeblefs]
+codegen-units = 1
+opt-level = 0
+# opt-level 0: the crate has a pathological LLVM module (single-CGU opt3 exceeds
+# ~7 GB). Deps stay fully optimized; only app logic ships unoptimized until
+# the crate gets split (see deslopp notes). opt0 is proven: dev profile builds it.
+
 [workspace.dependencies]
 ansi-to-tui = "8.0.1"
 anyhow = "1.0.102"

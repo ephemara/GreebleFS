@@ -1,0 +1,23 @@
+{
+  "name": "@tauri-apps/api",
+  "version": "2.11.0-tauron.0",
+  "description": "Tauron fork of the Tauri JS guest API (reconstructed guest bindings; see headers in transport.js et al.)",
+  "license": "Apache-2.0 OR MIT",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "require": "./index.cjs",
+      "types": "./index.d.ts"
+    },
+    "./*": {
+      "import": "./*.js",
+      "require": "./*.cjs",
+      "types": "./*.d.ts"
+    },
+    "./package.json": "./package.json"
+  }
+}
