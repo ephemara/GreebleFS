@@ -180,14 +180,34 @@ pub fn resolve_writable_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, Stri
         return Ok(custom_root);
     }
 
+    if let Some(installed_root) = installed_layout_fallback_root() {
+        return Ok(installed_root);
+    }
+
     app.path()
         .app_local_data_dir()
         .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
 }
 
+/// Install roots that carry an install profile but no explicit usr root
+/// (empty/legacy `managedContentRoot`). The profile's presence means "local
+/// installed layout", so the workspace belongs beside the executable —
+/// never AppData. Callers bootstrap bundled content into it on startup.
+fn installed_layout_fallback_root() -> Option<PathBuf> {
+    let install_root = resolve_install_root_from_current_executable()?;
+    if !resolve_install_profile_path(&install_root).exists() {
+        return None;
+    }
+    Some(install_root.join("usr"))
+}
+
 pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if let Some(custom_root) = custom_managed_content_root() {
         return Ok(custom_root);
+    }
+
+    if let Some(installed_root) = installed_layout_fallback_root() {
+        return Ok(installed_root);
     }
 
     let app_local_data_root = app

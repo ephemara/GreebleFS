@@ -271,6 +271,15 @@ Built {built} from a fresh-clone-verified pipeline
 1. Run `{installer.name}` (per-machine NSIS, Start Menu + Desktop shortcuts).
 2. The installer registers the `GreebleFSUsnIndexer` service for fast NTFS indexing.
 
+## What's fixed (v0.2.3)
+- Empty-root hardening: some installs wrote `managedContentRoot = ''` into
+  `greeblefs-install-profile.toml` (page-skip edge), and the backend read
+  that as "no choice" → AppData. Two fixes: the installer now falls back
+  to `$INSTDIR\\usr` instead of writing empty, and the backend treats an
+  installed-but-rootless profile as "workspace beside the exe" (created +
+  bootstrapped automatically) instead of AppData. Existing broken installs
+  heal on next app start — no reinstall needed.
+
 ## What's fixed (v0.2.2)
 - Custom usr-root installs are honored end to end: every backend data lane
   (cloud tokens, thumbnails, models, screenshots, caches, indexes, ...) and

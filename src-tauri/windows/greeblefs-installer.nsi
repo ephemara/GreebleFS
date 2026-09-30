@@ -893,6 +893,12 @@ Section Install
 
   ; Save current MAINBINARYNAME for future updates
   WriteRegStr SHCTX "${UNINSTKEY}" "MainBinaryName" "${MAINBINARYNAME}.exe"
+  ; v0.2.3: never persist an empty usr root (page-skip/silent edge cases
+  ; wrote managedContentRoot = '' and the app fell back to AppData).
+  ; Default portable layout keeps the workspace beside the install.
+  ${If} $SelectedUsrRootDirectory == ""
+    StrCpy $SelectedUsrRootDirectory "$INSTDIR\usr"
+  ${EndIf}
   WriteRegStr SHCTX "${UNINSTKEY}" "UsrRootDirectory" "$SelectedUsrRootDirectory"
 
   ClearErrors
