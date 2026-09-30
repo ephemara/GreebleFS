@@ -1,482 +1,330 @@
 # GreebleFS
 
-> *A Tauri desktop workbench centered on a highly themeable file explorer, terminal overlay, plugins, shaders, animations, and settings-driven shell customization.*
+<p align="center">
+  <img src="https://img.shields.io/badge/Release-v0.2.0--workbench-blue.svg?style=for-the-badge&logo=tauri" alt="Release v0.2.0-workbench">
+  <img src="https://img.shields.io/badge/Architecture-Tauron%20Native%20Fork-00e5ff.svg?style=for-the-badge" alt="Tauron Native Fork">
+  <img src="https://img.shields.io/badge/Engine-Rust%20%7C%20wgpu%20%7C%20React%2019-ff6d00.svg?style=for-the-badge" alt="Rust wgpu React">
+  <img src="https://img.shields.io/badge/Filesystem-USN%20MFT%20Fastpath-00e676.svg?style=for-the-badge" alt="USN MFT Fastpath">
+  <img src="https://img.shields.io/badge/Themes%20%26%20Packs-30%2B%20Lanes-d500f9.svg?style=for-the-badge" alt="30+ Theme Lanes">
+  <img src="https://img.shields.io/badge/Polyglot-Rust%20%7C%20Go%20%7C%20Python%20%7C%20Kain%20%7C%20TS-7c4dff.svg?style=for-the-badge" alt="Polyglot Runtime">
+</p>
 
-**GreebleFS** is not just a file explorer. It is a desktop workbench — a themable, extensible, GPU-accelerated native surface where the file explorer is the center of everything. Think VS Code meets Directory Opus, running on Tauri 2 + Rust + React, with a custom fork of the Tauri framework itself.
+### The Native Desktop Workbench: File Explorer × High-Density IDE Crossover
+*A hyper-customizable, GPU-accelerated desktop workstation built on a custom zero-copy Tauri fork (`Tauron`), native Rust file engines, wgpu compute, and full polyglot plugin execution.*
 
----
+> ⚡ **What is GreebleFS?** Forget basic file managers and bloated web wrappers. GreebleFS is an **entire desktop workbench** built from the ground up where the file manager *is* the operating environment. It combines the deep, high-speed directory mastery of Directory Opus with the full-bore workspace power of VS Code, wrapped in hardware-accelerated shaders, customizable shell chrome, and a zero-serialization native IPC engine.
+>
+> 🚀 **The Tauron Engine:** GreebleFS doesn't run on stock Tauri. It runs on **Tauron** (our sibling fork of Tauri 2) engineered with zero-copy shared buffers (`native_buffer_pool`), raw live byte streams (`native_stream`), and ring-buffered IPC for instant 100k+ file scans and live terminal streams.
 
-## Table of Contents
-
-1. [What GreebleFS Is Trying To Do](#what-greeblefs-is-trying-to-do)
-2. [Scale & Scope](#scale--scope)
-3. [Architecture at a Glance](#architecture-at-a-glance)
-4. [The Tauron Fork](#the-tauron-fork)
-5. [The `/usr` Folder System](#the-usr-folder-system)
-6. [Full Flow: How Everything Is Wired Up](#full-flow-how-everything-is-wired-up)
-7. [Technology Stack](#technology-stack)
-8. [Key Subsystems](#key-subsystems)
-9. [Project Structure](#project-structure)
-10. [Getting Started](#getting-started)
-11. [Validation & Testing](#validation--testing)
-12. [Design Principles](#design-principles)
-13. [The Beauty of GreebleFS](#the-beauty-of-greeblefs)
-
----
-
-## What GreebleFS Is Trying To Do
-
-GreebleFS is a **theme-first, explorer-centric desktop workbench**. It reimagines the file explorer not as a utility window you open and close, but as the **primary surface** of your desktop interaction.
-
-### Core Goals
-
-1. **Make the file explorer the shell.** The explorer is not a sidebar or a popup — it is the default launch surface (`greeblefs://home`), the workspace hub, and the background against which all other tools operate.
-
-2. **Theme everything.** Themes are not just color palettes. They are composable orchestration manifests that control appearance, interaction motion, layout dynamics, chrome layout, icon themes, wallpapers, shaders, animations, sound packs, render styles, workbench recipes, explorer recipes, and dock presentation — all authored as data, not code.
-
-3. **Plugin-native extensibility.** Every preview lane, every explorer workflow, every settings slot, every activity rail item can be contributed by a plugin. Plugins have a real sandbox, a declared dependency graph, and access to host files, events, selection context, and terminal services.
-
-4. **GPU-accelerated native performance.** A custom `wgpu` backplane renders behind the WebView, native buffer pools carry directory listings and preview bytes across the host boundary without JSON serialization, and a bounded task graph manages cancellable scan/thumbnail/preview/archive work.
-
-5. **Multi-runtime polyglot.** The app orchestrates Rust (native host), React/TypeScript (shell), Go/TinyGo (Wasm panels and native sidecars), Python (AI/media sidecar), Kain (semantic UI and lattice authoring), and Node (VS Code extension bridge) — all through one typed extension-host schema.
-
-6. **Dual-surface shell.** The app has two presentation modes — a full windowed application shell and a compact overlay dock (Yakuake/Guake-style) — that share the same explorer sessions, filesystem data plane, and workspace state.
-
-7. **Mobile companion.** A separate PWA bundle served over LAN/mobile sharing provides a browser-safe file browser, search, transfers, and plugin panes from your phone, all backed by the same desktop host.
+> 📖 **Deep Dive Documentation:**
+> - **[Architecture Spec (`architecture.md`)](architecture.md)** — Exhaustive 2,700-line deep dive into every subsystem, IPC contract, and thread model.
+> - **[User Content System (`usr/README.md`)](usr/README.md)** — Guide to authoring themes, appearance packs, layout physics, top bars, and plugins.
+> - **[Developer Memory (`memory.md`)](memory.md)** — Architectural evolution, decisions, and system history.
 
 ---
 
-## Scale & Scope
+## 1. What GreebleFS Actually Is
 
-GreebleFS is a **massive** codebase. Here are some numbers that suggest its scale:
+Most operating systems treat the file explorer as an afterthought — a dumb, floating grid of icons you click through to launch "real" apps. **GreebleFS flips that inside out.**
 
-| Metric | Count |
-|--------|-------|
-| **Total files** | ~5,600+ |
-| **TypeScript/TSX source files** | ~1,000+ |
-| **Rust source files** | ~80+ in `src-tauri/src/`, plus 17 workspace crates |
-| **Go source modules** | ~20+ in `src-go/` (SDK + builtin runtimes) |
-| **Python modules** | Sidecar package in `src-python/` |
-| **Kain modules** | `src-kain/` with stdlib, lattice, plugins, runtimes, FFI bridges |
-| **Theme bundles** | 30+ in `usr/themes/` |
-| **Appearance packs** | 15+ token lanes in `usr/appearance-packs/` |
-| **Icon themes** | Multiple in `usr/icon-themes/` |
-| **Plugins** | 20+ in `usr/plugins/`, plus Kain plugins in `usr/plugins-kain/` |
-| **Architecture documentation** | 1,186 lines of dense architectural specification |
-| **Test files** | 50+ Vitest test suites |
-| **zulgent of Rust dependencies** | ~200 workspace dependencies |
-| **npm packages** | ~100 dependencies |
-| **Vite configs** | 6 separate configs (main, mobile, shared, vitest browser, vitest echo) |
-
-### Lines of Code (estimate)
-
-- `src/App.tsx`: ~8,500 lines (the main shell orchestrator)
-- `src/components/FileExplorer.tsx`: ~30,000+ lines ~ the eldritch horror of typescript.
-- `architecture.md`: ~2,700 lines
-- `memory.md`: ~9,300 lines (developer session memory)
-- `scripts/run-platform-tauri.mjs`: ~1,400 lines (dev/build orchestration)
-- **Total estimated code**: well over 200,000 lines across all languages.
-
-### What Makes This Scale Special
-
-This is not a weekend project. It is a **sustained, multi-year workbench** built by someone with deep knowledge of:
-- Desktop application architecture
-- Tauri internals (hence the fork)
-- Filesystem APIs and NTFS internals
-- GPU programming and real-time rendering
-- Plugin systems and extension hosts
-- Theme engines and design tokens
-- Polyglot runtime orchestration
-
-The result is a codebase where almost every subsystem has been **architected from first principles** rather than stitched together from tutorials.
-
----
-
-## Architecture at a Glance
+The file explorer is not a sidecar utility. It is your **primary command deck**:
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    USER INTERFACE                        │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │              React 19 + TypeScript                 │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │  │
-│  │  │ App.tsx  │ │FileExpl- │ │ TerminalOverlay  │  │  │
-│  │  │ (shell)  │ │ orer.tsx │ │ (xterm + native  │  │  │
-│  │  │          │ │ (main UI)│ │  byte stream)    │  │  │
-│  │  └──────────┘ └──────────┘ └──────────────────┘  │  │
-│  │         Zustand Stores (settings, explorer, etc)   │  │
-│  └───────────────────────────────────────────────────┘  │
-│                         │ IPC                            │
-│  ┌───────────────────────────────────────────────────┐  │
-│  │              RUST BACKEND (Tauri 2)                │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │  │
-│  │  │fs_commands│ │native_   │ │runtime_pipeline  │  │  │
-│  │  │(filesys) │ │task_graph│ │(polyglot host)   │  │  │
-│  │  └──────────┘ └──────────┘ └──────────────────┘  │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │  │
-│  │  │audio_    │ │video_    │ │gpu_runtime       │  │  │
-│  │  │engine.rs │ │engine.rs │ │(wgpu offload)    │  │  │
-│  │  └──────────┘ └──────────┘ └──────────────────┘  │  │
-│  │  ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │  │
-│  │  │global_   │ │semantic_ │ │python_sidecar.rs │  │  │
-│  │  │search/   │ │search.rs │ │(managed Python)  │  │  │
-│  │  └──────────┘ └──────────┘ └──────────────────┘  │  │
-│  └───────────────────────────────────────────────────┘  │
-│           │                    │            │            │
-│  ┌────────┴───────┐  ┌────────┴──────┐  ┌──┴──────────┐│
-│  │ TAURON FORK    │  │ Native        │  │ Sidecars    ││
-│  │ (patched Tauri)│  │ Services      │  │ Go, Python, ││
-│  │ native_control │  │ USN Indexer   │  │ Kain, Node  ││
-│  │ native_buffer  │  │ Windows       │  │             ││
-│  │ native_stream  │  │ Daemon        │  │             ││
-│  └────────────────┘  └───────────────┘  └─────────────┘│
-└─────────────────────────────────────────────────────────┘
+ ┌─────────────────────────────────────────────────────────────────────────────┐
+ │ GREEBLEFS WORKBENCH SHELL                                                   │
+ │ ┌──────────┬──────────────────────────────────────┬───────────────────────┐ │
+ │ │ ACTIVITY │ DUAL-PANE FILE EXPLORER              │ INTEGRATED WORKBENCH  │ │
+ │ │ RAIL     │                                      │                       │ │
+ │ │          │  📁 /src/components/                  │ 🛠️ Code (Monaco)      │ │
+ │ │ 🔍 Search│  ├─ 📄 App.tsx          [8.5k lines] │ 🎨 DAW / Audio (VST3) │ │
+ │ │ 🧭 Nav   │  ├─ 📄 FileExplorer.tsx [30k lines]  │ 🎬 Video Editor (MP4) │ │
+ │ │ 🧠 Vector│  └─ 📁 usr/                          │ 🖼️ Image / AI Cutout  │ │
+ │ │ 🧩 Ext   │     ├─ 🎨 themes/      (30+ bundles) │ 📊 Spreadsheets       │ │
+ │ │ ⚡ Tasks │     ├─ 🔮 shaders/     (wgpu compute)│ 🗄️ SQLite Database    │ │
+ │ │ ⚙️ Setup │     └─ 🔌 plugins/     (sandboxed)   │ 🧊 3D Models (PBR)    │ │
+ │ ├──────────┴──────────────────────────────────────┴───────────────────────┤ │
+ │ │ >_ NATIVE TERMINAL OVERLAY (xterm.js + Tauron raw byte streaming)       │ │
+ │ └─────────────────────────────────────────────────────────────────────────┘ │
+ └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### The Three-Layer Stack
-
-1. **Presentation Layer** (TypeScript/React)
-   - App shell, explorer UI, terminal, settings, panels
-   - Zustand for persisted state
-   - CSS variables for theming
-   - Framer Motion for shell transitions (not explorer rows)
-
-2. **Host Layer** (Rust/Tauri)
-   - Filesystem operations, search, indexing
-   - Media engines (audio via CPAL/Symphonia, video via ffmpeg)
-   - GPU runtime (wgpu compute for thumbnails, waveforms, spectrograms)
-   - Native task graph for cancellable background work
-   - Extension host for polyglot runtimes
-
-3. **Transport Layer** (Tauron Fork)
-   - `native_control`: compact JSON control plane for metadata/actions
-   - `native_buffer_pool`: finite shared-buffer lane for directory snapshots and preview bytes
-   - `native_stream`: live byte stream for terminal output and search results
-   - `message_ring`: bounded replay-capable message rings for host events
+- **Explorer as the Shell:** Launch directly into `greeblefs://home`. Your filesystem is the workspace canvas, with dual-pane views, virtual archive mounting (`.zip`, `.tar`, `.7z`), tabs, and live directory watching.
+- **Full IDE & Media Workbenches Built In:** Click a file, and GreebleFS transforms right there into an IDE, audio DAW, video editor, or 3D viewport without ever leaving the explorer:
+  - **Code:** Full Monaco editor with language servers, syntax highlighting, and theme integration.
+  - **Audio DAW:** CPAL + Symphonia native audio pipeline, waveform/spectral views, DAW-style fades, and live **VST3 plugin hosting**.
+  - **Video Studio:** High-performance preview engine, hardware decode with FFmpeg fallback, inspector deck, and trim tooling.
+  - **Image & AI Cutout:** Pan/zoom stage, CropperJS deck, and one-click AI background removal via the Python sidecar.
+  - **Data & Databases:** Native Glide Data Grid + HyperFormula spreadsheets and interactive SQLite query engines.
+  - **3D & Shaders:** Hardware-accelerated Three.js and Bevy/Wasm PBR model viewports, plus live WebGPU shader workbenches.
+- **Instant Dual-Surface Modes:** Hit a hotkey to toggle between the **full workbench shell** and a lightning-fast **drop-down Quake-style overlay dock** (`Yakuake`/`Guake`-style) sharing the exact same state, tabs, and filesystem data planes.
 
 ---
 
-## The Tauron Fork
+## 2. The Scale & The Engine
 
-GreebleFS does not use stock Tauri. It uses **Tauron**, a sibling fork of the entire Tauri 2 framework located at `D:/tauron` (hardcoded path in the repo workspace configuration).
+GreebleFS is an uncompromising engineering effort spanning over **200,000 lines of code** across five languages:
 
-### Why Tauron Exists
-
-Stock Tauri's IPC model is built around JSON serialization of every payload through `invoke()` calls. This is fine for configuration and metadata, but it falls apart for GreebleFS's performance-critical data flows:
-
-- **Directory listings** with 100,000+ files would require serializing a massive JSON array
-- **Preview bytes** for images, PDFs, and video frames would base64-encode through JSON
-- **Terminal output** streams would need per-chunk event emission
-- **Search results** streaming large batches would saturate the event bus
-
-Tauron adds three native transport primitives that bypass JSON entirely:
-
-| Primitive | Purpose | Direction |
-|-----------|---------|-----------|
-| `native_control` | Compact JSON RPC for metadata, actions, and handle creation | Bidirectional |
-| `native_buffer_pool` | WebView2 shared-buffer lease for large binary snapshots | Host → WebView |
-| `native_stream` | Live byte stream for terminal output, search batches | Host → WebView |
-| `message_ring` | Bounded, replay-capable ring buffers for event history | Host → WebView |
-
-### What Gets Patched
-
-In the root `Cargo.toml`, the `[patch.crates-io]` section overrides every core Tauri crate:
-
-```toml
-[patch.crates-io]
-tauri = { path = "../tauron/crates/tauri" }
-tauri-build = { path = "../tauron/crates/tauri-build" }
-tauri-codegen = { path = "../tauron/crates/tauri-codegen" }
-tauri-macros = { path = "../tauron/crates/tauri-macros" }
-tauri-plugin = { path = "../tauron/crates/tauri-plugin" }
-tauri-runtime = { path = "../tauron/crates/tauri-runtime" }
-tauri-runtime-wry = { path = "../tauron/crates/tauri-runtime-wry" }
-tauri-utils = { path = "../tauron/crates/tauri-utils" }
-```
-
-Similarly, the JS `@tauri-apps/api` package is consumed from the fork:
-
-```json
-"@tauri-apps/api": "file:../tauron/packages/api/dist"
-```
-
-The fork also includes **first-party Tauron plugins** consumed by GreebleFS:
-- `tauri-plugin-windowmgr` — native window management and HWND attachment for owned-window proofs
-- `tauri-plugin-kain` — Kain language bridge for semantic UI and lattice authoring
-- Dev observatory — native telemetry, performance snapshots, and CDP attach support
-
-### The Preflight Guard
-
-A script at `scripts/tauron-preflight.mjs` runs before every Cargo-backed command (`tauri dev`, `tauri build`, `bindings:generate`). It verifies:
-1. The sibling `../tauron` workspace exists
-2. Required core crate manifests are present
-3. The JS API `dist/` is fresh (checked against generated outputs, not metadata)
-4. If stale on Windows, it shells `pnpm build:api` through `cmd.exe` before proceeding
-
-This prevents cryptic compilation errors when the fork is missing or outdated.
+| Metric | Details |
+|---|---|
+| **Core Languages** | Rust (Host & Engines), TypeScript/React 19 (Shell), Go, Python, Kain |
+| **Workspace Crates** | **17 native Rust crates** (`greeblefs-index-core`, `vst-host`, `audio-engine`, etc.) |
+| **Tauri Framework** | Custom **Tauron fork** (`D:/tauron`) patched at the crate level |
+| **Windows Indexer** | Dedicated **NTFS MFT & USN Journal tailing service** for sub-millisecond lookups |
+| **UI Core** | `App.tsx` (~8.5k lines), `FileExplorer.tsx` (~30k lines of dense frontend logic) |
+| **User Space (`/usr`)** | 30+ Theme Bundles, 15+ Appearance Packs, Shaders, Sound Packs, Plugins |
+| **Polyglot Sidecars** | Go (Wasm runtime), Python (AI/cutout), Kain (Lattice UI), Node (VS Code bridge) |
 
 ---
 
-## The `/usr` Folder System
+## 3. Why Stock Tauri Wasn't Enough: The Tauron Fork
 
-`/usr` is the **shipped authoring root** for all runtime-discovered content. It is the canonical place to author themes, appearance packs, icon themes, plugins, shaders, animations, sound packs, layout presets, hotkeys, menu packs, and performance manifests — as data, not code.
+Stock Tauri is great for lightweight apps, but its IPC model forces every single byte through JSON serialization strings. When you have a folder with **150,000 files**, stream 4K video frames, or tail massive live terminal streams, **JSON IPC chokes**.
 
-### Layout Philosophy
+GreebleFS solved this by maintaining a sibling fork of Tauri 2: **Tauron** (located at `D:/tauron`):
+
+| Tauron Primitive | What It Does | Why It Dominates Stock Tauri |
+|---|---|---|
+| **`native_buffer_pool`** | WebView2 shared-memory zero-copy buffer leases | Transfers 100k+ file directory snapshots in milliseconds without base64 or JSON bloat. |
+| **`native_stream`** | Raw native byte stream pipeline | Live streaming for xterm.js terminal shells and global search results directly into the UI. |
+| **`native_control`** | High-density binary/JSON RPC control plane | Handles high-frequency UI commands and handle leases with near-zero latency. |
+| **`message_ring`** | Bounded, replay-capable event rings | Ensures zero lost filesystem events, window mutations, or task graph changes. |
+
+*Cargo and pnpm hook directly into the Tauron source tree, with automated preflight validation scripts (`scripts/tauron-preflight.mjs`) ensuring zero stale bindings.*
+
+---
+
+---
+
+## 4. The Complete Workbench Matrix
+
+GreebleFS ships built-in dedicated workbenches that mount natively when navigating or previewing files, turning the explorer into a domain-specific IDE on demand:
+
+| Workbench | File Types / Triggers | Engine / Technologies | Key Superpowers |
+|---|---|---|---|
+| **Monaco Code IDE** | `.ts`, `.rs`, `.py`, `.go`, `.json`, `.md`, etc. | Monaco Editor + Language Server Bridge | Full syntax parsing, theme matching, fast code editing inside the directory tree. |
+| **Audio DAW & VST3** | `.wav`, `.mp3`, `.flac`, `.ogg` | CPAL + Symphonia + `vst-host` crate | Native waveform & spectral display, DAW fades, live VST3 instrument/effect processing. |
+| **Video Production Deck**| `.mp4`, `.webm`, `.mkv`, `.mov` | Hardware video engine + FFmpeg fallback | Scrubbing timeline, trim tool, frame stepping, CPAL/Symphonia audio sync. |
+| **Image & AI Cutout** | `.png`, `.jpg`, `.webp`, `.svg`, `.psd` | WebGL canvas + Python sidecar (rembg/U2Net) | Pan/zoom stage, CropperJS filter decks, one-click subject isolation & transparent PNG export. |
+| **Spreadsheet Lab** | `.csv`, `.tsv`, `.xlsx` | Glide Data Grid + HyperFormula engine | Real calculation graph, million-cell virtualization, formula parsing, instant sorting. |
+| **Database Inspector**| `.db`, `.sqlite`, `.sqlite3` | Native SQLite driver | Live table schema viewer, dynamic SQL querying, paginated table data inspection. |
+| **Shader Studio** | `.wgsl`, `.glsl`, `.frag` | `wgpu` + WebGPU preview canvas | Live GPU compilation, real-time uniform manipulation, and frame diagnostic HUD. |
+| **3D Asset Viewport** | `.glb`, `.gltf`, `.obj`, `.fbx`, `.stl` | Three.js + Bevy/Wasm PBR engine | Physically-based rendering, orbit controls, material inspector, wireframe/normal overlays. |
+| **PDF Workshop** | `.pdf` | Native Pdfium bridge | Multi-page virtualized rendering, overlay vector annotations, AcroForm interactive editing. |
+| **Virtual Archive Mount**| `.zip`, `.tar`, `.7z`, `.gz`, `.xz` | `archive_ops.rs` virtual filesystem | Mounts archives as real browsable folder hierarchies with on-demand entry materialization. |
+
+---
+
+## 5. The `/usr` Data-Driven Architecture
+
+In GreebleFS, **data owns truth, not hardcoded code**. Themes, UI layouts, hotkeys, contextual menus, performance caps, and chrome layouts live in `/usr` as editable JSON/manifest files. You can customize, swap, or fork the entire shell's behavior without recompiling a single line of Rust or TypeScript.
+
+### Layout Hierarchy
 
 ```
 usr/
-├── manifest.json              # Source of truth for every managed lane
-├── README.md                  # Operator map for shared vs profile lanes
+├── manifest.json              # Canonical source of truth for all managed content lanes
+├── README.md                  # Developer operator guide for shared vs profile lanes
 │
-├── profiles/                  # Profile system
+├── profiles/                  # User profile and layout overlays
 │   ├── catalog.json           # Active profile registry
-│   ├── variants.json          # Named seed variations
-│   ├── shared/
-│   │   └── settings.json      # Machine-global settings baseline
-│   └── default/               # Canonical shipped profile baseline
-│       ├── settings.json      # Profile-local settings
-│       ├── explorer-performance/
-│       ├── explorer-rail-trees/
-│       ├── explorer-mode-profiles/
-│       ├── explorer-chrome-layouts/
-│       ├── explorer-shell-layouts/
-│       ├── explorer-workspace-layouts/
-│       ├── explorer-customize-controls/
-│       ├── explorer-experimental-modes/
-│       ├── explorer-zoom-behaviors/
-│       ├── shell-customize-controls/
-│       └── hotkeys/
+│   ├── default/               # Shipped default profile baseline
+│   │   ├── settings.json      # Profile-local settings
+│   │   ├── explorer-performance/ # Hardware-tailored rendering & thumbnail limits
+│   │   ├── explorer-chrome-layouts/ # Modular dock & rail layout configurations
+│   │   └── hotkeys/           # Customizable keybinding matrices
+│   └── variants.json          # Seed profiles (focused-authoring, review-presentation, etc.)
 │
-├── appearance-packs/          # Visual tokens (color, typography, spacing, etc.)
-├── interaction-motion/        # Micro-interaction profiles
-├── layout-dynamics/           # Solver/surface physics presets
-├── theme-recipes/             # Workbench, explorer, mobile, dock recipes
-├── theme-engines/             # Thin composition manifests
-├── themes/                    # 30+ theme bundles (bundle-first orchestration)
-├── icon-themes/               # VS Code-style icon packages
-├── sound-packs/               # Shell audio packs
-├── top-bars/                  # Data-driven top bar definitions
-├── shaders/                   # Authored shader modules
-├── animations/                # Authored animation modules
-├── wallpapers/                # Imported media + live wallpaper modules
-├── lookdev-presets/           # Shared lookdev system presets
-├── menu-packs/                # Explorer context-menu structure definitions
-├── actions/                   # Pack-first action definitions
-├── domain/                    # Rust domain presets and derived metadata
-├── explorer-widgets/          # Explorer widget packages
-├── plugins/                   # Package plugins (React + Wasm + assets)
-├── plugins-kain/              # Kain-authored plugins
-└── packages/                  # Shared library packages
-    ├── greeblefs-ui/          # @greeblefs/ui (DCC controls, layouts)
-    └── greeblefs-plugin-tools/ # @greeblefs/plugin-tools (file/state helpers)
+├── appearance-packs/          # Visual design tokens (palette, spacing, typography, borders)
+├── interaction-motion/        # Micro-interaction timing, spring physics, and hover dynamics
+├── layout-dynamics/           # Solver physics presets for panels and splitters
+├── theme-recipes/             # Multi-layer recipes unifying workbench, explorer, and dock
+├── themes/                    # 30+ Complete Theme Bundles (Cyberpunk, Nord, Solarized, Matrix, etc.)
+├── icon-themes/               # Full file, folder, and UI glyph icon themes
+├── sound-packs/               # Tactile UI audio cues (clicks, mount chimes, completion sounds)
+├── top-bars/                  # Data-driven top bar layouts and quick-action toolbars
+├── shaders/                   # Custom wgpu / WebGL background and glass shader effects
+├── animations/                # Fluid shell transitions and dynamic state changes
+├── wallpapers/                # Ambient dynamic canvas & live interactive wallpapers
+├── menu-packs/                # Deep contextual right-click menu action trees
+├── plugins/                   # Sandboxed plugin bundles (React + Wasm + assets)
+└── plugins-kain/              # Semantic plugins authored in Kain
 ```
 
 ### Shared-Root vs Profile-Overlay
 
-Every managed-content lane is classified as either **shared-root** or **profile-overlay**:
+- **Shared-Root (`usr/<lane>`)**: Machine-global assets shared across all user profiles (Themes, Icon Themes, Appearance Packs, Plugins, Shaders, Sound Packs).
+- **Profile-Overlay (`usr/profiles/<id>/<lane>`)**: User-specific or task-tailored configurations (Keybindings, Custom Chrome Layouts, Virtual Workspaces, Performance Manifests).
 
-- **Shared-root** lanes (top-level `usr/<lane>`) stay global across all profiles. Examples: themes, icon themes, appearance packs, plugins, sound packs, shaders, animations, wallpapers.
-
-- **Profile-overlay** lanes (`usr/profiles/default/<lane>`) are intentionally profile-specific. Examples: settings, hotkeys, explorer layouts, explorer performance manifests, chrome layouts, menu packs.
-
-The resolution chain is: **active profile → canonical baseline → bundled fallback**. This means users can override profile-scoped content without affecting shared global resources, and each profile has its own settings, layouts, and hotkey bindings.
-
-### Settings Pipeline
-
-1. `usr/profiles/shared/settings.json` + `usr/profiles/default/settings.json` define the shipped first-run baseline
-2. `src/config/usrDefaultSettings.ts` imports those files and builds the effective canonical default snapshot
-3. `src/store/settingsStore.ts` uses that snapshot as the canonical `defaultSettings`
-4. `src-tauri/src/usr_profiles.rs` handles splitting and persisting shared-vs-profile settings at runtime
-
-New product defaults should be authored in `/usr`, not hardcoded in the Zustand store.
-
-### Profile Variations
-
-The system ships four seed variations:
-- `canonical-default` — mirrors the shipped baseline exactly
-- `focused-authoring` — dense, quieter authoring defaults
-- `review-presentation` — preview-first demo and browsing defaults
-- `minimal-low-motion` — reduced motion and shell noise
-
-These are partial overrides, not full settings files. They only change the slices they intentionally differ on.
+The resolution chain is rock-solid: **Active Profile $\to$ Canonical Baseline $\to$ Bundled Fallback**.
 
 ---
 
-## Full Flow: How Everything Is Wired Up
-
-### Startup Flow
+## 6. Architecture & Full Data Flow
 
 ```
-1. User launches greeblefs.exe / bun run tauri dev
-   │
-2. run-platform-tauri.mjs (canonical Tauri launcher)
-   ├── Kills stale GreebleFS dev processes
-   ├── Runs tauron-preflight.mjs (verifies D:/tauron fork)
-   ├── Stages Go runtime assets
-   ├── Builds mobile share bundle
-   ├── Runs Specta bindings generation (missing-only)
-   ├── Stages Kain toolchain payload
-   ├── Injects MCP/dev-session environment variables
-   ├── Writes session truth to MCP/.state/
-   │   ├── tauri-dev-session.json (wrapper truth)
-   │   ├── tauron-webview2-session.json (WebView/CDP truth)
-   │   └── greeblefs-native-automation.json (native RPC truth)
-   └── Launches @tauri-apps/cli tauri dev
-       │
-3. Tauri BeforeDevCommand: scripts/run-frontend-dev.mjs
-   ├── Syncs canonical icons
-   ├── Starts Vite dev server (programmatic API)
-   ├── Warms critical entrypoints (App.tsx, FileExplorer.tsx, etc.)
-   └── Listens on localhost:1420
-       │
-4. Rust host compiles and boots
-   ├── lib.rs registers plugins, state, and commands
-   ├── linux_graphics.rs applies NVIDIA/WebKit workarounds
-   ├── usr_profiles.rs loads profile catalog
-   ├── dev_observatory.rs initializes dev telemetry
-   ├── native_task_graph.rs starts task executor
-   └── Creates WebView2 window pointing at Vite dev URL
-       │
-5. Frontend bootstrap (src/main.tsx)
-   ├── Reads window descriptor (main, picker, file-operations, etc.)
-   ├── Installs React Aria OverlayProvider
-   ├── Installs dev bridge (window.__GREEBLEFS_DEV_MCP__)
-   ├── Installs react-scan in dev/MCP mode
-   └── Renders App component
-       │
-6. App.tsx initialization
-   ├── Hydrates Zustand stores from Tauri plugin-store
-   ├── Loads managed content catalog from usr/
-   ├── Resolves active theme bundle
-   │   ├── appearance pack → CSS variables
-   │   ├── interaction motion → pointer bindings
-   │   ├── layout dynamics → solver physics
-   │   ├── theme recipe → workbench/explorer recipes
-   │   ├── icon theme → file/folder/UI icon mappings
-   │   ├── top bar → header control layout
-   │   ├── wallpaper → background layer
-   │   ├── shader → background/border FX
-   │   ├── animation → shell transition modules
-   │   └── sound pack → shell audio cues
-   ├── Loads plugin catalog (usr/plugins + usr/plugins-kain)
-   ├── Registers panels in panelRegistry.tsx
-   ├── Mounts default explorer at greeblefs://home
-   └── Renders shell with resolved theme
+┌────────────────────────────────────────────────────────────────────────┐
+│                   PRESENTATION SHELL (React 19 + TS)                    │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌────────────────┐ │
+│  │   App.tsx    │ │ FileExplorer │ │ TerminalDeck │ │ Workbenches    │ │
+│  │ (Shell State)│ │ (Dual-Pane)  │ │ (xterm.js)   │ │ (Monaco/DAW/3D)│ │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └────────────────┘ │
+│           │ Zustand Stores (Theme, Settings, Explorer, Navigation)     │
+└───────────┼────────────────────────────────────────────────────────────┘
+            │ ⚡ TAURON FASTPATH TRANSPORT (Bypasses stock JSON serialization)
+            ├─► native_control      (Fast binary/JSON RPC control plane)
+            ├─► native_buffer_pool  (WebView2 zero-copy memory leases)
+            ├─► native_stream       (Unbounded live byte pipelines)
+            └─► message_ring        (Replay-capable event history)
+┌───────────▼────────────────────────────────────────────────────────────┐
+│                    NATIVE RUST HOST (Tauri 2 Core)                     │
+│  ┌──────────────┬──────────────┬──────────────┬──────────────────────┐ │
+│  │ fs_commands  │ task_graph   │ audio_engine │ video_engine         │ │
+│  │ (Fast IO)    │ (Cancellable)│ (CPAL/Symph) │ (Hardware/FFmpeg)    │ │
+│  ├──────────────┼──────────────┼──────────────┼──────────────────────┤ │
+│  │ global_search│ semantic_srch│ wgpu_runtime │ vst_host             │ │
+│  │ (Multi-core) │ (Vector/LLM) │ (Compute)    │ (Live VST3 plugins)  │ │
+│  └──────────────┴──────────────┴──────────────┴──────────────────────┘ │
+│           │                    │                     │                 │
+│  ┌────────▼────────┐  ┌────────▼────────┐   ┌────────▼───────────────┐ │
+│  │ NTFS USN DAEMON │  │ POLYGLOT SIDECAR│   │ VIRTUAL ARCHIVE FS     │ │
+│  │ Direct MFT Tail │  │ Go / Python /   │   │ In-memory staging of   │ │
+│  │ Sub-ms indexing │  │ Kain / Node     │   │ ZIP, 7z, TAR, GZ, XZ   │ │
+│  └─────────────────┘  └─────────────────┘   └────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Explorer Navigation Flow
+---
 
-```
-1. User navigates to a folder (double-click, address bar, rail, etc.)
-   │
-2. FileExplorer.tsx → loadCachedExplorerLocation(path, showHidden)
-   │
-3. explorerDirectoryCache.ts (React wrapper)
-   └── explorerBackend.ts (typed TS bridge)
-       │
-4. Try: native_control (explorer.list_location)
-   │   → native_buffer_pool shared buffer with directory snapshot
-   │   → native_pool_snapshots.rs decodes GFLS binary format
-   │   → Fallback: fs_list_dir invoke (Specta/JSON)
-   │
-5. Path index acceleration (Windows)
-   ├── Path warm in explorerPathIndex.ts
-   ├── Indexed snapshot from GreebleFSUsnIndexer daemon
-   │   → greeblefs-index-core crate (SQLite v2, MFT enumeration)
-   │   → USN journal tailing for live change detection
-   └── Falls back to live directory listing
-       │
-6. explorerVisibleEntries.ts shapes the listing
-   ├── Tag filtering
-   ├── Dir-first sorting
-   ├── Worker-hosted compute for large folders
-   └── Direct fast path for default name/asc view
-       │
-7. explorerViewportThumbnailScheduler.ts
-   ├── Bounded work lane with priority ordering
-   ├── Hover → visible → forward-prefetch → backward-prefetch
-   └── Throttled through explorerPerformance manifest caps
-       │
-8. explorerThumbnailArtifactRuntime.ts
-   ├── Batched native_control thumbnail artifact reads
-   ├── IPC resource descriptors
-   ├── entityId + contentRevision identity cache
-   └── Legacy data-URL fallback
-       │
-9. React renders virtualized file list
-   ├── @tanstack/react-virtual for windowing
-   ├── CSS transitions for layout changes (no Framer Motion)
-   ├── Native scrollbar (no JS scroll simulation)
-   └── Compositor-owned scrolling with native physics
+## 7. Technology Stack
+
+- **Native Host & Runtimes:** Rust 2021, Tauron (custom Tauri 2 fork), `wgpu` (WebGPU compute & rendering), CPAL / Symphonia / Rubato (pro audio), `vst-host` (VST3 plugin execution), FFmpeg, Pdfium.
+- **Frontend & UI Engine:** React 19, TypeScript, Vite, Tailwind CSS, TanStack Virtual (infinite scrolling lists), Zustand (state management), Monaco Editor, Glide Data Grid, HyperFormula, Three.js, Bevy/Wasm.
+- **Windows Acceleration:** Dedicated Windows Background Service reading the NTFS Master File Table (MFT) and tailing the Update Sequence Number (USN) journal with a SQLite v2 cache layer.
+- **Polyglot Plugin Pipeline:**
+  - **Go / TinyGo:** High-performance sandboxed Wasm extension panels and CLI tools.
+  - **Python:** Managed local AI sidecar (background removal, media tagging, semantic vector embeddings).
+  - **Kain:** First-class compilation and execution of declarative UI lattices and plugins.
+  - **Node.js:** Extensible bridge running real VS Code marketplace extensions.
+
+---
+
+## 8. Getting Started
+
+### Prerequisites
+
+- **Node / Runtime:** [Bun](https://bun.sh/) (preferred) or Node.js v20+ with `pnpm`
+- **Rust Toolchain:** Stable Rust (1.80+) with `cargo`
+- **Tauron Fork:** Ensure the sibling `../tauron` workspace is present (or set via configuration)
+- **C++ Build Tools:** Windows SDK & MSVC toolchain (on Windows) or standard `build-essential` (on Linux)
+
+### Installation & Development
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/greeblefs.git
+cd greeblefs
+
+# Install dependencies
+bun install
+
+# Verify the Tauron framework fork preflight
+bun run tauron:preflight
+
+# Start the full desktop dev session (launches frontend + Rust engine)
+bun run tauri dev
 ```
 
-### Preview Flow (Opening a File)
+### Fast Prototyping Modes
 
+```bash
+# Run frontend only with hot-reloading (ideal for UI/theme styling)
+bun run dev:frontend
+
+# Run Tauron UI proofs (instantly test components without compiling Rust)
+bun run proof:ui
+bun run proof:ui:explorer
+
+# Stage the Kain compiler toolchain
+bun run kain:stage
+
+# Build the companion mobile PWA
+bun run build:mobile
 ```
-1. User clicks a file → FileExplorer.tsx resolves preview
-   │
-2. explorerPreviewRegistry.ts
-   ├── Collects built-in + plugin preview lane candidates
-   ├── Sorts by priority
-   ├── Matches entry against lane rules (extension, MIME, etc.)
-   └── Returns canonical descriptor
-       │
-3. Workbench selection (explorerWorkbenches.ts)
-   ├── Saved user default for normalized extension
-   ├── Priority-based built-in selection
-   └── Plugin contribution precedence
-       │
-4. Preview lane mounts
-   │
-   ├── Image → ExplorerImageEditor.tsx
-   │   ├── Preview tab: pannable/zoomable stage
-   │   ├── Edit tab: CropperJS filter/crop deck
-   │   └── Cutout tab: AI-powered subject isolation
-   │       → Backend: image_cutout_commands.rs → Python sidecar
-   │
-   ├── Video → ExplorerVideoEditor.tsx
-   │   ├── Preview-first: <video> from asset URL
-   │   ├── MP4 proxy fallback on decode error (ffmpeg)
-   │   ├── Edit mode: trim/inspector workbench
-   │   └── Transport: video_engine.rs (CPAL/Symphonia audio link)
-   │
-   ├── Audio → ExplorerAudioWorkbench.tsx
-   │   ├── Preview tab: playback-first surface
-   │   ├── Edit tab: waveform/spectral editor, DAW-style fades
-   │   ├── VST tab: compact plugin lane (VST3 via crates/vst-host)
-   │   └── Engine: audio_engine.rs (CPAL stream, Symphonia decode, rubato resampling)
-   │
-   ├── PDF → ExplorerPdfWorkbench.tsx
-   │   ├── Page-by-page rendering (Pdfium)
-   │   ├── Page-space overlay annotations + AcroForm edits
-   │   └── Save/writeback: pdf_commands.rs
-   │
-   ├── Text/Code → ExplorerMonacoCodeView.tsx
-   │   └── Monaco editor with theme integration
-   │
-   ├── Python → ExplorerPythonWorkbench.tsx
-   │   ├── Code-first: Edit tab + Run + Runtime tabs
-   │   └── Managed execution: pythonRuntimeBackend.ts
-   │
-   ├── Spreadsheet → ExplorerSpreadsheetWorkbench.tsx
-   │   ├── Preview: themed table surface
-   │   └── Edit: Glide Data Grid + HyperFormula
-   │
-   ├── SQLite → ExplorerSqlitePreview.tsx
-   │   └── SQL query + table preview
-   │
-   ├── Shader → ExplorerShaderWorkbench.tsx
-   │   └── WebGPU preview + diagnostics
-   │
-   ├── 3D Model → Plugin workbenches
-   │   ├── greeblefs-workbench-model3d (Three.js, broader format support)
-   │   └── greeblefs-workbench-bevy-model3d (Bevy/Wasm, wgpu PBR for GLB)
-   │
-   └── Archive → virtual greeblefs://archive route
-       ├── archive_ops.rs: ZIP, TAR, 7z, Gzip, Bzip2, XZ
-       ├── Materialize-on-demand: entries staged as real files
-       └── Preview lanes read from staged real paths
+
+---
+
+## 9. Testing & Quality Assurance
+
+GreebleFS maintains a rigorous verification pipeline spanning unit tests, native proofs, and performance scanners:
+
+```bash
+# Run unit test suite (Vitest)
+bun run test:unit
+
+# Run native Rust crate tests
+bun run test:rust
+
+# Multi-runtime stack validation (Rust, Go, Python, Kain)
+bun run test:runtime-stack:quick
+
+# MCP Agent doctor & runtime attach probe
+bun run mcp:doctor
+
+# Full battery testing
+bun run test:all
 ```
+
+---
+
+## 10. Design Tenets: All Killer, No Filler
+
+1. **No Dumb File Managers:** If a tool only lists file names and icons, it's wasting your screen real estate. The explorer must be an active, high-density, multi-discipline IDE.
+2. **Data Over Hardcoded Logic:** If you want to change a layout, color token, shortcut, or audio feedback, edit the JSON in `/usr`. Code normalizes; data dictates truth.
+3. **Zero-Copy Where It Counts:** When moving 100k records, video frames, or audio buffers, JSON serialization is banned. Native shared memory leases do the heavy lifting.
+4. **Resilient Degradation:** If `wgpu` hardware compute isn't present, fall back to optimized CPU SIMD. If the NTFS USN journal isn't accessible, fall back to live async directory enumeration. Never crash silently.
+5. **Compositor-Owned Velocity:** The file list uses native compositor scrolling physics. No synthetic JavaScript scroll hijacking, no dropped frames during high-speed wheel navigation.
+
+---
+
+## 11. Key Subsystems Under the Hood
+
+### 1. The Core File Explorer (`FileExplorer.tsx`)
+The centerpiece of GreebleFS. A high-performance, virtualized, multi-pane filesystem surface featuring:
+- **Adaptive Density:** Seamless switching between Grid, List, and Detail Table views.
+- **Deep Inline Workbenches:** Instantly preview and edit images, videos, audio, PDFs, code, data spreadsheets, SQLite, shaders, and 3D assets.
+- **Virtual Archive Mounting:** Browse `.zip`, `.tar`, `.7z`, `.gz`, `.xz`, and `.bz2` archives as native folders with on-demand staging.
+- **Experimental Modes:** Constellation relational graph, adaptive-semantic-grid, and timeline-surface navigation.
+- **Pro Explorer Tooling:** Tagging, deep bookmarking, saved search facets, multi-pane layouts (1-Up to 4-Up), and native Windows COM shell context menus.
+
+### 2. The Composable Theme Engine
+A full-stack, data-driven design token orchestration pipeline:
+- **Orchestration Manifests:** One theme JSON orchestrates appearance packs, motion physics, icon themes, sound packs, and shaders.
+- **CSS Custom Property Pipeline:** Over 100+ normalized CSS variables (`--gfs-ui-*`) controlling every millimeter of chrome, borders, typography, and elevations.
+- **Physics-Based Layout Dynamics:** Real-time spring/repulsion solvers controlling dock behavior, rail collapse, and splitter movement.
+- **Live Visual FX:** Background WebGPU glass shaders, dynamic interactive canvas wallpapers, and fluid shell transitions.
+- **30+ Shipped Theme Bundles:** Including Cyberpunk, Nord, Solarized, Matrix, Tokyo Night, and the complete Official Pilot Suite.
+
+### 3. Sandboxed Plugin Architecture
+A robust package plugin ecosystem built for security and raw speed:
+- **Sandboxed Dependency Graph:** Plugins specify explicit version-pinned dependencies with strict source visibility gates (`open`, `hybrid`, `compiled`, `private`).
+- **Host Bridge Services:** Controlled access to the native filesystem, active selection, workspace state, terminal streams, and background tasks.
+- **VS Code Extension Compatibility:** Bridges VSIX manifests directly into Explorer activity rail lanes.
+- **Kain Native Plugins:** First-class support for compiled Kain lattice plugins communicating over zero-overhead FFI.
+
+### 4. Bounded Native Task Graph
+Engineered to prevent UI starvation and out-of-memory crashes:
+- Rust-native task executor managing scan-class, thumbnail decoding, archive unpacks, and directory walks.
+- Per-lane concurrency caps with priority FIFO ordering.
+- Cooperative generation-based cancellation tokens: when you navigate away, in-flight work for the previous directory is instantly cancelled.
+
+### 5. Hardware-Accelerated wgpu Compute
+- Dedicated `wgpu` compute pipeline offloading heavy calculations directly to your discrete GPU.
+- High-speed parallel thumbnail generation, audio waveform decimation, and spectrogram rasterization.
+- Automatic CPU SIMD fallback guarantees rock-solid reliability on low-power devices or headless setups.
+
+---
+
+## 12. Full System Flow & Life of an Action
 
 ### Theme Resolution Flow
 
@@ -628,237 +476,8 @@ These are partial overrides, not full settings files. They only change the slice
 
 ---
 
-## Technology Stack
+## 13. Project Tree & Source Layout
 
-### Frontend
-| Technology | Purpose |
-|------------|---------|
-| **React 19** | UI framework for the shell and all components |
-| **TypeScript 5.8** | Type-safe development across the entire frontend |
-| **Vite 7** | Build tool and dev server |
-| **Zustand 5** | Lightweight state management (settings, explorer, terminal, etc.) |
-| **Tailwind CSS 4** | Utility-first CSS framework |
-| **@tanstack/react-virtual** | Virtualized file lists for huge directories |
-| **Monaco Editor** | Code editing (text/shader preview lanes) |
-| **xterm.js 6** | Terminal emulation with WebGL renderer |
-| **Three.js** | 3D model preview (fallback workbench) |
-| **Framer Motion** | Shell-level animations (not used on hot paths) |
-| **React Aria 3.48** | Accessible UI primitives (select, modal, overlay) |
-| **Floating UI** | Anchored popup positioning |
-| **tweakpane** | Compact inspector for lookdev |
-| **CropperJS** | Image crop/filter surface |
-| **Glide Data Grid** | Spreadsheet editing |
-| **HyperFormula** | Spreadsheet engine |
-| **Tiptap/ProseMirror** | Rich text editing (notes) |
-| **Culori** | Color math and theme token normalization |
-| **Zod 4** | Schema validation for manifests and settings |
-
-### Backend (Rust)
-| Technology | Purpose |
-|------------|---------|
-| **Tauri 2 (Tauron fork)** | Desktop application framework |
-| **Tokio** | Async runtime for all backend work |
-| **Specta** | TypeScript binding generation from Rust commands |
-| **wgpu** | GPU compute for thumbnails, waveforms, spectrograms |
-| **CPAL + Symphonia** | Audio playback engine (no browser audio) |
-| **ffmpeg** | Video proxy generation and media codec bridge |
-| **Pdfium** | PDF rendering and AcroForm manipulation |
-| **Tantivy** | Full-text search index |
-| **SQLite (rusqlite)** | Explorer identity, path index, semantic search index |
-| **VST3 (crates/vst-host)** | Audio plugin host |
-| **Pyo3** | Embedded Python for lightweight in-process helpers |
-| **Windows API** | NTFS USN journal, MFT enumeration, shell context menus |
-
-### Polyglot Runtimes
-| Runtime | Compiler | Use Case |
-|---------|----------|----------|
-| **Python** | Virtualenv + stdio JSON sidecar | AI inference, image cutout, model management, semantic search |
-| **Go** | go-native, go-js-wasm | Native sidecars, Wasm panels |
-| **TinyGo** | tinygo-wasm | Lightweight Wasm panels |
-| **Rust/Wasm** | cargo-wasm-bindgen | Bevy 3D model viewer |
-| **Kain** | kain-script | Semantic UI graph, lattice authoring, plugin workbenches |
-| **Node** | node-script | VS Code extension bridge host |
-
-### Transport (Tauron Fork)
-| Transport | Use |
-|-----------|-----|
-| **Specta/JSON** | Configuration, metadata, small payloads |
-| **native_control** | Compact JSON RPC for explorer actions, handle creation |
-| **native_buffer_pool** | Directory snapshots (GFLS binary), preview bytes |
-| **native_stream** | Live terminal output, search result streaming |
-| **message_ring** | Host events with replay capability |
-| **IPC resources** | Opaque artifact handles (thumbnails, media) |
-
----
-
-## Key Subsystems
-
-### 1. File Explorer (`FileExplorer.tsx`)
-The crown jewel. A virtualized, multi-pane, multi-view-mode file explorer that supports:
-- Grid, list, and table views with adaptive density
-- Inline preview pane (image, video, audio, PDF, text, code, spreadsheets, SQLite, shaders, 3D models)
-- Archive browsing (ZIP, 7z, TAR, GZ, BZ2, XZ) as virtual directories
-- Experimental folder views: adaptive-semantic-grid, constellation, timeline-surface
-- Drag-and-drop with native OS integration
-- Multi-pane workspace (1-Up through 4-Up) with independent tabs
-- Activity rail with search, semantic, tasks, and plugin lanes
-- Explorer Home surface at `greeblefs://home`
-- Full context menu system with authored menu packs, action packs, and native Windows shell menus
-- Tags, bookmarks, saved searches
-- Copy/move with collision detection and resolution policies
-
-### 2. Theme Engine
-A complete design-token pipeline:
-- Bundle-first orchestration: one manifest composes many standalone packs
-- CSS custom properties for every visual token
-- Separate workbench, explorer, and mobile recipe layers
-- Icon theming: file/folder mappings + UI icon overrides
-- Render styles: mapped to live interaction runtimes (tabs, cross-axis, channel, desktop)
-- Top bars: data-driven catalog, moveable controls
-- Layout dynamics: physics-based repulsion/spring solver for explorer chrome
-- Interaction motion: micro-interaction profiles for surface hover/press behavior
-- Wallpapers: imported media + authored live wallpaper modules
-- Shaders: background/border shader surfaces (CSS + canvas)
-- Sound packs: shell audio cues
-- 30+ shipped theme bundles including the Official Pilot Suite
-
-### 3. Plugin System
-A sandboxed, dependency-graph-aware package plugin runtime:
-- Package-local module graph with relative imports
-- Declared dependencies with version matching
-- Source visibility gates (open, hybrid, compiled, private)
-- Host bridge with files, events, selection, explorer, preview, tasks, terminal, repo services
-- Sandboxed `lucide-react` → `AppIcons.tsx` resolution
-- Shared library packages: `@greeblefs/ui` (DCC controls), `@greeblefs/plugin-tools`
-- VSIX extension discovery: maps `contributes.viewsContainers` into Explorer activity lanes
-- Kain plugin lane: parallel Kain-authored plugins with Fabric multi-runtime pipelines
-
-### 4. Polyglot Runtime Pipeline
-A unified extension host supporting six runtime families:
-- Content-addressed compile cache with source fingerprinting
-- Runtime discovery from `src-go/builtin-runtimes/`, `src-node/builtin-runtimes/`, `src-kain/runtimes/`, and managed-content `runtimes/`
-- Sidecar lifecycle with host-call/host-response nested packets
-- Wasm panel mounting with unique bridge tokens per instance
-- Terminal service for Go/Wasm panels (spawn, write, resize, shell integration)
-- Ambient execution context: cwd, selection, preview state, repo context
-
-### 5. Native Task Graph
-A Rust-native bounded executor for cancellable background work:
-- Scan-class, directory-list misses, thumbnail-decode, preview-read, archive lanes
-- Stable priority/FIFO ordering per lane
-- Per-lane concurrency caps
-- Stale work-key cancellation by generation
-- Cooperative cancellation tokens
-- Timing/counter telemetry fed to dev observatory
-
-### 6. GPU Runtime
-A wgpu compute offload subsystem:
-- One long-lived device/queue
-- Adapter capability probing with safe/integrated/discrete tier resolution
-- Workloads: image thumbnails, image editor preview, audio waveform reduction, spectrogram rasterization
-- CPU fallback on every path
-
-### 7. Cross-Provider Acceleration
-A control plane above GPU + Python CUDA:
-- Composes native wgpu snapshot with Python-sidecar CUDA/Torch/ONNX probing
-- Routing-mode-aware workload assignment
-- `preferCuda` as preference, not guarantee
-
-### 8. Windows Path-Index Acceleration
-NTFS-level directory listing acceleration:
-- `greeblefs-index-core` crate: SQLite schema v2, MFT enumeration, USN journal operations
-- `greeblefs-usn-daemon`: LocalSystem Windows service on 127.0.0.1:12462
-- Drive-root index builds directly into SQLite
-- USN journal tailing for live change detection
-- App stays unelevated; service handles privileged NTFS access
-
-### 9. Media Engines
-Native playback that bypasses browser media:
-- **Audio**: CPAL output stream + Symphonia decode (ffmpeg fallback) + rubato resampling
-- **Video**: ffmpeg for proxy generation; browser `<video>` for playback
-- **PDF**: Pdfium page raster + AcroForm extraction/writeback
-- **VST3**: crates/vst-host for plugin scanning and parameter editing
-
-### 10. Terminal
-An integrated terminal with multiple deployment modes:
-- Preview-embedded terminal
-- Bottom drawer terminal
-- Side-dock terminal lane
-- xterm.js with WebGL renderer (hardware-probed)
-- Native byte stream for live output (Tauron native_stream)
-- IPC message ring for fallback and replay
-- Shell integration for cwd sync (OSC markers)
-- Profile-aware shell launch (shellPath, shellArgs)
-
-### 11. Git Panel
-Source control integrated into the shell:
-- Repo rail with working-tree staging
-- Diff actions and ship controls
-- History and branch browsing
-- Commit patch loading
-
-### 12. Storage Panel
-Storage forensics and cleanup:
-- Drive context rail
-- Matrix-first workspace with treemap
-- Split map/types/focus modes
-- Scroll-safe inspector
-- Native drive scans (logical vs allocated size, file-type buckets)
-- Batch cleanup queue
-
-### 13. Notes Workspace
-A folder-first markdown workspace:
-- Explorer-like sidebar tree
-- Tiptap rich markdown editor
-- Context-menu/dialog flows
-- Coalesced autosave/flush
-- Backend: filesystem operations through explorer runtime
-
-### 14. Mobile Companion
-A browser-safe PWA surface:
-- Separate Vite entrypoint (`vite.mobile.config.ts`)
-- Served by Axum over LAN/mobile sharing
-- Explorer, Search, Transfers, Settings tabs
-- Plugin-contributed mobile panes
-- HTTP control plane for desktop host access
-- Tailscale integration for remote access
-
-### 15. Dev MCP Automation
-A standalone MCP server for agents and automated testing:
-- Compact router tool surface (gfs_*, gfs_kain)
-- Native CDP attach to live Tauri WebView
-- DOM snapshots, UI actions, screenshots
-- Host schema/RPC/event access
-- Agent coding context (branch, dirty files, memory, architecture)
-- Performance flow snapshots
-- Windows-native window capture fallback
-
-### 16. Tauron WindowMgr
-First-party executable embedding:
-- Launch external Windows processes
-- Attach HWND to GreebleFS window
-- Keep external window following a React-owned rectangle
-- Native coordinate conversion (physical pixels for legacy, host-local for DirectComposition)
-
-### 17. Wayland Dock
-A dedicated layer-shell dock host for Linux:
-- Separate webview using gtk-layer-shell
-- Anchored panel behavior (Yakuake-style)
-- Independent from main app window
-- Frontend routing between main and dock hosts
-
-### 18. Kain Integration
-A polyglot authoring language embedded in GreebleFS:
-- Semantic UI graph: live theme/chrome/layout/motion/settings data
-- UI scaffold: Kain-authored surface structure, the host renders
-- Lattice: QML-like package/component/host-model catalog
-- FFI catalog: Python, Node, C, Rust, Tauri, Wasm, SPIR-V bridges
-- Plugin lane: parallel Kain-authored plugins with Fabric pipelines
-- Bridge through Tauron's tauri-plugin-kain
-
----
-
-## Project Structure
 
 ```
 GreebleFS/
@@ -1273,153 +892,7 @@ GreebleFS/
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- **Bun** 1.3.x (package manager and script runner)
-- **Rust** 1.92+ (for the Tauri backend)
-- **Go** (for Go runtime compilation, optional but recommended)
-- **Python** 3.x (for the Python sidecar)
-- **Node** 22+ (for MCP automation, `tsx`)
-- **The Tauron fork** at `D:/tauron` (required for all Cargo-backed workflows)
-
-### Development
-
-```bash
-# Install dependencies
-bun install
-
-# Bootstrap Go toolchain (optional)
-bun run go:bootstrap
-
-# Generate Specta Tauri bindings
-bun run bindings:generate
-
-# Start the dev server (frontend only, no Cargo)
-bun run dev:frontend
-
-# Start the full Tauri dev session
-bun run tauri dev
-
-# Stage Kain toolchain (required for release builds)
-bun run kain:stage
-
-# Build the mobile PWA companion
-bun run build:mobile
-```
-
-### Running Tests
-
-```bash
-# Unit tests
-bun run test:unit
-
-# Browser tests
-bun run test:browser
-
-# Rust tests
-bun run test:rust
-
-# Runtime stack validation
-bun run test:runtime-stack:quick
-
-# UI runner proofs (fast, no Cargo compile)
-bun run proof:ui
-
-# Native icon smoke test
-bun run test:proof:native-icons
-
-# MCP doctor
-bun run mcp:doctor
-
-# All tests
-bun run test:all
-```
-
-### Building for Release
-
-```bash
-# Windows
-bun run release:windows:bundle
-bun run release:windows:install
-
-# Linux
-bun run release:linux:install
-
-# USN daemon (Windows only)
-bun run usn:service:install
-```
-
----
-
-## Validation & Testing
-
-GreebleFS has a multi-layered validation strategy:
-
-### TypeScript/Vitest
-- **~50+ test suites** covering stores, config, components, plugins, and runtime logic
-- Node-environment tests for pure logic, config, and store seams
-- Browser-environment tests for DOM-dependent explorer behavior (currently blocked by JSDOM ESM dependency issue)
-
-### Rust Tests
-- `cargo test --manifest-path src-tauri/Cargo.toml --lib` for unit tests
-- `cargo test --manifest-path src-tauri/Cargo.toml global_search -- --nocapture`
-- `cargo test --manifest-path src-tauri/Cargo.toml runtime_pipeline:: -- --nocapture`
-- `cargo check --manifest-path src-tauri/Cargo.toml --lib` for compilation validation
-- The Rust lib test uses a Windows-safe unit graph that excludes desktop/Tauri modules
-
-### Go Tests
-- `go test ./sdk/greeblefs-go/...` for SDK tests
-- `go vet ./...` with `GOOS=js GOARCH=wasm` for Wasm runtimes
-
-### Python Tests
-- `python3 -m py_compile src-python/greeblefs_sidecar/*.py` for syntax validation
-- `python3 -m unittest discover -s tests_python` for unit tests
-
-### UI Proofs (Tauron UI Runner)
-- Fast WebView-based proofs with no Cargo compilation
-- `bun run proof:ui` — spoofed-filesystem smoke fixture
-- `bun run proof:ui:usr` — `/usr` manifest imports
-- `bun run proof:ui:explorer` — Exploror repository-picker proof
-
-### MCP Smoke Tests
-- `bun run mcp:smoke` — runtime proof harness
-- `bun run mcp:doctor` — status/attach probe
-- Agent coding context and performance flow snapshots
-
-### End-to-End
-- `bun run perf:explorer` — Playwright/CDP performance scanner
-- `scripts/run-heartbeat-pass.mjs` — comprehensive heartbeat
-- `scripts/validate-runtime-stack.mjs` — multi-runtime stack validation
-
----
-
-## Design Principles
-
-1. **All killer, no filler.** No text explanations in UI, no boxy bloated layouts. UI must be raw, compact, and only hold what it needs — especially panes, previews, and explorer surfaces.
-
-2. **Data over code.** Themes, layouts, hotkeys, menu structures, performance policies, and chrome composition are authored as data in `/usr`, not as logic in TypeScript. The code normalizes and resolves; the data owns truth.
-
-3. **Theme everything.** Every visual property, every surface metric, every interaction behavior, every sound cue is themable. If something looks hardcoded, it's a bug.
-
-4. **Native where it matters.** Filesystem operations, media playback, GPU compute, and NTFS indexing stay in Rust. Browser APIs are for presentation, not for media truth.
-
-5. **Bounded at every layer.** Task graphs have bounded queues. Message rings have bounded capacity. Preview caches have byte budgets. Worker lanes have concurrency caps. Nothing is unbounded by default.
-
-6. **Fallback always works.** Every GPU path has a CPU fallback. Every native buffer pool read has an invoke fallback. Every native stream has an IPC stream fallback. The app degrades gracefully, never crashes silently.
-
-7. **Plugin sandboxing is real.** Plugins cannot import undeclared dependencies, cannot escape their package root, cannot self-call the host bridge, and cannot access raw Tauri invokes. This is security architecture, not a wish.
-
-8. **Compositor-owned scrolling.** The main file list uses native scrollbars with native physics. No JS scroll simulation, no `preventDefault()` wheel remapping, no Framer Motion on hot paths.
-
-9. **Stale work is cancelled.** Navigation re-enters cancel in-flight directory loads. Task graph entries are cancelled by stale generation. Thumbnail batches are cancelled when the viewport shifts. Nothing from a previous folder poisons the current one.
-
-10. **The fork exists for a reason.** When the framework IPC model is the bottleneck, you fix the framework. Tauron exists because stock Tauri's JSON-only transport cannot handle 100K+ file directories, live terminal streams, or large preview payloads without becoming the bottleneck itself.
-
----
-
-## The Beauty of GreebleFS
+## 14. The Beauty of GreebleFS
 
 What makes GreebleFS beautiful is not any individual feature — it's the **coherence of the whole**.
 
