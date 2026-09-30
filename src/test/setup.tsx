@@ -255,11 +255,23 @@ vi.mock('tauri-plugin-screenshots-api', () => ({
   clearScreenshots: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Monaco editor — heavy and irrelevant for unit tests
+// Monaco editor — heavy and irrelevant for unit tests.
+// Mirrors the uncontrolled contract: mount-time content only
+// (value ?? defaultValue ?? initialValue), never live-pushed.
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ value, path }: { value: string; path?: string }) => (
+  default: ({
+    value,
+    defaultValue,
+    initialValue,
+    path,
+  }: {
+    value?: string;
+    defaultValue?: string;
+    initialValue?: string;
+    path?: string;
+  }) => (
     <pre data-testid="monaco-editor" data-monaco-path={path ?? ''}>
-      {value}
+      {value ?? defaultValue ?? initialValue ?? ''}
     </pre>
   ),
 }));

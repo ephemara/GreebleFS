@@ -31,6 +31,8 @@ export interface ExplorerTextWorkbenchSurfaceProps {
   editorSettings: import('../store/settingsStore').EditorSettings;
   pythonRuntimeConfig: ManagedPythonRuntimeConfig | null;
   pythonBootstrapPackageInput: string;
+  /** Disk-load revision for the editor remount key (defaults to 0). */
+  contentRevision?: number;
   onChange: (value: string) => void;
   onCursorPositionChange?: (
     position: ExplorerMonacoCursorPosition,
@@ -76,6 +78,7 @@ export function ExplorerTextWorkbenchSurface({
   editorSettings,
   pythonRuntimeConfig,
   pythonBootstrapPackageInput,
+  contentRevision = 0,
   onChange,
   onCursorPositionChange,
   onRunScript,
@@ -150,7 +153,8 @@ export function ExplorerTextWorkbenchSurface({
       <ExplorerMonacoCodeView
         appearance={appearance}
         path={path}
-        value={content || ''}
+        initialValue={content || ''}
+        editorKey={`${path}::r${contentRevision}`}
         language={language || 'plaintext'}
         focusTarget={focusTarget}
         onChange={

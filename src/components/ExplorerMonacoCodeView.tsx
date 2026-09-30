@@ -97,7 +97,8 @@ function EditorFallback({ label }: { label: string }) {
 export function ExplorerMonacoCodeView({
   appearance,
   path,
-  value,
+  initialValue,
+  editorKey,
   language,
   focusTarget,
   onChange,
@@ -106,7 +107,11 @@ export function ExplorerMonacoCodeView({
 }: {
   appearance?: ResolvedOverlayAppearance;
   path: string;
-  value: string;
+  /** Mount-time content. Monaco owns the text after mount (uncontrolled)
+   * so keystroke renders can never yank the cursor via full-model pushes. */
+  initialValue: string;
+  /** Remount only when the underlying file revision changes (disk load). */
+  editorKey: string;
   language: string;
   focusTarget: EditorSearchFocusTarget | null;
   onChange?: (value: string) => void;
@@ -180,14 +185,14 @@ export function ExplorerMonacoCodeView({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [appearance, focusTarget?.requestId, path, publishCursorPosition, value]);
+  }, [appearance, focusTarget?.requestId, path, publishCursorPosition]);
 
   useEffect(() => {
     if (!editorRef.current) {
       return;
     }
     publishCursorPosition(editorRef.current);
-  }, [path, publishCursorPosition, value]);
+  }, [path, publishCursorPosition]);
 
   useEffect(
     () => () => {
@@ -200,10 +205,11 @@ export function ExplorerMonacoCodeView({
   return (
     <Suspense fallback={<EditorFallback label="Loading editor..." />}>
       <LazyMonacoEditor
+        key={editorKey}
         path={path}
         height="100%"
         language={language || 'plaintext'}
-        value={value}
+        defaultValue={initialValue}
         theme={monacoThemeId}
         beforeMount={handleBeforeMount}
         onMount={handleMount}

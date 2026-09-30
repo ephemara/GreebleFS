@@ -427,6 +427,12 @@ import {
   type ExplorerChromeSurfaceLayoutDynamics,
 } from "./explorer/ExplorerChromeSurface";
 import {
+  ZBrushCustomizationOverlay,
+  HotkeyCaptureModal,
+  IconPickerPopover,
+} from "../customization";
+import { renderExplorerCommandLibraryIcon } from "./explorer/explorerCommandLibrary";
+import {
   beginExplorerCustomizePointerSession,
   cancelExplorerCustomizePointerSession,
   useExplorerCustomizePointerActive,
@@ -618,6 +624,12 @@ import {
   EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG,
   canRenderExplorerThumbnail,
 } from "../config/explorerThumbnails";
+import {
+  buildPreviewTextEditorKey,
+  createPreviewTextEditMirror,
+  nextPreviewTextContentRevision,
+  type PreviewTextEditMirror,
+} from "../runtime/previewTextEditMirror";
 import {
   applyExplorerMonacoTheme,
   buildExplorerMonacoPreviewOptions,
@@ -1354,6 +1366,10 @@ const BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID = "builtin.duplicateFinder";
 
 type PreviewTextWorkbenchState = {
   content: string;
+  /** Bumped only when content lands from disk (fresh load/reload).
+   * Typing and saves never bump it, so the uncontrolled editor keeps
+   * its model + cursor across renders. */
+  contentRevision: number;
   language: string;
   renderKind: DocumentPreviewKind;
   scriptPreview: ExplorerResolvedScriptPreview | null;
@@ -1535,6 +1551,7 @@ function getPreviewTextWorkbenchSession(
       resolvedPath: preview.resolvedPath,
       name: preview.name,
       content: preview.content,
+      contentRevision: preview.contentRevision,
       language: preview.language,
       renderKind: preview.renderKind,
       scriptPreview: preview.scriptPreview,
@@ -1573,6 +1590,7 @@ function updatePreviewTextWorkbenchState(
       ...preview,
       ...updater({
         content: preview.content,
+        contentRevision: preview.contentRevision,
         language: preview.language,
         renderKind: preview.renderKind,
         scriptPreview: preview.scriptPreview,
@@ -1594,6 +1612,24 @@ function updatePreviewTextWorkbenchState(
   }
 
   return preview;
+}
+
+/**
+ * Editor remount revision for text loads. Reuses the live revision when the
+ * freshly loaded bytes match the current session (typing + cursor survive
+ * refresh-resolves); otherwise issues a fresh revision so the uncontrolled
+ * editor remounts onto the new disk content.
+ */
+function resolvePreviewTextContentRevision(
+  currentPreview: PreviewState,
+  path: string,
+  content: string,
+): number {
+  const prevSession = getPreviewTextWorkbenchSession(currentPreview, path);
+  if (prevSession && prevSession.content === content) {
+    return prevSession.contentRevision;
+  }
+  return nextPreviewTextContentRevision();
 }
 
 function getPreviewShaderWorkbenchSession(
@@ -4267,7 +4303,8 @@ function applyEditorSearchFocus(
 function SearchAwareCodeView({
   appearance,
   path,
-  value,
+  initialValue,
+  editorKey,
   language,
   focusTarget,
   onChange,
@@ -4276,7 +4313,11 @@ function SearchAwareCodeView({
 }: {
   appearance?: ResolvedOverlayAppearance;
   path: string;
-  value: string;
+  /** Mount-time content. Monaco owns the text after mount (uncontrolled)
+   * so keystroke renders can never yank the cursor via full-model pushes. */
+  initialValue: string;
+  /** Remount only when the underlying file revision changes (disk load). */
+  editorKey: string;
   language: string;
   focusTarget: EditorSearchFocusTarget | null;
   onChange?: (value: string) => void;
@@ -4350,14 +4391,14 @@ function SearchAwareCodeView({
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [appearance, focusTarget?.requestId, path, publishCursorPosition, value]);
+  }, [appearance, focusTarget?.requestId, path, publishCursorPosition]);
 
   useEffect(() => {
     if (!editorRef.current) {
       return;
     }
     publishCursorPosition(editorRef.current);
-  }, [path, publishCursorPosition, value]);
+  }, [path, publishCursorPosition]);
 
   useEffect(
     () => () => {
@@ -4370,10 +4411,11 @@ function SearchAwareCodeView({
   return (
     <Suspense fallback={<EditorFallback label="Loading editor…" />}>
       <LazyMonacoEditor
+        key={editorKey}
         path={path}
         height="100%"
         language={language || "plaintext"}
-        value={value}
+        defaultValue={initialValue}
         theme={monacoThemeId}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
@@ -6869,7 +6911,11 @@ function PreviewPanel({
               <SearchAwareCodeView
                 appearance={appearance}
                 path={previewResolvedPath}
-                value={preview.content || ""}
+                initialValue={preview.content || ""}
+                editorKey={buildPreviewTextEditorKey(
+                  previewResolvedPath,
+                  preview.contentRevision,
+                )}
                 language={preview.language || "plaintext"}
                 focusTarget={preview.focusTarget}
                 onChange={
@@ -10471,6 +10517,16 @@ function FileExplorerImpl({
   const isDuplicateFinderWorkflowOpen =
     activeWorkflowId === BUILTIN_DUPLICATE_FINDER_WORKFLOW_ID;
   const previewSaveTimer = useRef<number | null>(null);
+  // Keystroke-fast edit mirror: Monaco owns the text (uncontrolled), so
+  // typing stages here instead of round-tripping every keystroke through
+  // React state (which used to yank the cursor via controlled value pushes
+  // plus a full-tree re-render and a localStorage write per keystroke).
+  const previewTextMirrorRef = useRef<PreviewTextEditMirror | null>(null);
+  if (previewTextMirrorRef.current == null) {
+    previewTextMirrorRef.current = createPreviewTextEditMirror();
+  }
+  // Debounced crash-safety draft (localStorage no longer on the hot path).
+  const previewDraftTimer = useRef<number | null>(null);
   const previewPrefetchInFlightRef = useRef<Set<string>>(new Set());
   const previewPrefetchLastSignatureRef = useRef<string | null>(null);
   const internalPointerDragCandidateRef =
@@ -15500,7 +15556,12 @@ function FileExplorerImpl({
       return false;
     }
 
-    const contentAtSave = textSession.content;
+    // Typing lives in the edit mirror (Monaco is uncontrolled); the saved
+    // state snapshot is only the fallback for paths with no staged edits.
+    const mirror = previewTextMirrorRef.current;
+    const contentAtSave = mirror
+      ? mirror.read(path, textSession.content)
+      : textSession.content;
     const writePath = textSession.resolvedPath ?? path;
     setPreview((prev) =>
       updatePreviewTextWorkbenchState(prev, path, (state) => ({
@@ -15517,10 +15578,20 @@ function FileExplorerImpl({
       setPreview((prev) => {
         const nextSession = getPreviewTextWorkbenchSession(prev, path);
         if (!nextSession) return prev;
-        const isStillSame = nextSession.content === contentAtSave;
+        // Newer keystrokes may have landed while the write was in flight;
+        // only converge + discard the mirror when it matches what we saved.
+        const latestStaged = mirror?.read(path, contentAtSave) ?? contentAtSave;
+        const isStillSame = latestStaged === contentAtSave;
+        if (isStillSame) {
+          mirror?.discard(path);
+        }
         return updatePreviewTextWorkbenchState(prev, path, (state) => ({
           ...state,
           isSaving: false,
+          content: contentAtSave,
+          scriptPreview: state.scriptPreview
+            ? { ...state.scriptPreview, content: contentAtSave }
+            : state.scriptPreview,
           isDirty: !isStillSame,
           lastSavedAt: isStillSame ? Date.now() : state.lastSavedAt,
           error: null,
@@ -15581,28 +15652,49 @@ function FileExplorerImpl({
     await persistPreviewText(currentPreview.path);
   }, [persistPreviewText]);
 
+  const queuePreviewDraftPersist = useCallback((path: string) => {
+    // Crash-safety drafts used to write localStorage on EVERY keystroke.
+    // Now they flush from the mirror on a quiet timer instead.
+    if (previewDraftTimer.current) {
+      window.clearTimeout(previewDraftTimer.current);
+    }
+    previewDraftTimer.current = window.setTimeout(() => {
+      previewDraftTimer.current = null;
+      const staged = previewTextMirrorRef.current?.peek();
+      if (staged && staged.path === path) {
+        persistExplorerEditDraft(
+          EXPLORER_TEXT_DRAFT_SCOPE,
+          path,
+          staged.content,
+          explorerStringDraftSerializer,
+        );
+      }
+    }, 1500);
+  }, []);
+
   const updatePreviewTextContent = useCallback(
     (path: string, content: string) => {
-      persistExplorerEditDraft(
-        EXPLORER_TEXT_DRAFT_SCOPE,
+      // Hot path: stage typing in the mirror (no content in state, no draft
+      // write, no editor feedback). React state only flips the dirty edge,
+      // so the uncontrolled Monaco model + cursor are never disturbed.
+      previewTextMirrorRef.current?.stage(path, content);
+      queuePreviewDraftPersist(path);
+      const session = getPreviewTextWorkbenchSession(
+        previewRef.current,
         path,
-        content,
-        explorerStringDraftSerializer,
       );
-      setPreview((prev) =>
-        updatePreviewTextWorkbenchState(prev, path, (state) => ({
-          ...state,
-          content,
-          scriptPreview: state.scriptPreview
-            ? { ...state.scriptPreview, content }
-            : null,
-          isDirty: true,
-          error: null,
-        })),
-      );
+      if (session && (!session.isDirty || session.error != null)) {
+        setPreview((prev) =>
+          updatePreviewTextWorkbenchState(prev, path, (state) =>
+            state.isDirty && state.error == null
+              ? state
+              : { ...state, isDirty: true, error: null },
+          ),
+        );
+      }
       queuePreviewSave(path);
     },
-    [queuePreviewSave],
+    [queuePreviewDraftPersist, queuePreviewSave],
   );
 
   const persistShaderPreviewSource = useCallback(async (path: string) => {
@@ -16786,12 +16878,18 @@ function FileExplorerImpl({
           const hasRestoredDraft =
             restoredDraft != null &&
             restoredDraft !== executableTextScriptProbe.preview.content;
+          previewTextMirrorRef.current?.discard(entry.path);
           setPreview({
             type: "text",
             path: entry.path,
             ...previewResolvedPathProps,
             name: entry.name,
             content: resolvedContent,
+            contentRevision: resolvePreviewTextContentRevision(
+              previewRef.current,
+              entry.path,
+              resolvedContent,
+            ),
             language: executableTextScriptProbe.preview.language,
             renderKind: "none",
             scriptPreview:
@@ -17225,12 +17323,18 @@ function FileExplorerImpl({
             const resolvedContent = restoredDraft ?? content;
             const hasRestoredDraft =
               restoredDraft != null && restoredDraft !== content;
+            previewTextMirrorRef.current?.discard(entry.path);
             setPreview({
               type: "text",
               path: entry.path,
               ...previewResolvedPathProps,
               name: entry.name,
               content: resolvedContent,
+              contentRevision: resolvePreviewTextContentRevision(
+                previewRef.current,
+                entry.path,
+                resolvedContent,
+              ),
               language: resolvedPreview.language,
               renderKind: "none",
               pythonPreview: null,
@@ -17334,12 +17438,18 @@ function FileExplorerImpl({
             const resolvedContent = restoredDraft ?? content;
             const hasRestoredDraft =
               restoredDraft != null && restoredDraft !== content;
+            previewTextMirrorRef.current?.discard(entry.path);
             setPreview({
               type: "text",
               path: entry.path,
               ...previewResolvedPathProps,
               name: entry.name,
               content: resolvedContent,
+              contentRevision: resolvePreviewTextContentRevision(
+                previewRef.current,
+                entry.path,
+                resolvedContent,
+              ),
               language: resolvedPreview.language,
               renderKind: resolvedPreview.renderKind,
               scriptPreview: null,
@@ -17553,10 +17663,16 @@ function FileExplorerImpl({
               const resolvedContent = restoredDraft ?? content;
               const hasRestoredDraft =
                 restoredDraft != null && restoredDraft !== content;
+              previewTextMirrorRef.current?.discard(entry.path);
               setPreview({
                 ...basePluginPreviewState,
                 delegateText: {
                   content: resolvedContent,
+                  contentRevision: resolvePreviewTextContentRevision(
+                    previewRef.current,
+                    entry.path,
+                    resolvedContent,
+                  ),
                   language: delegateLanguage,
                   renderKind: delegateRenderKind,
                   scriptPreview: isScriptDelegate
@@ -22546,7 +22662,7 @@ function FileExplorerImpl({
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
         enabled: explorerTopbarLayoutDynamicsSettings.enabled,
-        authoringCanvasEnabled: isCompactDock,
+        authoringCanvasEnabled: false,
         axisMode: explorerTopbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerTopbarLayoutDynamicsSettings.preset,
         intensity: explorerTopbarLayoutDynamicsSettings.intensity,
@@ -22562,14 +22678,13 @@ function FileExplorerImpl({
         activeChromeEditSession,
         explorerTopbarLayoutDynamicsSettings,
         handleExplorerChromeDynamicSurfaceCommit,
-        isCompactDock,
       ],
     );
   const explorerToolbarLayoutDynamics =
     useMemo<ExplorerChromeSurfaceLayoutDynamics>(
       () => ({
         enabled: explorerToolbarLayoutDynamicsSettings.enabled,
-        authoringCanvasEnabled: isCompactDock,
+        authoringCanvasEnabled: false,
         axisMode: explorerToolbarLayoutDynamicsSettings.surface.axisMode,
         solver: explorerToolbarLayoutDynamicsSettings.preset,
         intensity: explorerToolbarLayoutDynamicsSettings.intensity,
@@ -22585,7 +22700,6 @@ function FileExplorerImpl({
         activeChromeEditSession,
         explorerToolbarLayoutDynamicsSettings,
         handleExplorerChromeDynamicSurfaceCommit,
-        isCompactDock,
       ],
     );
   const explorerRailHeaderLayoutDynamics =
@@ -25490,7 +25604,9 @@ function FileExplorerImpl({
         canExecuteExplorerChromeAction(action, placement.surfaceId);
       const disabled = isMissing || !canExecute;
       const iconNode = showIcon ? (
-        action?.iconAssetUrl ? (
+        placement.customIconName ? (
+          renderExplorerCommandLibraryIcon(placement.customIconName, iconSize)
+        ) : action?.iconAssetUrl ? (
           <SvgIcon src={action.iconAssetUrl} size={iconSize} />
         ) : (
           (resolveContextMenuIcon(action?.iconName ?? "Sparkles") ?? (
@@ -25565,7 +25681,7 @@ function FileExplorerImpl({
                 whiteSpace: "nowrap",
               }}
             >
-              {catalogEntry.label}
+              {placement.customLabel || catalogEntry.label}
             </span>
           ) : null}
           {isMissing ? (
@@ -36954,6 +37070,18 @@ function FileExplorerImpl({
       {renderDragOverlayHost || isActiveWorkspacePane ? (
         <ExplorerCustomizeDragOverlay catalog={explorerCustomizeCatalog} />
       ) : null}
+      {isActiveWorkspacePane && (
+        <>
+          <ZBrushCustomizationOverlay />
+          <HotkeyCaptureModal />
+          <IconPickerPopover
+            currentEntry={selectedExplorerCustomizePlacement}
+            onUpdateEntry={(controlId, patch) => {
+              updateExplorerChromeEditEntry(controlId, patch);
+            }}
+          />
+        </>
+      )}
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>
