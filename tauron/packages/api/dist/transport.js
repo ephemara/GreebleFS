@@ -32,14 +32,34 @@ function decodeBase64ToBytes(value) {
 }
 
 /**
- * Invoke a binary Tauri command and coerce the JSON-bridge payload back to
- * bytes. Accepts the shapes a Vec<u8>/byte-buffer return can take across the
- * standard invoke bridge.
+ * Coerce an invoke() resolution for a binary command back to bytes.
+ *
+ * Shapes across the bridge (see tauron/crates/tauri/src/ipc/channel.rs
+ * `Channel::from_callback_fn` + protocol.rs response dispatch):
+ * - Raw < 1KB  -> runCallback(id, new Uint8Array([...]).buffer) = ArrayBuffer
+ * - Raw >= 1KB -> fetch-lane roundtrip, callback gets the fetched bytes
+ *                  (ArrayBuffer) — or, if the internals pass channel
+ *                  frames through, { message: <bytes>, index }.
+ * - macOS eval path / JSON-bridge fallback -> number[] or base64 string.
+ * - Tauri Result-JSON envelope -> { data: number[] | base64 }.
+ *
+ * Returns null when the payload is not byte-shaped at all.
  */
-export async function invokeBinary(command, args) {
-  const raw = await invoke(command, args);
+export function coerceBinaryPayload(raw, _depth = 0) {
+  if (raw == null || _depth > 4) {
+    return null;
+  }
   if (raw instanceof Uint8Array) {
     return raw;
+  }
+  if (typeof ArrayBuffer !== 'undefined' && raw instanceof ArrayBuffer) {
+    return new Uint8Array(raw);
+  }
+  if (typeof SharedArrayBuffer !== 'undefined' && raw instanceof SharedArrayBuffer) {
+    return new Uint8Array(raw);
+  }
+  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(raw)) {
+    return new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
   }
   if (Array.isArray(raw)) {
     return Uint8Array.from(raw);
@@ -47,12 +67,38 @@ export async function invokeBinary(command, args) {
   if (typeof raw === 'string') {
     return decodeBase64ToBytes(raw);
   }
-  if (raw != null && typeof raw === 'object' && Array.isArray(raw.data)) {
-    return Uint8Array.from(raw.data);
+  if (typeof raw === 'object') {
+    if (Array.isArray(raw.data)) {
+      return Uint8Array.from(raw.data);
+    }
+    if (typeof raw.data === 'string') {
+      return decodeBase64ToBytes(raw.data);
+    }
+    // Channel-frame envelope: { message: <bytes>, index } / { payload }.
+    if ('message' in raw) {
+      return coerceBinaryPayload(raw.message, _depth + 1);
+    }
+    if ('payload' in raw && raw.payload !== raw) {
+      return coerceBinaryPayload(raw.payload, _depth + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Invoke a binary Tauri command and coerce the bridge payload back to
+ * bytes. Accepts every shape a Vec<u8>/BinaryResponse return can take
+ * across the invoke bridge (see coerceBinaryPayload).
+ */
+export async function invokeBinary(command, args) {
+  const raw = await invoke(command, args);
+  const bytes = coerceBinaryPayload(raw);
+  if (bytes) {
+    return bytes;
   }
   throw new Error(
     `transport.invokeBinary: unexpected payload shape from '${command}' ` +
-      `(expected Uint8Array, number[] or base64 string).`,
+      `(expected Uint8Array, ArrayBuffer, number[] or base64 string).`,
   );
 }
 
