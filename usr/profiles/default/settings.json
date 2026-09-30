@@ -5,11 +5,11 @@
     "activeDockThemeId": null,
     "activeIconThemeId": "toon_icons",
     "activeShaderId": null,
-    "activeShellRendererId": null,
-    "activeThemeEngineId": null,
+    "activeShellRendererId": "toon:toon-studio-shell",
+    "activeThemeEngineId": "andromeda-engine",
     "activeThemeId": "github-dark",
-    "activeThemeRecipeId": null,
-    "activeTopBarId": "orbital-glass",
+    "activeThemeRecipeId": "doors:doors-shell",
+    "activeTopBarId": "toon:toon-ribbon",
     "activeWallpaperId": null,
     "activityBarPosition": "side",
     "animations": false,
@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 0.725,
+    "appZoom": 1.1,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -470,7 +470,12 @@
         "enabled": false,
         "intensityMultiplier": 1,
         "modifierValuesByPresetId": {},
-        "presetId": null
+        "presetId": "sway"
+      },
+      "shellChrome": {
+        "intensityMultiplier": 1,
+        "modifierValuesByPresetId": {},
+        "presetId": "wobble"
       }
     },
     "interactionMotionPresetId": null,
@@ -2622,7 +2627,7 @@
     "experimentalDensity": 0.4,
     "experimentalViewMode": "off",
     "explorerViewDensityById": {
-      "adaptive-semantic-grid": 0.4,
+      "adaptive-semantic-grid": 1,
       "constellation": 0.4,
       "standard": 0.4,
       "timeline-surface": 0
@@ -2824,7 +2829,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.5190000072430951,
+    "gridZoom": 0.98,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2852,7 +2857,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-l"
+    "viewMode": "icons-xl"
   },
   "home": {
     "activePackId": null,
@@ -2976,7 +2981,9 @@
       },
       "overlay-classic": {
         "activePanelId": "explorer",
-        "dismissedPanelIds": [],
+        "dismissedPanelIds": [
+          "greeble3d"
+        ],
         "openPanelIds": [
           "settings",
           "explorer",
@@ -3002,7 +3009,7 @@
         },
         "explorerInspectorLinkMode": "live-linked",
         "floatingNodes": [],
-        "focusedSurfaceId": "explorer",
+        "focusedSurfaceId": "settings",
         "inspectorRailState": {
           "mode": "preview-inspector",
           "preferredWidth": 420,
@@ -3025,7 +3032,7 @@
                   "type": "stack"
                 },
                 {
-                  "activeSurfaceId": "git",
+                  "activeSurfaceId": "settings",
                   "collapsed": false,
                   "id": "ide:bottom-panel",
                   "placement": "bottom-panel",

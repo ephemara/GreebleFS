@@ -2525,14 +2525,6 @@ function getSettingsSectionIcon(sectionKey: SettingsSectionKey): ReactNode {
       return <Music size={14} />;
     case "appearance":
       return <Palette size={14} />;
-    case "appearance-packs":
-      return <Sparkles size={14} />;
-    case "theme-recipes":
-      return <LayoutGrid size={14} />;
-    case "theme-engines":
-      return <Cpu size={14} />;
-    case "shell-renderers":
-      return <MonitorPlay size={14} />;
     case "top-bars":
       return <SlidersHorizontal size={14} />;
     case "icons":
@@ -2738,31 +2730,7 @@ function getSettingsSectionContent(
       return {
         summary: `${context.effectiveThemeName} · ${formatOverlayVisualControlValue("opacity", context.appOpacity)} OP · ${formatOverlayVisualControlValue("panelTransparency", context.panelTransparency)} PT · ${formatOverlayVisualControlValue("zoom", context.appZoom)} ZM · ${formatOverlayVisualControlValue("blurStrength", context.appBlurStrength)} BL`,
         detail:
-          "Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, UI typography, and the theme bundle catalog that orchestrates the modular authored lanes.",
-      };
-    case "appearance-packs":
-      return {
-        summary: `${context.appearancePackSelectionSummary} · ${context.availableAppearancePacksCount} packs`,
-        detail:
-          "Appearance packs own palette, fonts, visuals, and shell identity primitives. Leave them on Follow Theme to respect the active bundle, or pin one to start mixing shells intentionally.",
-      };
-    case "theme-recipes":
-      return {
-        summary: `${context.themeRecipeSelectionSummary} · ${context.availableThemeRecipePacksCount} packs`,
-        detail:
-          "Theme recipe packs own workbench, explorer, and dock recipe lanes. Pin one when you want to swap the shell composition language without changing the whole bundle.",
-      };
-    case "theme-engines":
-      return {
-        summary: `${context.themeEngineSelectionSummary} · ${context.availableThemeEnginePacksCount} packs`,
-        detail:
-          "Theme engine packs own design tokens, render styles, layout primitives, and compatibility defaults. This is the deeper presentation/runtime lane behind the visible shell.",
-      };
-    case "shell-renderers":
-      return {
-        summary: `${context.shellRendererSelectionSummary} · ${context.availableShellRenderersCount} renderers`,
-        detail:
-          "Shell renderers control the runtime renderer module itself. Leave Follow Theme on for bundle defaults, or pin a renderer when you want the shell runtime to break away from the bundle.",
+          "Pick a theme, then tune blur, transparency, typography, and palette. Greenfield: theme bundles are being rebuilt from scratch.",
       };
     case "top-bars":
       return {
@@ -9866,7 +9834,7 @@ export function SettingsPage({
           />
         )}
 
-        {activeSection === "appearance-packs" && (
+        {(activeSection as string) === "appearance-packs" && (
           <ThemeBundlePackSettingsSection
             icon={<Sparkles size={12} />}
             title="Appearance Packs"
@@ -9927,7 +9895,7 @@ export function SettingsPage({
           />
         )}
 
-        {activeSection === "theme-recipes" && (
+        {(activeSection as string) === "theme-recipes" && (
           <ThemeBundlePackSettingsSection
             icon={<LayoutGrid size={12} />}
             title="Theme Recipes"
@@ -9987,7 +9955,7 @@ export function SettingsPage({
           />
         )}
 
-        {activeSection === "theme-engines" && (
+        {(activeSection as string) === "theme-engines" && (
           <ThemeBundlePackSettingsSection
             icon={<Cpu size={12} />}
             title="Theme Engines"
@@ -10047,7 +10015,7 @@ export function SettingsPage({
           />
         )}
 
-        {activeSection === "shell-renderers" && (
+        {(activeSection as string) === "shell-renderers" && (
           <ThemeBundlePackSettingsSection
             icon={<MonitorPlay size={12} />}
             title="Shell Renderers"

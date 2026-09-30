@@ -23,6 +23,7 @@ import {
   type NativeSurfaceTelemetry,
 } from '../../../runtime/nativeSurface';
 import { WindowMgrProofSurface } from '../WindowMgrProofSurface';
+import { UpdatesSettingsSection } from './UpdatesSettingsSection';
 import {
   SettingsCompactActionButton,
   SettingsCompactPath,
@@ -448,6 +449,14 @@ export function SystemSettingsSection({
       <SettingsInlineNotice tone={startupSyncError ? 'danger' : startupSyncPending ? 'warning' : 'muted'}>
         {startupStatusSummary}
       </SettingsInlineNotice>
+
+      <UpdatesSettingsSection
+        accent={accent}
+        border={border}
+        text={text}
+        muted={muted}
+        settingsSelectStyle={settingsSelectStyle}
+      />
 
       <SettingsCompactSection
         title="Startup + Shell"

@@ -148,3 +148,6 @@ src/generated/tauri.ts
 .windsurf/skills/.other/fp/analyze_zoom_math.py
 /.cargo-registry
 *.md
+/.cache
+/toolchains/kain
+/toolchains

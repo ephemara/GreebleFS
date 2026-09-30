@@ -145,6 +145,10 @@ export function AppearanceSettingsSection({
   void muted;
   void border;
   void text;
+  void dockThemeMode;
+  void activeDockThemeId;
+  void onApplyDockThemeSelection;
+  void dockAppearanceName;
 
   return (
     <SettingsSectionScaffold
@@ -231,19 +235,7 @@ export function AppearanceSettingsSection({
             />
           </div>
 
-          {dockThemeMode === 'override' ? (
-            <div className="min-w-0 space-y-1.5">
-              <label className="text-[10px] font-semibold uppercase opacity-50">Dock Suite</label>
-              <ThemeCatalogGrid
-                themes={appearance.themes}
-                activeThemeId={activeDockThemeId}
-                onSelect={onApplyDockThemeSelection}
-                themePackageLookup={themePackageLookup}
-                createThemeCardMotion={createThemeCardMotion}
-                density="compact"
-              />
-            </div>
-          ) : null}
+          {/* Dock follows app — override lane removed in theme greenfield cleanup. */}
         </div>
 
         <div className="min-w-0 space-y-3">
@@ -252,7 +244,7 @@ export function AppearanceSettingsSection({
             subtitle={activeThemePackage?.description ?? activeTheme?.description ?? 'Theme routing'}
             badges={[
               activeTheme?.name ?? editableTheme.name,
-              dockThemeMode === 'override' ? 'Dock override' : 'Dock follows app',
+              'Dock follows app',
             ]}
             accent={accent}
           >
@@ -264,27 +256,10 @@ export function AppearanceSettingsSection({
               </div>
 
               <SettingsCompactSection title="Routing">
-                <SettingsControlRow
-                  label="Dock Mode"
-                  detail={dockThemeMode === 'override' ? 'Pinned theme' : 'App theme'}
-                  control={(
-                    <SettingsSelect
-                      value={dockThemeMode}
-                      onChange={event => onUpdateAppearance({ dockThemeMode: event.target.value as 'follow-app' | 'override' })}
-                      aria-label="Dock theme mode"
-                    >
-                      <option value="follow-app">Follow App</option>
-                      <option value="override">Override Theme</option>
-                    </SettingsSelect>
-                  )}
-                />
                 <SettingsKeyValueRow label="App Theme" value={appAppearanceName} />
-                <SettingsKeyValueRow label="Dock Theme" value={dockAppearanceName} />
-                {dockThemeMode === 'follow-app' ? (
-                  <SettingsInlineNotice tone="info">
-                    Dock follows {appAppearanceName}
-                  </SettingsInlineNotice>
-                ) : null}
+                <SettingsInlineNotice tone="info">
+                  Dock follows {appAppearanceName}
+                </SettingsInlineNotice>
               </SettingsCompactSection>
 
               <SettingsCompactSection title="Typography">

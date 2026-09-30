@@ -1,51 +1,44 @@
 {
   "schemaVersion": 1,
-  "sourceRoot": "D:/Kain-Lang",
-  "payloadRoot": "D:/GreebleFS/toolchains/kain/payload-runtime",
-  "stagedAt": "2026-05-13T22:08:23.006Z",
+  "sourceRoot": "D:/kain",
+  "payloadRoot": "E:/GreebleFS/toolchains/kain/payload-runtime",
+  "stagedAt": "2026-09-29T00:12:01.333Z",
   "fingerprint": {
-    "digest": "df939f8aba603ba5a0bafdc22b34feba2fb9e86a8b40ab332157feaf9129333d",
+    "digest": "44fdc9016e243feb3156b162fcf31b4850b501d4357b3ac50cbc0b90e4ee27b5",
     "entries": [
       {
         "label": "bin/kain",
-        "path": "D:/Kain-Lang/target/release/kain.exe",
-        "size": 63103488,
-        "modifiedMs": 1778709558217,
+        "path": "D:/tools/kain/kain.exe",
+        "size": 76161536,
+        "modifiedMs": 1790022810834,
         "directory": false
       },
       {
         "label": "payload-stage-config",
-        "path": "D:/GreebleFS/toolchains/kain/toolchains.json",
+        "path": "E:/GreebleFS/toolchains/kain/toolchains.json",
         "size": 269,
         "modifiedMs": 0,
         "directory": false
       },
       {
-        "label": "bin/kn",
-        "path": "D:/Kain-Lang/target/release/kn.exe",
-        "size": 63103488,
-        "modifiedMs": 1778709558221,
-        "directory": false
-      },
-      {
         "label": "stdlib",
-        "path": "D:/Kain-Lang/stdlib",
+        "path": "D:/kain/stdlib",
         "size": 0,
-        "modifiedMs": 1778543357461,
+        "modifiedMs": 1790050562175,
         "directory": true
       },
       {
         "label": "runtime",
-        "path": "D:/Kain-Lang/runtime",
+        "path": "D:/kain/runtime",
         "size": 0,
-        "modifiedMs": 1778636862777,
+        "modifiedMs": 1789974764755,
         "directory": true
       }
     ]
   },
   "executables": {
-    "kain": "D:/Kain-Lang/target/release/kain.exe",
-    "kn": "D:/Kain-Lang/target/release/kn.exe"
+    "kain": "D:/tools/kain/kain.exe",
+    "kn": null
   },
   "payloadProfile": "runtime-bundled",
   "copiedDirectories": [
@@ -62,5 +55,5 @@
   "fullProfileRequested": false,
   "payloadSanitizerVersion": 2,
   "symlinkSanitization": [],
-  "version": "kain 0.1.0"
+  "version": "kain 0.8.2"
 }

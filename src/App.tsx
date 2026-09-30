@@ -332,6 +332,8 @@ import {
 } from './runtime/explorerBackend';
 import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
+import { useUpdateAutoCheck } from './runtime/useUpdateAutoCheck';
+import { UpdateBanner } from './components/UpdateBanner';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { registerWindowsPathIndexAccelerationProfileOnce } from './runtime/pathIndexAcceleration';
@@ -2285,6 +2287,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
 
   // ── Boot store ──
   useEffect(() => { initTerminalStore(); }, [initTerminalStore]);
+  useUpdateAutoCheck();
 
   useEffect(() => {
     installFrontendTelemetryObservers();
@@ -9175,6 +9178,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           onOpenSettingsSection={handleOpenSettingsSection}
           onToggleTopBarCustomize={handleToggleTopBarCustomize}
         />
+        <UpdateBanner accent={accent} />
       </div>
     </IconThemeProvider>
   );
