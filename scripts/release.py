@@ -52,12 +52,52 @@ RELEASE_TRACKED = [
     "package.json",
     "bun.lock",
     "src-tauri/tauri.conf.json",
+    "src-tauri/Cargo.toml",
     "src-tauri/windows/greeblefs-installer.nsi",
     "src-tauri/icons/",
+    # v0.2.2: usr-root honor lane — custom install root for ALL data lanes.
+    "src-tauri/src/usr.rs",
+    "src-tauri/src/lib.rs",
+    "src-tauri/src/archive_ops.rs",
+    "src-tauri/src/cloud_commands.rs",
+    "src-tauri/src/global_search/query.rs",
+    "src-tauri/src/global_search/scan.rs",
+    "src-tauri/src/lan_share/push.rs",
+    "src-tauri/src/telemetry.rs",
+    "src-tauri/src/entry_size_cache.rs",
+    "src-tauri/src/explorer_identity.rs",
+    "src-tauri/src/explorer_pro_commands.rs",
+    "src-tauri/src/image_cutout_commands.rs",
+    "src-tauri/src/indexing/mod.rs",
+    "src-tauri/src/python_commands.rs",
+    "src-tauri/src/remote_storage_commands.rs",
+    "src-tauri/src/runtime_pipeline/cache.rs",
+    "src-tauri/src/runtime_pipeline/commands.rs",
+    "src-tauri/src/screenshot_commands.rs",
+    "src-tauri/src/semantic_search.rs",
+    "src-tauri/src/thumbnail_commands.rs",
+    "src-tauri/src/video_engine.rs",
+    "src/config/appContentDirectories.ts",
+    "src/runtime/ipc/artifacts.ts",
+    "src/runtime/useFolderPluginRuntime.ts",
     "tauron/packages/api/",
     "tauron/crates/tauri-plugin/src/build/",
     "scripts/release.py",
 ]
+
+
+def resolve_node() -> str:
+    """Absolute node path: background shells often lack node on PATH."""
+    found = shutil.which("node")
+    if found:
+        return found
+    for cand in (
+        r"C:\Program Files\nodejs\node.exe",
+        r"C:\Program Files (x86)\nodejs\node.exe",
+    ):
+        if Path(cand).exists():
+            return cand
+    return "node"
 
 
 def run_cmd(cmd, env=None, check=True, capture=True):
@@ -142,7 +182,7 @@ def main():
         for key in ("GREEBLEFS_KAIN_SOURCE_ROOT", "GREEBLEFS_KAIN_EXE", "PYO3_PYTHON"):
             if not build_env.get(key):
                 sys.exit(f"ERROR: {key} must be set for --build.")
-        run_cmd(["node", "scripts/run-platform-tauri.mjs", "build",
+        run_cmd([resolve_node(), "scripts/run-platform-tauri.mjs", "build",
                  "--bundles", "nsis", "--ci"], env=build_env, capture=False)
     else:
         print("\n[Step 1/5] Skipping build (--build not given).")
@@ -162,6 +202,14 @@ def main():
         if src.exists():
             shutil.copy2(src, stage_dir / "portable" / name)
             portable_files.append(name)
+    # Portable install profile: keeps the whole workspace (usr content +
+    # caches) beside the exe instead of leaking into AppData. The backend
+    # resolves relative profile paths against the executable directory.
+    (stage_dir / "portable" / "greeblefs-install-profile.toml").write_text(
+        "schemaVersion = 1\ninstallRoot = '.'\n"
+        "managedContentRoot = './usr'\n",
+        encoding="utf-8",
+    )
     if (ROOT / "README.md").exists():
         shutil.copy2(ROOT / "README.md", stage_dir / "portable" / "README.md")
     zip_name = f"greeblefs-{tag}-windows-x64-portable.zip"
@@ -223,11 +271,21 @@ Built {built} from a fresh-clone-verified pipeline
 1. Run `{installer.name}` (per-machine NSIS, Start Menu + Desktop shortcuts).
 2. The installer registers the `GreebleFSUsnIndexer` service for fast NTFS indexing.
 
-## Heads-up (honest v0.1.0 notes)
+## What's fixed (v0.2.2)
+- Custom usr-root installs are honored end to end: every backend data lane
+  (cloud tokens, thumbnails, models, screenshots, caches, indexes, ...) and
+  every frontend lane (notes, screenshots, IPC artifacts, plugin storage)
+  now roots at the installer-chosen directory (e.g. T:/...) instead of
+  leaking back into AppData. Stock installs behave exactly as before.
+- Portable zip ships an install profile so it stays beside the exe too.
+- Perf honesty: the app crate still ships opt-0/single-CGU (opt1/2/3 all
+  LLVM-OOM at ~6 GB free — re-verified this release). All dependency crates
+  ship fully optimized, which is where the hot code lives. Full app-opt
+  follows the great crate split.
+
+## Heads-up (honest notes)
 - Unsigned build — Windows SmartScreen will ask; expected.
 - Native GPU / shared-buffer lanes run in invoke-compatibility mode.
-- App crate ships at opt-level 0 (LLVM OOM guard, deps fully optimized);
-  full-opt follows the great crate split. See ARCHITECTURE.md.
 
 ## SHA-256
 ```text

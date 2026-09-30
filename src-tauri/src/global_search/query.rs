@@ -16,7 +16,6 @@ use tantivy::query::{AllQuery, BooleanQuery, FuzzyTermQuery, Query, RegexQuery, 
 use tantivy::schema::{IndexRecordOption, Value};
 use tantivy::Term;
 use tantivy::{DocAddress, IndexReader, Order};
-use tauri::Manager;
 
 fn build_query(
     fields: &GlobalSearchIndexFields,
@@ -300,10 +299,7 @@ fn sort_index_query_results(
 fn open_search_reader(
     app: &tauri::AppHandle,
 ) -> Result<(IndexReader, GlobalSearchIndexFields), String> {
-    let base_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error: tauri::Error| error.to_string())?;
+    let base_dir = crate::usr::resolve_writable_data_dir(app)?;
     let index_path = global_search_index_dir(&base_dir);
 
     let (reader, fields) = {

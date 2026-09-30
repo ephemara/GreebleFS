@@ -1855,10 +1855,7 @@ fn resolve_path_index_db_path(app: &AppHandle) -> Result<PathBuf, String> {
             return Ok(PathBuf::from(trimmed));
         }
     }
-    Ok(app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    Ok(crate::usr::resolve_writable_data_dir(app)?
         .join("indexing")
         .join("path-index.sqlite3"))
 }

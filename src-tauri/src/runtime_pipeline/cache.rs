@@ -54,10 +54,7 @@ impl CompileCacheLayout {
     /// Resolve the cache layout under the Tauri app-local data dir. Falls back
     /// to a deterministic temp path when no Tauri context is available (tests).
     pub fn from_app(app: &tauri::AppHandle) -> Result<Self, String> {
-        let local_data = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|error| format!("failed to resolve app local data dir: {error}"))?;
+        let local_data = crate::usr::resolve_writable_data_dir(app)?;
         Ok(Self {
             root_dir: local_data.join("runtime-cache"),
         })

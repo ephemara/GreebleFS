@@ -421,10 +421,7 @@ pub(crate) fn sanitize_video_runtime_stem(value: &str) -> String {
 }
 
 pub(crate) fn resolve_video_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
-        .map(|path| path.join(VIDEO_ENGINE_RUNTIME_DIR))
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
+    crate::usr::resolve_writable_data_dir(app).map(|path| path.join(VIDEO_ENGINE_RUNTIME_DIR))
 }
 
 fn prepare_video_source(input_path: &Path) -> Result<PreparedVideoSource, String> {

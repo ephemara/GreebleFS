@@ -403,10 +403,8 @@ fn telemetry_directory(app: &AppHandle) -> Result<PathBuf, String> {
         return repo_root_directory().map(|repo_root| repo_root.join(TELEMETRY_DIRECTORY_NAME));
     }
 
-    let logs_root = app
-        .path()
-        .app_log_dir()
-        .or_else(|_| app.path().app_data_dir().map(|path| path.join("logs")))
+    let logs_root = crate::usr::resolve_writable_data_dir(app)
+        .map(|path| path.join("logs"))
         .map_err(|error| format!("Failed to resolve telemetry directory: {error}"))?;
     Ok(logs_root.join(TELEMETRY_DIRECTORY_NAME))
 }

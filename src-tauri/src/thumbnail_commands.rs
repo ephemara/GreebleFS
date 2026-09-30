@@ -1064,11 +1064,7 @@ where
 }
 
 fn resolve_thumbnail_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map(|path| path.join(THUMBNAIL_RUNTIME_DIR))
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?;
+    let root = crate::usr::resolve_writable_data_dir(app)?.join(THUMBNAIL_RUNTIME_DIR);
     fs::create_dir_all(&root).map_err(|error| {
         format!(
             "Failed to create thumbnail runtime directory '{}': {error}",

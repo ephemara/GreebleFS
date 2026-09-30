@@ -38,9 +38,11 @@ debug = false
 [profile.release.package.greeblefs]
 codegen-units = 1
 opt-level = 0
-# opt-level 0: the crate has a pathological LLVM module (single-CGU opt3 exceeds
-# ~7 GB). Deps stay fully optimized; only app logic ships unoptimized until
-# the crate gets split (see deslopp notes). opt0 is proven: dev profile builds it.
+# opt-level 0 + single CGU: the ONLY setting the app crate survives on
+# 16 GB boxes (opt1/opt2/opt3 single-CGU all LLVM-OOM at ~6 GB free —
+# verified 2026-09-30). The monolith's LLVM module is pathological; the
+# real fix is splitting the crate (see deslopp notes). Deps stay fully
+# optimized, which is where the hot code lives (tokio/serde/tantivy/etc).
 
 [workspace.dependencies]
 ansi-to-tui = "8.0.1"

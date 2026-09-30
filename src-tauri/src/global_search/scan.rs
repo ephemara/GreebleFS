@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tantivy::{doc, Index, IndexReader, IndexWriter};
-use tauri::{Manager, State};
+use tauri::State;
 
 const STATUS_UPDATE_INTERVAL: u64 = 512;
 
@@ -64,10 +64,7 @@ fn apply_committed_index_status(
 #[tauri::command]
 #[specta::specta]
 pub fn global_search_init(app: tauri::AppHandle) -> Result<GlobalSearchStatus, String> {
-    let base_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error: tauri::Error| error.to_string())?;
+    let base_dir = crate::usr::resolve_writable_data_dir(&app)?;
 
     let index_path = global_search_index_dir(&base_dir);
     let is_valid = validate_index(&index_path, &base_dir);
@@ -243,10 +240,7 @@ pub async fn global_search_start_scan_with_task_graph(
         state.cancel_flag.store(false, Ordering::SeqCst);
     }
 
-    let base_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error: tauri::Error| error.to_string())?;
+    let base_dir = crate::usr::resolve_writable_data_dir(&app)?;
     let index_path = global_search_index_dir(&base_dir);
     let cancel_flag = {
         let state = GLOBAL_SEARCH_STATE

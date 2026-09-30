@@ -2091,6 +2091,18 @@ fn numbered_destination(parent: &Path, base_name: &str, extension: &str) -> Path
 }
 
 fn archive_cache_root() -> Result<PathBuf, String> {
+    // Honor a custom usr root (installer choice) without needing an app
+    // handle: env override / install profile first, OS cache dir otherwise.
+    if let Some(custom_root) = crate::usr::custom_managed_content_root() {
+        let root = custom_root.join("archive-open");
+        fs::create_dir_all(&root).map_err(|error| {
+            format!(
+                "Failed to create archive cache root {}: {error}",
+                root.display()
+            )
+        })?;
+        return Ok(root);
+    }
     let root = dirs::cache_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("GreebleFS")

@@ -607,25 +607,33 @@ async function resolveNativeManagedContentRoots(): Promise<ManagedContentRootsSn
   }
 }
 
+/**
+ * Single frontend choke point for the writable data root: the installer's
+ * usr-root choice (T:/...) when configured, AppData otherwise. Every lane
+ * (notes, screenshots, artifacts, plugin storage) must go through here so
+ * a custom install root is honored end to end.
+ */
+export async function resolveWritableDataRoot(): Promise<string> {
+  const managedContentRoots = await resolveNativeManagedContentRoots();
+  const writableRoot = managedContentRoots?.writableRoot?.trim();
+  if (writableRoot) {
+    return writableRoot.replace(/[\\/]+$/, "");
+  }
+  return (await appLocalDataDir()).replace(/[\\/]+$/, "");
+}
+
 async function buildReleaseManagedDirectoryMap(): Promise<
   Record<ManagedContentDirectoryId, string>
 > {
-  const appLocalDataRoot = (await appLocalDataDir()).replace(/[\\/]+$/, "");
-  const managedContentRoots = await resolveNativeManagedContentRoots();
-
-  const writableManagedRoot = managedContentRoots?.writableRoot
-    ? managedContentRoots.writableRoot.replace(/[\\/]+$/, "")
-    : await join(appLocalDataRoot, "usr");
+  const writableManagedRoot = await resolveWritableDataRoot();
 
   const resolvedEntries = await Promise.all(
     managedContentDirectoryCatalog.map(async (entry) => {
-      const targetRoot =
-        entry.shippingMode === "shipped"
-          ? writableManagedRoot
-          : appLocalDataRoot;
+      // ALL lanes (shipped + runtime-state) live under the writable root so
+      // a custom usr-root install never leaks lanes back into AppData.
       return [
         entry.id as ManagedContentDirectoryId,
-        await join(targetRoot, entry.relativeDirectoryName),
+        await join(writableManagedRoot, entry.relativeDirectoryName),
       ] as const;
     }),
   );

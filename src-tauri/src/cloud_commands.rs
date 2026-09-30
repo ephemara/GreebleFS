@@ -1083,10 +1083,7 @@ fn parse_cloud_path(path: &str) -> Result<CloudPathRef, String> {
 }
 
 fn accounts_file_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let base = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let base = crate::usr::resolve_writable_data_dir(app)?
         .join(CLOUD_ROOT_DIRECTORY);
     fs::create_dir_all(&base)
         .map_err(|error| format!("Failed to create cloud account directory: {error}"))?;
@@ -1094,10 +1091,7 @@ fn accounts_file_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn provider_config_file_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let base = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let base = crate::usr::resolve_writable_data_dir(app)?
         .join(CLOUD_ROOT_DIRECTORY);
     fs::create_dir_all(&base)
         .map_err(|error| format!("Failed to create cloud configuration directory: {error}"))?;
@@ -1105,10 +1099,7 @@ fn provider_config_file_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn temp_root_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let root = crate::usr::resolve_writable_data_dir(app)?
         .join(CLOUD_ROOT_DIRECTORY)
         .join(CLOUD_TEMP_DIRECTORY);
     fs::create_dir_all(&root)

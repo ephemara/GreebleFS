@@ -1665,10 +1665,7 @@ fn observe_remote_host_key(public_key: &PublicKey) -> RemoteHostKeyObservation {
 }
 
 fn remote_storage_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve the app local data directory: {error}"))?
+    let root = crate::usr::resolve_writable_data_dir(app)?
         .join(REMOTE_STORAGE_DIRECTORY);
     fs::create_dir_all(&root)
         .map_err(|error| format!("Failed to create the remote-storage data directory: {error}"))?;

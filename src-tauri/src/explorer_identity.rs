@@ -52,10 +52,7 @@ pub struct ExplorerIdentityManager {
 }
 
 pub fn initialize_explorer_identity_store(app: &AppHandle) -> Result<(), String> {
-    let db_path = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let db_path = crate::usr::resolve_writable_data_dir(app)?
         .join("explorer-cache")
         .join("explorer-identity.sqlite3");
 
@@ -253,10 +250,7 @@ fn resolve_db_path(app: &AppHandle) -> Result<PathBuf, String> {
         return Ok(existing_path.clone());
     }
 
-    let db_path = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let db_path = crate::usr::resolve_writable_data_dir(app)?
         .join("explorer-cache")
         .join("explorer-identity.sqlite3");
     let _ = EXPLORER_IDENTITY_DB_PATH.set(db_path.clone());

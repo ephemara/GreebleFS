@@ -309,10 +309,7 @@ fn semantic_search_path_to_string(path: &Path) -> String {
 
 #[cfg(not(test))]
 fn semantic_search_data_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve semantic-search data root: {error}"))?
+    let root = crate::usr::resolve_writable_data_dir(app)?
         .join("explorer")
         .join(SEMANTIC_SEARCH_DIRECTORY);
     fs::create_dir_all(&root)

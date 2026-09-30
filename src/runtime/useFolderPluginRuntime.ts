@@ -33,6 +33,7 @@ import type {
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import { getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from '../config/platform';
+import { resolveWritableDataRoot } from '../config/appContentDirectories';
 import type { OverlayRegisteredFontContribution } from '../config/appearance';
 import * as explorerBackend from './explorerBackend';
 import { loadKainPluginCatalog } from './kainPluginCatalog';
@@ -161,8 +162,6 @@ export function useFolderPluginRuntime(
   }, [runtimePlatform]);
 
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
-    const appLocalData = TauriFs.BaseDirectory.AppLocalData;
-    const separator = getPlatformPathSeparator(runtimePlatform);
     const storageRoot = getPluginStorageDirectory(plugin.id);
     const assetRoot = plugin.pluginDirectory;
     const resolveAssetPath = (relativePath: string) => {
@@ -178,13 +177,17 @@ export function useFolderPluginRuntime(
         return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
       }
     };
-    const resolveStoragePath = (relativePath?: string) => {
+    // Plugin storage lives under the writable data root (installer's
+    // usr-root choice when configured) via backend fs commands.
+    const resolveStorageAbsPath = async (relativePath?: string) => {
+      const writableRoot = await resolveWritableDataRoot();
       const trimmed = relativePath?.trim().replace(/^[\\/]+/, '') ?? '';
-      return trimmed ? joinPlatformPath(storageRoot, trimmed, runtimePlatform) : storageRoot;
+      const base = joinPlatformPath(writableRoot, storageRoot, runtimePlatform);
+      return trimmed ? joinPlatformPath(base, trimmed, runtimePlatform) : base;
     };
     const ensureStorageDir = async (relativePath?: string) => {
-      const target = resolveStoragePath(relativePath);
-      await TauriFs.mkdir(target, { baseDir: appLocalData, recursive: true });
+      const target = await resolveStorageAbsPath(relativePath);
+      unwrapTauriResult(await commands.fsCreateDir(target));
       return target;
     };
     const settingsController =
@@ -237,22 +240,12 @@ export function useFolderPluginRuntime(
       storage: {
         rootDir: storageRoot,
         ensureDir: ensureStorageDir,
-        readTextFile: async relativePath => TauriFs.readTextFile(resolveStoragePath(relativePath), { baseDir: appLocalData }),
+        readTextFile: async relativePath => unwrapTauriResult(await commands.fsReadTextFile(await resolveStorageAbsPath(relativePath))),
         writeTextFile: async (relativePath, data) => {
-          const target = resolveStoragePath(relativePath);
-          const parent = getParentPath(target, separator);
-          if (parent) {
-            await TauriFs.mkdir(parent, { baseDir: appLocalData, recursive: true });
-          }
-          await TauriFs.writeTextFile(target, data, { baseDir: appLocalData });
+          unwrapTauriResult(await commands.fsWriteFile(await resolveStorageAbsPath(relativePath), { kind: "text", value: data }));
         },
         writeFile: async (relativePath, data) => {
-          const target = resolveStoragePath(relativePath);
-          const parent = getParentPath(target, separator);
-          if (parent) {
-            await TauriFs.mkdir(parent, { baseDir: appLocalData, recursive: true });
-          }
-          await TauriFs.writeFile(target, data, { baseDir: appLocalData });
+          unwrapTauriResult(await commands.fsWriteFile(await resolveStorageAbsPath(relativePath), { kind: "bytes", value: Array.from(data as Uint8Array) }));
         },
       },
       assets: {

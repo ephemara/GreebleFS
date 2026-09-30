@@ -373,10 +373,7 @@ fn resolve_runtime_root(app: &AppHandle, config: &PythonRuntimeConfig) -> Result
         return Ok(PathBuf::from(path));
     }
 
-    app.path()
-        .app_local_data_dir()
-        .map(|path| path.join("python-runtime"))
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
+    crate::usr::resolve_writable_data_dir(app).map(|path| path.join("python-runtime"))
 }
 
 pub(crate) fn resolve_runtime_config(

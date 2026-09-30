@@ -757,11 +757,7 @@ fn normalize_optional_output_path(path: Option<String>) -> Option<String> {
 }
 
 fn resolve_cutout_stage_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map(|path| path.join(IMAGE_CUTOUT_STAGE_DIR))
-        .map_err(|error| format!("Failed to resolve cutout staging directory: {error}"))?;
+    let root = crate::usr::resolve_writable_data_dir(app)?.join(IMAGE_CUTOUT_STAGE_DIR);
     resolve_cutout_stage_root_under(&root)
 }
 

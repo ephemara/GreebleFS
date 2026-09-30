@@ -7,7 +7,6 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
-use tauri::Manager;
 use tokio::sync::Mutex;
 use url::Url;
 #[cfg(not(target_os = "windows"))]
@@ -167,10 +166,7 @@ fn normalize_mobile_push_device_label(value: Option<&str>) -> String {
 }
 
 fn build_mobile_push_state_directory(app_handle: &AppHandle) -> Result<PathBuf, String> {
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Failed to resolve app data directory: {error}"))?;
+    let app_data_dir = crate::usr::resolve_writable_data_dir(app_handle)?;
     Ok(app_data_dir.join(MOBILE_PUSH_DIRECTORY_NAME))
 }
 

@@ -1,6 +1,6 @@
-import { appLocalDataDir, join } from "@tauri-apps/api/path";
+import { join } from "@tauri-apps/api/path";
 import { resourceUrl } from "@tauri-apps/api/transport";
-import { BaseDirectory, mkdir, writeFile } from "@tauri-apps/plugin-fs";
+import { resolveWritableDataRoot } from "../../config/appContentDirectories";
 import type {
   IpcArtifactDescriptor,
   IpcArtifactRef,
@@ -68,22 +68,18 @@ export async function stageIpcArtifactBytes(
       request.mediaType ?? null,
     );
 
-  const parentDirectory = relativePath.includes("/")
-    ? relativePath.slice(0, relativePath.lastIndexOf("/"))
-    : "";
-  if (parentDirectory) {
-    await mkdir(parentDirectory, {
-      baseDir: BaseDirectory.AppLocalData,
-      recursive: true,
-    });
-  }
-  await writeFile(relativePath, request.bytes, {
-    baseDir: BaseDirectory.AppLocalData,
-  });
-
+  // Backend write under the writable data root (installer's usr-root
+  // choice when configured) — never AppData-pinned, no fs-scope needed.
+  const writableRoot = await resolveWritableDataRoot();
   const absolutePath = await join(
-    normalizeDirectoryPath(await appLocalDataDir()),
+    normalizeDirectoryPath(writableRoot),
     relativePath,
+  );
+  await unwrapTauriResult(
+    await commands.fsWriteFile(absolutePath, {
+      kind: "bytes",
+      value: Array.from(request.bytes),
+    }),
   );
   return unwrapTauriResult(
     await commands.ipcRegisterArtifactPath({

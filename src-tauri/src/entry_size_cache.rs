@@ -33,10 +33,7 @@ pub fn normalize_cache_path(path: &Path) -> String {
 }
 
 pub fn initialize_entry_size_cache(app: &AppHandle) -> Result<(), String> {
-    let db_path = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+    let db_path = crate::usr::resolve_writable_data_dir(app)?
         .join("explorer-cache")
         .join("entry-sizes.sqlite3");
 

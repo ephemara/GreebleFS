@@ -276,6 +276,23 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(move |app| {
             builder.mount_events(app);
+            match usr::resolve_managed_content_root(&app.handle()) {
+                Ok(managed_root) => {
+                    eprintln!("GreebleFS: managed usr root: {}", managed_root.display());
+                    // Let frontend file lanes follow the installer's usr-root
+                    // choice (e.g. T:/...) instead of being scope-pinned to AppData.
+                    #[allow(unused_imports)]
+                    use tauri_plugin_fs::FsExt as _;
+                    if let Err(error) = app.handle().fs_scope().allow_directory(&managed_root, true) {
+                        eprintln!(
+                            "GreebleFS: failed to extend fs scope to managed root: {error}"
+                        );
+                    }
+                }
+                Err(error) => {
+                    eprintln!("GreebleFS: failed to resolve managed usr root: {error}");
+                }
+            }
             if let Err(error) = usr::bootstrap_usr_content(&app.handle()) {
                 eprintln!("GreebleFS: failed to bootstrap bundled usr content: {error}");
             }

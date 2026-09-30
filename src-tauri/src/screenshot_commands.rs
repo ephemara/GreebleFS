@@ -8,7 +8,7 @@ use arboard::{Clipboard, ImageData};
 use image::imageops::crop_imm;
 use image::{ImageReader, RgbaImage};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const SCREENSHOT_STAGE_DIR: &str = "screenshot-staging";
 
@@ -214,11 +214,7 @@ pub async fn screenshot_delete_image_stage(app: AppHandle, path: String) -> Resu
 }
 
 fn resolve_screenshot_stage_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_local_data_dir()
-        .map(|path| path.join(SCREENSHOT_STAGE_DIR))
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?;
+    let root = crate::usr::resolve_writable_data_dir(app)?.join(SCREENSHOT_STAGE_DIR);
 
     fs::create_dir_all(&root).map_err(|error| {
         format!(

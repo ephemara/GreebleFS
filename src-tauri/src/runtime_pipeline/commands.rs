@@ -2798,7 +2798,7 @@ fn managed_runtimes_root(app: &AppHandle) -> Option<PathBuf> {
             }
         }
     }
-    let local = app.path().app_local_data_dir().ok()?;
+    let local = crate::usr::resolve_writable_data_dir(app).ok()?;
     Some(local.join(RUNTIMES_MANAGED_DIR_NAME))
 }
 

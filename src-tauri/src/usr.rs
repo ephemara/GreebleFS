@@ -157,16 +157,37 @@ pub fn resolve_bundled_usr_root(app: &tauri::AppHandle) -> Result<PathBuf, Strin
     Ok(repo_root)
 }
 
-pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+/// Explicitly chosen managed root: env override first, then the installer
+/// profile (`greeblefs-install-profile.toml` beside the executable).
+/// `None` means stock behavior (OS app-local data dir).
+pub fn custom_managed_content_root() -> Option<PathBuf> {
     if let Some(explicit_root) = read_first_env_path(&[
         "GREEBLEFS_MANAGED_CONTENT_ROOT",
         "OVERLAYTERM_MANAGED_CONTENT_ROOT",
     ]) {
-        return Ok(explicit_root);
+        return Some(explicit_root);
     }
 
-    if let Some(installer_managed_root) = resolve_managed_content_root_from_install_profile() {
-        return Ok(installer_managed_root);
+    resolve_managed_content_root_from_install_profile()
+}
+
+/// Writable root for ALL app data lanes (caches, DBs, cloud tokens,
+/// thumbnails, models, screenshots, ...). Honors the installer's usr-root
+/// choice; falls back to the OS app-local data dir only when no custom
+/// root is configured.
+pub fn resolve_writable_data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(custom_root) = custom_managed_content_root() {
+        return Ok(custom_root);
+    }
+
+    app.path()
+        .app_local_data_dir()
+        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
+}
+
+pub fn resolve_managed_content_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Some(custom_root) = custom_managed_content_root() {
+        return Ok(custom_root);
     }
 
     let app_local_data_root = app
