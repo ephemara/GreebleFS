@@ -173,6 +173,106 @@ export function formatModifiedLabel(timestampMs: number | null): string {
   }).format(new Date(timestampMs));
 }
 
+export type MobileFormFactor = "mobile" | "desktop";
+export type MobileFormFactorOverride = "auto" | MobileFormFactor;
+
+export const MOBILE_DESKTOP_MIN_WIDTH_PX = 900;
+
+export interface MobileFormFactorHints {
+  userAgent?: string;
+  viewportWidth?: number;
+  pointerFine?: boolean;
+  pointerCoarse?: boolean;
+  touchPoints?: number;
+}
+
+const MOBILE_UA_PATTERN = /android|iphone|ipod|windows phone|blackberry|bb10|mobile|phone/i;
+const TABLET_UA_PATTERN = /ipad|tablet|kindle|silk|playbook/i;
+
+export function isMobileUserAgent(userAgent: string): boolean {
+  if (!userAgent) {
+    return false;
+  }
+  return MOBILE_UA_PATTERN.test(userAgent) || TABLET_UA_PATTERN.test(userAgent);
+}
+
+export function normalizeMobileFormFactorOverride(value: unknown): MobileFormFactorOverride {
+  return value === "mobile" || value === "desktop" || value === "auto" ? value : "auto";
+}
+
+export function detectMobileFormFactor(hints: MobileFormFactorHints = {}): MobileFormFactor {
+  const viewportWidth = hints.viewportWidth ?? 0;
+  if (hints.userAgent && isMobileUserAgent(hints.userAgent)) {
+    return "mobile";
+  }
+  if (!viewportWidth || viewportWidth < MOBILE_DESKTOP_MIN_WIDTH_PX) {
+    return "mobile";
+  }
+  // Large touch-first tablet that never reports a fine pointer stays on the
+  // thumb-friendly layout even when the viewport is wide.
+  if (hints.pointerFine === false && (hints.touchPoints ?? 0) > 0 && hints.pointerCoarse !== false) {
+    return "mobile";
+  }
+  if (hints.pointerFine === true) {
+    return "desktop";
+  }
+  // No pointer signal (SSR, jsdom, kiosk): a wide viewport with no touch
+  // points is almost always a real computer browser.
+  if ((hints.touchPoints ?? 0) === 0 && hints.pointerCoarse !== true) {
+    return "desktop";
+  }
+  return "mobile";
+}
+
+export function resolveMobileFormFactor(
+  override: MobileFormFactorOverride | unknown,
+  hints: MobileFormFactorHints = {},
+): MobileFormFactor {
+  const normalizedOverride = normalizeMobileFormFactorOverride(override);
+  if (normalizedOverride !== "auto") {
+    return normalizedOverride;
+  }
+  return detectMobileFormFactor(hints);
+}
+
+export function readMobileFormFactorHints(viewportWidth?: number): MobileFormFactorHints {
+  if (typeof window === "undefined") {
+    return { viewportWidth: viewportWidth ?? 0 };
+  }
+  const width = viewportWidth ?? window.innerWidth ?? 0;
+  let pointerFine: boolean | undefined;
+  let pointerCoarse: boolean | undefined;
+  try {
+    if (typeof window.matchMedia === "function") {
+      pointerFine = window.matchMedia("(pointer: fine)").matches || undefined;
+      // matchMedia returns false for both queries when the feature is
+      // unsupported (jsdom) — leave both undefined so detection falls back
+      // to the conservative mobile layout instead of flipping to desktop.
+      if (pointerFine !== true) {
+        pointerFine = undefined;
+      }
+      const coarseMatches = window.matchMedia("(pointer: coarse)").matches;
+      pointerCoarse = coarseMatches ? true : undefined;
+    }
+  } catch {
+    pointerFine = undefined;
+    pointerCoarse = undefined;
+  }
+  let touchPoints = 0;
+  try {
+    touchPoints = window.navigator?.maxTouchPoints ?? 0;
+  } catch {
+    touchPoints = 0;
+  }
+  return {
+    userAgent: window.navigator?.userAgent ?? "",
+    viewportWidth: width,
+    pointerFine,
+    pointerCoarse,
+    touchPoints,
+  };
+}
+
 export function isStandaloneWebApp(): boolean {
   return (
     window.matchMedia("(display-mode: standalone)").matches ||

@@ -5,6 +5,7 @@ import type {
   ExplorerChromeSurfaceId,
   ExplorerChromeZoneId,
 } from "../../config/explorerChromeLayouts";
+import { resolveValidZoneForSurface } from "../../config/explorerChromeLayouts";
 
 type ExplorerCustomizePointerPoint = {
   x: number;
@@ -682,6 +683,32 @@ export function resolveExplorerCustomizeDropTargetFromPoint(
       activeExplorerCustomizePointerSession?.sourceKind === "placed"
         ? activeExplorerCustomizePointerSession.controlId
         : null;
+
+    const freeformShelfElement =
+      ambientSurfaceElement.querySelector<HTMLElement>(
+        "[data-zbrush-freeform-shelf]",
+      ) ||
+      hoveredElement?.closest<HTMLElement>("[data-zbrush-freeform-shelf]");
+    if (freeformShelfElement) {
+      const shelfRect = freeformShelfElement.getBoundingClientRect();
+      const dropX = Math.max(6, Math.round(point.x - shelfRect.left));
+      const dropY = Math.max(2, Math.round(point.y - shelfRect.top));
+      return {
+        dropTarget: {
+          surfaceId: surfaceId ?? "explorerToolbar",
+          zoneId: resolveValidZoneForSurface(
+            surfaceId ?? "explorerToolbar",
+            "primaryStart",
+          ),
+          targetIndex: 0,
+          offsetPx: 0,
+          bandId: "primary",
+          anchorX: dropX,
+          anchorY: dropY,
+        },
+        removeTargetActive: false,
+      };
+    }
     const ambientLayoutDynamicsBandTarget =
       resolveAmbientLayoutDynamicsBandTargetInSurface(
         ambientSurfaceElement,

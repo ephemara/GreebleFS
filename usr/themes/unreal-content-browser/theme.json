@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "id": "unreal-content-browser",
+  "name": "Unreal Content Browser",
+  "description": "UE5 Content Browser 1:1 for the dock — sources rail, dense content grid, live preview pane, filter bar chrome. Pair with the Content Browser dock presentation.",
+  "author": "GreebleFS",
+  "tags": [
+    "dock",
+    "content-browser",
+    "ue5",
+    "dark",
+    "dense"
+  ],
+  "extends": "pilot-dark",
+  "themeRecipeId": "unreal-content-browser",
+  "topBarId": "dock-control-strip",
+  "explorerLayoutId": "balanced"
+}

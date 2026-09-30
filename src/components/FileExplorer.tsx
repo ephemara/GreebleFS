@@ -21969,11 +21969,6 @@ function FileExplorerImpl({
         targetIndex: args.target.targetIndex,
         targetOffsetPx: args.target.offsetPx,
       });
-      const targetUsesLayoutDynamics =
-        args.sourceKind === "catalog" &&
-        isLayoutDynamicsSurfaceId(args.target.surfaceId) &&
-        args.target.bandId != null &&
-        args.target.anchorX != null;
       const nextEntries = movedSnapshot.entries.map((entry) => {
         if (entry.controlId !== args.controlId) {
           return entry;
@@ -21985,19 +21980,32 @@ function FileExplorerImpl({
           widthPx: args.catalogPreviewPlacement?.widthPx ?? entry.widthPx,
           showLabel: args.catalogPreviewPlacement?.showLabel ?? entry.showLabel,
           showIcon: args.catalogPreviewPlacement?.showIcon ?? entry.showIcon,
-          ...(targetUsesLayoutDynamics &&
-          args.target.bandId &&
-          args.target.anchorX != null
-            ? {
-                bandId: args.target.bandId,
-                anchorX: args.target.anchorX,
-                anchorY: args.target.anchorY,
-                offsetPx: 0,
-                hidden: false,
-              }
-            : null),
+          anchorX: args.target.anchorX ?? entry.anchorX,
+          anchorY: args.target.anchorY ?? entry.anchorY,
+          bandId: args.target.bandId ?? entry.bandId,
+          offsetPx: 0,
+          hidden: false,
         };
       });
+      const alreadyHasEntry = nextEntries.some(
+        (entry) => entry.controlId === args.controlId,
+      );
+      if (!alreadyHasEntry) {
+        nextEntries.push({
+          controlId: args.controlId,
+          surfaceId: args.target.surfaceId,
+          zone: args.target.zoneId,
+          order: (nextEntries.length + 1) * 10,
+          bandId: args.target.bandId ?? "primary",
+          anchorX: args.target.anchorX ?? 20,
+          anchorY: args.target.anchorY ?? 4,
+          sizeVariant: args.catalogPreviewPlacement?.sizeVariant ?? "regular",
+          widthPx: args.catalogPreviewPlacement?.widthPx ?? 32,
+          showLabel: args.catalogPreviewPlacement?.showLabel ?? true,
+          showIcon: args.catalogPreviewPlacement?.showIcon ?? true,
+          hidden: false,
+        });
+      }
       const hiddenEntries = liveChromeEditSession.draftOverride.entries.filter(
         (entry) => entry.hidden && entry.controlId !== args.controlId,
       );

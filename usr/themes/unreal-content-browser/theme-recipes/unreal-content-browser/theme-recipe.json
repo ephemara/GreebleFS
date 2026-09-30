@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "unreal-content-browser",
+  "name": "Unreal Content Browser",
+  "description": "Tight square chrome, sources rail, dense content grid, and a live preview pane — the UE5 Content Browser recipe for dock mode.",
+  "author": "GreebleFS",
+  "tags": [
+    "dock",
+    "content-browser",
+    "ue5",
+    "dense"
+  ],
+  "dock": {
+    "workbench": {
+      "preset": "channel-grid",
+      "topBarStyle": "minimal",
+      "panelStyle": "solid",
+      "tabStyle": "segment",
+      "metrics": {
+        "chromeHeight": 30,
+        "controlRadius": 6,
+        "panelRadius": 8,
+        "shellInset": 6,
+        "pagePadding": 8,
+        "panelGap": 8
+      }
+    },
+    "explorer": {
+      "preset": "workbench",
+      "toolbarStyle": "minimal",
+      "statusBarStyle": "solid",
+      "metrics": {
+        "railWidth": 232,
+        "previewWidth": 384,
+        "chromeInset": 6,
+        "controlRadius": 6,
+        "panelRadius": 8,
+        "iconScale": 1.0,
+        "hoverLiftPx": 0
+      }
+    }
+  }
+}

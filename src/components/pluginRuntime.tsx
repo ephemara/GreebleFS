@@ -11,6 +11,7 @@ import {
   GREEBLE_API_VERSION_STRING,
   GREEBLE_RUNTIME_MODULE,
 } from '../api/greeble';
+import { defineGreebleExtension } from '../runtime/greebleFactory';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { PremiumSlider } from './PremiumSlider';
 import type { OverlayThemeDefinition } from '../config/appearance';
@@ -893,6 +894,7 @@ function executePluginModuleGraph(
       GREEBLE_API_VERSION,
       GREEBLE_API_VERSION_STRING,
       GREEBLE_RUNTIME_MODULE,
+      defineGreebleExtension,
     },
   };
 

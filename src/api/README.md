@@ -156,8 +156,10 @@ hot reload is a clean replace, not an accumulation.
 - [x] `greeblefs` virtual module in both transpiler import maps
   (`pluginRuntime`, `themeRendererRuntime`)
 - [x] Theme domain backed by a real renderer path (`greebleThemeBridge`, runtime-tested)
-- [ ] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs
+- [x] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs
+  (`greeblePluginShim`, tested: panel + lane + slot + workflow adopt, idempotent re-adopt, withdraw)
 - [x] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
   (`greebleLegacyShim`, runtime-tested against the real toon pack)
-- [ ] Remaining domains (view-mode, preview-lane, …) backed by real renderers
+- [x] `previewLane` + `viewMode` backed by descriptor bridges (`greebleLaneBridge`: registry → legacy lane / view-mode definitions + reactive hooks; App/registry merge still TODO)
+- [ ] Remaining domains (explorer-widget, activity-lane, …) backed by real renderers
 - [ ] Rust watcher re-runs factories on file change (hot reload end to end)

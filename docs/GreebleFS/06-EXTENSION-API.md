@@ -189,8 +189,9 @@ harness.dispose();   // releases handles + sweeps the owner's contributions
 | Contract, registries, event spine, bus, host binding | ✅ Done (`src/api/*`) |
 | Unit tests (`src/test/greebleApi.test.ts`, 14 tests) | ✅ Passing |
 | `greeblefs` virtual module in both transpiler import maps (`pluginRuntime`, `themeRendererRuntime`) | ✅ Done — TSX can import the contract at runtime |
-| Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs | ⬜ TODO |
+| Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs | ✅ Done (`greeblePluginShim`: loaded packs adopt as panel + preview-lane + settings-slot + workflow, live host providers from App, withdraw on unload, `greeblePluginShim.test.ts`) |
 | Theme domain backed by a real renderer path (`greebleThemeBridge`: registry → definitions → ThemeCatalog/apply/CSS) | ✅ Done + runtime-tested (`greebleThemeBridge.test.ts`) |
 | Legacy `defineThemeRenderer` TSX shimmed onto `registerShell` | ✅ Done (`greebleLegacyShim`: loaded packs adopt as API shells, live host from App, withdraw on unload) |
-| Remaining domains (view-mode, preview-lane, …) backed by real renderers | ⬜ TODO |
+| `previewLane` + `viewMode` backed by descriptor bridges (`greebleLaneBridge`: registry → legacy lane / view-mode definitions + reactive hooks; App/registry merge still TODO) | ✅ Bridge done, wiring TODO |
+| Remaining domains (explorer-widget, activity-lane, …) backed by real renderers | ⬜ TODO |
 | Rust watcher re-runs factories on file change (hot reload end-to-end) | ⬜ TODO |

@@ -158,7 +158,8 @@ Kain-language extensions: `kain-image-converter`,
   (`greebleThemeBridge`: registry → definitions → catalog/apply/CSS).
 - [x] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
   (`greebleLegacyShim` + App adoption effect + live host provider).
-- [ ] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs.
+- [x] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs
+  (`greeblePluginShim` + App adoption effect + live host providers).
 - [ ] Rust watcher re-runs factories on file change (hot reload end to end).
 
 `extension.toml` packs and `theme.json` playlists run on their legacy

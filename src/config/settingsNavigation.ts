@@ -200,6 +200,17 @@ export const settingsSectionCatalog = [
     order: 100,
   },
   {
+    key: 'appearance-dock',
+    label: 'Dock Appearance',
+    subtitle: 'Dedicated dock theme override, dock-ready catalog, and UE5-grade chrome.',
+    keywords: ['appearance', 'dock appearance', 'dock theme', 'dock override', 'content browser', 'ue5'],
+    overviewSummary: 'Dock theme override.',
+    featuredInOverview: true,
+    archetype: 'catalog-inspector',
+    shell: { inspector: true, preferredContentDensity: 'comfortable' },
+    order: 105,
+  },
+  {
     key: 'top-bars',
     label: 'Top Bars',
     subtitle: 'Standalone shell chrome workflows that can follow theme defaults or stay pinned independently.',
@@ -359,7 +370,7 @@ export const settingsSectionCategoryCatalog = [
     label: 'Interface',
     description: 'Main workbench, explorer, terminal, and menu workflows.',
     order: 20,
-    sectionKeys: ['appearance', 'explorer', 'layouts', 'terminal', 'dock', 'context-menus', 'home'],
+    sectionKeys: ['appearance', 'appearance-dock', 'explorer', 'layouts', 'terminal', 'dock', 'context-menus', 'home'],
   },
   {
     key: 'pipelines',

@@ -401,6 +401,32 @@ function isValidZoneForSurface(
   return explorerChromeZoneSurfaceMap.get(zone)?.includes(surfaceId) ?? false;
 }
 
+export function resolveValidZoneForSurface(
+  surfaceId: ExplorerChromeSurfaceId,
+  requestedZone?: string,
+): ExplorerChromeZoneId {
+  const surfaceDef = explorerChromeSurfaceDefinitions[surfaceId];
+  if (!surfaceDef || surfaceDef.rows.length === 0) {
+    return "primaryStart";
+  }
+  const allZones = surfaceDef.rows.flatMap((r) => r.zones);
+  if (requestedZone && (allZones as string[]).includes(requestedZone)) {
+    return requestedZone as ExplorerChromeZoneId;
+  }
+  if (requestedZone?.toLowerCase().includes("end")) {
+    return (
+      allZones.find((z) => z.toLowerCase().includes("end")) ??
+      allZones[allZones.length - 1]!
+    );
+  }
+  if (requestedZone?.toLowerCase().includes("center")) {
+    return (
+      allZones.find((z) => z.toLowerCase().includes("center")) ?? allZones[0]!
+    );
+  }
+  return allZones[0]!;
+}
+
 function asFiniteInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value)
     ? Math.round(value)
@@ -876,21 +902,21 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
     }
   }
 
-  const targetKey = `${input.targetSurfaceId}:${input.targetZoneId}`;
-  const targetControls = placementsBySurfaceAndZone.get(targetKey);
-  if (
-    !targetControls ||
-    !isValidZoneForSurface(input.targetSurfaceId, input.targetZoneId)
-  ) {
-    return createExplorerChromeOverrideSnapshotFromResolvedSurfaces(
-      input.surfaces,
-    );
+  const resolvedZone = resolveValidZoneForSurface(
+    input.targetSurfaceId,
+    input.targetZoneId,
+  );
+  const targetKey = `${input.targetSurfaceId}:${resolvedZone}`;
+  let targetControls = placementsBySurfaceAndZone.get(targetKey);
+  if (!targetControls) {
+    targetControls = [];
+    placementsBySurfaceAndZone.set(targetKey, targetControls);
   }
 
   const fallbackPlacement = movingPlacement ?? {
     controlId: input.controlId,
     surfaceId: input.targetSurfaceId,
-    zone: input.targetZoneId,
+    zone: resolvedZone,
     order: 10,
     offsetPx: 0,
     hidden: false,
@@ -898,7 +924,7 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
   const nextPlacement: ExplorerChromeResolvedControlPlacement = {
     ...fallbackPlacement,
     surfaceId: input.targetSurfaceId,
-    zone: input.targetZoneId,
+    zone: resolvedZone,
     offsetPx: normalizedTargetOffsetPx ?? fallbackPlacement.offsetPx ?? 0,
   };
   const insertionIndex = Math.min(normalizedTargetIndex, targetControls.length);

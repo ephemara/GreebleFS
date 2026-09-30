@@ -106,4 +106,44 @@ describe("ZBrushFreeformShelf (Absolute 2D Placement)", () => {
     fireEvent.click(removeButton);
     expect(onRemove).toHaveBeenCalledWith("refresh");
   });
+
+  it("supports multi-row placement and expands shelf height in customize mode", () => {
+    const multiRowControls: ExplorerChromeResolvedControlPlacement[] = [
+      {
+        controlId: "refresh",
+        surfaceId: "explorerToolbar",
+        zone: "primaryStart",
+        order: 10,
+        anchorX: 10,
+        anchorY: 4,
+        widthPx: 32,
+      },
+      {
+        controlId: "terminalDrawerToggle",
+        surfaceId: "explorerToolbar",
+        zone: "primaryStart",
+        order: 20,
+        anchorX: 10,
+        anchorY: 44,
+        widthPx: 32,
+      },
+    ];
+
+    const { container } = render(
+      <ZBrushFreeformShelf
+        surfaceId="explorerToolbar"
+        rowId="primary"
+        controls={multiRowControls}
+        editModeActive={true}
+        selectedControlId={null}
+        renderControl={(p) => <span>{p.controlId}</span>}
+      />,
+    );
+
+    const shelf = container.querySelector(
+      "[data-zbrush-freeform-shelf='explorerToolbar:primary']",
+    ) as HTMLElement;
+    expect(shelf).not.toBeNull();
+    expect(parseInt(shelf.style.minHeight, 10)).toBeGreaterThanOrEqual(88);
+  });
 });

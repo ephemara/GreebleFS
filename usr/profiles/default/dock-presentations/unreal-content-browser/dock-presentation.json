@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "unreal-content-browser-dock-presentations",
+  "name": "Unreal Content Browser Dock Presentations",
+  "description": "UE5 Content Browser 1:1 dock presentation — bottom-edge content-browser strip with sources rail, dense grid, and live pane preview. Pair with the Unreal Content Browser theme.",
+  "tags": [
+    "dock",
+    "presentation",
+    "content-browser",
+    "ue5"
+  ],
+  "dockPresentations": [
+    {
+      "id": "content-browser",
+      "name": "Content Browser",
+      "description": "Bottom-edge UE5-style content browser: sources rail left, dense content grid center, live preview pane right. Ctrl+Space in, Esc out.",
+      "defaultPlacement": "bottom-edge",
+      "allowedPlacements": [
+        "top-edge",
+        "bottom-edge",
+        "floating"
+      ],
+      "defaultSize": {
+        "width": 1600,
+        "height": 520
+      },
+      "minSize": {
+        "width": 720,
+        "height": 320
+      },
+      "defaultTerminalGrid": {
+        "rows": 18,
+        "columns": 176
+      },
+      "topBarId": "dock-control-strip",
+      "preview": {
+        "enabled": true,
+        "splitMode": "pane"
+      },
+      "tags": [
+        "content-browser",
+        "ue5",
+        "explorer-first",
+        "preview-pane"
+      ]
+    }
+  ]
+}

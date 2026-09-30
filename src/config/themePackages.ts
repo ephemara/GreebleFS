@@ -53,6 +53,10 @@ import {
 import { joinPlatformPath } from './platform';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import {
+  loadGreebleFactoryFromSource,
+  runGreebleFactoryOwner,
+} from '../runtime/greebleFactory';
+import {
   loadThemeAppearancePacks,
   loadThemeAppearancePacksFromDirectoryEntries,
   loadThemeEnginePacks,
@@ -653,6 +657,43 @@ async function loadChildDirectoryEntries(directoryPath: string): Promise<FileEnt
     return await listLocalDirectoryEntriesFast(directoryPath);
   } catch {
     return [];
+  }
+}
+
+/** API-native theme entry: `theme.greeble.tsx` factory run through a harness. */
+export const GREEBLE_THEME_FACTORY_FILENAME = 'theme.greeble.tsx';
+
+/**
+ * If a theme directory ships a factory module, read + run it (owner = dir
+ * name). The factory registers via the harness (usually registerTheme),
+ * which the bridge picks up — no theme.json required. Never throws;
+ * failures surface as warnings so one bad pack can't break the catalog.
+ */
+export async function runThemeFactoryModuleIfPresent(
+  directoryPath: string,
+  directoryName: string,
+): Promise<string[]> {
+  const factoryPath = joinPlatformPath(directoryPath, GREEBLE_THEME_FACTORY_FILENAME);
+  let source: string;
+  try {
+    source = await commands.fsReadTextFile(factoryPath).then(unwrapTauriResult);
+  } catch {
+    return [];
+  }
+  try {
+    const factory = await loadGreebleFactoryFromSource(source, factoryPath);
+    if (!factory) {
+      return [`${directoryName}: ${GREEBLE_THEME_FACTORY_FILENAME} is not a marked factory module`];
+    }
+    await runGreebleFactoryOwner(source, factoryPath, {
+      id: directoryName,
+      name: directoryName,
+      entryPath: factoryPath,
+      rootDir: directoryPath,
+    });
+    return [];
+  } catch (error) {
+    return [`${directoryName}: factory ${GREEBLE_THEME_FACTORY_FILENAME}: ${String(error)}`];
   }
 }
 
@@ -1575,6 +1616,14 @@ export async function loadThemePackagesFromDirectoryEntries(
         }
 
         const manifest = await readBundleManifest(normalizedEntry.path);
+        // API-native packs run first (independent of theme.json); a directory
+        // may ship both during migration. Failures are warnings, never fatal.
+        manifestWarnings.push(
+          ...(await runThemeFactoryModuleIfPresent(
+            normalizedEntry.path,
+            normalizedEntry.name,
+          ).catch(error => [String(error)])),
+        );
         if (manifest) {
           bundleRecords.push({
             directoryName: normalizedEntry.name,

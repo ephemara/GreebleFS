@@ -272,6 +272,7 @@ import {
   useSettingsRowDescriptionsVisible,
 } from "./settings/SettingsPrimitives";
 import { AppearanceSettingsSection } from "./settings/sections/AppearanceSettingsSection";
+import { AppearanceDockSettingsSection } from "./settings/sections/AppearanceDockSettingsSection";
 import { IconSettingsSection } from "./settings/sections/IconSettingsSection";
 import { SystemSettingsSection } from "./settings/sections/SystemSettingsSection";
 import { KainUiSettingsSection } from "./settings/sections/KainUiSettingsSection";
@@ -9831,6 +9832,21 @@ export function SettingsPage({
             onUpdateAppearance={updateAppearance}
             onUpdateThemePalette={updateThemePalette}
             createThemeCardMotion={bindSettingsCardMotion}
+          />
+        )}
+        {activeSection === "appearance-dock" && (
+          <AppearanceDockSettingsSection
+            appearance={appearance}
+            themePackageLookup={themePackageLookup}
+            themePackagesCount={themePackages.length}
+            appAppearanceName={appAppearance.baseTheme.name}
+            dockAppearanceName={dockAppearance.baseTheme.name}
+            activeDockThemeId={settings.appearance.activeDockThemeId}
+            dockThemeMode={settings.appearance.dockThemeMode}
+            accent={accent}
+            onApplyDockThemeSelection={applyDockThemeSelection}
+            onUpdateAppearance={updateAppearance}
+            onOpenDockSettings={() => setActiveSection("dock")}
           />
         )}
 

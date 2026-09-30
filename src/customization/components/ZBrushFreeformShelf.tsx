@@ -116,9 +116,17 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
     return maxX;
   }, [resolvedPositions]);
 
+  const contentHeight = useMemo(() => {
+    let maxY = 34;
+    for (const [_, pos] of resolvedPositions.entries()) {
+      maxY = Math.max(maxY, pos.y + DEFAULT_ITEM_HEIGHT + 6);
+    }
+    return editModeActive ? Math.max(88, maxY + 24) : Math.max(38, maxY);
+  }, [resolvedPositions, editModeActive]);
+
   const handleDragStop = useCallback(
     (controlId: ExplorerChromeControlId, x: number, y: number) => {
-      if (y > 60 || y < -30) {
+      if (y > contentHeight + 45 || y < -60) {
         if (onRemoveControl) {
           onRemoveControl(controlId);
           return;
@@ -130,7 +138,7 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
         anchorY: Math.round(y),
       });
     },
-    [onRemoveControl, onUpdatePlacement],
+    [contentHeight, onRemoveControl, onUpdatePlacement],
   );
 
   const handleResizeStop = useCallback(
@@ -199,14 +207,18 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
         position: "relative",
         width: "100%",
         minWidth: contentWidth,
-        height: 38,
-        minHeight: 38,
+        height: contentHeight,
+        minHeight: contentHeight,
         overflowX: editModeActive ? "auto" : "visible",
         overflowY: "visible",
         background: editModeActive
-          ? "rgba(0, 0, 0, 0.15)"
+          ? "rgba(0, 0, 0, 0.18)"
           : "transparent",
         borderRadius: 6,
+        border: editModeActive
+          ? "1px dashed rgba(255, 255, 255, 0.15)"
+          : "none",
+        transition: "height 120ms ease",
         ...style,
       }}
     >

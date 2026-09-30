@@ -2,9 +2,14 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 
 import type { MobileLayoutSettings } from "../src/config/mobileLayout";
-import type { MobileTabId } from "./mobileShared";
+import {
+  normalizeMobileFormFactorOverride,
+  type MobileFormFactorOverride,
+  type MobileTabId,
+} from "./mobileShared";
 
 const MOBILE_PATH_MEMORY_STORAGE_KEY = "greeblefs.mobile.pathMemory.v1";
+const MOBILE_FORM_FACTOR_STORAGE_KEY = "greeblefs.mobile.formFactor.v1";
 const MOBILE_PINNED_PATH_LIMIT = 12;
 const MOBILE_RECENT_PATH_LIMIT = 10;
 
@@ -41,6 +46,7 @@ interface MobileStoreState {
   recentPaths: string[];
   transfers: MobileTransferEntry[];
   layoutOverrides: Partial<MobileLayoutSettings>;
+  formFactorOverride: MobileFormFactorOverride;
   setActiveTab: (tab: MobileTabId) => void;
   setExplorerPath: (path: string) => void;
   pinPath: (path: string) => void;
@@ -49,6 +55,7 @@ interface MobileStoreState {
   clearRecentPaths: () => void;
   patchLayoutOverrides: (patch: Partial<MobileLayoutSettings>) => void;
   resetLayoutOverrides: () => void;
+  setFormFactorOverride: (override: MobileFormFactorOverride) => void;
   createTransfer: (
     draft: Omit<MobileTransferEntry, "id" | "createdAt" | "updatedAt">,
   ) => string;
@@ -123,6 +130,28 @@ function writeMobilePathMemorySnapshot(snapshot: MobilePathMemorySnapshot): void
 
 const initialPathMemory = readMobilePathMemorySnapshot();
 
+function readMobileFormFactorOverride(): MobileFormFactorOverride {
+  if (typeof window === "undefined") {
+    return "auto";
+  }
+  try {
+    return normalizeMobileFormFactorOverride(window.localStorage.getItem(MOBILE_FORM_FACTOR_STORAGE_KEY));
+  } catch {
+    return "auto";
+  }
+}
+
+function writeMobileFormFactorOverride(override: MobileFormFactorOverride): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(MOBILE_FORM_FACTOR_STORAGE_KEY, override);
+  } catch {
+    // Best-effort only; private browsing must not break the share shell.
+  }
+}
+
 export const useMobileStore = create<MobileStoreState>((set) => ({
   activeTab: "explorer",
   explorerPath: "",
@@ -130,6 +159,7 @@ export const useMobileStore = create<MobileStoreState>((set) => ({
   recentPaths: initialPathMemory.recentPaths,
   transfers: [],
   layoutOverrides: {},
+  formFactorOverride: readMobileFormFactorOverride(),
   setActiveTab: (tab) => {
     set({ activeTab: tab });
   },
@@ -204,6 +234,11 @@ export const useMobileStore = create<MobileStoreState>((set) => ({
   },
   resetLayoutOverrides: () => {
     set({ layoutOverrides: {} });
+  },
+  setFormFactorOverride: (override) => {
+    const normalized = normalizeMobileFormFactorOverride(override);
+    writeMobileFormFactorOverride(normalized);
+    set({ formFactorOverride: normalized });
   },
   createTransfer: (draft) => {
     const transferId = nanoid();

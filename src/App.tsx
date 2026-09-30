@@ -334,6 +334,7 @@ import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { useGreebleApiThemeDefinitions } from './runtime/greebleThemeBridge';
 import { useUpdateAutoCheck } from './runtime/useUpdateAutoCheck';
+import { startGreebleContentWatch } from './runtime/greebleWatch';
 import { UpdateBanner } from './components/UpdateBanner';
 import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
@@ -3939,13 +3940,29 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       if (dockStore.placementMode === 'floating') {
         isFreefloatingRef.current = true;
         runtimeOverlayBoundsRef.current = currentBounds;
-        useSettingsStore.getState().updateDock({
-          edgeSize: nextOverlayHeight,
-          edgeWidth: nextOverlayWidth,
-          defaultTerminalRows: nextGrid.rows,
-          defaultTerminalColumns: nextGrid.columns,
-          floatingBounds: currentBounds,
-        });
+        const prevFloating = dockStore.floatingBounds;
+        const floatingSizeChanged = !prevFloating
+          || Math.abs(prevFloating.width - currentBounds.width) > 2
+          || Math.abs(prevFloating.height - currentBounds.height) > 2;
+        const dockSizeChanged = nextOverlayHeight !== dockStore.edgeSize
+          || nextOverlayWidth !== dockStore.edgeWidth
+          || nextGrid.rows !== dockStore.defaultTerminalRows
+          || nextGrid.columns !== dockStore.defaultTerminalColumns;
+        // Guard: onResized fires per-pixel on Windows. Without this the
+        // floating path writes to the store on every pixel (including x/y
+        // jitter from outerPosition), which fans out to dock + terminal
+        // subscribers and trips React #185. Runtime ref + telemetry stay
+        // immediate for smooth feedback; persisted store only on real change.
+        // Position ownership stays with onMoved — resize owns size.
+        if (dockSizeChanged || floatingSizeChanged) {
+          useSettingsStore.getState().updateDock({
+            edgeSize: nextOverlayHeight,
+            edgeWidth: nextOverlayWidth,
+            defaultTerminalRows: nextGrid.rows,
+            defaultTerminalColumns: nextGrid.columns,
+            ...(floatingSizeChanged ? { floatingBounds: currentBounds } : {}),
+          });
+        }
         return;
       }
 
@@ -4472,6 +4489,27 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       themePackagesRefreshInFlightRef.current = false;
     }
   }, []);
+
+  // Factory hot reload: backend watches the themes root (single slot —
+  // main window owns it). Tracked factory owners re-run on change, then
+  // the package catalog refreshes so bridge themes update live.
+  useEffect(() => {
+    if (!isTauri() || isDedicatedSecondaryWindowHost) {
+      return;
+    }
+    let stop: (() => void) | null = null;
+    void startGreebleContentWatch({
+      directory: themeSystemConfig.themesDirectory,
+      onChanged: () => {
+        void refreshThemePackages(true);
+      },
+    }).then(stopWatch => {
+      stop = stopWatch;
+    }).catch(() => undefined);
+    return () => {
+      stop?.();
+    };
+  }, [isDedicatedSecondaryWindowHost, refreshThemePackages]);
 
   const refreshTopBarPackages = useCallback(async (force = false) => {
     if (!isTauri()) {
