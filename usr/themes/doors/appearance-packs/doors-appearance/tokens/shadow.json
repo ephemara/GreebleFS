@@ -1,0 +1,13 @@
+{
+  "effects": {
+    "shadow": "0 18px 42px rgba(0, 0, 0, 0.34)",
+    "overlayShadow": "0 0 0 1px rgba(255,255,255,0.02), 0 28px 62px rgba(0, 0, 0, 0.46)"
+  },
+  "shellShadow": "0 20px 54px rgba(0, 0, 0, 0.4)",
+  "toolbarShadow": "0 10px 24px rgba(0, 0, 0, 0.24)",
+  "modalShadow": "0 28px 60px rgba(0, 0, 0, 0.42)",
+  "contextMenuShadow": "0 16px 40px rgba(0, 0, 0, 0.38)",
+  "popupShadow": "0 12px 28px rgba(0, 0, 0, 0.32)",
+  "popupShadowLarge": "0 20px 44px rgba(0, 0, 0, 0.42)",
+  "hudShadow": "0 14px 28px rgba(0, 0, 0, 0.3)"
+}

@@ -1,0 +1,6 @@
+{
+  "chromeBorder": "rgba(255, 255, 255, 0.08)",
+  "panelBorder": "rgba(255, 255, 255, 0.08)",
+  "accentBorder": "rgba(118, 185, 255, 0.38)",
+  "dangerSoftBorder": "rgba(255, 138, 138, 0.34)"
+}

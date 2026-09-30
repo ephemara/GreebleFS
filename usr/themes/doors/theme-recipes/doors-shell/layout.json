@@ -1,0 +1,15 @@
+{
+  "layoutPrimitives": [
+    {
+      "id": "doors-split-shell",
+      "name": "Doors Split Shell",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.7,
+        "gap": 6,
+        "side": "left"
+      }
+    }
+  ],
+  "defaultLayoutPrimitiveId": "doors-split-shell"
+}

@@ -1,0 +1,31 @@
+{
+  "animationProfiles": [
+    {
+      "id": "doors-snap",
+      "name": "Doors Snap",
+      "durationMs": 170,
+      "easing": "cubic-bezier(0.2, 0.8, 0.2, 1)",
+      "intensity": 34
+    }
+  ],
+  "iconPacks": [
+    {
+      "id": "doors-icons",
+      "name": "Doors Icons",
+      "style": "skeuomorphic"
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "doors-desktop",
+      "label": "Doors Desktop",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/doors-desktop.tsx",
+      "supportsLiveSwap": true,
+      "description": "Desktop-window-manager render style for Windows Explorer-like shells."
+    }
+  ],
+  "defaultAnimationProfileId": "doors-snap",
+  "defaultIconPackId": "doors-icons",
+  "defaultRenderStyleId": "doors-desktop"
+}

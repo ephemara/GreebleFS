@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "doors-shell",
+  "name": "Doors Shell",
+  "description": "Split-file desktop-window-manager recipe pack for the Doors bundle.",
+  "author": "Codex",
+  "tags": [
+    "windows",
+    "desktop",
+    "explorer"
+  ]
+}

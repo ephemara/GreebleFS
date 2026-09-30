@@ -1,0 +1,15 @@
+{
+  "fonts": {
+    "ui": "\"Fredoka\", \"Baloo 2\", \"Avenir Next Rounded\", \"Segoe UI\", sans-serif",
+    "mono": "\"Fira Code\", \"JetBrains Mono\", monospace"
+  },
+  "tokens": {
+    "chromeLabelSize": 10,
+    "chromeMetaSize": 8,
+    "tabLabelSize": 12,
+    "pageTitleSize": 18,
+    "pageBodySize": 12,
+    "badgeSize": 9,
+    "labelLetterSpacing": "0.11em"
+  }
+}

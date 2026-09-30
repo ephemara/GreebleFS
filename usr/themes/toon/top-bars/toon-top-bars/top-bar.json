@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "id": "toon-top-bars",
+  "name": "Toon Top Bars",
+  "description": "Playful floating chrome presets for the Toon bundle.",
+  "tags": [
+    "toon",
+    "floating",
+    "launcher"
+  ],
+  "topBars": [
+    {
+      "id": "toon-marquee",
+      "name": "Toon Marquee",
+      "description": "Launcher-heavy chrome with a sticker-strip silhouette and summary navigation.",
+      "topBarStyle": "floating",
+      "tabStyle": "segment",
+      "leadingControls": [
+        "panel-menu",
+        "command-palette",
+        "layout-cycle",
+        "surface-controls"
+      ],
+      "navigationShortcuts": [
+        "explorer-shortcut",
+        "settings-shortcut"
+      ],
+      "trailingControls": [
+        "window-mode",
+        "overlay-anchor",
+        "mobile-share",
+        "zen-mode",
+        "shortcut-badge",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "summary",
+      "tags": [
+        "default",
+        "summary",
+        "sticker"
+      ]
+    },
+    {
+      "id": "toon-ribbon",
+      "name": "Toon Ribbon",
+      "description": "Tighter chrome that keeps the explorer close while retaining the playful shell language.",
+      "topBarStyle": "minimal",
+      "tabStyle": "capsule",
+      "leadingControls": [
+        "window-mode",
+        "layout-cycle",
+        "panel-menu"
+      ],
+      "navigationShortcuts": [
+        "explorer-shortcut"
+      ],
+      "trailingControls": [
+        "command-palette",
+        "overlay-anchor",
+        "shell-mode",
+        "close-overlay"
+      ],
+      "navigationMode": "auto",
+      "tags": [
+        "compact",
+        "focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "navigationPatterns": [
+    {
+      "id": "andromeda-tabs",
+      "name": "Andromeda Tabs",
+      "kind": "tabbed",
+      "axis": "horizontal",
+      "props": {
+        "directionalNavigation": true,
+        "wrap": true,
+        "breadcrumb": true,
+        "focusRing": "accent"
+      }
+    },
+    {
+      "id": "andromeda-palette",
+      "name": "Andromeda Palette",
+      "kind": "palette",
+      "axis": "horizontal",
+      "props": {
+        "searchFirst": true,
+        "previewBias": "right"
+      }
+    }
+  ],
+  "defaultNavigationPatternId": "andromeda-tabs"
+}

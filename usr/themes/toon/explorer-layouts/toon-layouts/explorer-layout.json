@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "id": "toon-layouts",
+  "name": "Toon Layouts",
+  "description": "Theme-scoped explorer layouts that stress custom metrics and chrome snapshots for the Toon bundle.",
+  "ownership": "shipped",
+  "tags": [
+    "toon",
+    "explorer-layouts",
+    "stress-test"
+  ],
+  "layouts": [
+    {
+      "id": "storybook",
+      "name": "Storybook",
+      "description": "Preview-heavy pastel layout with a wide storyboard lane and visible source rail.",
+      "sortOrder": 5,
+      "tags": [
+        "default",
+        "preview",
+        "wide"
+      ],
+      "modeProfileId": "inspector",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 274,
+        "previewWidthPx": 544,
+        "actionsWidthPx": 360,
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "pane"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 96,
+        "explorerToolbarHeightPx": 50,
+        "railHeaderHeightPx": 42,
+        "previewHeaderHeightPx": 42,
+        "explorerStatusBarHeightPx": 34
+      },
+      "chromeSnapshot": {
+        "entries": [
+          { "controlId": "navigateBack", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 10 },
+          { "controlId": "navigateForward", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 20 },
+          { "controlId": "navigateUp", "surfaceId": "explorerToolbar", "zone": "primaryStart", "order": 30 },
+          { "controlId": "addressBar", "surfaceId": "explorerToolbar", "zone": "primaryCenter", "order": 10, "widthPx": 760, "showIcon": false, "showLabel": true },
+          { "controlId": "togglePreview", "surfaceId": "explorerToolbar", "zone": "primaryEnd", "order": 30 },
+          { "controlId": "actionsPaneToggle", "surfaceId": "explorerToolbar", "zone": "primaryEnd", "order": 40 },
+          { "controlId": "refresh", "surfaceId": "explorerToolbar", "zone": "primaryEnd", "order": 50 },
+          { "controlId": "workspacePaneActionsMenu", "surfaceId": "workspaceHeader", "zone": "end", "order": 10 },
+          { "controlId": "workspacePaneCounts", "surfaceId": "workspaceHeader", "zone": "end", "order": 20 },
+          { "controlId": "previewIdentity", "surfaceId": "previewHeader", "zone": "start", "order": 10 },
+          { "controlId": "previewModeToggle", "surfaceId": "previewHeader", "zone": "end", "order": 10 },
+          { "controlId": "previewTerminalToggle", "surfaceId": "previewHeader", "zone": "end", "order": 20 },
+          { "controlId": "previewClose", "surfaceId": "previewHeader", "zone": "end", "order": 30 },
+          { "controlId": "statusItemCount", "surfaceId": "explorerStatusBar", "zone": "start", "order": 10 },
+          { "controlId": "statusTaskBadge", "surfaceId": "explorerStatusBar", "zone": "end", "order": 10 },
+          { "controlId": "terminalDrawerToggle", "surfaceId": "explorerStatusBar", "zone": "end", "order": 15 },
+          { "controlId": "statusViewToggles", "surfaceId": "explorerStatusBar", "zone": "end", "order": 20 }
+        ]
+      },
+      "basedOnLayoutId": "inspector"
+    },
+    {
+      "id": "sticker-sheet",
+      "name": "Sticker Sheet",
+      "description": "Large-icon browsing with lighter chrome and an inline preview lane.",
+      "sortOrder": 15,
+      "tags": [
+        "icons",
+        "sheet"
+      ],
+      "modeProfileId": "navigator",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": true,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 246,
+        "previewWidthPx": 420,
+        "actionsWidthPx": 332,
+        "sourcesVisible": true,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 90,
+        "explorerToolbarHeightPx": 48,
+        "railHeaderHeightPx": 40,
+        "previewHeaderHeightPx": 40,
+        "explorerStatusBarHeightPx": 32
+      },
+      "basedOnLayoutId": "navigator"
+    },
+    {
+      "id": "focus-board",
+      "name": "Focus Board",
+      "description": "Minimal browsing chrome with the source rail hidden until it is intentionally recalled.",
+      "sortOrder": 25,
+      "tags": [
+        "focus",
+        "minimal"
+      ],
+      "modeProfileId": "focus",
+      "workspaceLayoutMode": "single",
+      "tabStripVisible": false,
+      "tabStripSurfaceId": "explorerTopbar",
+      "paneMetrics": {
+        "sidebarWidthPx": 196,
+        "previewWidthPx": 380,
+        "actionsWidthPx": 320,
+        "sourcesVisible": false,
+        "previewEnabled": true,
+        "previewSplitMode": "inline"
+      },
+      "bandMetrics": {
+        "unifiedHeaderHeightPx": 74,
+        "explorerToolbarHeightPx": 42,
+        "railHeaderHeightPx": 36,
+        "previewHeaderHeightPx": 36,
+        "explorerStatusBarHeightPx": 28
+      },
+      "basedOnLayoutId": "focus"
+    }
+  ]
+}

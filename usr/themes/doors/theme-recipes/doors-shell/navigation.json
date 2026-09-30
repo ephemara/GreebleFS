@@ -1,0 +1,53 @@
+{
+  "navigationPatterns": [
+    {
+      "id": "doors-hierarchy-tabs",
+      "name": "Doors Hierarchy Tabs",
+      "kind": "hierarchy",
+      "axis": "vertical",
+      "props": {
+        "breadcrumb": true,
+        "focusRing": "accent",
+        "railViewMode": "tree",
+        "railShowViewModeSelector": false,
+        "railShowAutoExpandToggle": false,
+        "railAutoExpandToOpenFolder": true,
+        "railSectionOrder": [
+          "quick-access",
+          "drives",
+          "bookmarks",
+          "saved-searches",
+          "tags"
+        ],
+        "railHiddenSectionIds": [
+          "saved-searches",
+          "tags"
+        ],
+        "railSectionChrome": "plain",
+        "railRowChrome": "plain",
+        "railHierarchyGuideStyle": "soft",
+        "railActiveBranchStyle": "lane",
+        "railIconTone": "contrast",
+        "railTreeIndentStep": 16,
+        "railShowSupportingMeta": false,
+        "railShowDriveCapacity": false,
+        "railFlattenDriveRows": true,
+        "railShowSectionHeaders": false,
+        "railSectionHeaderTextTransform": "none",
+        "railBookmarkChromeStyle": "minimal",
+        "railSectionGap": 4,
+        "workspaceTabStyle": "windows",
+        "workspaceTabShowPaneSwitcher": false,
+        "workspaceTabShowLeadingStatusDot": false,
+        "workspaceTabShowPaneCountBadge": false,
+        "workspaceTabShowActiveIndicator": false,
+        "workspaceTabCloseButtonMode": "active-only",
+        "chromeTabStyle": "windows",
+        "chromeTabShowIcons": false,
+        "chromeTabShowActiveIndicator": false,
+        "chromeTabCloseButtonMode": "active-only"
+      }
+    }
+  ],
+  "defaultNavigationPatternId": "doors-hierarchy-tabs"
+}

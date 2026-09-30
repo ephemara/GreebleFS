@@ -1,0 +1,70 @@
+{
+  "preset": "custom",
+  "brandLabel": "Doors",
+  "topBarStyle": "solid",
+  "panelStyle": "solid",
+  "commandPaletteStyle": "solid",
+  "terminalStyle": "solid",
+  "settingsStyle": "solid",
+  "tabStyle": "windows",
+  "chromeTabs": {
+    "style": "windows",
+    "showIcons": false,
+    "showActiveIndicator": false,
+    "closeButtonMode": "active-only"
+  },
+  "metrics": {
+    "chromeHeight": 34,
+    "controlRadius": 8,
+    "panelRadius": 12,
+    "shellInset": 0,
+    "commandPaletteWidth": 840,
+    "commandPaletteTopInset": 44,
+    "pagePadding": 10,
+    "panelGap": 8
+  },
+  "surfaces": {
+    "shellBackground": "var(--overlay-bg-shell)",
+    "chromeBackground": "linear-gradient(180deg, rgba(43,43,43,0.96) 0%, rgba(33,33,33,0.98) 100%)",
+    "chromeMenuBackground": "rgba(37,37,38,0.98)",
+    "chromeBorder": "rgba(255,255,255,0.08)",
+    "chromeButtonBackground": "rgba(255,255,255,0.025)",
+    "chromeButtonHoverBackground": "rgba(255,255,255,0.08)",
+    "chromeButtonActiveBackground": "rgba(118,185,255,0.12)",
+    "chromeButtonActiveBorder": "rgba(118,185,255,0.32)",
+    "chromeTabBackground": "rgba(255,255,255,0.03)",
+    "chromeTabActiveBackground": "linear-gradient(180deg, rgba(58,58,58,0.98) 0%, rgba(43,43,43,0.98) 100%)",
+    "chromeTabBorder": "rgba(255,255,255,0.1)",
+    "shellShadow": "0 20px 54px rgba(0,0,0,0.4)",
+    "commandPaletteScrimBackground": "rgba(0,0,0,0.44)",
+    "commandPaletteBackground": "rgba(36,36,36,0.98)",
+    "commandPaletteBorder": "rgba(255,255,255,0.08)",
+    "commandPaletteInputBackground": "rgba(48,48,48,0.96)",
+    "commandPaletteItemBackground": "rgba(255,255,255,0.03)",
+    "commandPaletteItemActiveBackground": "rgba(118,185,255,0.12)",
+    "settingsBackground": "linear-gradient(180deg, rgba(31,31,31,0.98) 0%, rgba(23,23,23,0.98) 100%)",
+    "settingsRailBackground": "rgba(255,255,255,0.03)",
+    "settingsCardBackground": "rgba(38,38,38,0.96)",
+    "settingsCardBorder": "rgba(255,255,255,0.08)",
+    "settingsBadgeBackground": "rgba(255,255,255,0.05)",
+    "settingsBadgeBorder": "rgba(255,255,255,0.08)",
+    "terminalBackground": "rgba(17,19,24,0.98)",
+    "terminalPanelBackground": "rgba(28,28,28,0.96)",
+    "terminalPaneBackground": "rgba(17,19,24,0.98)",
+    "terminalBorder": "rgba(255,255,255,0.08)",
+    "terminalStatusBackground": "rgba(255,255,255,0.06)"
+  },
+  "typography": {
+    "chromeLabelSize": 10.5,
+    "chromeMetaSize": 8,
+    "tabLabelSize": 11,
+    "pageTitleSize": 16,
+    "pageBodySize": 11,
+    "badgeSize": 9,
+    "labelLetterSpacing": "0.08em"
+  },
+  "cssVars": {
+    "--overlay-workbench-brand": "doors-frame",
+    "--greeblefs-shell-luster": "0.72"
+  }
+}

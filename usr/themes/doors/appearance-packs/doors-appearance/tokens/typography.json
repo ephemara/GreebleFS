@@ -1,0 +1,15 @@
+{
+  "fonts": {
+    "ui": "\"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+    "mono": "\"Cascadia Mono\", \"Cascadia Code\", Consolas, monospace"
+  },
+  "tokens": {
+    "chromeLabelSize": 10.5,
+    "chromeMetaSize": 8,
+    "tabLabelSize": 11,
+    "pageTitleSize": 16,
+    "pageBodySize": 11,
+    "badgeSize": 9,
+    "labelLetterSpacing": "0.08em"
+  }
+}

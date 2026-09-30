@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "andromeda-appearance",
+  "name": "Andromeda Appearance",
+  "description": "Deep-space palette, frosted observatory chrome, and restrained atmospheric glow.",
+  "author": "Codex",
+  "tags": [
+    "space",
+    "minimal",
+    "glass",
+    "reference"
+  ],
+  "extendsThemeId": "github-dark",
+  "preview": "../themes/andromeda/wallpapers/andromeda-halo.svg"
+}

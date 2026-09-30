@@ -5,11 +5,11 @@
     "activeDockThemeId": null,
     "activeIconThemeId": "toon_icons",
     "activeShaderId": null,
-    "activeShellRendererId": "toon:toon-studio-shell",
-    "activeThemeEngineId": "andromeda-engine",
+    "activeShellRendererId": null,
+    "activeThemeEngineId": null,
     "activeThemeId": "github-dark",
-    "activeThemeRecipeId": "doors:doors-shell",
-    "activeTopBarId": "toon:toon-ribbon",
+    "activeThemeRecipeId": null,
+    "activeTopBarId": "orbital-glass",
     "activeWallpaperId": null,
     "activityBarPosition": "side",
     "animations": false,
@@ -20,7 +20,7 @@
     "appCloseAnimation": null,
     "appOpacity": 1,
     "appOpenAnimation": null,
-    "appZoom": 1.1,
+    "appZoom": 0.725,
     "compactMode": false,
     "customThemeBundles": [
       {
@@ -470,12 +470,7 @@
         "enabled": false,
         "intensityMultiplier": 1,
         "modifierValuesByPresetId": {},
-        "presetId": "sway"
-      },
-      "shellChrome": {
-        "intensityMultiplier": 1,
-        "modifierValuesByPresetId": {},
-        "presetId": "wobble"
+        "presetId": null
       }
     },
     "interactionMotionPresetId": null,
@@ -2627,7 +2622,7 @@
     "experimentalDensity": 0.4,
     "experimentalViewMode": "off",
     "explorerViewDensityById": {
-      "adaptive-semantic-grid": 1,
+      "adaptive-semantic-grid": 0.4,
       "constellation": 0.4,
       "standard": 0.4,
       "timeline-surface": 0
@@ -2829,7 +2824,7 @@
       }
     ],
     "followThemeExplorerLayout": true,
-    "gridZoom": 0.98,
+    "gridZoom": 0.5190000072430951,
     "layoutSelectionByPresentationMode": {
       "dock": {
         "activeExplorerLayoutId": null,
@@ -2857,7 +2852,7 @@
       "includeVideo": true,
       "videoHoverScrubFrameCount": 6
     },
-    "viewMode": "icons-xl"
+    "viewMode": "icons-l"
   },
   "home": {
     "activePackId": null,
@@ -2981,9 +2976,7 @@
       },
       "overlay-classic": {
         "activePanelId": "explorer",
-        "dismissedPanelIds": [
-          "greeble3d"
-        ],
+        "dismissedPanelIds": [],
         "openPanelIds": [
           "settings",
           "explorer",
@@ -3009,7 +3002,7 @@
         },
         "explorerInspectorLinkMode": "live-linked",
         "floatingNodes": [],
-        "focusedSurfaceId": "settings",
+        "focusedSurfaceId": "explorer",
         "inspectorRailState": {
           "mode": "preview-inspector",
           "preferredWidth": 420,
@@ -3032,7 +3025,7 @@
                   "type": "stack"
                 },
                 {
-                  "activeSurfaceId": "settings",
+                  "activeSurfaceId": "git",
                   "collapsed": false,
                   "id": "ide:bottom-panel",
                   "placement": "bottom-panel",

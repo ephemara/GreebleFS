@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "id": "doors-motion",
+  "name": "Doors Motion",
+  "description": "Tighter, calmer motion tuned for desktop-window-manager chrome.",
+  "author": "Codex",
+  "tags": [
+    "windows",
+    "desktop",
+    "snappy"
+  ]
+}

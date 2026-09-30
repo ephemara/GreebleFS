@@ -1,0 +1,56 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF9F1"/>
+      <stop offset="0.42" stop-color="#FFF1E2"/>
+      <stop offset="1" stop-color="#FFE7D1"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1174 156) rotate(90) scale(190 190)">
+      <stop stop-color="#FFE38D"/>
+      <stop offset="1" stop-color="#FFE38D" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pinkGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(318 182) rotate(90) scale(210 210)">
+      <stop stop-color="#FFD7E5"/>
+      <stop offset="1" stop-color="#FFD7E5" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="halftone" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="1.8" fill="#9FC7FF" fill-opacity="0.18"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <rect width="1600" height="900" fill="url(#halftone)"/>
+  <rect width="1600" height="900" fill="url(#sun)"/>
+  <rect width="1600" height="900" fill="url(#pinkGlow)"/>
+
+  <g opacity="0.9">
+    <ellipse cx="310" cy="196" rx="106" ry="60" fill="white"/>
+    <ellipse cx="398" cy="204" rx="82" ry="48" fill="#FFFDF9"/>
+    <ellipse cx="228" cy="216" rx="72" ry="42" fill="#FFFDF9"/>
+    <ellipse cx="1220" cy="212" rx="120" ry="64" fill="white"/>
+    <ellipse cx="1312" cy="224" rx="88" ry="50" fill="#FFFDF9"/>
+    <ellipse cx="1112" cy="230" rx="76" ry="44" fill="#FFFDF9"/>
+  </g>
+
+  <g opacity="0.78">
+    <ellipse cx="582" cy="694" rx="562" ry="176" fill="#CBEAD7"/>
+    <ellipse cx="1312" cy="714" rx="516" ry="186" fill="#D8E5FF"/>
+    <ellipse cx="260" cy="782" rx="452" ry="172" fill="#FFD8E5"/>
+  </g>
+
+  <g opacity="0.78">
+    <rect x="188" y="470" width="86" height="56" rx="24" fill="#73B9FF" transform="rotate(-14 188 470)"/>
+    <rect x="308" y="588" width="72" height="46" rx="20" fill="#FFD36B" transform="rotate(12 308 588)"/>
+    <rect x="1262" y="454" width="88" height="54" rx="24" fill="#FFA8BE" transform="rotate(16 1262 454)"/>
+    <rect x="1368" y="580" width="72" height="46" rx="20" fill="#78D4AB" transform="rotate(-12 1368 580)"/>
+    <rect x="850" y="402" width="66" height="42" rx="18" fill="#B899FF" transform="rotate(-10 850 402)"/>
+  </g>
+
+  <g opacity="0.88">
+    <circle cx="240" cy="122" r="8" fill="#73B9FF"/>
+    <circle cx="282" cy="96" r="6" fill="#FFD36B"/>
+    <circle cx="1324" cy="112" r="8" fill="#FF9BB0"/>
+    <circle cx="1372" cy="144" r="6" fill="#78D4AB"/>
+    <circle cx="1118" cy="102" r="5" fill="#B899FF"/>
+  </g>
+</svg>

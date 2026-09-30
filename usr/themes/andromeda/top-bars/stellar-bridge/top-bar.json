@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "stellar-bridge",
+  "name": "Stellar Bridge",
+  "description": "A quiet observatory bar that keeps navigation readable while the atmosphere does the heavy lifting.",
+  "topBarStyle": "floating",
+  "tabStyle": "capsule",
+  "navigationMode": "summary",
+  "leadingControls": [
+    "panel-menu",
+    "command-palette",
+    "layout-cycle"
+  ],
+  "navigationShortcuts": [
+    "explorer-shortcut",
+    "settings-shortcut"
+  ],
+  "trailingControls": [
+    "window-mode",
+    "overlay-anchor",
+    "mobile-share",
+    "zen-mode",
+    "shortcut-badge",
+    "close-overlay"
+  ],
+  "tags": [
+    "minimal",
+    "space",
+    "summary"
+  ]
+}

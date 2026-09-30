@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "id": "doors",
+  "name": "Doors",
+  "description": "A dead-serious Windows Explorer homage for GreebleFS: desktop-window-manager chrome, tree-first navigation, Windows-style tabs, and a picker preview that shows exactly how far the theme system can stretch.",
+  "author": "Codex",
+  "tags": [
+    "official-pilot",
+    "windows",
+    "desktop",
+    "explorer",
+    "bundle-first",
+    "dark"
+  ],
+  "extends": "github-dark",
+  "preview": "wallpapers/doors-preview.svg",
+  "appearancePackId": "doors-appearance",
+  "interactionMotionPackId": "doors-motion",
+  "themeRecipeId": "doors-shell",
+  "themeEngineId": "doors-engine",
+  "topBarId": "doors-frame",
+  "explorerLayoutId": "doors-inline-preview",
+  "iconThemeId": "doors-icons",
+  "wallpaperId": "doors-nightframe"
+}

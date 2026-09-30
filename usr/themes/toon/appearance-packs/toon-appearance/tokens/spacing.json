@@ -1,0 +1,10 @@
+{
+  "chromeHeight": 36,
+  "shellInset": 14,
+  "pagePadding": 14,
+  "panelGap": 12,
+  "toolbarGap": 8,
+  "toolbarPaddingX": 12,
+  "toolbarPaddingY": 8,
+  "marqueeGap": 12
+}

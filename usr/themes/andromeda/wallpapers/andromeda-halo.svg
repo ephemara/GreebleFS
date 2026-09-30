@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" fill="none">
+  <defs>
+    <linearGradient id="andromeda-bg" x1="260" y1="40" x2="1660" y2="1040" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#02040b"/>
+      <stop offset=".38" stop-color="#070b15"/>
+      <stop offset=".72" stop-color="#0b1120"/>
+      <stop offset="1" stop-color="#040712"/>
+    </linearGradient>
+    <radialGradient id="andromeda-crown" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1460 190) rotate(132) scale(580 340)">
+      <stop stop-color="#f7fbff" stop-opacity=".94"/>
+      <stop offset=".16" stop-color="#8fe7ff" stop-opacity=".52"/>
+      <stop offset=".44" stop-color="#657dfd" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#657dfd" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="andromeda-nebula-a" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1160 340) rotate(158) scale(720 280)">
+      <stop stop-color="#8fe7ff" stop-opacity=".36"/>
+      <stop offset=".42" stop-color="#8fe7ff" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#8fe7ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="andromeda-nebula-b" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(620 760) rotate(18) scale(620 260)">
+      <stop stop-color="#c8bbff" stop-opacity=".28"/>
+      <stop offset=".48" stop-color="#9ab7ff" stop-opacity=".11"/>
+      <stop offset="1" stop-color="#9ab7ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="andromeda-nebula-c" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(980 560) rotate(90) scale(420 190)">
+      <stop stop-color="#ffffff" stop-opacity=".1"/>
+      <stop offset=".45" stop-color="#8fe7ff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#8fe7ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="andromeda-vignette" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(960 475) scale(1180 780)">
+      <stop stop-color="#000000" stop-opacity="0"/>
+      <stop offset=".62" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity=".38"/>
+    </radialGradient>
+    <filter id="andromeda-blur-lg" x="-240" y="-240" width="2400" height="1560" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="72"/>
+    </filter>
+    <filter id="andromeda-blur-md" x="-120" y="-120" width="2160" height="1320" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+    <filter id="andromeda-sparkle" x="-40" y="-40" width="2000" height="1160" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="1.4"/>
+    </filter>
+    <pattern id="andromeda-stars" width="240" height="240" patternUnits="userSpaceOnUse">
+      <circle cx="18" cy="24" r="1.15" fill="#f7fbff" fill-opacity=".92"/>
+      <circle cx="88" cy="46" r=".65" fill="#d8ecff" fill-opacity=".76"/>
+      <circle cx="184" cy="38" r=".95" fill="#f7fbff" fill-opacity=".82"/>
+      <circle cx="148" cy="86" r=".75" fill="#8fe7ff" fill-opacity=".62"/>
+      <circle cx="30" cy="118" r=".8" fill="#c8bbff" fill-opacity=".7"/>
+      <circle cx="110" cy="132" r=".55" fill="#f7fbff" fill-opacity=".58"/>
+      <circle cx="208" cy="128" r="1.05" fill="#f7fbff" fill-opacity=".88"/>
+      <circle cx="58" cy="186" r=".7" fill="#8fe7ff" fill-opacity=".68"/>
+      <circle cx="154" cy="194" r=".8" fill="#f7fbff" fill-opacity=".76"/>
+      <circle cx="216" cy="206" r=".55" fill="#c8bbff" fill-opacity=".66"/>
+      <circle cx="132" cy="222" r="1.05" fill="#f7fbff" fill-opacity=".9"/>
+    </pattern>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#andromeda-bg)"/>
+  <rect width="1920" height="1080" fill="url(#andromeda-stars)" opacity=".72"/>
+  <g filter="url(#andromeda-blur-lg)" opacity=".95">
+    <ellipse cx="1460" cy="190" rx="420" ry="250" fill="url(#andromeda-crown)"/>
+    <ellipse cx="1180" cy="340" rx="540" ry="220" transform="rotate(-14 1180 340)" fill="url(#andromeda-nebula-a)"/>
+    <ellipse cx="620" cy="760" rx="460" ry="170" transform="rotate(8 620 760)" fill="url(#andromeda-nebula-b)"/>
+    <ellipse cx="960" cy="560" rx="260" ry="120" fill="url(#andromeda-nebula-c)"/>
+  </g>
+  <g filter="url(#andromeda-blur-md)" opacity=".72">
+    <path d="M870 180c242-52 524 30 712 292" stroke="#8fe7ff" stroke-opacity=".28" stroke-width="16" stroke-linecap="round"/>
+    <path d="M708 258c274-28 520 88 672 314" stroke="#c8bbff" stroke-opacity=".2" stroke-width="10" stroke-linecap="round"/>
+    <path d="M512 820c210-134 492-160 744-54" stroke="#8fe7ff" stroke-opacity=".16" stroke-width="12" stroke-linecap="round"/>
+  </g>
+  <g opacity=".66">
+    <path d="M820 200c258-56 560 34 766 336" stroke="url(#andromeda-crown)" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M676 290c272-34 514 76 672 314" stroke="#f7fbff" stroke-opacity=".16" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M580 784c184-118 404-168 650-96" stroke="#8fe7ff" stroke-opacity=".16" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  <g filter="url(#andromeda-sparkle)">
+    <circle cx="1414" cy="176" r="3.6" fill="#f7fbff"/>
+    <circle cx="1310" cy="228" r="2.2" fill="#8fe7ff"/>
+    <circle cx="1548" cy="236" r="2.8" fill="#c8bbff"/>
+    <circle cx="1204" cy="364" r="2.4" fill="#f7fbff"/>
+    <circle cx="1020" cy="522" r="2.2" fill="#8fe7ff"/>
+    <circle cx="716" cy="756" r="2.6" fill="#c8bbff"/>
+    <circle cx="612" cy="714" r="3" fill="#f7fbff"/>
+  </g>
+  <rect width="1920" height="1080" fill="url(#andromeda-vignette)" opacity=".92"/>
+</svg>

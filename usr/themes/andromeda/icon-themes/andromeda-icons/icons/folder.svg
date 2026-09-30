@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <defs>
+    <linearGradient id="andromeda-folder-gradient" x1="3" y1="5" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f6fbff" />
+      <stop offset="0.52" stop-color="#8fe7ff" />
+      <stop offset="1" stop-color="#c8bbff" />
+    </linearGradient>
+  </defs>
+  <path d="M3.75 8.1a1.85 1.85 0 0 1 1.85-1.85h4.72l1.84 2.05h6.24a1.85 1.85 0 0 1 1.85 1.85v6.25a2.1 2.1 0 0 1-2.1 2.1H5.85a2.1 2.1 0 0 1-2.1-2.1V8.1Z" stroke="url(#andromeda-folder-gradient)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M4.4 9.55h15.2" stroke="url(#andromeda-folder-gradient)" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+  <circle cx="17.4" cy="7.8" r="1.1" fill="#f6fbff"/>
+  <path d="M17.4 5.85v3.9M15.45 7.8h3.9" stroke="#8fe7ff" stroke-width="1" stroke-linecap="round" opacity=".85"/>
+</svg>

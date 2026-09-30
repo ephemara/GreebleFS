@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "id": "kain-ion-lattice",
+  "name": "Kain Ion Lattice",
+  "description": "Usr-authored Kain UI theme proof. The source lives in usr/profiles/default/kain-ui/themes/ion-lattice/main.kn and emits this compatibility bundle while GreebleFS still renders trusted theme primitives.",
+  "author": "Kain",
+  "tags": [
+    "kain",
+    "lattice",
+    "usr-authored",
+    "dark"
+  ],
+  "extends": "pilot-dark",
+  "appearancePackId": "ion-lattice-appearance",
+  "embedded": {
+    "appearancePacks": [
+      {
+        "version": 1,
+        "id": "ion-lattice-appearance",
+        "name": "Ion Lattice Appearance",
+        "description": "Compact cyan, rose, amber, and green shell tokens authored from the Kain UI lane.",
+        "extendsThemeId": "pilot-dark",
+        "fonts": {
+          "ui": "\"Inter\", \"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+          "mono": "\"Cascadia Code\", \"Cascadia Mono\", Consolas, monospace"
+        },
+        "scrollbar": {
+          "colorScheme": "dark",
+          "size": 10,
+          "fileListSize": 11,
+          "thumb": "#27515a",
+          "thumbHover": "#40f6ff",
+          "track": "rgba(255,255,255,0.045)",
+          "radius": 8
+        },
+        "palette": {
+          "appBackground": "#05070a",
+          "appBackgroundAlt": "#080c10",
+          "shellBackground": "rgba(5, 9, 13, 0.96)",
+          "shellBackgroundSolid": "#05090d",
+          "topBarBackground": "#081018",
+          "topBarMenuBackground": "#0d1822",
+          "sidebarBackground": "#071018",
+          "panelBackground": "#0b131b",
+          "panelAltBackground": "#101c25",
+          "cardBackground": "#0e1720",
+          "cardHoverBackground": "#132532",
+          "contextMenuBackground": "#0b151d",
+          "inputBackground": "#071018",
+          "terminalBackground": "#030609",
+          "selectionBackground": "rgba(64,246,255,0.16)",
+          "scrimBackground": "rgba(0,0,0,0.58)",
+          "textPrimary": "#edfaff",
+          "textSecondary": "#b8d9de",
+          "textMuted": "rgba(184,217,222,0.68)",
+          "textDim": "rgba(184,217,222,0.42)",
+          "textInverse": "#041015",
+          "border": "rgba(120,215,222,0.12)",
+          "borderStrong": "rgba(64,246,255,0.28)",
+          "accent": "#40f6ff",
+          "accentSoft": "rgba(64,246,255,0.14)",
+          "accentContrast": "#041015",
+          "success": "#7cf6b9",
+          "warning": "#f4c95d",
+          "danger": "#ff6b91",
+          "info": "#8cbcff",
+          "note": "#c6a7ff",
+          "todo": "#7cf6b9",
+          "bug": "#ff6b91",
+          "prompt": "#f4c95d"
+        },
+        "xterm": {
+          "background": "#030609",
+          "foreground": "#edfaff",
+          "cursor": "#40f6ff",
+          "black": "#05070a",
+          "red": "#ff6b91",
+          "green": "#7cf6b9",
+          "yellow": "#f4c95d",
+          "blue": "#8cbcff",
+          "magenta": "#c6a7ff",
+          "cyan": "#40f6ff",
+          "white": "#edfaff",
+          "brightBlack": "#51646a",
+          "brightRed": "#ff93ad",
+          "brightGreen": "#a4ffd0",
+          "brightYellow": "#ffdc82",
+          "brightBlue": "#afd0ff",
+          "brightMagenta": "#dbc6ff",
+          "brightCyan": "#7ffaff",
+          "brightWhite": "#ffffff"
+        },
+        "effects": {
+          "backgroundImage": "linear-gradient(180deg, rgba(64,246,255,0.045), rgba(255,107,145,0.022) 38%, rgba(5,7,10,0) 78%), repeating-linear-gradient(90deg, rgba(255,255,255,0.018) 0 1px, transparent 1px 48px)",
+          "backgroundSize": "cover, 48px 48px",
+          "backgroundPosition": "center top",
+          "shadow": "0 18px 46px rgba(0, 0, 0, 0.42)",
+          "overlayShadow": "0 0 0 1px rgba(64,246,255,0.05), 0 28px 66px rgba(0,0,0,0.52)"
+        },
+        "tokens": {
+          "kainThemeSource": "usr/profiles/default/kain-ui/themes/ion-lattice/main.kn",
+          "controlRadius": 6,
+          "panelRadius": 8,
+          "pagePadding": 9,
+          "panelGap": 7
+        },
+        "cssVars": {
+          "--greeblefs-kain-ui-theme": "ion-lattice",
+          "--overlay-workbench-brand": "kain-ion",
+          "--overlay-explorer-brand": "kain-ion",
+          "--overlay-kain-ion-cyan": "#40f6ff",
+          "--overlay-kain-ion-rose": "#ff6b91"
+        }
+      }
+    ]
+  }
+}

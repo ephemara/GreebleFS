@@ -1,0 +1,21 @@
+{
+  "animationProfiles": [
+    {
+      "id": "andromeda-drift",
+      "name": "Andromeda Drift",
+      "durationMs": 260,
+      "easing": "cubic-bezier(0.22, 1, 0.36, 1)",
+      "intensity": 42
+    }
+  ],
+  "iconPacks": [
+    {
+      "id": "andromeda-icons",
+      "name": "Andromeda Icons",
+      "style": "custom"
+    }
+  ],
+  "renderStyles": [],
+  "defaultAnimationProfileId": "andromeda-drift",
+  "defaultIconPackId": "andromeda-icons"
+}

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "id": "toon",
+  "name": "Toon",
+  "description": "A bright pastel stress test for the modern GreebleFS theme bundle stack: local tokens, custom renderer, authored home/menu/sound lanes, non-default shell runtime, and a theme-local drawsvg icon pipeline.",
+  "author": "Codex",
+  "tags": [
+    "stress-test",
+    "bundle-first",
+    "pastel",
+    "toon",
+    "light",
+    "channel-launcher"
+  ],
+  "extends": "aqua-light",
+  "preview": "wallpapers/toon-daydream.svg",
+  "appearancePackId": "toon-appearance",
+  "interactionMotionPackId": "toon-motion",
+  "themeRecipeId": "toon-stagecraft",
+  "themeEngineId": "toon-engine",
+  "rendererId": "toon-studio-shell",
+  "topBarId": "toon-marquee",
+  "explorerLayoutId": "storybook",
+  "iconThemeId": "toon-icons",
+  "wallpaperId": "toon-daydream",
+  "shaderId": "toon-sky-confetti",
+  "openAnimationId": "toon-pop",
+  "closeAnimationId": "toon-pop",
+  "soundPackId": "toon-squeaks",
+  "homePackId": "toon-clubhouse",
+  "menuPackId": "toon-bubble-menu"
+}

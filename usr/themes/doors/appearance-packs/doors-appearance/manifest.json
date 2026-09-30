@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "id": "doors-appearance",
+  "name": "Doors Appearance",
+  "description": "Dark desktop chrome, Segoe-first shell typography, and Windows-style contrast for the Doors bundle.",
+  "author": "Codex",
+  "tags": [
+    "windows",
+    "desktop",
+    "dark"
+  ],
+  "extendsThemeId": "github-dark",
+  "preview": "../../wallpapers/doors-preview.svg",
+  "fonts": {
+    "ui": "\"Segoe UI Variable Text\", \"Segoe UI\", system-ui, sans-serif",
+    "mono": "\"Cascadia Mono\", \"Cascadia Code\", Consolas, monospace"
+  },
+  "scrollbar": {
+    "colorScheme": "dark",
+    "size": 12,
+    "fileListSize": 12,
+    "thumb": "#5c5c5c",
+    "thumbHover": "#7a7a7a",
+    "track": "rgba(255,255,255,0.06)",
+    "radius": 999
+  }
+}

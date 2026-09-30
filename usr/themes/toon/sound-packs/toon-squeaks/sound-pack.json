@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "toon-squeaks",
+  "name": "Toon Squeaks",
+  "description": "Soft synth pops and bright success chimes for the Toon bundle.",
+  "tags": [
+    "toon",
+    "synth",
+    "pastel"
+  ],
+  "masterVolume": 0.88,
+  "sounds": {
+    "shell-button-press": {
+      "kind": "synth",
+      "volume": 0.62,
+      "cooldownMs": 26,
+      "tones": [
+        { "frequency": 740, "durationMs": 24, "gain": 0.18, "waveform": "triangle" },
+        { "frequency": 1160, "durationMs": 54, "offsetMs": 10, "gain": 0.1, "waveform": "sine" }
+      ]
+    },
+    "explorer-selection-step": {
+      "kind": "synth",
+      "volume": 0.48,
+      "cooldownMs": 28,
+      "tones": [
+        { "frequency": 520, "durationMs": 18, "gain": 0.1, "waveform": "triangle" },
+        { "frequency": 790, "durationMs": 38, "offsetMs": 4, "gain": 0.07, "waveform": "sine" }
+      ]
+    },
+    "explorer-open-entry": {
+      "kind": "synth",
+      "volume": 0.62,
+      "cooldownMs": 48,
+      "tones": [
+        { "frequency": 610, "durationMs": 26, "gain": 0.16, "waveform": "triangle" },
+        { "frequency": 915, "durationMs": 68, "offsetMs": 10, "gain": 0.12, "waveform": "sine" }
+      ]
+    },
+    "task-start": {
+      "kind": "synth",
+      "volume": 0.54,
+      "cooldownMs": 36,
+      "tones": [
+        { "frequency": 470, "durationMs": 16, "gain": 0.14, "waveform": "square" },
+        { "frequency": 705, "durationMs": 28, "offsetMs": 12, "gain": 0.1, "waveform": "triangle" }
+      ]
+    },
+    "task-success": {
+      "kind": "synth",
+      "volume": 0.72,
+      "cooldownMs": 80,
+      "tones": [
+        { "frequency": 523.25, "durationMs": 34, "gain": 0.15, "waveform": "triangle" },
+        { "frequency": 783.99, "durationMs": 52, "offsetMs": 16, "gain": 0.14, "waveform": "triangle" },
+        { "frequency": 1046.5, "durationMs": 94, "offsetMs": 36, "gain": 0.12, "waveform": "sine" }
+      ]
+    },
+    "task-failure": {
+      "kind": "synth",
+      "volume": 0.64,
+      "cooldownMs": 90,
+      "tones": [
+        { "frequency": 320, "durationMs": 44, "gain": 0.14, "waveform": "sawtooth" },
+        { "frequency": 240, "durationMs": 110, "offsetMs": 22, "gain": 0.14, "waveform": "triangle" }
+      ],
+      "noiseLayers": [
+        { "durationMs": 20, "offsetMs": 18, "gain": 0.04, "lowpassHz": 1700 }
+      ]
+    },
+    "notification-info": {
+      "kind": "synth",
+      "volume": 0.58,
+      "cooldownMs": 56,
+      "tones": [
+        { "frequency": 660, "durationMs": 24, "gain": 0.12, "waveform": "triangle" },
+        { "frequency": 990, "durationMs": 62, "offsetMs": 8, "gain": 0.1, "waveform": "sine" }
+      ]
+    },
+    "notification-success": {
+      "kind": "synth",
+      "volume": 0.68,
+      "cooldownMs": 68,
+      "tones": [
+        { "frequency": 660, "durationMs": 22, "gain": 0.12, "waveform": "triangle" },
+        { "frequency": 990, "durationMs": 54, "offsetMs": 14, "gain": 0.13, "waveform": "sine" },
+        { "frequency": 1320, "durationMs": 88, "offsetMs": 32, "gain": 0.09, "waveform": "sine" }
+      ]
+    },
+    "notification-error": {
+      "kind": "synth",
+      "volume": 0.66,
+      "cooldownMs": 86,
+      "tones": [
+        { "frequency": 360, "durationMs": 26, "gain": 0.14, "waveform": "square" },
+        { "frequency": 288, "durationMs": 86, "offsetMs": 16, "gain": 0.15, "waveform": "triangle" }
+      ]
+    }
+  }
+}
