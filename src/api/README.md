@@ -157,6 +157,7 @@ hot reload is a clean replace, not an accumulation.
   (`pluginRuntime`, `themeRendererRuntime`)
 - [x] Theme domain backed by a real renderer path (`greebleThemeBridge`, runtime-tested)
 - [ ] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs
-- [ ] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
+- [x] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
+  (`greebleLegacyShim`, runtime-tested against the real toon pack)
 - [ ] Remaining domains (view-mode, preview-lane, …) backed by real renderers
 - [ ] Rust watcher re-runs factories on file change (hot reload end to end)

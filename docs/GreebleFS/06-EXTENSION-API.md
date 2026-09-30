@@ -191,6 +191,6 @@ harness.dispose();   // releases handles + sweeps the owner's contributions
 | `greeblefs` virtual module in both transpiler import maps (`pluginRuntime`, `themeRendererRuntime`) | ✅ Done — TSX can import the contract at runtime |
 | Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs | ⬜ TODO |
 | Theme domain backed by a real renderer path (`greebleThemeBridge`: registry → definitions → ThemeCatalog/apply/CSS) | ✅ Done + runtime-tested (`greebleThemeBridge.test.ts`) |
-| Legacy `defineThemeRenderer` TSX shimmed onto `registerShell` | ⬜ TODO |
+| Legacy `defineThemeRenderer` TSX shimmed onto `registerShell` | ✅ Done (`greebleLegacyShim`: loaded packs adopt as API shells, live host from App, withdraw on unload) |
 | Remaining domains (view-mode, preview-lane, …) backed by real renderers | ⬜ TODO |
 | Rust watcher re-runs factories on file change (hot reload end-to-end) | ⬜ TODO |

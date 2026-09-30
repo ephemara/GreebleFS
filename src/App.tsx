@@ -1653,6 +1653,14 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       themeBundleDependencyCatalogs,
     ],
   );
+  // Legacy shell renderers (defineThemeRenderer TSX) surface as API `shell`
+  // contributions. Registration replaces on duplicate id — safe to re-run.
+  useEffect(() => {
+    adoptLoadedShellRendererPacks([
+      ...themeBundleDependencyCatalogs.shellRenderers,
+      ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
+    ]);
+  }, [themeBundleDependencyCatalogs, combinedThemePackages]);
   // API-registered themes (greeblefs harness `theme` domain) render through
   // the same pipeline as JSON packs — catalog, selection, CSS vars.
   const greebleApiThemeDefinitions = useGreebleApiThemeDefinitions();
@@ -8988,6 +8996,11 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
     windowMode,
     windowControlsSurface,
   ]);
+  // API shell adapter renders legacy components against this same host.
+  useEffect(() => {
+    setLegacyShellHostProvider(() => themeRendererHost);
+    return () => setLegacyShellHostProvider(null);
+  }, [themeRendererHost]);
   const shellBody = canRenderThemeRenderer
     ? (
       <ThemeRendererBoundary

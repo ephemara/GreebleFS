@@ -156,10 +156,11 @@ Kain-language extensions: `kain-image-converter`,
   (`pluginRuntime`, `themeRendererRuntime`) — TSX can import the contract.
 - [x] Theme domain backed by a real renderer path
   (`greebleThemeBridge`: registry → definitions → catalog/apply/CSS).
+- [x] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
+  (`greebleLegacyShim` + App adoption effect + live host provider).
 - [ ] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs.
-- [ ] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`.
 - [ ] Rust watcher re-runs factories on file change (hot reload end to end).
 
-Until the shims land, `extension.toml` packs and `theme.json` playlists
-run on their legacy loaders while API registrations flow through the
-bridge — both visible side by side.
+`extension.toml` packs and `theme.json` playlists run on their legacy
+loaders while API registrations flow through the bridge — both visible
+side by side, with legacy shells adopted into the API book.
