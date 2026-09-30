@@ -18,7 +18,6 @@ import {
   EXPLORER_DIRECTORY_RESULT_CACHE_TTL_MS,
   EXPLORER_PREVIEW_STREAMING_POLICY,
 } from "../config/explorerPerformance";
-import { isExecutableBinaryExtension } from "../config/filePreview";
 import type { RuntimePlatform } from "../config/platform";
 import { resolveGreebleNativeLaneSelection } from "../config/nativeLaneMigration";
 import { commands, events, unwrapTauriResult } from "./tauriClient";
@@ -1297,17 +1296,12 @@ async function resolveLocalExplorerEntryOpenWithPolicy(
     };
   }
 
-  if (
-    request.previewEnabled &&
-    !request.compactDock &&
-    !isExecutableBinaryExtension(entry.extension)
-  ) {
-    return {
-      effect: "preview",
-      targetPath: entryPath,
-    };
-  }
-
+  // Explicit open gestures (double-click, Enter, context-menu Open) always
+  // launch the file through the OS shell. Single-click preview is handled by
+  // the click path, never by this policy — returning "preview" here is what
+  // made double-click a no-op for everything except executables.
+  // `previewEnabled`/`compactDock` stay on the request for sidecar wire
+  // compatibility; they do not influence explicit open.
   return {
     effect: "openPath",
     targetPath: entryPath,

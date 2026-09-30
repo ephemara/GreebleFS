@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { IconThemeProvider, RefreshCw, X } from '@/components/AppIcons';
+import { IconThemeProvider, Maximize2, Minimize2, Minus, RefreshCw, X } from '@/components/AppIcons';
 import {
   describeFileOperationsWindowRequest,
   listenToFileOperationsWindowRequests,
@@ -11,11 +11,16 @@ import {
 import {
   useExplorerTaskProgressFeed,
   useExplorerTaskSnapshots,
+  refreshExplorerTaskSnapshots,
 } from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { ExplorerTaskCenterContent } from '../components/explorer/ExplorerTaskCenterContent';
 import { OverlayScrollArea } from '../components/OverlayScrollArea';
 import { useSyncedWindowAppearance } from './useSyncedWindowAppearance';
+import {
+  SECONDARY_WINDOW_DRAG_REGION_ATTR,
+  useSecondaryWindowChromeControls,
+} from './secondaryWindowChrome';
 
 export default function FileOperationsWindowApp() {
   useExplorerTaskProgressFeed();
@@ -38,9 +43,7 @@ export default function FileOperationsWindowApp() {
     void getCurrentWindow().setTitle(title).catch(() => undefined);
   }, [request]);
 
-  const closeWindow = useCallback(() => {
-    void getCurrentWindow().close().catch(() => undefined);
-  }, []);
+  const chrome = useSecondaryWindowChromeControls();
 
   const palette = windowAppearance.palette;
   const title = describeFileOperationsWindowRequest(request);
@@ -71,6 +74,10 @@ export default function FileOperationsWindowApp() {
           }}
         >
           <header
+            {...{ [SECONDARY_WINDOW_DRAG_REGION_ATTR]: 'file-operations' }}
+            onPointerDown={chrome.handleDragPointerDown}
+            onDoubleClick={chrome.handleTitleDoubleClick}
+            title="Drag to move · double-click to maximize"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -79,6 +86,8 @@ export default function FileOperationsWindowApp() {
               padding: '18px 20px',
               borderBottom: '1px solid var(--overlay-workbench-chrome-border, var(--overlay-border))',
               background: 'var(--overlay-workbench-chrome-bg, var(--overlay-bg-topbar))',
+              userSelect: 'none',
+              cursor: 'grab',
             }}
           >
             <div style={{ minWidth: 0 }}>
@@ -103,9 +112,53 @@ export default function FileOperationsWindowApp() {
                 Live history for explorer transfers, archive extraction, trash actions, and other durable filesystem tasks.
               </div>
             </div>
+            <div
+              data-gfs-window-drag-exclusion="true"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}
+            >
+              <button
+                type="button"
+                onClick={chrome.handleMinimize}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+                border: '1px solid var(--overlay-workbench-chrome-border, var(--overlay-border))',
+                background: 'var(--overlay-workbench-chrome-button-bg, var(--overlay-bg-card))',
+                color: palette.textPrimary,
+                cursor: 'pointer',
+              }}
+              aria-label="Minimize file operations window"
+              title="Minimize file operations window"
+            >
+              <Minus size={14} />
+            </button>
             <button
               type="button"
-              onClick={closeWindow}
+              onClick={chrome.handleToggleMaximize}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+                border: '1px solid var(--overlay-workbench-chrome-border, var(--overlay-border))',
+                background: 'var(--overlay-workbench-chrome-button-bg, var(--overlay-bg-card))',
+                color: palette.textPrimary,
+                cursor: 'pointer',
+              }}
+              aria-label={chrome.isMaximized ? 'Restore file operations window' : 'Maximize file operations window'}
+              title={chrome.isMaximized ? 'Restore file operations window' : 'Maximize file operations window'}
+            >
+              {chrome.isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+            <button
+              type="button"
+              onClick={chrome.handleClose}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -123,6 +176,7 @@ export default function FileOperationsWindowApp() {
             >
               <X size={14} />
             </button>
+            </div>
           </header>
           <OverlayScrollArea style={{ minHeight: 0 }} scrollbarStyle="themed">
             <div style={{ padding: 20 }}>
@@ -137,7 +191,7 @@ export default function FileOperationsWindowApp() {
                 headerActions={(
                   <button
                     type="button"
-                    onClick={() => window.location.reload()}
+                    onClick={() => { void refreshExplorerTaskSnapshots(); }}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',

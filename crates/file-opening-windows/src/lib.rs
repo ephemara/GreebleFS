@@ -21,6 +21,10 @@ fn ensure_com_initialized() {
     });
 }
 
+// ShellExecute error code for "no application is associated with this file".
+// Explorer catches exactly this and raises the Open With picker instead.
+const SE_ERR_NOASSOC: isize = 31;
+
 pub struct WindowsFileOpener;
 
 impl FileOpener for WindowsFileOpener {
@@ -56,12 +60,29 @@ impl FileOpener for WindowsFileOpener {
             let result = ShellExecuteW(None, w!("open"), &h_path, None, None, SW_SHOWNORMAL);
 
             if result.0 as isize > 32 {
-                Ok(OpenResult::Success)
-            } else {
-                Ok(OpenResult::PlatformError {
-                    message: format!("ShellExecute failed with code {}", result.0 as isize),
-                })
+                return Ok(OpenResult::Success);
             }
+
+            // SE_ERR_NOASSOC: Explorer shows the "How do you want to open this
+            // file?" picker here instead of failing, so do the same via the
+            // documented "openas" verb rather than surfacing error 31.
+            if result.0 as isize == SE_ERR_NOASSOC {
+                let picker =
+                    ShellExecuteW(None, w!("openas"), &h_path, None, None, SW_SHOWNORMAL);
+                if picker.0 as isize > 32 {
+                    return Ok(OpenResult::Success);
+                }
+                return Ok(OpenResult::PlatformError {
+                    message: format!(
+                        "No app is associated with this file type (Open With picker failed with code {})",
+                        picker.0 as isize
+                    ),
+                });
+            }
+
+            Ok(OpenResult::PlatformError {
+                message: format!("ShellExecute failed with code {}", result.0 as isize),
+            })
         }
     }
 

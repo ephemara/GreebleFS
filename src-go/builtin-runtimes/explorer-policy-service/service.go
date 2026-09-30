@@ -31,14 +31,6 @@ var archiveSuffixes = []string{
 	".xz",
 }
 
-var executableBinaryExtensions = map[string]struct{}{
-	"exe": {},
-	"msi": {},
-	"com": {},
-	"app": {},
-	"dmg": {},
-}
-
 type explorerPolicyService struct {
 	mu       sync.Mutex
 	sessions map[string]explorerPolicySessionSnapshot
@@ -236,13 +228,12 @@ func (service *explorerPolicyService) resolveOpenEntry(
 		}, nil
 	}
 
-	if request.PreviewEnabled && !request.CompactDock && !isExecutableBinaryExtension(entry.Extension) {
-		return explorerPolicyResolveOpenEntryResult{
-			Effect:     "preview",
-			TargetPath: entry.Path,
-		}, nil
-	}
-
+	// Explicit open gestures (double-click, Enter, context-menu Open) always
+	// launch the file through the OS shell. Single-click preview is handled
+	// by the click path, never by this policy — returning "preview" here is
+	// what made double-click a no-op for everything except executables.
+	// PreviewEnabled/CompactDock stay on the request for wire compatibility;
+	// they do not influence explicit open.
 	return explorerPolicyResolveOpenEntryResult{
 		Effect:                     "openPath",
 		TargetPath:                 entry.Path,
@@ -365,12 +356,6 @@ func isArchiveFileEntry(entry explorerPolicyFileEntry) bool {
 		}
 	}
 	return false
-}
-
-func isExecutableBinaryExtension(extension string) bool {
-	normalized := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(extension)), ".")
-	_, exists := executableBinaryExtensions[normalized]
-	return exists
 }
 
 func callExplorerHost[T any](

@@ -98,9 +98,13 @@ import {
   isIosSafari,
   isMobilePluginTabId,
   isStandaloneWebApp,
+  readMobileFormFactorHints,
   resolveMobileEntryIconUrl,
+  resolveMobileFormFactor,
   resolveMobileNavIcon,
   type MobileBuiltInTabId,
+  type MobileFormFactor,
+  type MobileFormFactorOverride,
   type MobileTabId,
 } from "./mobileShared";
 import { useMobileStore } from "./mobileStore";
@@ -411,21 +415,35 @@ function getHandsetScaleBoost(width: number): number {
 function getResolvedInterfaceScale(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  const rawScale = layout.interfaceScale * getHandsetScaleBoost(viewportWidth);
+  const boost = formFactor === "desktop" ? 1 : getHandsetScaleBoost(viewportWidth);
+  const rawScale = layout.interfaceScale * boost;
   return Math.round(rawScale * 100) / 100;
 }
 
 function getResolvedChromeScale(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  const handsetBoost = getHandsetScaleBoost(viewportWidth);
+  const handsetBoost = formFactor === "desktop" ? 1 : getHandsetScaleBoost(viewportWidth);
   const rawScale = layout.chromeScale * Math.max(1, handsetBoost - 0.02);
   return Math.round(rawScale * 100) / 100;
 }
 
-function getTouchTargetSize(layout: MobileLayoutSettings): number {
+function getTouchTargetSize(layout: MobileLayoutSettings, formFactor: MobileFormFactor = "mobile"): number {
+  if (formFactor === "desktop") {
+    switch (layout.touchComfort) {
+      case "compact":
+        return 36;
+      case "balanced":
+        return 40;
+      case "comfortable":
+      default:
+        return 44;
+    }
+  }
   switch (layout.touchComfort) {
     case "compact":
       return 42;
@@ -437,7 +455,18 @@ function getTouchTargetSize(layout: MobileLayoutSettings): number {
   }
 }
 
-function getLayoutPanelGap(layout: MobileLayoutSettings): number {
+function getLayoutPanelGap(layout: MobileLayoutSettings, formFactor: MobileFormFactor = "mobile"): number {
+  if (formFactor === "desktop") {
+    switch (layout.touchComfort) {
+      case "compact":
+        return 10;
+      case "balanced":
+        return 12;
+      case "comfortable":
+      default:
+        return 16;
+    }
+  }
   switch (layout.touchComfort) {
     case "compact":
       return 10;
@@ -452,11 +481,12 @@ function getLayoutPanelGap(layout: MobileLayoutSettings): number {
 function resolveMobileShellMetrics(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): MobileShellMetrics {
-  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth);
-  const chromeScale = getResolvedChromeScale(layout, viewportWidth);
-  const panelGap = getLayoutPanelGap(layout);
-  const touchTarget = getTouchTargetSize(layout);
+  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth, formFactor);
+  const chromeScale = getResolvedChromeScale(layout, viewportWidth, formFactor);
+  const panelGap = getLayoutPanelGap(layout, formFactor);
+  const touchTarget = getTouchTargetSize(layout, formFactor);
   const bottomNavHeight = Math.round(touchTarget * 1.52);
   const actionStripHeight = Math.round(touchTarget * 1.2);
   const pagePadding = Math.round(layout.pagePadding * Math.max(1, interfaceScale - 0.03));
@@ -475,63 +505,71 @@ function resolveMobileShellMetrics(
 function getGridMinWidthForViewport(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
   return Math.round(
-    getGridMinWidth(layout) * getResolvedInterfaceScale(layout, viewportWidth),
+    getGridMinWidth(layout) * getResolvedInterfaceScale(layout, viewportWidth, formFactor),
   );
 }
 
 function getGridIconSizeForViewport(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
   return Math.round(
-    getGridIconSize(layout) * getResolvedInterfaceScale(layout, viewportWidth),
+    getGridIconSize(layout) * getResolvedInterfaceScale(layout, viewportWidth, formFactor),
   );
 }
 
 function getExplorerContainerInset(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth));
+  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth, formFactor));
 }
 
 function getExplorerListGap(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  return Math.round(10 * getResolvedInterfaceScale(layout, viewportWidth));
+  return Math.round(10 * getResolvedInterfaceScale(layout, viewportWidth, formFactor));
 }
 
 function getExplorerGridGap(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth));
+  return Math.round(14 * getResolvedInterfaceScale(layout, viewportWidth, formFactor));
 }
 
 function getExplorerListRowEstimateSize(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
   return Math.max(
-    Math.round(getTouchTargetSize(layout) * 1.14),
-    Math.round(78 * getResolvedInterfaceScale(layout, viewportWidth)),
+    Math.round(getTouchTargetSize(layout, formFactor) * 1.14),
+    Math.round(78 * getResolvedInterfaceScale(layout, viewportWidth, formFactor)),
   );
 }
 
 function getExplorerGridColumnCount(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  const shellMetrics = resolveMobileShellMetrics(layout, viewportWidth);
-  const containerInset = getExplorerContainerInset(layout, viewportWidth);
-  const gap = getExplorerGridGap(layout, viewportWidth);
-  const minWidth = getGridMinWidthForViewport(layout, viewportWidth);
+  const shellMetrics = resolveMobileShellMetrics(layout, viewportWidth, formFactor);
+  const containerInset = getExplorerContainerInset(layout, viewportWidth, formFactor);
+  const gap = getExplorerGridGap(layout, viewportWidth, formFactor);
+  const minWidth = getGridMinWidthForViewport(layout, viewportWidth, formFactor);
+  const sidebarReserve = formFactor === "desktop" && viewportWidth >= 900 ? 264 : 0;
   const availableWidth = Math.max(
     280,
-    viewportWidth - shellMetrics.pagePadding * 2 - containerInset * 2,
+    viewportWidth - shellMetrics.pagePadding * 2 - containerInset * 2 - sidebarReserve,
   );
 
   return Math.max(1, Math.floor((availableWidth + gap) / (minWidth + gap)));
@@ -540,9 +578,10 @@ function getExplorerGridColumnCount(
 function getExplorerGridRowEstimateSize(
   layout: MobileLayoutSettings,
   viewportWidth: number,
+  formFactor: MobileFormFactor = "mobile",
 ): number {
-  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth);
-  const iconSize = getGridIconSizeForViewport(layout, viewportWidth);
+  const interfaceScale = getResolvedInterfaceScale(layout, viewportWidth, formFactor);
+  const iconSize = getGridIconSizeForViewport(layout, viewportWidth, formFactor);
   return Math.max(
     Math.round(176 * interfaceScale),
     Math.round(iconSize + 88 * interfaceScale),
@@ -552,8 +591,9 @@ function getExplorerGridRowEstimateSize(
 function buildMobileShellStyle(
   layout: MobileLayoutSettings,
   viewport: MobileViewportSnapshot,
+  formFactor: MobileFormFactor = "mobile",
 ): CSSProperties {
-  const shellMetrics = resolveMobileShellMetrics(layout, viewport.width);
+  const shellMetrics = resolveMobileShellMetrics(layout, viewport.width, formFactor);
 
   return {
     "--mobile-interface-scale": shellMetrics.interfaceScale.toFixed(2),
@@ -833,6 +873,7 @@ function MobileExplorerVirtualSurface({
   entries,
   layout,
   viewportWidth,
+  formFactor = "mobile",
   gridCardSize,
   themeSnapshot,
   scrollElementRef,
@@ -843,6 +884,7 @@ function MobileExplorerVirtualSurface({
   entries: MobileShareEntry[];
   layout: MobileLayoutSettings;
   viewportWidth: number;
+  formFactor?: MobileFormFactor;
   gridCardSize: number;
   themeSnapshot: MobileShareThemeSnapshot | null;
   scrollElementRef: RefObject<HTMLDivElement | null>;
@@ -852,10 +894,10 @@ function MobileExplorerVirtualSurface({
 }) {
   const gridView = isMobileGridViewMode(layout.viewMode);
   const shouldVirtualize = entries.length > 60;
-  const listGap = getExplorerListGap(layout, viewportWidth);
-  const gridGap = getExplorerGridGap(layout, viewportWidth);
+  const listGap = getExplorerListGap(layout, viewportWidth, formFactor);
+  const gridGap = getExplorerGridGap(layout, viewportWidth, formFactor);
   const gridColumnCount = gridView
-    ? getExplorerGridColumnCount(layout, viewportWidth)
+    ? getExplorerGridColumnCount(layout, viewportWidth, formFactor)
     : 1;
   const rowCount = gridView
     ? Math.ceil(entries.length / gridColumnCount)
@@ -924,6 +966,7 @@ function MobileExplorerVirtualSurface({
             "--mobile-grid-min-width": `${getGridMinWidthForViewport(
               layout,
               viewportWidth,
+              formFactor,
             )}px`,
           } as CSSProperties
         }
@@ -974,8 +1017,8 @@ function MobileExplorerVirtualSurface({
     },
     estimateSize: () =>
       gridView
-        ? getExplorerGridRowEstimateSize(layout, viewportWidth)
-        : getExplorerListRowEstimateSize(layout, viewportWidth),
+        ? getExplorerGridRowEstimateSize(layout, viewportWidth, formFactor)
+        : getExplorerListRowEstimateSize(layout, viewportWidth, formFactor),
     overscan: gridView ? 4 : 8,
     getItemKey: (index) =>
       gridView
@@ -1129,6 +1172,7 @@ export default function App() {
     recentPaths,
     transfers,
     layoutOverrides,
+    formFactorOverride,
     setActiveTab,
     setExplorerPath,
     pinPath,
@@ -1136,6 +1180,7 @@ export default function App() {
     recordRecentPath,
     clearRecentPaths,
     patchLayoutOverrides,
+    setFormFactorOverride,
     createTransfer,
     patchTransfer,
     clearFinishedTransfers,
@@ -1325,13 +1370,19 @@ export default function App() {
     () => recentPaths.filter((path) => path !== currentPath && !pinnedPathSet.has(path)).slice(0, 6),
     [currentPath, pinnedPathSet, recentPaths],
   );
+  const formFactor = useMemo<MobileFormFactor>(
+    () => resolveMobileFormFactor(formFactorOverride, readMobileFormFactorHints(viewportSnapshot.width)),
+    [formFactorOverride, viewportSnapshot.width],
+  );
+  const isDesktopLayout = formFactor === "desktop";
   const gridCardSize = getGridIconSizeForViewport(
     resolvedLayout,
     viewportSnapshot.width,
+    formFactor,
   );
   const mobileShellStyle = useMemo(
-    () => buildMobileShellStyle(resolvedLayout, viewportSnapshot),
-    [resolvedLayout, viewportSnapshot],
+    () => buildMobileShellStyle(resolvedLayout, viewportSnapshot, formFactor),
+    [formFactor, resolvedLayout, viewportSnapshot],
   );
   const previewDismissThreshold = useMemo(
     () => Math.max(136, Math.round(viewportSnapshot.height * 0.18)),
@@ -2030,6 +2081,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    document.title = isDesktopLayout ? "GreebleFS Share" : "GreebleFS Mobile";
+  }, [isDesktopLayout]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadPushRuntime = async () => {
@@ -2282,6 +2337,7 @@ export default function App() {
         entries={filteredEntries}
         layout={resolvedLayout}
         viewportWidth={viewportSnapshot.width}
+        formFactor={formFactor}
         gridCardSize={gridCardSize}
         themeSnapshot={themeSnapshot}
         scrollElementRef={explorerListRef}
@@ -2801,14 +2857,17 @@ export default function App() {
 
   return (
     <div
-      className={`mobile-shell mobile-shell--${resolvedLayout.touchComfort}`}
+      className={`mobile-shell mobile-shell--${resolvedLayout.touchComfort} mobile-shell--${formFactor}`}
+      data-form-factor={formFactor}
       style={mobileShellStyle}
     >
       <div className="mobile-shell__backdrop" />
 
       <header className="mobile-topbar">
         <div className="mobile-topbar__identity">
-          <div className="mobile-topbar__eyebrow">Sovereign Mobile Link</div>
+          <div className="mobile-topbar__eyebrow">
+            {isDesktopLayout ? "Sovereign Share Link" : "Sovereign Mobile Link"}
+          </div>
           <div className="mobile-topbar__headline">
             <h1 className="mobile-topbar__title">{shareName}</h1>
             <button
@@ -2830,11 +2889,39 @@ export default function App() {
             >
               {isStandalone ? "Standalone" : "Browser"}
             </span>
+            <span
+              className={`mobile-status-chip${
+                isDesktopLayout ? " mobile-status-chip--accent" : ""
+              }`}
+            >
+              {isDesktopLayout ? "Desktop" : "Mobile"}
+              {formFactorOverride !== "auto" ? " · Manual" : ""}
+            </span>
             <span className="mobile-status-chip">
               {hubMode ? "Hub Share" : "Directory Share"}
             </span>
           </div>
         </div>
+        {isDesktopLayout ? (
+          <div className="mobile-topbar__view-switch" role="group" aria-label="Layout mode">
+            {(["auto", "mobile", "desktop"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`mobile-segment-button${
+                  formFactorOverride === option ? " mobile-segment-button--active" : ""
+                }`}
+                onClick={() => {
+                  setFormFactorOverride(option as MobileFormFactorOverride);
+                }}
+                aria-pressed={formFactorOverride === option}
+                title={option === "auto" ? "Follow the browser (auto)" : `Force ${option} layout`}
+              >
+                {option === "auto" ? "Auto" : option === "mobile" ? "Mobile" : "Desktop"}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       {showInstallTip ? (
@@ -3365,6 +3452,26 @@ export default function App() {
                 <div className="mobile-settings-card__body">
                   These controls sit on top of the desktop Mobile Theme settings so you can tune the current phone session without breaking the paired shell contract.
                 </div>
+                <div className="mobile-settings-card__section">
+                  <div className="mobile-settings-card__section-label">Device layout</div>
+                  <div className="mobile-layout-toggle-grid" role="group" aria-label="Device layout">
+                    {(["auto", "mobile", "desktop"] as const).map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`mobile-layout-pill${
+                          formFactorOverride === option ? " mobile-layout-pill--active" : ""
+                        }`}
+                        aria-pressed={formFactorOverride === option}
+                        onClick={() => {
+                          setFormFactorOverride(option);
+                        }}
+                      >
+                        {option === "auto" ? `Auto (${formFactor})` : option === "mobile" ? "Mobile" : "Desktop"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="mobile-settings-card__slider-block">
                   <div className="mobile-settings-card__row">
                     <span>Interface scale</span>
@@ -3755,7 +3862,7 @@ export default function App() {
         </div>
       ) : null}
 
-      <nav className="mobile-bottom-nav" aria-label="Mobile sections">
+      <nav className="mobile-bottom-nav" aria-label={isDesktopLayout ? "Share sections" : "Mobile sections"}>
         {mobileBottomNavTabs.map((tab) => (
           <button
             key={tab.id}

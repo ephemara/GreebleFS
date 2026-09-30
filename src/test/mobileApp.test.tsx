@@ -305,7 +305,18 @@ describe("mobile app shell", () => {
       recentPaths: [],
       transfers: [],
       layoutOverrides: {},
+      formFactorOverride: "auto",
     }));
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 390,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      writable: true,
+      value: 844,
+    });
 
     vi.spyOn(window, "open").mockImplementation(() => null);
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
@@ -561,5 +572,53 @@ describe("mobile app shell", () => {
     expect(await screen.findByText("Saved Paths")).toBeInTheDocument();
     expect(useMobileStore.getState().pinnedPaths).toContain("photos");
     expect(screen.getAllByText("photos").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the thumb-friendly mobile shell on phone viewports", async () => {
+    render(<App />);
+
+    await screen.findByText("photo.png");
+    const shell = document.querySelector(".mobile-shell");
+    expect(shell?.getAttribute("data-form-factor")).toBe("mobile");
+    expect(shell?.classList.contains("mobile-shell--mobile")).toBe(true);
+    expect(document.title).toBe("GreebleFS Mobile");
+    expect(screen.getByText("Sovereign Mobile Link")).toBeInTheDocument();
+  });
+
+  it("switches to the desktop share layout on wide fine-pointer browsers", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      writable: true,
+      value: 1440,
+    });
+    const matchMediaSpy = vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+      matches: query === "(pointer: fine)",
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList);
+
+    try {
+      render(<App />);
+
+      await screen.findByText("photo.png");
+      const shell = document.querySelector(".mobile-shell");
+      expect(shell?.getAttribute("data-form-factor")).toBe("desktop");
+      expect(shell?.classList.contains("mobile-shell--desktop")).toBe(true);
+      expect(document.title).toBe("GreebleFS Share");
+      expect(screen.getByText("Sovereign Share Link")).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Share sections" })).toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Mobile" }));
+      expect(useMobileStore.getState().formFactorOverride).toBe("mobile");
+      expect(document.querySelector(".mobile-shell")?.getAttribute("data-form-factor")).toBe("mobile");
+    } finally {
+      matchMediaSpy.mockRestore();
+    }
   });
 });

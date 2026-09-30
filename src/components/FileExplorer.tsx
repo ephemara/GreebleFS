@@ -273,7 +273,6 @@ import {
 } from "./pluginRuntime";
 import {
   listenToFileOperationsTransferCompleted,
-  openFileOperationsWindow,
   publishFileOperationsTransferCompleted,
   type FileOperationsTransferCompletedEventDetail,
 } from "../runtime/fileOperationsWindow";
@@ -15130,7 +15129,6 @@ function FileExplorerImpl({
       collisionPolicy: ExplorerFileTransferCollisionPolicy = "keep_both",
     ): Promise<FileTransferResult[]> => {
       if (sources.length === 0) return [];
-      void openFileOperationsWindow({ view: "tasks" });
       const results = await transferExplorerItems(
         targetDir,
         sources,

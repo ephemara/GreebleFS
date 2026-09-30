@@ -5437,9 +5437,9 @@ fn execute_path(path: &Path) -> Result<(), String> {
                 }
             }
 
-            return Err(
-                "No supported shell interpreter was found in PATH for this script.".to_string(),
-            );
+            // No shell interpreter on PATH: hand the script to the OS shell so
+            // Windows raises the Open With picker instead of a dead-end error.
+            return open_with_default_application(path);
         }
 
         return open_with_default_application(path);

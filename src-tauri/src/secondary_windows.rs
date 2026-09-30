@@ -704,7 +704,10 @@ fn resolve_secondary_window_policy(
                 width: 640,
                 height: 420,
             },
-            skip_taskbar: true,
+            // Durable history window: it must appear in the taskbar and the
+            // OS window switcher (Alt-Tab), otherwise it reads as a phantom
+            // panel with no way to get back to it.
+            skip_taskbar: false,
             transparent: false,
             always_on_top: false,
             remember_bounds: true,
@@ -907,6 +910,31 @@ mod tests {
                 transparent: false,
                 always_on_top: false,
                 remember_bounds: false,
+            }
+        );
+
+        let file_operations_policy = resolve_secondary_window_policy(
+            &SecondaryWindowSurfaceKind::FileOperations,
+            &SecondaryWindowPresentation::ToolWindow,
+            None,
+            None,
+        );
+        assert_eq!(
+            file_operations_policy,
+            SecondaryWindowPolicy {
+                initial_size: SecondaryWindowSize {
+                    width: 880,
+                    height: 620,
+                },
+                min_size: SecondaryWindowSize {
+                    width: 640,
+                    height: 420,
+                },
+                // Durable history window: visible in the taskbar / switcher.
+                skip_taskbar: false,
+                transparent: false,
+                always_on_top: false,
+                remember_bounds: true,
             }
         );
 

@@ -25,25 +25,30 @@ func TestApplyNavigationHistoryPushesAndTruncatesForwardBranch(t *testing.T) {
 	}
 }
 
-func TestResolveOpenEntryPrefersPreviewForInlineFiles(t *testing.T) {
+func TestResolveOpenEntryOpensInlineFilesNativelyOnExplicitOpen(t *testing.T) {
 	service := newExplorerPolicyService()
-	result, err := service.resolveOpenEntry(nil, explorerPolicyResolveOpenEntryRequest{
-		SessionID:      "pane-1",
-		PreviewEnabled: true,
-		CompactDock:    false,
-		ShowHidden:     false,
-		Entry: explorerPolicyFileEntry{
-			Name:      "notes.txt",
-			Path:      "/tmp/notes.txt",
-			IsDir:     false,
-			Extension: "txt",
-		},
-	})
-	if err != nil {
-		t.Fatalf("resolveOpenEntry returned error: %v", err)
-	}
-	if got, want := result.Effect, "preview"; got != want {
-		t.Fatalf("expected effect %q, got %q", want, got)
+	// Explicit open gestures (double-click, Enter) must launch through the OS
+	// shell even when the inline preview pane is enabled — returning
+	// "preview" here made double-click a no-op for non-executables.
+	for _, entry := range []explorerPolicyFileEntry{
+		{Name: "notes.txt", Path: "/tmp/notes.txt", IsDir: false, Extension: "txt"},
+		{Name: "hero.png", Path: "/tmp/hero.png", IsDir: false, Extension: "png"},
+		{Name: "score.wav", Path: "/tmp/score.wav", IsDir: false, Extension: "wav"},
+		{Name: "scene.uproject", Path: "/tmp/scene.uproject", IsDir: false, Extension: "uproject"},
+	} {
+		result, err := service.resolveOpenEntry(nil, explorerPolicyResolveOpenEntryRequest{
+			SessionID:      "pane-1",
+			PreviewEnabled: true,
+			CompactDock:    false,
+			ShowHidden:     false,
+			Entry:          entry,
+		})
+		if err != nil {
+			t.Fatalf("resolveOpenEntry(%s) returned error: %v", entry.Path, err)
+		}
+		if got, want := result.Effect, "openPath"; got != want {
+			t.Fatalf("resolveOpenEntry(%s): expected effect %q, got %q", entry.Path, want, got)
+		}
 	}
 }
 

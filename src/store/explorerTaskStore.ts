@@ -335,3 +335,23 @@ export async function retryFailedExplorerTasks(): Promise<ExplorerTaskSnapshot[]
 export async function clearCompletedExplorerTasks(): Promise<void> {
   await clearExplorerTaskHistoryInStore('completed');
 }
+
+export async function refreshExplorerTaskSnapshots(): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  const store = useExplorerTaskStore.getState();
+  store.setHydrationState('loading');
+  store.setHydrationError(null);
+
+  try {
+    const tasks = await listExplorerTasks();
+    useExplorerTaskStore.getState().replaceTasks(tasks);
+    useExplorerTaskStore.getState().setHydrationState('ready');
+  } catch (error) {
+    useExplorerTaskStore
+      .getState()
+      .setHydrationError(error instanceof Error ? error.message : String(error));
+  }
+}

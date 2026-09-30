@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { IconThemeProvider, X } from '@/components/AppIcons';
+import { IconThemeProvider, Maximize2, Minimize2, Minus, X } from '@/components/AppIcons';
 import { FileExplorer } from '../components/FileExplorer';
 import {
   EXPLORER_PICKER_WINDOW_CONFIG,
@@ -12,6 +12,10 @@ import {
 } from '../runtime/explorerPicker';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSyncedWindowAppearance } from './useSyncedWindowAppearance';
+import {
+  SECONDARY_WINDOW_DRAG_REGION_ATTR,
+  useSecondaryWindowChromeControls,
+} from './secondaryWindowChrome';
 
 function isWindowPickerRequest(
   request: ExplorerPickerRequest | null,
@@ -46,6 +50,8 @@ export default function PickerWindowApp() {
       .setTitle(request.title || EXPLORER_PICKER_WINDOW_CONFIG.title)
       .catch(() => undefined);
   }, [request]);
+
+  const chrome = useSecondaryWindowChromeControls();
 
   const closeWindow = useCallback(() => {
     void getCurrentWindow().close().catch(() => undefined);
@@ -107,6 +113,10 @@ export default function PickerWindowApp() {
           }}
         >
           <header
+            {...{ [SECONDARY_WINDOW_DRAG_REGION_ATTR]: 'explorer-picker' }}
+            onPointerDown={chrome.handleDragPointerDown}
+            onDoubleClick={chrome.handleTitleDoubleClick}
+            title="Drag to move · double-click to maximize"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -116,6 +126,8 @@ export default function PickerWindowApp() {
               borderBottom: '1px solid var(--overlay-border)',
               background: 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))',
               backdropFilter: 'blur(18px)',
+              userSelect: 'none',
+              cursor: 'grab',
             }}
           >
             <div style={{ minWidth: 0 }}>
@@ -140,6 +152,50 @@ export default function PickerWindowApp() {
                 Browse with the main Explorer surface and confirm the selection when ready.
               </div>
             </div>
+            <div
+              data-gfs-window-drag-exclusion="true"
+              style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}
+            >
+            <button
+              type="button"
+              onClick={chrome.handleMinimize}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                border: '1px solid var(--overlay-border)',
+                background: 'rgba(255,255,255,0.05)',
+                color: palette.textPrimary,
+                cursor: 'pointer',
+              }}
+              aria-label="Minimize picker"
+              title="Minimize picker"
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={chrome.handleToggleMaximize}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                border: '1px solid var(--overlay-border)',
+                background: 'rgba(255,255,255,0.05)',
+                color: palette.textPrimary,
+                cursor: 'pointer',
+              }}
+              aria-label={chrome.isMaximized ? 'Restore picker' : 'Maximize picker'}
+              title={chrome.isMaximized ? 'Restore picker' : 'Maximize picker'}
+            >
+              {chrome.isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
             <button
               type="button"
               onClick={handleCancel}
@@ -160,6 +216,7 @@ export default function PickerWindowApp() {
             >
               <X size={14} />
             </button>
+            </div>
           </header>
           <div style={{ minHeight: 0 }}>
             {request ? (
