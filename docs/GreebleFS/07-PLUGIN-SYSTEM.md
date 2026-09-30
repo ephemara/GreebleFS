@@ -160,7 +160,11 @@ Kain-language extensions: `kain-image-converter`,
   (`greebleLegacyShim` + App adoption effect + live host provider).
 - [x] Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs
   (`greeblePluginShim` + App adoption effect + live host providers).
-- [ ] Rust watcher re-runs factories on file change (hot reload end to end).
+- [x] `previewLane` merged into preview resolution; `viewMode` registry-listed
+  (`greebleLaneBridge`; switch-UI merge needs a custom-mode-aware consumer).
+- [x] Factory modules + flagship API themes (XMB, Wii Menu, Finder) +
+  content watcher hot-reload loop (`greebleFactory`, `greebleWatch`).
+- [ ] Multi-root watch + API shell host (render book shells structurally).
 
 `extension.toml` packs and `theme.json` playlists run on their legacy
 loaders while API registrations flow through the bridge — both visible

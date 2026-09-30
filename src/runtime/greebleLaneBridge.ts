@@ -29,7 +29,6 @@
 import { createElement, useSyncExternalStore, type ComponentType } from 'react';
 import type {
   GreebleComponent,
-  GreebleContext,
   GreebleMatch,
   GreeblePreviewLaneContribution,
   GreebleRegistry,
@@ -53,6 +52,11 @@ import type {
   BoundOverlayPluginPreviewLaneProps,
 } from '../components/pluginRuntime';
 import { getGreebleDomainBook } from './greebleHost';
+import { buildGreebleContext } from './greebleContext';
+import {
+  getGreebleEntryStore,
+  getGreebleExtensionBus,
+} from './greebleHost';
 
 /** Owner attribution for converted lanes — the contribution carries no owner. */
 export const GREEBLE_API_LANE_PLUGIN_ID = 'greeble-api' as const;
@@ -176,6 +180,7 @@ function readNonEmptyText(value: unknown, fallback: string): string {
  */
 export function adaptGreebleLaneComponent(
   apiComponent: GreebleComponent<unknown>,
+  ownerId = 'greeble-lane',
 ): BoundOverlayPluginPreviewLaneComponent {
   if (typeof apiComponent !== 'function') {
     const FallbackNotice = () =>
@@ -196,10 +201,21 @@ export function adaptGreebleLaneComponent(
       cssVars: {},
       fonts: { ui: 'system-ui, sans-serif', mono: 'ui-monospace, monospace' },
     };
-    // STUB: full host context synthesis (capability bag, extension identity,
-    // abort signal) is a later step. Handlers receiving this must not rely on
-    // `ctx` beyond its shape.
-    const ctx = {} as GreebleContext;
+    // Real storage/log/paths/events; host-bound lanes throw honest
+    // not-yet-wired errors only if called (see greebleContext).
+    const ctx = buildGreebleContext(
+      {
+        id: `lane:${ownerId}`,
+        name: `lane:${ownerId}`,
+        version: '1.0.0',
+        entryPath: ownerId,
+        rootDir: ownerId,
+        capabilities: new Set(['storage:read', 'storage:write']),
+        tags: [],
+        meta: {},
+      },
+      { bus: getGreebleExtensionBus(), entries: getGreebleEntryStore() },
+    );
     const data = {
       path: props.file.path,
       name: props.file.name,
@@ -268,7 +284,7 @@ export function convertGreeblePreviewLaneToDescriptor(
         },
         { topBarDensity: chrome.topBarDensity === 'compact' ? 'compact' : 'regular' },
       ),
-      component: adaptGreebleLaneComponent(entry.component),
+      component: adaptGreebleLaneComponent(entry.component, laneId),
     };
   } catch (error) {
     console.warn(

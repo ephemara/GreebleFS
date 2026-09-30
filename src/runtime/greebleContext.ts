@@ -11,6 +11,7 @@
 
 import type {
   GreebleContext,
+  GreebleExtensionBus,
   GreebleExtensionIdentity,
   GreebleFileSystemCapability,
   GreebleExplorerCapability,
@@ -22,7 +23,6 @@ import type {
   GreebleStorageCapability,
   GreebleUICapability,
 } from '../api/greeble';
-import type { GreebleExtensionBus } from '../api/events';
 import type { GreebleEntryStore } from '../api/host';
 
 function unwired<T>(capability: string): T {
@@ -120,7 +120,10 @@ export function buildGreebleContext(
   identity: GreebleExtensionIdentity,
   deps: GreebleContextDependencies,
 ): GreebleContext {
-  return {
+  // Built unannotated then cast: test-only declaration merging can widen
+  // GreebleContext (e.g. an `xmb` slice), which a direct annotation would
+  // reject. Runtime shape always satisfies the published contract.
+  const context = {
     extension: identity,
     signal: undefined,
     hasUI: true,
@@ -135,4 +138,5 @@ export function buildGreebleContext(
     log: buildLogCapability(identity),
     events: deps.bus,
   };
+  return context as unknown as GreebleContext;
 }

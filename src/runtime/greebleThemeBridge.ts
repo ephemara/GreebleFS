@@ -23,6 +23,7 @@ import {
   type OverlayThemeDefinition,
 } from '../config/appearance';
 import type {
+  GreebleDomainBook,
   GreebleRegistry,
   GreebleThemeContribution,
 } from '../api/greeble';
@@ -95,6 +96,7 @@ export function convertGreebleThemeToDefinition(
 }
 
 interface ApiThemeSnapshot {
+  book: GreebleDomainBook | null;
   version: number;
   definitions: OverlayThemeDefinition[];
 }
@@ -102,9 +104,10 @@ interface ApiThemeSnapshot {
 let snapshotCache: ApiThemeSnapshot | null = null;
 
 function readApiThemeSnapshot(): ApiThemeSnapshot {
-  const registry = getThemeRegistry();
+  const book = getGreebleDomainBook();
+  const registry = book.define<GreebleThemeContribution>('theme');
   const version = registry.version();
-  if (snapshotCache && snapshotCache.version === version) {
+  if (snapshotCache && snapshotCache.book === book && snapshotCache.version === version) {
     return snapshotCache;
   }
   const takenIds = new Set<string>(overlayThemePresets.map(preset => preset.id));
@@ -113,7 +116,7 @@ function readApiThemeSnapshot(): ApiThemeSnapshot {
     const definition = convertGreebleThemeToDefinition(entry, takenIds);
     if (definition) definitions.push(definition);
   }
-  snapshotCache = { version, definitions };
+  snapshotCache = { book, version, definitions };
   return snapshotCache;
 }
 

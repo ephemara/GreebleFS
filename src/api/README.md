@@ -160,6 +160,8 @@ hot reload is a clean replace, not an accumulation.
   (`greeblePluginShim`, tested: panel + lane + slot + workflow adopt, idempotent re-adopt, withdraw)
 - [x] Legacy `defineThemeRenderer` TSX shimmed onto `registerShell`
   (`greebleLegacyShim`, runtime-tested against the real toon pack)
-- [x] `previewLane` + `viewMode` backed by descriptor bridges (`greebleLaneBridge`: registry → legacy lane / view-mode definitions + reactive hooks; App/registry merge still TODO)
+- [x] `previewLane` merged into preview resolution; `viewMode` registry-listed
+  (`greebleLaneBridge` + App merge; switch-UI merge needs a custom-mode-aware consumer)
+- [x] Factory modules (`defineGreebleExtension`, `greebleFactory` + `greebleContext`), theme discovery branch, flagship XMB/Wii/Finder packs, content watcher loop (`greebleWatch`)
 - [ ] Remaining domains (explorer-widget, activity-lane, …) backed by real renderers
-- [ ] Rust watcher re-runs factories on file change (hot reload end to end)
+- [ ] Multi-root watch + API shell host (render book shells structurally)

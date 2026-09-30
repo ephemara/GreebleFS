@@ -192,6 +192,11 @@ harness.dispose();   // releases handles + sweeps the owner's contributions
 | Legacy `definePlugin` / `extension.toml` shimmed onto the new verbs | ✅ Done (`greeblePluginShim`: loaded packs adopt as panel + preview-lane + settings-slot + workflow, live host providers from App, withdraw on unload, `greeblePluginShim.test.ts`) |
 | Theme domain backed by a real renderer path (`greebleThemeBridge`: registry → definitions → ThemeCatalog/apply/CSS) | ✅ Done + runtime-tested (`greebleThemeBridge.test.ts`) |
 | Legacy `defineThemeRenderer` TSX shimmed onto `registerShell` | ✅ Done (`greebleLegacyShim`: loaded packs adopt as API shells, live host from App, withdraw on unload) |
-| `previewLane` + `viewMode` backed by descriptor bridges (`greebleLaneBridge`: registry → legacy lane / view-mode definitions + reactive hooks; App/registry merge still TODO) | ✅ Bridge done, wiring TODO |
+| `previewLane` backed by descriptor bridge + merged into preview resolution (`greebleLaneBridge` + App merge; adapted components render degraded-real) | ✅ Done + tested (`greebleLaneBridge.test.ts`) |
+| `viewMode` backed by descriptor bridge (registry-listed, `api-*` ids outside the closed union; switch-UI merge needs a custom-mode-aware consumer) | ✅ Bridge done, consumer TODO |
+| Factory modules (`*.greeble.tsx` via `defineGreebleExtension`): load, run, owner-tracked reload (`greebleFactory` + `greebleContext` w/ real paths/storage/log/events, honest stubs) | ✅ Done + tested (`greebleFactory.test.ts`) |
+| Theme discovery runs factory packs (`theme.greeble.tsx` per dir, independent of `theme.json`) | ✅ Done |
+| Flagship API-native token themes: XMB, Wii Menu, Finder (`usr/themes/*/theme.greeble.tsx`) | ✅ Done — visible in catalog via bridge |
+| Content watcher loop (backend single-slot watch + debounced factory reload + catalog refresh, main window owns it) | ✅ Done, no Rust changes (`greebleWatch.ts`) |
 | Remaining domains (explorer-widget, activity-lane, …) backed by real renderers | ⬜ TODO |
-| Rust watcher re-runs factories on file change (hot reload end-to-end) | ⬜ TODO |
+| Multi-root watch + API shell host (render book shells structurally) | ⬜ TODO |

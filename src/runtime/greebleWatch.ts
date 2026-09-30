@@ -90,7 +90,6 @@ export async function startGreebleContentWatch(
     return () => {};
   });
 
-  void ownerUnderRoot;
   return () => {
     stopped = true;
     if (timer) clearTimeout(timer);

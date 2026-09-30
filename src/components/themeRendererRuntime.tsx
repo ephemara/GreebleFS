@@ -6,7 +6,7 @@ import {
   GREEBLE_API_VERSION_STRING,
   GREEBLE_RUNTIME_MODULE,
 } from '../api/greeble';
-import { defineGreebleExtension } from './greebleFactory';
+import { defineGreebleExtension } from '../runtime/greebleFactory';
 
 import type { OverlayThemeDefinition, ResolvedOverlayAppearance } from '../config/appearance';
 import type { LayoutProfile } from '../config/layoutProfiles';

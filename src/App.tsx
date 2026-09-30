@@ -333,6 +333,15 @@ import {
 import type { ExplorerTaskSnapshot } from './runtime/explorerBackend';
 import { installFrontendTelemetryObservers } from './runtime/telemetry';
 import { useGreebleApiThemeDefinitions } from './runtime/greebleThemeBridge';
+import { useGreebleApiPreviewLanes } from './runtime/greebleLaneBridge';
+import {
+  adoptLoadedShellRendererPacks,
+  setLegacyShellHostProvider,
+} from './runtime/greebleLegacyShim';
+import {
+  adoptLoadedPluginPacks,
+  setLegacyPluginHostProviders,
+} from './runtime/greeblePluginShim';
 import { useUpdateAutoCheck } from './runtime/useUpdateAutoCheck';
 import { startGreebleContentWatch } from './runtime/greebleWatch';
 import { UpdateBanner } from './components/UpdateBanner';
@@ -1662,6 +1671,30 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
     ]);
   }, [themeBundleDependencyCatalogs, combinedThemePackages]);
+  // API preview lanes merge ahead of folder lanes (same pattern as themes).
+  const greebleApiPreviewLanes = useGreebleApiPreviewLanes();
+  const allPluginPreviewLanes = useMemo(
+    () => [...greebleApiPreviewLanes, ...pluginPreviewLanes],
+    [greebleApiPreviewLanes, pluginPreviewLanes],
+  );
+  // Legacy plugins surface as API contributions (panel/lanes/slots/workflows).
+  // Registration replaces on duplicate id — safe to re-run on every load.
+  useEffect(() => {
+    const packs = new Map<string, {
+      pluginId: string;
+      plugin: (typeof folderPlugins)[number] | null;
+      lanes: typeof pluginPreviewLanes;
+      slots: typeof pluginSettingsSlots;
+      workflows: typeof pluginWorkflows;
+    }>();
+    for (const plugin of folderPlugins) {
+      packs.set(plugin.id, { pluginId: plugin.id, plugin, lanes: [], slots: [], workflows: [] });
+    }
+    for (const lane of pluginPreviewLanes) packs.get(lane.pluginId)?.lanes.push(lane);
+    for (const slot of pluginSettingsSlots) packs.get(slot.pluginId)?.slots.push(slot);
+    for (const workflow of pluginWorkflows) packs.get(workflow.pluginId)?.workflows.push(workflow);
+    adoptLoadedPluginPacks([...packs.values()]);
+  }, [folderPlugins, pluginPreviewLanes, pluginSettingsSlots, pluginWorkflows]);
   // API-registered themes (greeblefs harness `theme` domain) render through
   // the same pipeline as JSON packs — catalog, selection, CSS vars.
   const greebleApiThemeDefinitions = useGreebleApiThemeDefinitions();
@@ -1700,6 +1733,18 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
+  // Shimmed plugin adapters build legacy props from these providers.
+  useEffect(() => {
+    setLegacyPluginHostProviders({
+      createApi: plugin => createPluginApi(plugin),
+      getAppearance: () => ({
+        theme: resolvedAppearance.theme,
+        fonts: resolvedAppearance.fonts,
+        cssVars: resolvedAppearance.cssVars,
+      }),
+    });
+    return () => setLegacyPluginHostProviders(null);
+  }, [createPluginApi, resolvedAppearance]);
   useEffect(() => {
     if (isDedicatedSecondaryWindowHost) {
       return;
@@ -5567,7 +5612,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         pluginExplorerActivityLanes,
         pluginExplorerViews,
         pluginExplorerWidgets,
-        pluginPreviewLanes,
+        pluginPreviewLanes: allPluginPreviewLanes,
         pluginSettingsSlots,
         pluginWorkflows,
         pluginsLoading: folderPluginsLoading,
@@ -5736,7 +5781,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
           <PluginsManager
             appearance={resolvedAppearance}
             plugins={folderPlugins}
-            previewLanes={pluginPreviewLanes}
+            previewLanes={allPluginPreviewLanes}
             isLoading={folderPluginsLoading}
             error={folderPluginsError}
             onRefreshPlugins={() => refreshFolderPlugins(true)}
@@ -5809,7 +5854,7 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       pluginExplorerActivityLanes,
       pluginExplorerViews,
       pluginExplorerWidgets,
-      pluginPreviewLanes,
+      allPluginPreviewLanes,
       openAnimationsFolder,
       openAppearancePacksFolder,
       openActionsFolder,
