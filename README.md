@@ -68,7 +68,7 @@ GreebleFS is an uncompromising engineering effort spanning over **200,000 lines 
 |---|---|
 | **Core Languages** | Rust (Host & Engines), TypeScript/React 19 (Shell), Go, Python, Kain |
 | **Workspace Crates** | **17 native Rust crates** (`greeblefs-index-core`, `vst-host`, `audio-engine`, etc.) |
-| **Tauri Framework** | Custom **Tauron fork** (`D:/tauron`) patched at the crate level |
+| **Tauri Framework** | Custom **Tauron fork** (vendored directly in repo at `tauron/`) patched at the crate level |
 | **Windows Indexer** | Dedicated **NTFS MFT & USN Journal tailing service** for sub-millisecond lookups |
 | **UI Core** | `App.tsx` (~8.5k lines), `FileExplorer.tsx` (~30k lines of dense frontend logic) |
 | **User Space (`/usr`)** | 30+ Theme Bundles, 15+ Appearance Packs, Shaders, Sound Packs, Plugins |
@@ -80,7 +80,7 @@ GreebleFS is an uncompromising engineering effort spanning over **200,000 lines 
 
 Stock Tauri is great for lightweight apps, but its IPC model forces every single byte through JSON serialization strings. When you have a folder with **150,000 files**, stream 4K video frames, or tail massive live terminal streams, **JSON IPC chokes**.
 
-GreebleFS solved this by maintaining a sibling fork of Tauri 2: **Tauron** (located at `D:/tauron`):
+GreebleFS solved this by integrating a custom in-tree fork of Tauri 2: **Tauron** (vendored directly in the repo at `tauron/`):
 
 | Tauron Primitive | What It Does | Why It Dominates Stock Tauri |
 |---|---|---|
@@ -214,7 +214,7 @@ The resolution chain is rock-solid: **Active Profile $\to$ Canonical Baseline $\
 
 - **Node / Runtime:** [Bun](https://bun.sh/) (preferred) or Node.js v20+ with `pnpm`
 - **Rust Toolchain:** Stable Rust (1.80+) with `cargo`
-- **Tauron Fork:** Ensure the sibling `../tauron` workspace is present (or set via configuration)
+- **Tauron Engine:** In-tree vendored at `tauron/` (verified automatically during preflight)
 - **C++ Build Tools:** Windows SDK & MSVC toolchain (on Windows) or standard `build-essential` (on Linux)
 
 ### Installation & Development
@@ -935,9 +935,9 @@ This is a project that:
 
 ### The Missing Tauron
 
-The sibling `D:/tauron` fork is the **hidden foundation**. Without it, GreebleFS would be a slower, JSON-choked file explorer. With it, it can stream 100K directory entries across a shared buffer in milliseconds, pipe live terminal output through a native byte stream, and lease WebView2 shared buffers for preview payloads — all while the user scrolls smoothly through their files.
+The vendored `tauron/` tree is the **hidden foundation**. Without it, GreebleFS would be a slower, JSON-choked file explorer. With it, it can stream 100K directory entries across a shared buffer in milliseconds, pipe live terminal output through a native byte stream, and lease WebView2 shared buffers for preview payloads — all while the user scrolls smoothly through their files.
 
-The fork boundary is intentionally clean: GreebleFS patches the core crates through Cargo and consumes the JS API from the fork's dist. When Tauron improves, GreebleFS benefits. When GreebleFS needs new transport primitives, they land in Tauron first and flow back through the patch.
+The framework boundary is intentionally clean: GreebleFS patches the core crates in `Cargo.toml` (`[patch.crates-io]`) to point to `tauron/crates/*` and consumes the JS API from `tauron/packages/api/dist`. When Tauron improves, GreebleFS benefits. When GreebleFS needs new transport primitives, they land in Tauron first and flow back through the patch.
 
 ### Why It Matters
 

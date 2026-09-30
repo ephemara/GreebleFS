@@ -1,6 +1,5 @@
 import React, {
   Suspense,
-  useEffect,
   useMemo,
   useState,
   type ComponentProps,
@@ -146,7 +145,6 @@ export function SettingsPage(props: SettingsPageProps) {
     [props.appearance],
   );
   const [railWidth, setRailWidth] = useState(208);
-  const [legacyLoadAllowed, setLegacyLoadAllowed] = useState(false);
 
   const sectionByKey = useMemo(
     () =>
@@ -174,28 +172,7 @@ export function SettingsPage(props: SettingsPageProps) {
     [sectionByKey],
   );
 
-  useEffect(() => {
-    if (legacyLoadAllowed) {
-      return;
-    }
-
-    if (activeRailPath !== "settings") {
-      setActiveRailPath("settings");
-      setActivePluginSettingsSlotId(null);
-    }
-    if (activeSection !== "overview") {
-      setActiveSection("overview");
-    }
-  }, [
-    activeRailPath,
-    activeSection,
-    legacyLoadAllowed,
-    setActivePluginSettingsSlotId,
-    setActiveRailPath,
-    setActiveSection,
-  ]);
-
-  const visibleSection = legacyLoadAllowed ? activeSection : "overview";
+  const visibleSection = activeSection;
   const activeSectionMeta =
     sectionByKey.get(visibleSection) ?? sectionByKey.get("overview")!;
   const activeRailPathDescriptor =
@@ -205,10 +182,7 @@ export function SettingsPage(props: SettingsPageProps) {
     (slot) => slot.id === activePluginSettingsSlotId,
   );
 
-  if (
-    legacyLoadAllowed
-    && (activeRailPath !== "settings" || activeSection !== "overview")
-  ) {
+  if (activeRailPath !== "settings" || activeSection !== "overview") {
     return (
       <Suspense fallback={<SettingsDeepSectionLoading />}>
         <LazySettingsPageLegacy {...props} />
@@ -287,13 +261,9 @@ export function SettingsPage(props: SettingsPageProps) {
                         onClick={() => {
                           setActiveRailPath(path.key as SettingsRailPathKey);
                           if (path.key === "plugins") {
-                            setLegacyLoadAllowed(true);
                             setActivePluginSettingsSlotId(
                               props.pluginSettingsSlots?.[0]?.id ?? null,
                             );
-                          } else {
-                            setLegacyLoadAllowed(false);
-                            setActiveSection("overview");
                           }
                         }}
                         className="h-6 rounded px-2 text-center text-[10px] font-semibold uppercase transition-colors"
@@ -341,9 +311,7 @@ export function SettingsPage(props: SettingsPageProps) {
                           muted={appearance.muted}
                           onClick={() => {
                             setActiveRailPath("settings");
-                            const sectionKey = section.key as SettingsSectionKey;
-                            setLegacyLoadAllowed(sectionKey !== "overview");
-                            setActiveSection(sectionKey);
+                            setActiveSection(section.key as SettingsSectionKey);
                           }}
                         />
                       ))}
@@ -464,7 +432,7 @@ export function SettingsPage(props: SettingsPageProps) {
                       key={key}
                       type="button"
                       onClick={() => {
-                        setLegacyLoadAllowed(true);
+                        setActiveRailPath("settings");
                         setActiveSection(key);
                       }}
                       className="justify-start"

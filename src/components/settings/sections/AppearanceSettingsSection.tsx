@@ -165,7 +165,11 @@ export function AppearanceSettingsSection({
         <div className="min-w-0 space-y-2.5">
           <SettingsCompactSection
             title="Themes"
-            subtitle={themePackagesDirectory}
+            subtitle={(
+              <span>
+                Drop native bundles, VS Code color-theme folders, or <code>.vsix</code> archives into <code>{themePackagesDirectory}</code>.
+              </span>
+            )}
             actions={(
               <>
                 <SettingsIconActionButton
@@ -220,6 +224,10 @@ export function AppearanceSettingsSection({
                   {warning}
                 </SettingsInlineNotice>
               ))}
+
+              <p className="text-[11px] leading-4 opacity-40">
+                Official pilot bundles surface first, built-ins stay supported, and compatibility imports stay clearly labeled so cached .vsix extracts never masquerade as authored bundles.
+              </p>
             </div>
           </SettingsCompactSection>
 

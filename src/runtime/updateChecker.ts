@@ -13,7 +13,7 @@ export const UPDATE_LATEST_API_URL =
   `https://api.github.com/repos/${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}/releases/latest`;
 export const UPDATE_RELEASES_PAGE_URL =
   `https://github.com/${UPDATE_REPO_OWNER}/${UPDATE_REPO_NAME}/releases`;
-export const UPDATE_FALLBACK_VERSION = '0.2.0';
+export const UPDATE_FALLBACK_VERSION = '0.2.1';
 export const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 
 export interface UpdateReleaseAsset {

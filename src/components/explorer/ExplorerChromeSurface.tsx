@@ -24,6 +24,7 @@ import {
 } from "../../config/explorerChromeLayouts";
 import { shouldAllowNativeContextMenu } from "../../runtime/documentInteractionGuards";
 import { LayoutDynamicsCanvas } from "../layoutDynamics/LayoutDynamicsCanvas";
+import { ShelfDropIndicator } from "../../customization";
 import {
   useExplorerCustomizePointerSnapshot,
   type ExplorerCustomizePointerDropTarget,
@@ -623,9 +624,7 @@ export function ExplorerChromeSurface({
         key={`${surface.surfaceId}:${zoneId}:ghost:${targetIndex}`}
         data-explorer-customize-insertion-ghost="true"
         style={{
-          minWidth: 22,
-          height: 26,
-          display: "flex",
+          display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
           flexShrink: 0,
@@ -633,23 +632,7 @@ export function ExplorerChromeSurface({
           pointerEvents: "none",
         }}
       >
-        <div
-          style={{
-            width: isHighlighted ? 18 : 14,
-            height: isHighlighted ? 20 : 18,
-            borderRadius: 10,
-            border: isHighlighted
-              ? "1px solid color-mix(in srgb, var(--overlay-accent) 82%, white 18%)"
-              : "1px dashed color-mix(in srgb, var(--overlay-accent) 54%, transparent)",
-            background: isHighlighted
-              ? "color-mix(in srgb, var(--overlay-accent) 18%, transparent)"
-              : "color-mix(in srgb, var(--overlay-accent) 10%, transparent)",
-            boxShadow: isHighlighted
-              ? "0 0 0 1px color-mix(in srgb, var(--overlay-accent) 24%, transparent)"
-              : undefined,
-            transition: "width 120ms ease, height 120ms ease, background 120ms ease",
-          }}
-        />
+        <ShelfDropIndicator isHighlighted={isHighlighted} />
       </div>
     );
   };

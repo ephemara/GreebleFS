@@ -18,7 +18,6 @@ import {
   limitShift,
   offset as floatingOffset,
   shift,
-  size as floatingSize,
   type Placement,
   type Strategy,
 } from "@floating-ui/react";
@@ -74,31 +73,9 @@ interface AppSelectPopoverPosition {
   top: number;
   strategy: Strategy;
   placement: Placement;
-  minWidth: number;
-  maxWidth: number;
-  maxHeight: number;
-}
-
-function readOverlayThemeVariables(element: HTMLElement): CSSProperties {
-  const source =
-    element.closest(".overlay-window-host")
-    ?? element.closest("[data-gfs-shell-scene-container]")
-    ?? element;
-  const computedStyle = getComputedStyle(source);
-  const variables: Record<string, string> = {};
-
-  for (let index = 0; index < computedStyle.length; index += 1) {
-    const propertyName = computedStyle.item(index);
-    if (!propertyName.startsWith("--overlay-")) {
-      continue;
-    }
-    const propertyValue = computedStyle.getPropertyValue(propertyName).trim();
-    if (propertyValue) {
-      variables[propertyName] = propertyValue;
-    }
-  }
-
-  return variables as CSSProperties;
+  minWidth?: number;
+  maxWidth?: number;
+  maxHeight?: number;
 }
 
 function stringifySelectValue(value: string | number | readonly string[] | null | undefined): string | undefined {
@@ -267,6 +244,16 @@ function AppSelectOptionRow({
             : "transparent",
         ...optionStyle,
       }}
+      onMouseEnter={(e) => {
+        if (!isDisabled && !isSelected) {
+          e.currentTarget.style.background = "var(--overlay-workbench-command-palette-item-active-bg, var(--overlay-workbench-chrome-button-active-bg))";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isDisabled && !isSelected && !isFocused) {
+          e.currentTarget.style.background = "transparent";
+        }
+      }}
     >
       <span
         {...labelProps}
@@ -314,7 +301,6 @@ export function AppSelect({
   const listBoxRef = useRef<HTMLUListElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<AppSelectPopoverPosition | null>(null);
-  const [popoverThemeVariables, setPopoverThemeVariables] = useState<CSSProperties | null>(null);
   const normalizedOptions = useMemo(
     () => normalizeSelectOptions(options, children),
     [children, options],
@@ -393,7 +379,7 @@ export function AppSelect({
       ...menuProps,
       autoFocus: state.focusStrategy ?? true,
       shouldFocusWrap: true,
-      shouldFocusOnHover: true,
+      shouldFocusOnHover: false,
     },
     state,
     listBoxRef,
@@ -407,7 +393,6 @@ export function AppSelect({
   useLayoutEffect(() => {
     if (!state.isOpen) {
       setPopoverPosition(null);
-      setPopoverThemeVariables(null);
       return;
     }
 
@@ -415,28 +400,21 @@ export function AppSelect({
     const popoverElement = popoverRef.current;
     if (!triggerElement || !popoverElement) {
       setPopoverPosition(null);
-      setPopoverThemeVariables(null);
       return undefined;
     }
-
-    setPopoverThemeVariables(readOverlayThemeVariables(triggerElement));
 
     let cancelled = false;
     const updatePopoverPosition = async () => {
       const activeTriggerElement = triggerRef.current;
       const activePopoverElement = popoverRef.current;
-      if (!activeTriggerElement || !activePopoverElement) {
-        if (!cancelled) {
-          setPopoverPosition(null);
-        }
+      if (!activeTriggerElement || !activePopoverElement || cancelled) {
         return;
       }
 
-      let nextSize = {
-        minWidth: Math.max(160, Math.ceil(activeTriggerElement.getBoundingClientRect().width)),
-        maxWidth: Math.max(160, (window.innerWidth || document.documentElement.clientWidth) - 16),
-        maxHeight: Math.max(96, (window.innerHeight || document.documentElement.clientHeight) - 16),
-      };
+      const rect = activeTriggerElement.getBoundingClientRect();
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
       const nextPosition = await computePosition(
         activeTriggerElement,
         activePopoverElement,
@@ -452,16 +430,6 @@ export function AppSelect({
               padding: 8,
               limiter: limitShift(),
             }),
-            floatingSize({
-              padding: 8,
-              apply({ availableHeight, availableWidth, rects }) {
-                nextSize = {
-                  minWidth: Math.max(160, Math.ceil(rects.reference.width)),
-                  maxWidth: Math.max(160, Math.floor(availableWidth)),
-                  maxHeight: Math.max(96, Math.floor(availableHeight)),
-                };
-              },
-            }),
           ],
         },
       );
@@ -470,12 +438,35 @@ export function AppSelect({
         return;
       }
 
-      setPopoverPosition({
-        left: nextPosition.x,
-        top: nextPosition.y,
-        strategy: nextPosition.strategy,
-        placement: nextPosition.placement,
-        ...nextSize,
+      const minWidth = Math.max(160, Math.ceil(rect.width));
+      const maxWidth = Math.max(160, viewportWidth - 16);
+      const maxHeight = Math.max(96, Math.min(360, viewportHeight - 16));
+
+      // Apply size directly to floating element style to avoid triggering resize observer loops
+      Object.assign(activePopoverElement.style, {
+        minWidth: `${minWidth}px`,
+        maxWidth: `${maxWidth}px`,
+        maxHeight: `${maxHeight}px`,
+      });
+
+      setPopoverPosition((prev) => {
+        if (
+          prev &&
+          Math.abs(prev.left - nextPosition.x) < 1 &&
+          Math.abs(prev.top - nextPosition.y) < 1 &&
+          prev.placement === nextPosition.placement
+        ) {
+          return prev;
+        }
+        return {
+          left: nextPosition.x,
+          top: nextPosition.y,
+          strategy: nextPosition.strategy,
+          placement: nextPosition.placement,
+          minWidth,
+          maxWidth,
+          maxHeight,
+        };
       });
     };
 
@@ -489,8 +480,8 @@ export function AppSelect({
       {
         ancestorResize: true,
         ancestorScroll: true,
-        elementResize: true,
-        layoutShift: true,
+        elementResize: false, // Critical: prevent layout thrashing and resize observer loops!
+        layoutShift: false,   // Critical: prevent layout shift infinite trigger loops!
       },
     );
 
@@ -500,7 +491,13 @@ export function AppSelect({
     };
   }, [state.isOpen]);
 
-  const popover = state.isOpen && typeof document !== "undefined" ? createPortal(
+  const portalTarget = typeof document !== "undefined"
+    ? (triggerRef.current?.closest(".overlay-window-host")
+       ?? triggerRef.current?.closest("[data-gfs-shell-scene-container]")
+       ?? document.body)
+    : null;
+
+  const popover = state.isOpen && portalTarget ? createPortal(
     <FocusScope restoreFocus>
       <div
         {...mergeProps(overlayProps)}
@@ -526,7 +523,6 @@ export function AppSelect({
           padding: "var(--overlay-workbench-control-gap)",
           boxSizing: "border-box",
           visibility: popoverPosition ? "visible" : "hidden",
-          ...(popoverThemeVariables ?? undefined),
           ...menuStyle,
         }}
       >
@@ -562,16 +558,18 @@ export function AppSelect({
         <DismissButton onDismiss={() => state.close()} />
       </div>
     </FocusScope>,
-    document.body,
+    portalTarget,
   ) : null;
 
   return (
     <>
-      <HiddenSelect
-        {...hiddenSelectProps}
-        state={state}
-        triggerRef={triggerRef}
-      />
+      {selectProps.name ? (
+        <HiddenSelect
+          {...hiddenSelectProps}
+          state={state}
+          triggerRef={triggerRef}
+        />
+      ) : null}
       <button
         {...buttonProps}
         {...passthroughButtonProps}

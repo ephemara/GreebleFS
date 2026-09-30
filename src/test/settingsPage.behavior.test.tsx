@@ -82,7 +82,9 @@ const BUILT_IN_MENU_PACK_FIXTURES: LoadedExplorerMenuPack[] = [
 ];
 
 function findSectionButton(label: string): HTMLButtonElement {
-  const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
+  const button =
+    screen.getAllByRole('button').find(entry => entry.getAttribute('data-settings-rail-button') === label || entry.getAttribute('aria-label') === label)
+    ?? screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
   if (!button) {
     throw new Error(`Unable to find button containing "${label}"`);
   }

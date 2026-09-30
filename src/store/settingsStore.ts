@@ -199,8 +199,6 @@ const builtInExplorerViewIds = [
   'timeline-surface',
 ] as const;
 
-type BuiltInExplorerViewId = (typeof builtInExplorerViewIds)[number];
-
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -1487,6 +1485,73 @@ function isStorageLike(value: unknown): value is Storage {
     && typeof (value as Storage).setItem === 'function'
     && typeof (value as Storage).removeItem === 'function',
   );
+}
+
+/**
+ * Debounced storage wrapper: zustand/persist serializes the ENTIRE settings
+ * tree synchronously on every store set() — including slider drags, color
+ * keystrokes, and rail navigation. Debouncing setItem keeps interaction
+ * at 60fps; reads stay synchronous and beforeunload flushes pending writes.
+ */
+const SETTINGS_PERSIST_DEBOUNCE_MS = 400;
+
+function createDebouncedSettingsStorage(base: Storage): Storage {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: { key: string; value: string } | null = null;
+  const flush = () => {
+    timer = null;
+    if (pending) {
+      const write = pending;
+      pending = null;
+      try {
+        base.setItem(write.key, write.value);
+      } catch {
+        // Storage quota / private mode — settings stay in memory.
+      }
+    }
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', flush);
+  }
+  return {
+    get length() {
+      return base.length;
+    },
+    clear() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pending = null;
+      base.clear();
+    },
+    getItem(key: string) {
+      if (pending && pending.key === key) {
+        return pending.value;
+      }
+      return base.getItem(key);
+    },
+    key(index: number) {
+      return base.key(index);
+    },
+    removeItem(key: string) {
+      if (pending && pending.key === key) {
+        pending = null;
+      }
+      base.removeItem(key);
+    },
+    setItem(key: string, value: string) {
+      if (key !== SETTINGS_STORAGE_KEY) {
+        base.setItem(key, value);
+        return;
+      }
+      pending = { key, value };
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(flush, SETTINGS_PERSIST_DEBOUNCE_MS);
+    },
+  };
 }
 
 function getSettingsStorage(): Storage {
@@ -3282,7 +3347,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: SETTINGS_STORAGE_KEY,
-      storage: createJSONStorage(() => getSettingsStorage()),
+      storage: createJSONStorage(() => createDebouncedSettingsStorage(getSettingsStorage())),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<SettingsState> | undefined;
         const persistedShowAll = persisted?.showAllDescriptionsBySection;

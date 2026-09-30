@@ -167,6 +167,8 @@ export interface ExplorerChromeOverrideEntry {
   widthPx?: number;
   showLabel?: boolean;
   showIcon?: boolean;
+  customIconName?: string;
+  customLabel?: string;
 }
 
 export interface ExplorerChromeOverrideSnapshot {
@@ -185,6 +187,8 @@ export interface ExplorerChromeResolvedControlPlacement extends ExplorerChromeSl
   widthPx?: number;
   showLabel?: boolean;
   showIcon?: boolean;
+  customIconName?: string;
+  customLabel?: string;
 }
 
 export interface ExplorerChromeResolvedZone {
@@ -763,6 +767,8 @@ function getOverridePlacement(
     widthPx: overridePlacement.widthPx ?? basePlacement?.widthPx,
     showLabel: overridePlacement.showLabel ?? basePlacement?.showLabel,
     showIcon: overridePlacement.showIcon ?? basePlacement?.showIcon,
+    customIconName: overridePlacement.customIconName ?? basePlacement?.customIconName,
+    customLabel: overridePlacement.customLabel ?? basePlacement?.customLabel,
   };
 }
 
@@ -920,6 +926,8 @@ export function moveExplorerChromeControlInResolvedSurfaces(input: {
             widthPx: placement.widthPx,
             showLabel: placement.showLabel,
             showIcon: placement.showIcon,
+            customIconName: placement.customIconName,
+            customLabel: placement.customLabel,
           }));
         }),
       ),
