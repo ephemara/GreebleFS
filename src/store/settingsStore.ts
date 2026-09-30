@@ -227,6 +227,7 @@ export interface TerminalSettings {
   shellArgs: string;
   integratedHost: IntegratedTerminalHost;
   showSidebar: boolean;
+  followExplorerDirectory: boolean;
   cursorBlink: boolean;
   cursorStyle: 'bar' | 'block' | 'underline';
   scrollback: number;
@@ -1413,6 +1414,7 @@ function normalizeTerminalSettings(
       shellArgs: normalizedShellArgs,
     }),
     showSidebar: merged.showSidebar !== false,
+    followExplorerDirectory: merged.followExplorerDirectory !== false,
     overlayHeight: normalizeSavedWindowDimension(
       merged.overlayHeight,
       base.overlayHeight,
@@ -1945,6 +1947,7 @@ const runtimeFallbackDefaultSettings: Settings = {
     shellArgs: defaultIntegratedTerminalTemplate.shellArgs,
     integratedHost: defaultIntegratedTerminalHost,
     showSidebar: true,
+    followExplorerDirectory: true,
     cursorBlink: true,
     cursorStyle: 'bar',
     scrollback: 10000,

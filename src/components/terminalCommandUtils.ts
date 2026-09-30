@@ -67,6 +67,15 @@ export function buildTerminalCdCommand(path: string, shell: string): string {
     return `builtin cd -- '${escapeSingleQuotedPath(normalizedPath)}'`;
   }
 
+  if (!normalizedShell) {
+    // Shell unknown (e.g. a follow sync fired before settings resolved).
+    // A Windows path can never work with unix `cd --` quoting in pwsh/cmd,
+    // so prefer PowerShell syntax there; unix elsewhere.
+    if (/^[A-Za-z]:[\\/]/.test(normalizedPath) || normalizedPath.startsWith('\\\\')) {
+      return `Set-Location -LiteralPath '${escapePowerShellSingleQuotedPath(normalizedPath)}'`;
+    }
+  }
+
   return `cd -- '${escapeSingleQuotedPath(normalizedPath)}'`;
 }
 

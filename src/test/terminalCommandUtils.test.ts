@@ -42,6 +42,21 @@ describe('buildTerminalCdCommand', () => {
   it('returns an empty command when the target path is blank', () => {
     expect(buildTerminalCdCommand('   ', 'bash')).toBe('');
   });
+
+  it('prefers PowerShell syntax for Windows paths when the shell is unknown', () => {
+    expect(buildTerminalCdCommand('T:\\Code\\Greeble', '')).toBe(
+      "Set-Location -LiteralPath 'T:\\Code\\Greeble'",
+    );
+    expect(buildTerminalCdCommand('T:\\Code', '  ')).toBe(
+      "Set-Location -LiteralPath 'T:\\Code'",
+    );
+  });
+
+  it('keeps unix syntax for posix paths when the shell is unknown', () => {
+    expect(buildTerminalCdCommand('/home/taloor/work', '')).toBe(
+      "cd -- '/home/taloor/work'",
+    );
+  });
 });
 
 describe('buildTerminalScriptRunCommand', () => {

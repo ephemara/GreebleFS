@@ -130,6 +130,20 @@ GreebleFS is built on a multi-layered architecture:
 - 3D Model Thumbnail Generation
 - Shader Runtime (WGSL compilation)
 
+### 6. Extension API & Plugin System
+
+**[06-EXTENSION-API.md](06-EXTENSION-API.md)** - The `greeblefs` contract:
+
+- Registration verbs, event spine, inter-extension bus
+- Capabilities, context injection, declaration merging
+- Host integration and honest integration status
+
+**[07-PLUGIN-SYSTEM.md](07-PLUGIN-SYSTEM.md)** - The content system that runs today:
+
+- `usr/` layout, manifest bootstrap (copy-missing semantics)
+- Authoring plugins (`extension.toml`) and themes (`theme.json` playlists)
+- Kain plugins, profiles, troubleshooting, migration roadmap
+
 ## Key Concepts
 
 ### Shell First Philosophy

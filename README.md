@@ -304,12 +304,26 @@ A full-stack, data-driven design token orchestration pipeline:
 - **Live Visual FX:** Background WebGPU glass shaders, dynamic interactive canvas wallpapers, and fluid shell transitions.
 - **30+ Shipped Theme Bundles:** Including Cyberpunk, Nord, Solarized, Matrix, Tokyo Night, and the complete Official Pilot Suite.
 
-### 3. Sandboxed Plugin Architecture
-A robust package plugin ecosystem built for security and raw speed:
-- **Sandboxed Dependency Graph:** Plugins specify explicit version-pinned dependencies with strict source visibility gates (`open`, `hybrid`, `compiled`, `private`).
-- **Host Bridge Services:** Controlled access to the native filesystem, active selection, workspace state, terminal streams, and background tasks.
-- **VS Code Extension Compatibility:** Bridges VSIX manifests directly into Explorer activity rail lanes.
-- **Kain Native Plugins:** First-class support for compiled Kain lattice plugins communicating over zero-overhead FFI.
+### 3. The GreebleFS Extension API (`src/api/`, `import from 'greeblefs'`)
+The single contract every extension speaks — plugin, theme, workbench, script. One TypeScript module, one factory, **no manifest files**. Full doc: [`src/api/README.md`](src/api/README.md).
+
+```tsx
+// usr/plugins/xmb/index.tsx — the code IS the manifest
+import type { GreebleHarness } from 'greeblefs';
+export default function (fs: GreebleHarness) {
+  fs.registerCommand({ id: 'xmb-next', title: 'Next',
+    run: (_a, ctx) => ctx.explorer.open(ctx.explorer.selection().paths[0]) });
+  fs.registerViewMode({ id: 'xmb-row', title: 'XMB Row',
+    appliesTo: { isDirectory: true }, component: ({ data, ctx }) => <XmbRow entries={data} ctx={ctx} /> });
+  fs.on('file:before-open', e => e.size > 2_000_000 ? { block: true, reason: 'too large' } : undefined);
+}
+```
+
+- **Three rules:** (1) registration is a verb — `fs.registerX()` at load time, never TOML/JSON; (2) context is injected — handlers receive a capability bag (`ctx`: `ui, explorer, paths, fs, index, settings, storage, shell, log, events`), not imports; (3) the core never changes — new domains, events, and context slices arrive via `declare module 'greeblefs'`.
+- **25+ typed verbs, one escape hatch:** `registerShell|Theme|IconTheme|SoundPack|Shader|Motion|Animation|HomePack|MenuPack|Layout|Font|ViewMode|PreviewLane|ExplorerWidget|ActivityLane|Command|Action|ActionPack|ContextMenuItem|Hotkey|Workflow|Panel|SettingsSlot|Provider|Tool` — plus `register(domain, entry)` which works for ANY domain, known or not. Every verb returns a disposable `GreebleHandle`, so hot reload is a clean replace, never an accumulation.
+- **Event spine + bus:** `fs.on(event, handler, { priority })` middleware chain — return `{ patch }` to mutate for the next handler, `{ block: true }` to cancel before-events (`file:before-open`, `explorer:before-action`, …). Inter-extension chatter rides namespaced bus channels (`fs.events.emit('pdf:rendered', …)`).
+- **Sandboxed by capability:** per-extension tokens (`fs:read|write|watch`, `index:query`, `process:spawn`, `net:fetch`, `shell:panel|chrome`, `ui:overlay|notify`, `storage:*`, `settings:write`, `theme:override`) enforced by the host harness; legacy `definePlugin`/`extension.toml` and `defineThemeRenderer` TSX shims ride on top of the same verbs.
+- **Kain + VS Code lanes:** Kain lattice plugins over zero-overhead FFI and VSIX manifests bridged into activity lanes speak the same harness.
 
 ### 4. Bounded Native Task Graph
 Engineered to prevent UI starvation and out-of-memory crashes:
@@ -391,34 +405,28 @@ Engineered to prevent UI starvation and out-of-memory crashes:
    └── Active renderer awareness (custom themes suppress parts)
 ```
 
-### Plugin Activation Flow
+### Plugin Activation Flow (GreebleFS Extension API — `src/api/`, `import from 'greeblefs'`)
+
+> New extensions speak the harness, not manifests: default-export a factory `(fs: GreebleHarness) => void`, call `fs.registerX()` verbs, observe/patch/block via `fs.on(...)`. Legacy `extension.toml` / `definePlugin` / `defineThemeRenderer` packages are shimmed onto the same verbs. Full contract: [`src/api/README.md`](src/api/README.md).
 
 ```
 1. App startup / user Refresh in Plugins Manager
    │
-2. pluginPackages.ts scans:
-   ├── usr/plugins/<id>/extension.toml (or plugin.json)
-   │   ├── packageKind: "plugin" | "library"
-   │   ├── source visibility: open | hybrid | compiled | private
-   │   ├── dependencies with id, version, importAs, required
-   │   ├── exports.modules for library packages
-   │   ├── contributions:
-   │   │   ├── previewLanes → register preview workbenches
-   │   │   ├── settingsSlots → register Settings UI sections
-   │   │   ├── workflows → register explorer modal workflows
-   │   │   ├── views → register explorer view modes
-   │   │   ├── widgets → register explorer chrome widgets
-   │   │   ├── activityLanes → register explorer activity rail items
-   │   │   ├── mobilePanes → register mobile PWA tabs
-   │   │   └── commands → register command-palette actions
-   │   └── panelRuntime for Wasm-backed panels
+2. Host mints one harness per extension (host.ts: runGreebleExtension)
+   ├── identity { id, version, entryPath, rootDir, capabilities, tags, meta }
+   ├── shared GreebleDomainBookImpl + GreebleEventSpineImpl + GreebleExtensionBusImpl
+   ├── per-extension entry store (appendEntry/getEntry — survives reload)
+   └── lazy buildContext() → ctx { ui, explorer, paths, fs, index, settings, storage, shell, log, events }
    │
-   ├── usr/packages/<id>/extension.toml (libraries)
-   │   └── Source-importable by default
-   │
-   └── usr/plugins-kain/<id>/plugin.kn (Kain plugins)
-       ├── Normalized into same catalog
-       └── Rendered through KainPluginWorkbenchHost.tsx
+3. Factory runs → fs.registerX() verbs write into typed domain registries
+   ├── shell/theme/iconTheme/soundPack/shader/motion/animation/homePack/menuPack/layout/font
+   ├── viewMode/previewLane/explorerWidget/activityLane (explorer surfaces)
+   ├── command/action/actionPack/contextMenuItem/hotkey/workflow (interaction)
+   ├── panel/settingsSlot/provider/tool — or register(domain, entry) for ANY domain
+   ├── every verb returns a GreebleHandle; dispose() withdraws it
+   └── legacy scan still feeds the shims:
+       ├── usr/plugins/<id>/extension.toml (or plugin.json) → shimmed verbs
+       └── usr/plugins-kain/<id>/plugin.kn → normalized, rendered via KainPluginWorkbenchHost.tsx
    │
 3. Dependency graph resolution
    ├── Required deps must exist and be enabled

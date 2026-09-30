@@ -472,6 +472,105 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
+  it('defers explorer follow while the pane is busy instead of typing into it', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
+    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
+      eventHandlers.set(String(eventName), handler as (event: { payload: unknown }) => void);
+      return () => {
+        eventHandlers.delete(String(eventName));
+      };
+    });
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => expect(mockXtermInstances).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy Output' })).toBeEnabled());
+    await waitFor(() => {
+      expect(eventHandlers.has('terminal-shell-integration-state-event')).toBe(true);
+    });
+
+    const shellIntegrationHandler = eventHandlers.get('terminal-shell-integration-state-event');
+    if (!shellIntegrationHandler) {
+      throw new Error('Missing shell integration handler');
+    }
+    const shellPayload = (atPrompt: boolean) => ({
+      payload: {
+        id: 'overlay-0',
+        appliedCwd: null,
+        state: {
+          atPrompt,
+          pendingCwd: null,
+          lastSyncedCwd: null,
+          reportedCwd: null,
+          shellKind: 'unknown',
+          supportsAutoCd: true,
+        },
+      },
+    });
+
+    // Pane launches an interactive program: not at a fresh prompt.
+    shellIntegrationHandler(shellPayload(false));
+    invokeMock.mockClear();
+
+    useExplorerStore.getState().setPendingTerminalCwdSync({
+      path: 'S:\\Roms',
+      shell: 'pwsh.exe -NoLogo',
+      source: 'navigation',
+      updatedAt: 1,
+    });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().pendingTerminalCwdSync).toBeNull();
+    });
+    // Give the follow path a chance to misbehave.
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_sync_cwd', expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_write', expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_write_many', expect.anything());
+
+    // Shell returns to a fresh prompt: the deferred follow applies once.
+    shellIntegrationHandler(shellPayload(true));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_sync_cwd', {
+        id: 'overlay-0',
+        cwd: 'S:\\Roms',
+      });
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_write', expect.anything());
+  }, 20000);
+
+  it('skips explorer follow entirely when the follow toggle is off', async () => {
+    const invokeMock = vi.mocked(invoke);
+    useSettingsStore.getState().updateTerminal({ followExplorerDirectory: false });
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => expect(mockXtermInstances).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy Output' })).toBeEnabled());
+    expect(await screen.findByRole('button', { name: 'Follow Off' })).toBeInTheDocument();
+    invokeMock.mockClear();
+
+    useExplorerStore.getState().setPendingTerminalCwdSync({
+      path: 'S:\\Roms',
+      shell: 'pwsh.exe -NoLogo',
+      source: 'navigation',
+      updatedAt: 2,
+    });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().pendingTerminalCwdSync).toBeNull();
+    });
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_sync_cwd', expect.anything());
+    expect(invokeMock).not.toHaveBeenCalledWith('terminal_write', expect.anything());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Follow Off' }));
+    expect(useSettingsStore.getState().settings.terminal.followExplorerDirectory).toBe(true);
+    expect(await screen.findByRole('button', { name: 'Follow On' })).toBeInTheDocument();
+  }, 20000);
+
   it('spawns and restarts preview-scoped panes with namespaced ids and working directories', async () => {
     const invokeMock = vi.mocked(invoke);
     const previewWorkingDirectory = 'C:\\workspace\\repo';

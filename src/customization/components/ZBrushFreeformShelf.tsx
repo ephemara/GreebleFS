@@ -38,6 +38,11 @@ interface ZBrushFreeformShelfProps {
   isControlResizable?: (
     placement: ExplorerChromeResolvedControlPlacement,
   ) => boolean;
+  highlightedDropTarget?: {
+    surfaceId: string;
+    zoneId: string;
+    targetIndex: number;
+  } | null;
   style?: React.CSSProperties;
 }
 
@@ -77,6 +82,7 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
   onBeginPointerDrag,
   onBeginPointerResize,
   isControlResizable,
+  highlightedDropTarget,
   style,
 }) => {
   const shelfRef = useRef<HTMLDivElement | null>(null);
@@ -160,6 +166,7 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
         event.preventDefault();
         event.stopPropagation();
         onRequestHotkeyCapture?.(controlId);
+        onSelectControl?.(controlId);
         openHotkeyModal({
           controlId,
           commandId: controlId,
@@ -203,6 +210,12 @@ export const ZBrushFreeformShelf: React.FC<ZBrushFreeformShelfProps> = ({
         ...style,
       }}
     >
+      {highlightedDropTarget?.surfaceId === surfaceId && (
+        <div
+          data-explorer-customize-insertion-ghost="true"
+          style={{ display: "none" }}
+        />
+      )}
       {controls.map((placement) => {
         const pos = resolvedPositions.get(placement.controlId) ?? {
           x: 0,

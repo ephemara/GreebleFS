@@ -665,7 +665,7 @@ export function ExplorerChromeSurface({
         const rowControls = row.zones.flatMap((zone) => zone.controls);
         const hasCustomAnchors = rowControls.some((c) => c.anchorX != null);
 
-        if (hasCustomAnchors) {
+        if (editModeActive || hasCustomAnchors) {
           return (
             <div
               className="explorer-chrome-surface__row overlay-scrollbars-none"
@@ -695,6 +695,7 @@ export function ExplorerChromeSurface({
                 onBeginPointerDrag={editMode?.onBeginPointerDrag}
                 onBeginPointerResize={editMode?.onBeginPointerResize}
                 isControlResizable={editMode?.isControlResizable}
+                highlightedDropTarget={editMode?.highlightedDropTarget}
                 style={getRowStyle?.(row.id)}
               />
             </div>

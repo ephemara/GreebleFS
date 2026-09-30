@@ -37,6 +37,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  Crosshair,
   Circle,
   Copy,
   Eraser,
@@ -1898,6 +1899,13 @@ export function TerminalOverlay({
   const lastObservedWorkingDirectoryRef = useRef<string | null>(normalizedWorkingDirectory);
   const lastHandledCommandRequestIdRef = useRef<string | null>(null);
   const promptRestoreTimersRef = useRef<Record<string, number>>({});
+  // Explorer-follow safety: never type a `cd` into a pane that is running an
+  // interactive program (pi agent, editors, pagers) or while the user is
+  // mid-keystroke — hidden or visible writes would land in the wrong stdin.
+  const paneAtPromptRef = useRef<Record<string, boolean>>({});
+  const paneLastInputAtRef = useRef<Record<string, number>>({});
+  const deferredFollowRef = useRef<{ path: string; shell?: string } | null>(null);
+  const followBusyNotifiedRef = useRef(false);
   // Keep split-drag geometry off React's pointer-move hot path so mounted xterm
   // panes stay stable while their containing surfaces resize.
   const paneSurfaceElementsRef = useRef(new Map<string, HTMLDivElement>());
@@ -2136,13 +2144,80 @@ export function TerminalOverlay({
     if (targetIds.length === 0) {
       return;
     }
+    const now = Date.now();
+    for (const targetId of targetIds) {
+      paneLastInputAtRef.current[targetId] = now;
+    }
     if (/[\r\n]/.test(data)) {
       for (const targetId of targetIds) {
+        paneAtPromptRef.current[targetId] = false;
         void commands.terminalSetPromptState(targetId, false, null).then(unwrapTauriResult).catch(() => {});
       }
     }
     void writeToPaneIds(targetIds, data).catch(error => console.error('terminal input failed', error));
   }, [resolveCommandTargets, writeToPaneIds]);
+
+  const isPaneIdleForFollow = useCallback((paneId: string) => {
+    if (!isPaneReady(paneId)) {
+      return false;
+    }
+    // Shell integration says a program owns stdin (pi agent, vim, ...).
+    if (paneAtPromptRef.current[paneId] === false) {
+      return false;
+    }
+    // The user is typing or just hit enter — typing a `cd` now would
+    // interleave with their input and corrupt the line (or leak through the
+    // hidden-echo suppressor as stray `>> cd -- ...` fragments).
+    if (Date.now() - (paneLastInputAtRef.current[paneId] ?? 0) < 2000) {
+      return false;
+    }
+    // Output still streaming (TUI drawing, long command) — not a fresh prompt.
+    const lastOutputAt = paneTelemetryRef.current[paneId]?.lastOutputAt ?? 0;
+    if (Date.now() - lastOutputAt < 750) {
+      return false;
+    }
+    return true;
+  }, [isPaneReady]);
+
+  const requestFollowCwd = useCallback(async (
+    path: string,
+    shell: string | undefined,
+    paneId: string,
+  ): Promise<boolean> => {
+    const trimmed = path.trim();
+    if (!trimmed) {
+      return false;
+    }
+    if (!settings.followExplorerDirectory) {
+      return false;
+    }
+    if (!isPaneIdleForFollow(paneId)) {
+      // Busy pane: coalesce to the latest path and apply once the shell
+      // returns to a fresh prompt. Never type into running programs.
+      deferredFollowRef.current = { path: trimmed, shell };
+      if (!followBusyNotifiedRef.current) {
+        followBusyNotifiedRef.current = true;
+        setTransientActionMessage('Explorer follow queued — pane is busy');
+      }
+      return true;
+    }
+    followBusyNotifiedRef.current = false;
+    try {
+      unwrapTauriResult(await commands.terminalSyncCwd(paneId, trimmed));
+      // Do not mark lastObserved here: the backend may still hold the cd as
+      // pending (shell busy) or the shell may reject it. The shell-integration
+      // report is the source of truth and updates lastObserved on arrival.
+      return true;
+    } catch {
+      // Hidden lane failed — visible typing is only safe on a fresh prompt.
+      if (!isPaneIdleForFollow(paneId)) {
+        deferredFollowRef.current = { path: trimmed, shell };
+        return true;
+      }
+      await injectCd(trimmed, shell, paneId);
+      return true;
+    }
+  }, [injectCd, isPaneIdleForFollow, settings.followExplorerDirectory, setTransientActionMessage]);
 
   const emitToPane = useCallback((
     paneId: string,
@@ -2272,6 +2347,10 @@ export function TerminalOverlay({
 
     entry.focus();
     restartPaneHost(paneId);
+    delete paneAtPromptRef.current[paneId];
+    delete paneLastInputAtRef.current[paneId];
+    deferredFollowRef.current = null;
+    followBusyNotifiedRef.current = false;
     lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
     setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
   }, [
@@ -2297,22 +2376,17 @@ export function TerminalOverlay({
     }
 
     lastExplorerQueueCwdSyncKeyRef.current = syncKey;
-    void commands.terminalSyncCwd(activePaneId, pendingTerminalCwdSync.path)
-      .then(unwrapTauriResult)
-      .then(() => {
-        lastObservedWorkingDirectoryRef.current = pendingTerminalCwdSync.path;
-      })
-      .catch(() => injectCd(
-        pendingTerminalCwdSync.path,
-        pendingTerminalCwdSync.shell ?? undefined,
-        activePaneId,
-      ))
-      .finally(() => clearPendingTerminalCwdSync(null));
+    const queued = {
+      path: pendingTerminalCwdSync.path,
+      shell: pendingTerminalCwdSync.shell ?? undefined,
+    };
+    clearPendingTerminalCwdSync(null);
+    void requestFollowCwd(queued.path, queued.shell, activePaneId);
   }, [
     activePaneId,
     clearPendingTerminalCwdSync,
     consumeExplorerCwdSync,
-    injectCd,
+    requestFollowCwd,
     isPaneReady,
     isOpen,
     pendingTerminalCwdSync,
@@ -2335,16 +2409,11 @@ export function TerminalOverlay({
     }
 
     lastDirectWorkingDirectorySyncKeyRef.current = syncKey;
-    void commands.terminalSyncCwd(activePaneId, normalizedWorkingDirectory)
-      .then(unwrapTauriResult)
-      .then(() => {
-        lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
-      })
-      .catch(() => injectCd(normalizedWorkingDirectory, undefined, activePaneId));
+    void requestFollowCwd(normalizedWorkingDirectory, undefined, activePaneId);
   }, [
     activePaneId,
     consumeExplorerCwdSync,
-    injectCd,
+    requestFollowCwd,
     isOpen,
     isPaneReady,
     normalizedWorkingDirectory,
@@ -2379,16 +2448,27 @@ export function TerminalOverlay({
   ]);
 
   useEffect(() => {
-    if (!onReportedWorkingDirectoryChange) {
-      return;
-    }
-
     const stopShellIntegrationListener = bindDeferredUnlisten(
       listen<TerminalShellIntegrationStateEvent>(
       'terminal-shell-integration-state-event',
       (event) => {
         const payload = event.payload as TerminalShellIntegrationStateEvent;
-        if (!payload || payload.id !== activePaneId || !payload.state.atPrompt) {
+        if (!payload || !payload.id) {
+          return;
+        }
+        paneAtPromptRef.current[payload.id] = payload.state.atPrompt;
+        if (payload.id !== activePaneId) {
+          return;
+        }
+        // A deferred explorer-follow applies the moment the shell is back
+        // at a fresh prompt instead of typing into a running program.
+        const deferred = deferredFollowRef.current;
+        if (deferred && payload.state.atPrompt && isPaneIdleForFollow(activePaneId)) {
+          deferredFollowRef.current = null;
+          followBusyNotifiedRef.current = false;
+          void requestFollowCwd(deferred.path, deferred.shell, activePaneId);
+        }
+        if (!payload.state.atPrompt) {
           return;
         }
 
@@ -2402,7 +2482,7 @@ export function TerminalOverlay({
         }
 
         lastObservedWorkingDirectoryRef.current = reportedWorkingDirectory;
-        onReportedWorkingDirectoryChange(reportedWorkingDirectory);
+        onReportedWorkingDirectoryChange?.(reportedWorkingDirectory);
       },
       ),
       { onError: () => {} },
@@ -2411,7 +2491,28 @@ export function TerminalOverlay({
     return () => {
       stopShellIntegrationListener();
     };
-  }, [activePaneId, onReportedWorkingDirectoryChange]);
+  }, [activePaneId, isPaneIdleForFollow, onReportedWorkingDirectoryChange, requestFollowCwd]);
+
+  // Safety net: if no shell-integration events arrive (unknown shell, quiet
+  // terminal), retry a deferred follow on a slow poll instead of dropping it.
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const deferred = deferredFollowRef.current;
+      if (!deferred || !activePaneId) {
+        return;
+      }
+      if (!isPaneIdleForFollow(activePaneId)) {
+        return;
+      }
+      deferredFollowRef.current = null;
+      followBusyNotifiedRef.current = false;
+      void requestFollowCwd(deferred.path, deferred.shell, activePaneId);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [activePaneId, isOpen, isPaneIdleForFollow, requestFollowCwd]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -2940,6 +3041,24 @@ export function TerminalOverlay({
       onClick: toggleBroadcastActiveTab,
       tone: activeTab?.broadcastInput ? 'accent' : 'default',
     },
+    {
+      id: 'follow-explorer',
+      label: settings.followExplorerDirectory ? 'Follow On' : 'Follow Off',
+      title: settings.followExplorerDirectory
+        ? 'Stop following the explorer directory in the active pane'
+        : 'Follow the explorer directory in the active pane',
+      icon: Crosshair,
+      onClick: () => {
+        const next = !settings.followExplorerDirectory;
+        if (!next) {
+          deferredFollowRef.current = null;
+          followBusyNotifiedRef.current = false;
+        }
+        updateTerminal({ followExplorerDirectory: next });
+        setTransientActionMessage(next ? 'Explorer follow enabled' : 'Explorer follow disabled');
+      },
+      tone: settings.followExplorerDirectory ? 'accent' : 'default',
+    },
     { id: 'sep-2', label: '', title: '', separator: true },
     {
       id: 'copy-output',
@@ -2984,8 +3103,11 @@ export function TerminalOverlay({
     copyPaneSnapshot,
     duplicateActivePane,
     restartPane,
+    setTransientActionMessage,
+    settings.followExplorerDirectory,
     splitActivePane,
     toggleBroadcastActiveTab,
+    updateTerminal,
   ]);
   const activePaneViewportMetrics =
     paneViewportMetricsById[activePaneId] ??
