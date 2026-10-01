@@ -1,4 +1,5 @@
 // Reconstructed Tauron guest binding types: transport.
+export declare function coerceBinaryPayload(raw: unknown, depth?: number): Uint8Array | null;
 export declare function invokeBinary(command: string, args?: unknown): Promise<Uint8Array>;
 export declare function resourceUrl(resourceRid: number): string;
 export interface TransportStreamPacketMetadata {

@@ -5,8 +5,10 @@ export async function invokeBinary(command: string, args?: unknown): Promise<Uin
   throw new Error('stub source only; see dist/transport.js');
 }
 export function resourceUrl(resourceRid: number): string {
-  void resourceRid;
-  throw new Error('stub source only; see dist/transport.js');
+  if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__?.resolveCustomProtocolUrl) {
+    return (window as any).__TAURI_INTERNALS__.resolveCustomProtocolUrl(String(resourceRid), 'transport');
+  }
+  return `http://transport.localhost/${encodeURIComponent(String(resourceRid))}`;
 }
 export interface TransportStreamPacket<TPayload = unknown> {
   metadata: { sequence: number; [key: string]: unknown };

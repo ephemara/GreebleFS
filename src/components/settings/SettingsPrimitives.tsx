@@ -2,6 +2,7 @@ import {
   cloneElement,
   createContext,
   isValidElement,
+  memo,
   useContext,
   useEffect,
   useId,
@@ -1141,7 +1142,7 @@ export function SettingsInspectorPanel({
   );
 }
 
-export function SettingsRailButton({
+export const SettingsRailButton = memo(function SettingsRailButton({
   active,
   icon,
   label,
@@ -1215,7 +1216,7 @@ export function SettingsRailButton({
       </div>
     </button>
   );
-}
+});
 
 export function OverviewCard({
   title,

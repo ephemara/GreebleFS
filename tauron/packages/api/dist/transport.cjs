@@ -19,7 +19,10 @@ async function invokeBinary(command, args) {
   throw new Error(`transport.invokeBinary: unexpected payload shape from '${command}'.`);
 }
 function resourceUrl(resourceRid) {
-  throw new Error(`TAURON_GUEST_UNAVAILABLE: resourceUrl(${String(resourceRid)}) needs the Tauron native shared-buffer transport.`);
+  if (typeof globalThis.window !== 'undefined' && globalThis.window.__TAURI_INTERNALS__?.resolveCustomProtocolUrl) {
+    return globalThis.window.__TAURI_INTERNALS__.resolveCustomProtocolUrl(String(resourceRid), 'transport');
+  }
+  return `http://transport.localhost/${encodeURIComponent(String(resourceRid))}`;
 }
 async function subscribeStreamPackets(handle, listener, options) {
   void handle; void listener; void options;

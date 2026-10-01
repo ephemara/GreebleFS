@@ -102,13 +102,12 @@ export async function invokeBinary(command, args) {
   );
 }
 
-/** Native shared-resource URL. Requires the real Tauron guest transport. */
+/** Native shared-resource URL. Resolves through Tauron transport protocol. */
 export function resourceUrl(resourceRid) {
-  throw new Error(
-    `TAURON_GUEST_UNAVAILABLE: resourceUrl(${String(resourceRid)}) needs the ` +
-      'Tauron native shared-buffer transport (tauron/packages/api/dist). ' +
-      'Reconstruct it from the Tauron fork or route the caller through invokeBinary.',
-  );
+  if (typeof window !== 'undefined' && window.__TAURI_INTERNALS__?.resolveCustomProtocolUrl) {
+    return window.__TAURI_INTERNALS__.resolveCustomProtocolUrl(String(resourceRid), 'transport');
+  }
+  return `http://transport.localhost/${encodeURIComponent(String(resourceRid))}`;
 }
 
 /** Native transport stream subscription. Requires the real Tauron guest transport. */

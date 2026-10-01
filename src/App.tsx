@@ -1671,12 +1671,17 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
       ...combinedThemePackages.flatMap(pkg => pkg.localCatalogs?.shellRenderers ?? []),
     ]);
   }, [themeBundleDependencyCatalogs, combinedThemePackages]);
-  // API preview lanes merge ahead of folder lanes (same pattern as themes).
+  // API preview lanes merge ahead of folder lanes (same pattern as themes),
+  // but existing folder plugin lanes are retained as authoritative so shims
+  // do not shadow or degrade live workbenches.
   const greebleApiPreviewLanes = useGreebleApiPreviewLanes();
-  const allPluginPreviewLanes = useMemo(
-    () => [...greebleApiPreviewLanes, ...pluginPreviewLanes],
-    [greebleApiPreviewLanes, pluginPreviewLanes],
-  );
+  const allPluginPreviewLanes = useMemo(() => {
+    const folderLaneIds = new Set(pluginPreviewLanes.map(lane => lane.id));
+    const pureApiLanes = greebleApiPreviewLanes.filter(
+      lane => !folderLaneIds.has(lane.id) && !folderLaneIds.has(lane.id.replace(/^api-/, '')),
+    );
+    return [...pureApiLanes, ...pluginPreviewLanes];
+  }, [greebleApiPreviewLanes, pluginPreviewLanes]);
   // Legacy plugins surface as API contributions (panel/lanes/slots/workflows).
   // Registration replaces on duplicate id — safe to re-run on every load.
   useEffect(() => {
@@ -1742,6 +1747,36 @@ function App({ secondaryWindowDescriptor = null }: AppProps = {}) {
         fonts: resolvedAppearance.fonts,
         cssVars: resolvedAppearance.cssVars,
       }),
+      renderPreviewLane: (request, props) => {
+        const Component = request.component;
+        if (typeof Component !== 'function') return undefined;
+        const data = props?.data as Record<string, unknown> | undefined;
+        return (
+          <Component
+            appearance={{
+              theme: resolvedAppearance.theme,
+              fonts: resolvedAppearance.fonts,
+              cssVars: resolvedAppearance.cssVars,
+            }}
+            lane={{
+              id: request.laneId,
+              pluginId: request.pluginId,
+              pluginName: request.title,
+              title: request.title,
+            }}
+            file={data ? {
+              path: String(data.path ?? ''),
+              resolvedPath: String(data.path ?? ''),
+              name: String(data.name ?? ''),
+              extension: String(data.extension ?? ''),
+              size: Number(data.size ?? 0),
+              assetUrl: String(data.assetUrl ?? ''),
+              isDirectory: Boolean(data.isDirectory),
+            } : undefined}
+            viewMode={(data?.viewMode as any) ?? 'preview'}
+          />
+        );
+      },
     });
     return () => setLegacyPluginHostProviders(null);
   }, [createPluginApi, resolvedAppearance]);

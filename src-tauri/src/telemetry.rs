@@ -255,6 +255,65 @@ impl TelemetryManager {
         Ok(())
     }
 
+    fn record_batch(
+        &self,
+        app: &AppHandle,
+        records: Vec<TelemetryRecord>,
+        emit_events: bool,
+    ) -> Result<(), String> {
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| "telemetry manager lock poisoned".to_string())?;
+
+        if !inner.config.is_enabled() {
+            return Ok(());
+        }
+
+        Self::ensure_session(&mut inner, app)?;
+
+        let write_to_file = inner.config.developer_telemetry_write_to_file;
+        let mut file_opt = if write_to_file {
+            Self::rotate_file_if_needed(&mut inner)?;
+            Some(
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&inner.current_file_path)
+                    .map_err(|error| format!("Failed to open telemetry file: {error}"))?,
+            )
+        } else {
+            None
+        };
+
+        for record in records {
+            let serialized = serde_json::to_string(&record)
+                .map_err(|error| format!("Failed to serialize telemetry record: {error}"))?;
+            inner.recent_records.write(record.clone(), serialized.len());
+
+            if let Some(ref mut file) = file_opt {
+                writeln!(file, "{serialized}")
+                    .map_err(|error| format!("Failed to write telemetry record: {error}"))?;
+            }
+
+            if emit_events {
+                let _ = TelemetryRecordEvent { record }.emit(app);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn is_enabled(&self) -> bool {
+        self.inner
+            .lock()
+            .map(|inner| inner.config.is_enabled())
+            .unwrap_or(false)
+    }
+
     pub(crate) fn configure(&self, config: TelemetryConfig) -> Result<(), String> {
         let mut inner = self
             .inner
@@ -489,6 +548,20 @@ pub fn start_native_span(
     name: &str,
     metadata: BTreeMap<String, String>,
 ) -> TelemetrySpan {
+    let manager = app.state::<TelemetryManager>();
+    if !manager.is_enabled() {
+        return TelemetrySpan {
+            trace_id: String::new(),
+            span_id: String::new(),
+            parent_span_id: None,
+            layer: layer.to_string(),
+            name: name.to_string(),
+            started_at_ms: 0,
+            started_at_instant: Instant::now(),
+            metadata: BTreeMap::new(),
+        };
+    }
+
     let span = TelemetrySpan {
         trace_id: Uuid::new_v4().to_string(),
         span_id: Uuid::new_v4().to_string(),
@@ -500,7 +573,6 @@ pub fn start_native_span(
         metadata: metadata.clone(),
     };
 
-    let manager = app.state::<TelemetryManager>();
     let _ = manager.record(
         app,
         TelemetryRecord {
@@ -530,6 +602,10 @@ pub fn finish_native_span(
     metadata: BTreeMap<String, String>,
     error: Option<String>,
 ) {
+    if span.trace_id.is_empty() {
+        return;
+    }
+
     let mut merged_metadata = span.metadata.clone();
     for (key, value) in metadata {
         merged_metadata.insert(key, value);
@@ -590,10 +666,7 @@ pub fn telemetry_record_frontend_batch(
     state: State<'_, TelemetryManager>,
     records: Vec<TelemetryRecord>,
 ) -> Result<(), String> {
-    for record in records {
-        state.record(&app, record)?;
-    }
-    Ok(())
+    state.record_batch(&app, records, false)
 }
 
 #[tauri::command]

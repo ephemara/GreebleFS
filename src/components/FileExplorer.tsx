@@ -10655,6 +10655,7 @@ function FileExplorerImpl({
   const propertiesChecksumRequestIdRef = useRef(0);
   const propertiesInfoRequestIdRef = useRef(0);
   const isExplorerMountedRef = useRef(false);
+  const homeUsageRecordTimerRef = useRef<number | null>(null);
   const directoryLoadRequestIdRef = useRef(0);
   const pendingNavigationPathRef = useRef<string | null>(null);
   const pendingNavigationHistoryRef = useRef<string[] | null>(null);
@@ -11514,7 +11515,7 @@ function FileExplorerImpl({
     void listExplorerSavedSearches()
       .then((records) => {
         if (!disposed) {
-          setSavedSearches(records);
+          setSavedSearches(records ?? []);
         }
       })
       .catch(() => {
@@ -11551,7 +11552,7 @@ function FileExplorerImpl({
     void listExplorerHomeUsage()
       .then((snapshot) => {
         if (!disposed) {
-          setHomeUsageSnapshot(snapshot);
+          setHomeUsageSnapshot(snapshot ?? { mostUsed: [], recent: [] });
         }
       })
       .catch(() => {
@@ -11604,7 +11605,7 @@ function FileExplorerImpl({
     void listExplorerTags(paths)
       .then((snapshot) => {
         if (!disposed) {
-          setTagMetadata(snapshot);
+          setTagMetadata(snapshot ?? { tags: [], assignments: [] });
         }
       })
       .catch(() => {
@@ -11896,6 +11897,10 @@ function FileExplorerImpl({
 
     return () => {
       isExplorerMountedRef.current = false;
+      if (homeUsageRecordTimerRef.current !== null) {
+        window.clearTimeout(homeUsageRecordTimerRef.current);
+        homeUsageRecordTimerRef.current = null;
+      }
       searchRequestIdRef.current += 1;
       directoryLoadRequestIdRef.current += 1;
       recursiveSizeRequestIdRef.current += 1;
@@ -12098,7 +12103,7 @@ function FileExplorerImpl({
         void listExplorerHomeUsage()
           .then((snapshot) => {
             if (isExplorerMountedRef.current) {
-              setHomeUsageSnapshot(snapshot);
+              setHomeUsageSnapshot(snapshot ?? { mostUsed: [], recent: [] });
             }
           })
           .catch(() => {});
@@ -12142,13 +12147,20 @@ function FileExplorerImpl({
         homeSettings.usageTrackingEnabled &&
         isExplorerTrackableFolderPath(snapshot.currentPath)
       ) {
-        void recordExplorerHomeUsage(snapshot.currentPath)
-          .then((snapshot) => {
-            if (isExplorerMountedRef.current) {
-              setHomeUsageSnapshot(snapshot);
-            }
-          })
-          .catch(() => {});
+        if (homeUsageRecordTimerRef.current !== null) {
+          window.clearTimeout(homeUsageRecordTimerRef.current);
+        }
+        const recordPath = snapshot.currentPath;
+        homeUsageRecordTimerRef.current = window.setTimeout(() => {
+          homeUsageRecordTimerRef.current = null;
+          void recordExplorerHomeUsage(recordPath)
+            .then((usageSnapshot) => {
+              if (isExplorerMountedRef.current) {
+                setHomeUsageSnapshot(usageSnapshot ?? { mostUsed: [], recent: [] });
+              }
+            })
+            .catch(() => {});
+        }, 400);
       }
       recordExplorerMetric({
         metricId: "explorer_navigation",
@@ -13242,11 +13254,11 @@ function FileExplorerImpl({
   const pathTagIdsByPath = useMemo(
     () =>
       new Map(
-        tagMetadata.assignments.map(
+        (tagMetadata?.assignments ?? []).map(
           (assignment) => [assignment.path, assignment.tagIds] as const,
         ),
       ),
-    [tagMetadata.assignments],
+    [tagMetadata?.assignments],
   );
   const baseVisibleEntriesInput = useMemo<
     ExplorerVisibleEntriesComputeInput<FileEntry>
@@ -13254,7 +13266,7 @@ function FileExplorerImpl({
     () => ({
       entries: isSearchActive ? searchResults : entries,
       activeTagFilterIds,
-      pathTagAssignments: tagMetadata.assignments,
+      pathTagAssignments: tagMetadata?.assignments ?? [],
       sortBy: explorerSettings.sortBy,
       sortOrder: explorerSettings.sortOrder,
     }),
@@ -13265,7 +13277,7 @@ function FileExplorerImpl({
       explorerSettings.sortOrder,
       isSearchActive,
       searchResults,
-      tagMetadata.assignments,
+      tagMetadata?.assignments,
     ],
   );
   const canReuseBackendVisibleEntries =
@@ -13441,23 +13453,23 @@ function FileExplorerImpl({
   const homeLaunchpad = useMemo(() => createExplorerHomeLaunchpadItems(), []);
   const homeMostUsedFolders = useMemo(
     () =>
-      homeUsageSnapshot.mostUsed.map((entry) => ({
+      (homeUsageSnapshot?.mostUsed ?? []).map((entry) => ({
         path: entry.path,
         label: getPathLeaf(entry.path),
         openCount: entry.openCount,
         lastOpenedAt: entry.lastOpenedAt,
       })),
-    [homeUsageSnapshot.mostUsed],
+    [homeUsageSnapshot?.mostUsed],
   );
   const homeRecentFolders = useMemo(
     () =>
-      homeUsageSnapshot.recent.map((entry) => ({
+      (homeUsageSnapshot?.recent ?? []).map((entry) => ({
         path: entry.path,
         label: getPathLeaf(entry.path),
         openCount: entry.openCount,
         lastOpenedAt: entry.lastOpenedAt,
       })),
-    [homeUsageSnapshot.recent],
+    [homeUsageSnapshot?.recent],
   );
   const resolvedHomePackSelection = useMemo(
     () =>
@@ -31584,6 +31596,7 @@ function FileExplorerImpl({
 
     const shouldMeasureDirectories =
       EXPLORER_AUTO_MEASURE_DIRECTORY_SIZES && !isSearchActive;
+    const FILE_BATCH_SIZE = 32;
     const prioritizedSelectedEntries = selectedEntries
       .filter(
         (entry) =>
@@ -31591,7 +31604,7 @@ function FileExplorerImpl({
           !entrySizes[entry.path] &&
           !entrySizeLoadingPaths.has(entry.path),
       )
-      .slice(0, 8);
+      .slice(0, FILE_BATCH_SIZE);
     const pendingFiles = deferredVirtualizedEntries
       .filter(
         (entry) =>
@@ -31599,7 +31612,7 @@ function FileExplorerImpl({
           !entrySizes[entry.path] &&
           !entrySizeLoadingPaths.has(entry.path),
       )
-      .slice(0, 8);
+      .slice(0, FILE_BATCH_SIZE);
     const pendingDirectories = shouldMeasureDirectories
       ? deferredVirtualizedEntries
           .filter(
@@ -31608,7 +31621,7 @@ function FileExplorerImpl({
               !entrySizes[entry.path] &&
               !entrySizeLoadingPaths.has(entry.path),
           )
-          .slice(0, 1)
+          .slice(0, 2)
       : [];
 
     const nextBatch =
@@ -31616,7 +31629,7 @@ function FileExplorerImpl({
         ? prioritizedSelectedEntries
         : (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(
             0,
-            8,
+            FILE_BATCH_SIZE,
           );
     const unresolvedPaths = nextBatch.map((entry) => entry.path);
 

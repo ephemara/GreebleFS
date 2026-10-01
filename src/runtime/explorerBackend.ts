@@ -1962,12 +1962,20 @@ export async function readExplorerTextFile(
     case "remote":
       return unwrapTauriResult(await commands.remoteReadTextFile(path));
     case "local": {
-      const bytes = await readExplorerPreviewBytes(
-        path,
-        EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes,
-        options,
-      );
-      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      try {
+        const bytes = await readExplorerPreviewBytes(
+          path,
+          EXPLORER_PREVIEW_STREAMING_POLICY.textMaxBytes,
+          options,
+        );
+        return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch (error) {
+        try {
+          return unwrapTauriResult(await commands.fsReadTextFile(path));
+        } catch {
+          throw error;
+        }
+      }
     }
     default:
       throw new Error(
@@ -1995,12 +2003,20 @@ export async function readExplorerFileBase64(
     case "remote":
       return unwrapTauriResult(await commands.remoteReadFileBase64(path));
     case "local": {
-      const bytes = await readExplorerPreviewBytes(
-        path,
-        EXPLORER_PREVIEW_STREAMING_POLICY.dataUriMaxBytes,
-        options,
-      );
-      return bytesToExplorerPreviewDataUri(path, bytes);
+      try {
+        const bytes = await readExplorerPreviewBytes(
+          path,
+          EXPLORER_PREVIEW_STREAMING_POLICY.dataUriMaxBytes,
+          options,
+        );
+        return bytesToExplorerPreviewDataUri(path, bytes);
+      } catch (error) {
+        try {
+          return unwrapTauriResult(await commands.fsReadFileBase64(path));
+        } catch {
+          throw error;
+        }
+      }
     }
     default:
       throw new Error(

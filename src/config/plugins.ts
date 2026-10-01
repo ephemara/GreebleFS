@@ -34,7 +34,7 @@ export const pluginSystemConfig = {
   watchDebounceMs: 400,
   fallbackScanIntervalMs: 20000,
   fallbackScanMaxIntervalMs: 120000,
-  ignoredWatchDirectoryNames: ['node_modules', '.git', '.turbo', 'coverage', 'target', 'backend'] as const,
+  ignoredWatchDirectoryNames: ['node_modules', '.git', '.turbo', 'coverage', 'target', 'backend', 'overlayterm', 'explorer-pro', 'telemetry', 'cache'] as const,
   folderPanelsOpenByDefault: true,
   folderPanelsKeepMounted: false,
 };
@@ -78,6 +78,16 @@ export function isIgnoredPluginWatchPath(path: string): boolean {
 }
 
 export function isPluginManagedWatchPath(path: string): boolean {
+  const segments = normalizePluginWatchPathSegments(path);
+  if (
+    segments.includes('overlayterm') ||
+    segments.includes('explorer-pro') ||
+    segments.includes('telemetry') ||
+    segments.includes('cache')
+  ) {
+    return false;
+  }
+
   const normalizedPath = path.replace(/\\/g, '/').toLowerCase();
   const managedRoots = [
     pluginSystemConfig.pluginsDirectory,
@@ -89,7 +99,6 @@ export function isPluginManagedWatchPath(path: string): boolean {
     return true;
   }
 
-  const segments = normalizePluginWatchPathSegments(path);
   return segments.includes('plugins') || segments.includes('packages') || segments.includes('plugins-kain');
 }
 

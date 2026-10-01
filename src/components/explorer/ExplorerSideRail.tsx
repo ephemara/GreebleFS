@@ -1468,7 +1468,7 @@ export function ExplorerSideRail({
             updateRail(toggleExplorerRailSection(rail, "saved-searches"))
           }
         >
-          {savedSearches.length === 0 && (
+          {(savedSearches?.length ?? 0) === 0 && (
             <div
               style={{
                 fontSize: 10,
@@ -1479,7 +1479,7 @@ export function ExplorerSideRail({
               Save a search from the explorer toolbar to pin it here.
             </div>
           )}
-          {savedSearches.map((savedSearch, index) => (
+          {(savedSearches ?? []).map((savedSearch, index) => (
             <div
               key={savedSearch.id}
               style={{

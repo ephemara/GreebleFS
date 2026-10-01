@@ -256,6 +256,44 @@ export function scheduleUsrProfileStaticConfigRuntimeRefresh(
   }, Math.max(0, options.delayMs ?? DEFAULT_STATIC_CONFIG_REFRESH_DELAY_MS));
 }
 
+function hasProfileTopologyChanged(
+  previous: UsrProfileRuntimeSnapshot | null,
+  next: UsrProfileRuntimeSnapshot | null,
+): boolean {
+  if (!previous || !next) {
+    return true;
+  }
+  if (previous.activeProfileId !== next.activeProfileId) {
+    return true;
+  }
+  if (previous.profiles.length !== next.profiles.length) {
+    return true;
+  }
+  for (let i = 0; i < previous.profiles.length; i++) {
+    const p1 = previous.profiles[i];
+    const p2 = next.profiles[i];
+    if (p1.id !== p2.id || p1.isActive !== p2.isActive || p1.name !== p2.name) {
+      return true;
+    }
+  }
+  if (previous.managedContentDirectoryStacks.length !== next.managedContentDirectoryStacks.length) {
+    return true;
+  }
+  for (let i = 0; i < previous.managedContentDirectoryStacks.length; i++) {
+    const s1 = previous.managedContentDirectoryStacks[i];
+    const s2 = next.managedContentDirectoryStacks[i];
+    if (
+      s1.laneId !== s2.laneId ||
+      s1.writableDirectory !== s2.writableDirectory ||
+      s1.directories.length !== s2.directories.length ||
+      s1.directories.some((dir, idx) => dir !== s2.directories[idx])
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function applyUsrProfileSnapshot(
   snapshot: UsrProfileRuntimeSnapshot | null,
   options: {
@@ -265,7 +303,9 @@ async function applyUsrProfileSnapshot(
     notifyAfterStaticConfigRefresh?: boolean;
   } = {},
 ): Promise<UsrProfileRuntimeSnapshot | null> {
-  const staticConfigRefreshMode = options.staticConfigRefreshMode ?? 'await';
+  const isTopologyChanged = hasProfileTopologyChanged(activeUsrProfileSnapshot, snapshot);
+  const staticConfigRefreshMode = options.staticConfigRefreshMode ?? (isTopologyChanged ? 'await' : 'skip');
+  const shouldNotifyListeners = options.notifyListeners !== undefined ? options.notifyListeners : isTopologyChanged;
   const nextFingerprint = buildSnapshotFingerprint(snapshot);
   if (snapshot && nextFingerprint === activeUsrProfileSnapshotFingerprint) {
     return activeUsrProfileSnapshot;
@@ -275,7 +315,7 @@ async function applyUsrProfileSnapshot(
     activeUsrProfileSnapshot = null;
     activeUsrProfileSnapshotFingerprint = '';
     clearManagedContentDirectoryStackOverrides();
-    if (options.notifyListeners !== false) {
+    if (shouldNotifyListeners) {
       usrProfileRuntimeRevision += 1;
       notifyUsrProfileRuntimeListeners();
     }
@@ -309,11 +349,12 @@ async function applyUsrProfileSnapshot(
     });
   }
 
-  if (options.rehydrateStore) {
+  const shouldRehydrate = options.rehydrateStore && (isTopologyChanged || snapshot.effectiveSettingsJson !== lastPersistedEffectiveSettingsJson);
+  if (shouldRehydrate) {
     await rehydrateSettingsStore();
   }
 
-  if (options.notifyListeners !== false) {
+  if (shouldNotifyListeners) {
     usrProfileRuntimeRevision += 1;
     notifyUsrProfileRuntimeListeners();
   }
@@ -519,13 +560,16 @@ export async function persistActiveUsrProfileSettingsSnapshot(
     return activeUsrProfileSnapshot;
   }
 
+  lastPersistedEffectiveSettingsJson = settingsJson;
+
   const snapshot = await invokeUsrProfileCommand<UsrProfileRuntimeSnapshot>(
     'usr_profiles_persist_active_settings_snapshot',
     { settingsJson },
   );
   return applyUsrProfileSnapshot(snapshot, {
     rehydrateStore: false,
-    notifyListeners: true,
+    notifyListeners: false,
+    staticConfigRefreshMode: 'skip',
   });
 }
 

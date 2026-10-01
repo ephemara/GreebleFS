@@ -145,6 +145,14 @@ export function AppModalSurface({
     return null;
   }
 
+  const resolvedPortalContainer =
+    portalContainer ??
+    (typeof document !== 'undefined'
+      ? (portalAnchorRef.current?.closest('.overlay-window-host') as HTMLElement | null) ??
+        (portalAnchorRef.current?.closest('[data-app-modal-portal-root]') as HTMLElement | null) ??
+        document.body
+      : undefined);
+
   return (
     <>
       <span
@@ -152,7 +160,7 @@ export function AppModalSurface({
         aria-hidden="true"
         style={portalAnchorStyle}
       />
-      <OverlayContainer portalContainer={portalContainer}>
+      <OverlayContainer portalContainer={resolvedPortalContainer}>
         <div
           {...underlayProps}
           role="presentation"
@@ -206,7 +214,6 @@ function resolveAppModalInheritedCssVariables(
   if (themedSource instanceof HTMLElement) {
     copyAppModalCssVariables(themedSource.style, inheritedStyle);
   }
-  copyAppModalCssVariables(getComputedStyle(themedSource), inheritedStyle);
 
   return inheritedStyle as CSSProperties;
 }

@@ -264,10 +264,19 @@ export function convertGreeblePreviewLaneToDescriptor(
     const laneId = resolveApiPreviewLaneId(rawId, takenIds);
     takenIds.add(laneId);
     const chrome = entry.chrome ?? {};
+    const ownerPluginId =
+      (entry as { pluginId?: string }).pluginId?.trim() ||
+      (entry as { owner?: string }).owner?.trim() ||
+      GREEBLE_API_LANE_PLUGIN_ID;
     return {
       id: laneId,
-      pluginId: GREEBLE_API_LANE_PLUGIN_ID,
-      pluginName: GREEBLE_API_LANE_PLUGIN_NAME,
+      pluginId: ownerPluginId,
+      pluginName: readNonEmptyText(
+        (entry as { pluginName?: string }).pluginName,
+        ownerPluginId === GREEBLE_API_LANE_PLUGIN_ID
+          ? GREEBLE_API_LANE_PLUGIN_NAME
+          : ownerPluginId,
+      ),
       title: readNonEmptyText(entry.title, rawId),
       priority: readFinite(entry.priority, DEFAULT_OVERLAY_PLUGIN_PREVIEW_LANE_PRIORITY),
       rendererKind: 'react',

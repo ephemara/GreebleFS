@@ -37,6 +37,9 @@ export interface LegacyPluginLaneInput {
   readonly id?: string;
   readonly title?: string;
   readonly component?: React.ComponentType<any> | null;
+  readonly priority?: number;
+  readonly match?: any;
+  readonly workbenchChrome?: any;
 }
 
 /** Minimal settings-slot input — manifest contributions satisfy this structurally. */
@@ -246,12 +249,39 @@ export function adoptLegacyPlugin(options: AdoptLegacyPluginOptions): string[] {
     const title = lane.title?.trim() ? lane.title.trim() : `${pluginId} preview lane`;
     const laneId = lane.id?.trim() ? lane.id.trim() : `${pluginId}.preview-lane.${index}`;
     const snapshot: LegacyLaneRenderRequest = { pluginId, laneId, title, component };
+    const laneMatch = (lane as { match?: any }).match;
+    const laneChrome = (lane as { workbenchChrome?: any }).workbenchChrome;
+    const lanePriority = typeof (lane as { priority?: number }).priority === 'number'
+      ? (lane as { priority?: number }).priority
+      : undefined;
     const entry: GreeblePreviewLaneContribution = {
       id: laneId,
       title,
       description: `Legacy preview lane "${title}".`,
+      priority: lanePriority,
+      appliesTo: laneMatch
+        ? {
+            isDirectory:
+              laneMatch.appliesTo === 'directory'
+                ? true
+                : laneMatch.appliesTo === 'file'
+                  ? false
+                  : undefined,
+            extensions: laneMatch.extensions,
+            fileNames: laneMatch.fileNames,
+            kinds: laneMatch.previewKinds,
+          }
+        : undefined,
+      chrome: laneChrome
+        ? {
+            includePreviewTab: laneChrome.includePreviewTab,
+            includeEditTab: laneChrome.includeEditTab,
+            topBarDensity: laneChrome.topBarDensity,
+          }
+        : undefined,
       component: (props) => renderLegacyLaneAdapter(snapshot, props),
     };
+    (entry as { pluginId?: string }).pluginId = pluginId;
     book.define('previewLane').register(entry, pluginId);
     adopted.push(laneId);
   }
