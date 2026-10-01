@@ -182,6 +182,29 @@ const harness = await runGreebleExtension(module.default, {
 harness.dispose();   // releases handles + sweeps the owner's contributions
 ```
 
+## Authoring an API theme
+
+Drop a `theme.greeble.tsx` factory in `usr/themes/<id>/` — discovered
+automatically, independent of `theme.json`. Tokens become CSS vars;
+`extends` names a built-in baseline; edits hot-reload:
+
+```tsx
+import { defineGreebleExtension } from 'greeblefs';
+
+export default defineGreebleExtension((fs) => {
+  fs.registerTheme({
+    id: 'xmb',
+    title: 'XMB',
+    extends: 'github-dark',
+    tokens: { accent: '#2e9bff', appBackground: '#0b0b14' },
+  });
+});
+```
+
+Live examples: `usr/themes/xmb`, `usr/themes/wii`, `usr/themes/finder`.
+The theme appears in Settings → Theme Suite next to JSON packs and
+applies to the main window, dock/secondary windows, and the mobile app.
+
 ## Integration status
 
 | Piece | State |

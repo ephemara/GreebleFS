@@ -16,6 +16,49 @@ The GreebleFS theming system is fundamentally different from traditional theme e
 
 This "deep theming" approach means a single theme package can completely change the identity of the application without requiring code changes.
 
+## Authoring themes: two ways in (2026)
+
+**1. API-native (the future).** A `theme.greeble.tsx` factory module in
+`usr/themes/<id>/` registers through the harness — no `theme.json` needed:
+
+```tsx
+import { defineGreebleExtension } from 'greeblefs';
+
+export default defineGreebleExtension((fs) => {
+  fs.registerTheme({
+    id: 'xmb',
+    title: 'XMB',
+    extends: 'github-dark',
+    tokens: {
+      accent: '#2e9bff',
+      appBackground: '#0b0b14',
+      textPrimary: '#f2f5fa',
+      '--xmb-wave-speed': '1.4', // `--` keys pass through as CSS vars verbatim
+    },
+  });
+});
+```
+
+Registration flows through the theme bridge into the same pipeline as
+packs below: ThemeCatalog, selection, appearance resolution, CSS vars.
+Edits hot-reload via the content watcher. Shipped flagships: **XMB**
+(PS3 cross-media bar), **Wii Menu**, **Finder** (`usr/themes/*/theme.greeble.tsx`).
+See `06-EXTENSION-API.md`.
+
+**2. Legacy JSON playlists (still supported).** `theme.json` pointing at
+lane packs, as documented in the rest of this file. New work should prefer
+path 1; JSON packs keep working as bridge-fed legacy input.
+
+## What a theme reaches
+
+| Surface | How | Status |
+| --- | --- | --- |
+| Main window (colors, type, chrome, CSS vars) | Tokens → bridge → appearance | ✅ Live |
+| Dock / secondary windows | Published appearance snapshot (`useSyncedWindowAppearance`) | ✅ Follows automatically |
+| Mobile app | Snapshot pushed to the phone bundle (`mobile_share_set_theme_snapshot`) | ✅ Follows automatically |
+| Structural shell (custom layouts like a real XMB bar) | `registerShell` + API shell host | 🟡 Registered today, structural host TODO |
+| Custom view modes | `registerViewMode` (`api-*` ids) | 🟡 Registry-listed, switch-UI consumer TODO |
+
 ---
 
 ## Bundle-First Architecture
