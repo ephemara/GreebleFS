@@ -2,6 +2,48 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+/**
+ * Content-based freshness: the mtime heuristic below misfires on touch-only
+ * noise (checkout/sync side effects with zero content change — cf. the
+ * v0.2.5 preflight incident). If every watched source is git-clean AND all
+ * required dist outputs exist, the committed dist is authoritative.
+ */
+function tauronApiSourcesAreGitClean(tauronRoot, sourceAbsolutePaths) {
+  let repoRoot = tauronRoot;
+  try {
+    const top = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: tauronRoot,
+      encoding: "utf8",
+    });
+    if (top.status === 0 && top.stdout.trim()) {
+      repoRoot = top.stdout.trim();
+    }
+  } catch {
+    return false;
+  }
+  const relPaths = sourceAbsolutePaths.map((absolutePath) =>
+    path.relative(repoRoot, absolutePath),
+  );
+  try {
+    const status = spawnSync(
+      "git",
+      ["status", "--porcelain", "--", ...relPaths],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    const diff = spawnSync(
+      "git",
+      ["diff", "HEAD", "--name-only", "--", ...relPaths],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    if (status.status !== 0 || diff.status !== 0) {
+      return false;
+    }
+    return !status.stdout.trim() && !diff.stdout.trim();
+  } catch {
+    return false;
+  }
+}
+
 const requiredTauronRelativeManifestPaths = [
   "Cargo.toml",
   path.join("crates", "tauri", "Cargo.toml"),
@@ -110,6 +152,20 @@ function ensureTauronApiDist(tauronRoot) {
   const apiDistIsStale = missingRequiredApiDistPaths.length > 0
     || missingGeneratedApiDistPaths.length > 0
     || getNewestMtimeMs(tauronApiSourcePaths) > getOldestMtimeMs(tauronApiGeneratedDistPaths);
+
+  if (apiDistIsStale
+    && missingRequiredApiDistPaths.length === 0
+    && missingGeneratedApiDistPaths.length === 0
+    && tauronApiSourcesAreGitClean(tauronRoot, tauronApiSourcePaths)) {
+    console.log(
+      "[tauron-preflight] API dist only looks stale by mtime; sources are git-clean," +
+      " required outputs exist — trusting the committed dist (no pnpm rebuild).",
+    );
+    return {
+      apiDistPaths: tauronApiRequiredDistPaths,
+      apiSourcePaths: tauronApiSourcePaths,
+    };
+  }
 
   if (!apiDistIsStale) {
     return {
