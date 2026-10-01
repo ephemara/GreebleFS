@@ -1,2 +1,2 @@
-0b379ce5fc51695ed2cea13cdbbcf7db7533b61971fc10fe578c82e000249c94  GreebleFS_0.2.3_x64-setup.exe
-366cce4dbdded6ce6eb7b784f9b44347b6ec87936acf0d5aa7ca0ac94358cdf4  greeblefs-v0.2.3-windows-x64-portable.zip
+0b379ce5fc51695ed2cea13cdbbcf7db7533b61971fc10fe578c82e000249c94  GreebleFS_0.2.4_x64-setup.exe
+5f7c0ba2e1afd5b1a25badae232b786b8caedfc0275ba2cf9bfcb9c587b2a75b  greeblefs-v0.2.4-windows-x64-portable.zip
