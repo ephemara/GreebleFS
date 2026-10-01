@@ -148,7 +148,7 @@ def installer_for_version(tag: str) -> Path:
         return cand
     exes = sorted(NSIS_DIR.glob("GreebleFS_*-setup.exe"))
     if exes:
-        return exes[0]
+        return exes[-1]
     sys.exit(f"ERROR: no NSIS installer in {NSIS_DIR} (run with --build first).")
 
 
@@ -270,6 +270,18 @@ Built {built} from a fresh-clone-verified pipeline
 ## Install
 1. Run `{installer.name}` (per-machine NSIS, Start Menu + Desktop shortcuts).
 2. The installer registers the `GreebleFSUsnIndexer` service for fast NTFS indexing.
+
+## What's fixed (v0.2.4)
+- Performance & Responsiveness Hardening:
+  - Severed recursive directory watcher feedback loop on the application data directory (`co.greeblefs.app`), eliminating hundreds of spurious plugin and package rescans.
+  - Decoupled settings persistence from usr profile topology changes: saving settings no longer triggers 19 directory scans or reloads 8 package systems.
+  - Telemetry optimization: batched frontend records into single file writes and suppressed echoing 250-record events across IPC back to the webview. Added fast zero-allocation bypass for native spans when telemetry is disabled.
+  - Eliminated synchronous `getComputedStyle` layout recalc loops in `AppModal` by portaling inside `.overlay-window-host` so CSS custom properties inherit naturally.
+  - Debounced folder usage tracking and quadrupled file size measurement batch sizes (from 8 to 32), cutting IPC round-trips by 75%.
+  - Memoized hot settings rail buttons (`SettingsRailButton`).
+- Mobile & Secondary Window Polish:
+  - Polished `src-mobile` bundle, touch gestures, and PWA service worker precaching.
+  - Hardened file operations and picker secondary windows with proper chrome and task store synchronization.
 
 ## What's fixed (v0.2.3)
 - Empty-root hardening: some installs wrote `managedContentRoot = ''` into

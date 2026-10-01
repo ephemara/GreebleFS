@@ -1,6 +1,6 @@
 [package]
 name = "greeblefs"
-version = "0.2.3"
+version = "0.2.4"
 description = "GreebleFS desktop workbench"
 authors = ["you"]
 edition = "2021"
