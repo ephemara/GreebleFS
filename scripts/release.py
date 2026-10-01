@@ -100,6 +100,39 @@ def resolve_node() -> str:
     return "node"
 
 
+def missing_name_errors(tsc_output: str) -> list:
+    """TS2304/TS2552 outside vendor + tests = identifiers the bundler would
+    silently ship as runtime ReferenceErrors (esbuild does not fail on
+    undeclared names; cf. v0.2.3's adoptLoadedShellRendererPacks outage)."""
+    hits = []
+    for line in tsc_output.splitlines():
+        if 'error TS2304' not in line and 'error TS2552' not in line:
+            continue
+        path = line.split('(', 1)[0].replace('\\', '/')
+        if '/vendor/' in path:
+            continue
+        if '.test.' in path or '.spec.' in path:
+            continue
+        hits.append(line.strip())
+    return hits
+
+
+def preflight_typecheck() -> None:
+    print("\n[Step 0/5] Preflight: missing-name typecheck (blocks broken bundles)...")
+    res = subprocess.run(
+        ["bunx", "tsc", "--noEmit", "-p", "tsconfig.json"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    output = (res.stdout or "") + "\n" + (res.stderr or "")
+    hits = missing_name_errors(output)
+    if hits:
+        print("PREFLIGHT FAILED: undeclared identifiers would ship as runtime ReferenceErrors:")
+        for line in hits[:20]:
+            print(f"  {line}")
+        sys.exit("ERROR: fix missing-name type errors before release.")
+    print("  preflight clean (no TS2304/TS2552 outside vendor/tests).")
+
+
 def run_cmd(cmd, env=None, check=True, capture=True):
     print(f"--> {' '.join(cmd) if isinstance(cmd, list) else cmd}")
     res = subprocess.run(cmd, cwd=ROOT, env=env,
@@ -175,6 +208,8 @@ def main():
         sys.exit("ERROR: No GH_TOKEN found and git credential helper gave nothing.")
     env = os.environ.copy()
     env["GH_TOKEN"] = gh_token
+
+    preflight_typecheck()
 
     if args.build:
         print("\n[Step 1/5] Full release build (30-60 min cold)...")
