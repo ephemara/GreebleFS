@@ -882,6 +882,9 @@ fn app_local_data_dir_for_resolution() -> Option<PathBuf> {
             return Some(PathBuf::from(env_root));
         }
     }
+    if let Some(custom_root) = crate::usr::custom_managed_content_root() {
+        return Some(custom_root);
+    }
     #[cfg(target_os = "linux")]
     {
         let base = std::env::var_os("XDG_DATA_HOME")

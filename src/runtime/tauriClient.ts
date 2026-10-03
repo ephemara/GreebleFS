@@ -182,8 +182,6 @@ const baseCommands = {
       "global_search_query_under_path",
       { rootPath, query, options },
     ),
-  startupResolveManagedContentRoots: () =>
-    invoke<Result<ManagedContentRootsSnapshot, string>>("startup_resolve_managed_content_roots"),
 };
 
 export const commands = Object.fromEntries(
@@ -195,10 +193,12 @@ export const commands = Object.fromEntries(
 
 export const events = wrapEvents(tauriBindings.events);
 
-export function unwrapTauriResult<T>(result: Result<T, string>): T {
-  if (result.status === "ok") {
-    return result.data;
+export function unwrapTauriResult<T>(result: Result<T, string> | T): T {
+  if (result && typeof result === "object" && "status" in result) {
+    if ((result as Result<T, string>).status === "ok") {
+      return (result as { status: "ok"; data: T }).data;
+    }
+    throw new Error((result as { status: "error"; error: string }).error);
   }
-
-  throw new Error(result.error);
+  return result as T;
 }

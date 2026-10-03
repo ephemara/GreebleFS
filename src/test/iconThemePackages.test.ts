@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -16,7 +16,9 @@ type FileEntry = {
   modified: number;
 };
 
-const zenManifestPath = resolve(process.cwd(), 'icon-themes/Zen/icon-theme.json');
+const zenManifestPath = existsSync(resolve(process.cwd(), 'usr/icon-themes/Zen/icon-theme.json'))
+  ? resolve(process.cwd(), 'usr/icon-themes/Zen/icon-theme.json')
+  : resolve(process.cwd(), 'icon-themes/Zen/icon-theme.json');
 const zenManifestText = readFileSync(zenManifestPath, 'utf8');
 
 function normalizePath(path: string | undefined): string {

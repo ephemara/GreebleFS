@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getManagedContentDirectory } from '../config/appContentDirectories';
+import { getManagedContentDirectory, resolveWritableDataRoot } from '../config/appContentDirectories';
+import { unwrapTauriResult } from '../runtime/tauriClient';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -84,5 +85,25 @@ describe('managed content directories', () => {
     vi.stubEnv('VITE_OVERLAYTERM_ACTIONS_DIR', '/tmp/overlayterm-actions');
 
     expect(getManagedContentDirectory('actions')).toBe('/tmp/overlayterm-actions');
+  });
+
+  it('unwrapTauriResult safely unwraps ok Result, direct payload, and throws on error Result', () => {
+    expect(unwrapTauriResult({ status: 'ok', data: { bundledUsrRoot: 'T:/toolchain/usr', writableRoot: 'T:/toolchain/usr' } })).toEqual({
+      bundledUsrRoot: 'T:/toolchain/usr',
+      writableRoot: 'T:/toolchain/usr',
+    });
+
+    expect(unwrapTauriResult({ bundledUsrRoot: 'T:/toolchain/usr', writableRoot: 'T:/toolchain/usr' })).toEqual({
+      bundledUsrRoot: 'T:/toolchain/usr',
+      writableRoot: 'T:/toolchain/usr',
+    });
+
+    expect(() => unwrapTauriResult({ status: 'error', error: 'boom' })).toThrow('boom');
+  });
+
+  it('resolveWritableDataRoot honors primary usr dir override', async () => {
+    vi.stubEnv('VITE_GREEBLEFS_USR_DIR', 'T:/toolchain/usr');
+    const root = await resolveWritableDataRoot();
+    expect(root).toBe('T:/toolchain/usr');
   });
 });

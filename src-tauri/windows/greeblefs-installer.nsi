@@ -426,7 +426,13 @@ Function RunMainBinary
 FunctionEnd
 
 Function RefreshSuggestedUsrRootDirectory
-  StrCpy $0 "$INSTDIR\usr"
+  ${If} ${FileExists} "T:\toolchain\usr\*.*"
+    StrCpy $0 "T:\toolchain\usr"
+  ${ElseIf} ${FileExists} "T:\toolchain\*.*"
+    StrCpy $0 "T:\toolchain\usr"
+  ${Else}
+    StrCpy $0 "$INSTDIR\usr"
+  ${EndIf}
   ${If} $SelectedUsrRootDirectory == ""
   ${OrIf} $SelectedUsrRootDirectory == $SuggestedUsrRootDirectory
     StrCpy $SelectedUsrRootDirectory $0
@@ -511,12 +517,24 @@ Function PageLeaveUsrRootDirectory
   ${EndIf}
 
   GetFullPathName $0 $0
+  ${If} ${FileExists} "$0\usr\*.*"
+    StrCpy $0 "$0\usr"
+  ${EndIf}
   StrCpy $SelectedUsrRootDirectory $0
   Call UpdateUsrRootDirectoryPreview
 FunctionEnd
 
 Function RestorePreviousUsrRootDirectory
   ReadRegStr $0 SHCTX "${UNINSTKEY}" "UsrRootDirectory"
+  ${If} $0 == ""
+    ReadRegStr $0 SHCTX "${MANUPRODUCTKEY}" "UsrRootDirectory"
+  ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $0 HKLM "${UNINSTKEY}" "UsrRootDirectory"
+  ${EndIf}
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU "${UNINSTKEY}" "UsrRootDirectory"
+  ${EndIf}
   ${If} $0 != ""
     StrCpy $SelectedUsrRootDirectory $0
   ${EndIf}
@@ -900,6 +918,7 @@ Section Install
     StrCpy $SelectedUsrRootDirectory "$INSTDIR\usr"
   ${EndIf}
   WriteRegStr SHCTX "${UNINSTKEY}" "UsrRootDirectory" "$SelectedUsrRootDirectory"
+  WriteRegStr SHCTX "${MANUPRODUCTKEY}" "UsrRootDirectory" "$SelectedUsrRootDirectory"
 
   ClearErrors
   CreateDirectory "$SelectedUsrRootDirectory"

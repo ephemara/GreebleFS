@@ -584,19 +584,25 @@ async function resolveNativeManagedContentRoots(): Promise<ManagedContentRootsSn
     const tauriClientLoader = await import("../runtime/tauriClientLoader");
     const { commands, unwrapTauriResult } =
       await tauriClientLoader.loadTauriClientThroughLoader();
-    const resolvedRoots = await commands
-      .startupResolveManagedContentRoots()
-      .then(unwrapTauriResult);
+    const rawRoots = await commands.startupResolveManagedContentRoots();
+    const resolvedRoots = (unwrapTauriResult(rawRoots) ?? {}) as Partial<ManagedContentRootsSnapshot>;
     const bundledUsrRoot = resolvedRoots.bundledUsrRoot?.trim();
     const writableRoot = resolvedRoots.writableRoot?.trim();
 
-    if (!bundledUsrRoot || !writableRoot) {
+    if (!bundledUsrRoot && !writableRoot) {
+      return null;
+    }
+
+    const effectiveWritableRoot = writableRoot || bundledUsrRoot;
+    const effectiveBundledRoot = bundledUsrRoot || writableRoot;
+
+    if (!effectiveWritableRoot || !effectiveBundledRoot) {
       return null;
     }
 
     return {
-      bundledUsrRoot,
-      writableRoot,
+      bundledUsrRoot: effectiveBundledRoot,
+      writableRoot: effectiveWritableRoot,
     };
   } catch (error) {
     console.warn(
@@ -619,7 +625,32 @@ export async function resolveWritableDataRoot(): Promise<string> {
   if (writableRoot) {
     return writableRoot.replace(/[\\/]+$/, "");
   }
-  return (await appLocalDataDir()).replace(/[\\/]+$/, "");
+
+  const usrRootOverride = readUsrSourceRootOverride();
+  if (usrRootOverride) {
+    return usrRootOverride.replace(/[\\/]+$/, "");
+  }
+
+  if (isTauri()) {
+    try {
+      if (await exists("T:\\toolchain\\usr")) {
+        return "T:\\toolchain\\usr";
+      }
+      if (await exists("T:/toolchain/usr")) {
+        return "T:/toolchain/usr";
+      }
+      if (await exists("T:\\toolchain")) {
+        return "T:\\toolchain";
+      }
+      if (await exists("T:/toolchain")) {
+        return "T:/toolchain";
+      }
+    } catch {
+      // Ignore check errors
+    }
+  }
+
+  return (await join(await appLocalDataDir(), "usr")).replace(/[\\/]+$/, "");
 }
 
 async function buildReleaseManagedDirectoryMap(): Promise<
